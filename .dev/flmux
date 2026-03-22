@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Dev-only CLI wrapper. Production builds bundle the CLI separately.
+exec bun "$(dirname "$0")/../src/cli/index.ts" "$@"

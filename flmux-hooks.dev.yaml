@@ -1,0 +1,3 @@
+terminal:
+  init:
+    - if (Test-Path "$PWD\.dev\flmux.cmd") { $env:PATH = "$PWD\.dev" + ";" + $env:PATH }

@@ -1,0 +1,52 @@
+{
+  "name": "flmux",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Desktop workspace built on Electrobun and Dockview.",
+  "scripts": {
+    "dev": "electrobun dev --watch",
+    "start": "electrobun dev",
+    "build": "electrobun build",
+    "build:production": "NODE_ENV=production electrobun build --env=stable",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "test": "bun test src/",
+    "lint": "biome check src/",
+    "lint:fix": "biome check --write src/",
+    "smoke:webserver": "bun tests/smoke/web-server.ts",
+    "smoke:lifecycle": "bun tests/smoke/panel-lifecycle.ts",
+    "smoke:browser": "bun tests/smoke/browser-about.ts",
+    "smoke:layout": "bun tests/smoke/layout-restore.ts",
+    "smoke:tabs": "bun tests/smoke/tab-lifecycle.ts",
+    "smoke:nested": "bun tests/smoke/nested-split.ts",
+    "smoke:explorer": "bun tests/smoke/explorer-editor.ts",
+    "smoke:bell": "bun tests/smoke/terminal-bell.ts",
+    "smoke:cli": "bun tests/smoke/terminal-flmux-cli.ts",
+    "smoke:cowsay": "bun tests/smoke/extension-cowsay.ts",
+    "e2e": "bun tests/e2e/run.ts",
+    "cli": "bun run src/cli/index.ts",
+    "browser": "bun run src/browser-ctl/index.ts"
+  },
+  "dependencies": {
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-html": "^6.4.11",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/theme-one-dark": "^6.1.3",
+    "@flatina/browser-ctl": "link:../browser-ctl",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "bun-pty": "^0.4.8",
+    "citty": "^0.2.1",
+    "codemirror": "^6.0.2",
+    "dockview-core": "5.1.0",
+    "electrobun": "1.16.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.8",
+    "@types/bun": "latest",
+    "@types/three": "^0.183.0",
+    "typescript": "^5.9.3"
+  }
+}

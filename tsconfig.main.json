@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "lib": ["ESNext", "DOM"],
+    "types": ["bun-types"]
+  },
+  "include": ["src/main/**/*.ts", "src/cli/**/*.ts", "src/shared/**/*.ts"]
+}

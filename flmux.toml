@@ -1,0 +1,24 @@
+# flmux configuration
+
+[app]
+# Restore last layout on startup (default: false)
+# When false, starts fresh with a "Restore Session" button in the titlebar
+# restoreLayout = true
+
+[log]
+# Log level: "error", "warn", "info", "debug"
+# Default: "debug" (dev), "info" (production)
+# level = "info"
+
+[web]
+# Enable web UI server for browser access
+enabled = true
+# Bind address (default: "127.0.0.1", use "0.0.0.0" for LAN access)
+# host = "127.0.0.1"
+# Port (default: 3000)
+# port = 3000
+
+[ptyd]
+# Stop ptyd daemon when the app exits
+# Default: true (dev), false (production)
+# stopOnExit = true

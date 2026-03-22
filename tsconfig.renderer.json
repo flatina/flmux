@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "lib": ["ESNext", "DOM", "DOM.Iterable"]
+  },
+  "include": ["src/renderer/**/*.ts", "src/shared/**/*.ts", "env.d.ts"],
+  "exclude": [
+    "src/shared/ipc-*.ts",
+    "src/shared/json-lines.ts",
+    "src/shared/json-rpc-ipc.ts"
+  ]
+}

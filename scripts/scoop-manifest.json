@@ -1,0 +1,25 @@
+{
+  "version": "0.1.0",
+  "description": "Desktop workspace multiplexer with terminals, browsers, editors, and extensions",
+  "homepage": "https://github.com/flatina/flmux",
+  "license": "MIT",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/flatina/flmux/releases/download/v0.1.0/flmux-win-x64.zip",
+      "hash": ""
+    }
+  },
+  "extract_dir": "flmux",
+  "bin": "bin\\launcher.exe",
+  "shortcuts": [
+    ["bin\\launcher.exe", "flmux"]
+  ],
+  "checkver": "github",
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/flatina/flmux/releases/download/v$version/flmux-win-x64.zip"
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "sample.cowsay",
+  "name": "Cowsay",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "rendererEntry": "./index.ts",
+  "cliEntry": "./cli.ts",
+  "contributions": {
+    "panels": [
+      { "id": "cowsay", "kind": "panel", "title": "Cowsay" }
+    ],
+    "events": [
+      { "id": "said", "description": "Emitted when user types in the cowsay input" }
+    ],
+    "commands": [
+      { "id": "cowsay", "description": "Open or message a cowsay pane" }
+    ]
+  }
+}

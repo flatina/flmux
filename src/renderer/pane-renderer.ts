@@ -14,14 +14,14 @@ import type {
   PanelUpdateEvent
 } from "dockview-core";
 import type { WebviewTagElement } from "electrobun/view";
-import { asPaneId, type PaneId, type TerminalRuntimeId } from "../shared/ids";
-import type { ExtensionRegistryEntry, MountedExtension, PaneEvent } from "../shared/extension-abi";
+import type { ExtensionRegistryEntry, HeaderAction, MountedExtension, PaneEvent } from "../shared/extension-abi";
 import type { TabId } from "../shared/ids";
+import { asPaneId, type PaneId, type TerminalRuntimeId } from "../shared/ids";
 import type {
   BrowserPaneParams,
   EditorPaneParams,
-  ExtensionPaneParams,
   ExplorerPaneParams,
+  ExtensionPaneParams,
   PaneParams,
   TerminalPaneParams
 } from "../shared/pane-params";
@@ -59,6 +59,7 @@ export type PaneRendererContext = {
   unregisterPreCloseHook: (paneId: PaneId) => void;
   firePreCloseHook: (paneId: PaneId) => void;
   subscribeOuterVisibility?: (callback: (visible: boolean) => void) => () => void;
+  onHeaderActionsChanged?: (paneId: PaneId, actions: HeaderAction[]) => void;
 };
 
 export class PaneRenderer implements IContentRenderer {
@@ -174,9 +175,7 @@ export class PaneRenderer implements IContentRenderer {
     this.disposeTerminalView();
     this.disposeBrowserView();
     this.disposeExtensionView();
-    this.element.replaceChildren(
-      buildNote(`Unknown pane kind: ${(params as PaneParams).kind}`)
-    );
+    this.element.replaceChildren(buildNote(`Unknown pane kind: ${(params as PaneParams).kind}`));
   }
 
   private renderTerminal(params: TerminalPaneParams): void {
@@ -476,10 +475,12 @@ export class PaneRenderer implements IContentRenderer {
           this.props?.api.updateParameters({ state: nextState });
         },
         getState: () => this.extensionState,
-        emit: (eventType: string, data: unknown) =>
-          this.context.emitEvent(paneId, tabId, eventType, data),
+        emit: (eventType: string, data: unknown) => this.context.emitEvent(paneId, tabId, eventType, data),
         on: (eventType: string, handler: (event: PaneEvent) => void, options?: { global?: boolean }) =>
-          this.context.onEvent(paneId, tabId, eventType, handler, options)
+          this.context.onEvent(paneId, tabId, eventType, handler, options),
+        setHeaderActions: (actions: HeaderAction[]) => {
+          this.context.onHeaderActionsChanged?.(paneId, actions);
+        }
       };
 
       const mounted = await mountFn(host, context);
@@ -567,7 +568,7 @@ export class PaneRenderer implements IContentRenderer {
       }
 
       this.terminalParams = nextParams;
-  
+
       this.refreshTerminalRuntime(this.context.getTerminalRuntime(nextParams.runtimeId));
       this.scheduleTerminalFit();
     });
@@ -633,7 +634,6 @@ export class PaneRenderer implements IContentRenderer {
       this.terminalDisposables.push(unsub);
     }
 
-
     this.refreshTerminalRuntime(this.terminalLastRuntime);
     requestAnimationFrame(() => {
       this.fitTerminal();
@@ -692,18 +692,13 @@ export class PaneRenderer implements IContentRenderer {
     }
 
     if (!runtime) {
-  
       return;
     }
 
     if (runtime.status === "running") {
-  
       return;
     }
-
-
   }
-
 
   private async ensureTerminalRuntime(): Promise<void> {
     if (!this.terminalParams) {
@@ -724,7 +719,6 @@ export class PaneRenderer implements IContentRenderer {
     const cols = this.terminalLastSize?.cols ?? 120;
     const rows = this.terminalLastSize?.rows ?? 32;
 
-
     this.terminalCreatePromise = hostRpc
       .request("terminal.create", {
         runtimeId: this.terminalParams.runtimeId,
@@ -740,7 +734,6 @@ export class PaneRenderer implements IContentRenderer {
         this.refreshTerminalRuntime(result.terminal);
       })
       .catch((error) => {
-    
         this.terminalInstance?.writeln(
           `\r\n[flmux] failed to start runtime: ${error instanceof Error ? error.message : String(error)}`
         );
@@ -856,8 +849,7 @@ export class PaneRenderer implements IContentRenderer {
     // Web environment: use iframe instead of native webview
     const runtime = window as Window & { __electrobun?: unknown; __electrobunWindowId?: unknown };
     const isElectrobunRuntime =
-      typeof runtime.__electrobun !== "undefined" ||
-      typeof runtime.__electrobunWindowId === "number";
+      typeof runtime.__electrobun !== "undefined" || typeof runtime.__electrobunWindowId === "number";
     if (!isElectrobunRuntime) {
       this.mountBrowserIframe(params);
       return;
@@ -1069,7 +1061,11 @@ export class PaneRenderer implements IContentRenderer {
     backBtn.type = "button";
     backBtn.textContent = "\u2190";
     backBtn.addEventListener("click", () => {
-      try { iframe.contentWindow?.history.back(); } catch { /* cross-origin */ }
+      try {
+        iframe.contentWindow?.history.back();
+      } catch {
+        /* cross-origin */
+      }
     });
 
     const refreshBtn = document.createElement("button");

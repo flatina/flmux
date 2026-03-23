@@ -189,6 +189,13 @@ input {
   padding: 0 4px;
 }
 
+.group-actions-zone,
+.panel-actions-zone {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .group-action-btn {
   display: flex;
   align-items: center;
@@ -590,6 +597,123 @@ input {
 
 .explorer-dir .explorer-name {
   color: var(--accent-2);
+}
+
+/* Window resize handles (custom chrome — Electrobun hidden titlebar) */
+.resize-handle {
+  position: fixed;
+  z-index: 9999;
+  touch-action: none;
+}
+.resize-n  { top: 0; left: 6px; right: 6px; height: 5px; cursor: n-resize; }
+.resize-s  { bottom: 0; left: 6px; right: 6px; height: 5px; cursor: s-resize; }
+.resize-e  { right: 0; top: 6px; bottom: 6px; width: 5px; cursor: e-resize; }
+.resize-w  { left: 0; top: 6px; bottom: 6px; width: 5px; cursor: w-resize; }
+.resize-nw { top: 0; left: 0; width: 6px; height: 6px; cursor: nw-resize; }
+.resize-ne { top: 0; right: 0; width: 6px; height: 6px; cursor: ne-resize; }
+.resize-sw { bottom: 0; left: 0; width: 6px; height: 6px; cursor: sw-resize; }
+.resize-se { bottom: 0; right: 0; width: 6px; height: 6px; cursor: se-resize; }
+
+/* Extension manager */
+.ext-manager {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  background: var(--bg);
+}
+
+.ext-manager-header {
+  padding: 16px 20px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ext-manager-list {
+  padding: 8px 0;
+}
+
+.ext-manager-empty {
+  padding: 24px 20px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.ext-manager-icon {
+  font-size: 22px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.ext-manager-info {
+  min-width: 0;
+}
+
+.ext-manager-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ext-manager-meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.ext-manager-banner {
+  padding: 8px 20px;
+  background: rgba(255, 173, 90, 0.12);
+  color: var(--accent);
+  font-size: 12px;
+  border-bottom: 1px solid rgba(255, 173, 90, 0.2);
+}
+
+.ext-manager-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 20px;
+  cursor: default;
+}
+
+.ext-manager-entry:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ext-manager-entry.ext-disabled {
+  opacity: 0.5;
+}
+
+.ext-manager-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.ext-manager-btn {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  padding: 3px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.ext-manager-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.ext-manager-btn-danger {
+  border-color: rgba(232, 17, 35, 0.4);
+  color: #f87171;
+}
+
+.ext-manager-btn-danger:hover {
+  background: rgba(232, 17, 35, 0.15);
 }
 
 @media (max-width: 760px) {

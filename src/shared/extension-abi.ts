@@ -1,3 +1,4 @@
+import type { PaneCreateDirection, PaneCreateInput } from "./app-rpc";
 import type { PaneId, TabId } from "./ids";
 
 // ── Manifest (flmux-extension.json) ──
@@ -23,6 +24,7 @@ export interface ExtensionManifest {
   name: string;
   version: string;
   apiVersion: number;
+  setupEntry?: string;
   rendererEntry?: string;
   cliEntry?: string;
   contributions?: {
@@ -39,6 +41,7 @@ export interface ExtensionRegistryEntry {
   id: string;
   name: string;
   version: string;
+  setupEntry?: string;
   rendererEntry?: string;
   embedded: boolean;
   contributions: {
@@ -46,6 +49,8 @@ export interface ExtensionRegistryEntry {
     events: ExtensionEventContribution[];
   };
   permissions: string[];
+  /** Pre-transpiled setup module source (set by main process during bootstrap). */
+  setupSource?: string;
 }
 
 // ── Runtime context (passed to mount) ──
@@ -72,11 +77,20 @@ export interface ExtensionContext {
   getState: () => unknown;
   emit: (eventType: string, data: unknown) => void;
   on: (eventType: string, handler: (event: PaneEvent) => void, options?: EventSubscriptionOptions) => () => void;
+  setHeaderActions: (actions: HeaderAction[]) => void;
+}
+
+export interface HeaderAction {
+  id: string;
+  icon: string;
+  tooltip?: string;
+  onClick: () => void;
 }
 
 export interface MountedExtension {
   update?: (context: ExtensionContext) => void | Promise<void>;
   dispose?: () => void | Promise<void>;
+  getActions?(): HeaderAction[];
 }
 
 export type ExtensionMount = (
@@ -96,4 +110,34 @@ export interface ExtensionCliCommand {
   meta: { name: string; description?: string };
   args?: Record<string, { type: string; description?: string; required?: boolean }>;
   run: (ctx: ExtensionCliContext) => void | Promise<void>;
+}
+
+// ── Setup ABI (eager-loaded at renderer startup) ──
+
+export interface GroupActionDescriptor {
+  id: string;
+  icon: string;
+  tooltip?: string;
+  order?: number;
+  run: (ctx: GroupActionContext) => void;
+}
+
+export interface GroupActionContext {
+  activePaneId: PaneId | null;
+  tabId: TabId;
+  openPane: (leaf: PaneCreateInput, placement?: { referencePaneId?: PaneId; direction?: PaneCreateDirection }) => void;
+}
+
+export interface GroupActionsModifier {
+  hide(...ids: string[]): void;
+}
+
+export interface ExtensionSetupContext {
+  extensionId: string;
+  registerGroupAction(action: GroupActionDescriptor): Disposable;
+  onCreateGroupActions(handler: (actions: GroupActionsModifier) => void): Disposable;
+}
+
+export interface ExtensionSetup {
+  onInit?(ctx: ExtensionSetupContext): Disposable | undefined;
 }

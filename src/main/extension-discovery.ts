@@ -5,7 +5,7 @@ import { isExtensionDisabled, loadExtensionSettings } from "../shared/extension-
 import { getExtensionsDir } from "../shared/paths";
 
 const MANIFEST_FILENAME = "flmux-extension.json";
-const EXTENSION_ID_PATTERN = /^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$/;
+export const EXTENSION_ID_PATTERN = /^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$/;
 
 export interface DiscoveredExtension {
   manifest: ExtensionManifest;
@@ -59,14 +59,35 @@ export function buildExtensionRegistry(extensions: DiscoveredExtension[]): Exten
     id: ext.manifest.id,
     name: ext.manifest.name,
     version: ext.manifest.version,
+    setupEntry: ext.manifest.setupEntry,
     rendererEntry: ext.manifest.rendererEntry,
     embedded: ext.embedded,
     contributions: {
       panels: ext.manifest.contributions?.panels ?? [],
       events: ext.manifest.contributions?.events ?? []
     },
-    permissions: ext.manifest.permissions ?? []
+    permissions: ext.manifest.permissions ?? [],
+    setupSource: loadSetupSource(ext)
   }));
+}
+
+function loadSetupSource(ext: DiscoveredExtension): string | undefined {
+  const entry = ext.manifest.setupEntry;
+  if (!entry) return undefined;
+
+  if (!entry.startsWith("./") || entry.includes("..")) return undefined;
+
+  const sourcePath = resolve(ext.path, entry);
+  if (!sourcePath.startsWith(resolve(ext.path))) return undefined;
+
+  try {
+    const raw = readFileSync(sourcePath, "utf-8");
+    return sourcePath.endsWith(".ts") || sourcePath.endsWith(".tsx")
+      ? new Bun.Transpiler({ loader: sourcePath.endsWith(".tsx") ? "tsx" : "ts" }).transformSync(raw)
+      : raw;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -100,9 +121,10 @@ export function loadExtensionSource(
 
   try {
     const raw = readFileSync(sourcePath, "utf-8");
-    const source = sourcePath.endsWith(".ts") || sourcePath.endsWith(".tsx")
-      ? new Bun.Transpiler({ loader: sourcePath.endsWith(".tsx") ? "tsx" : "ts" }).transformSync(raw)
-      : raw;
+    const source =
+      sourcePath.endsWith(".ts") || sourcePath.endsWith(".tsx")
+        ? new Bun.Transpiler({ loader: sourcePath.endsWith(".tsx") ? "tsx" : "ts" }).transformSync(raw)
+        : raw;
     return { ok: true, source };
   } catch (err) {
     return { ok: false, error: `Failed to read extension source: ${err}` };

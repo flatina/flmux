@@ -9,9 +9,11 @@ import {
   type PanelUpdateEvent,
   type SerializedDockview
 } from "dockview-core";
+import type { HeaderAction } from "../shared/extension-abi";
 import { asPaneId, asTabId, type PaneId } from "../shared/ids";
 import type { PaneParams } from "../shared/pane-params";
 import { isLayoutableTabParams, type LayoutableTabParams } from "../shared/tab-params";
+import type { ExtensionSetupRegistry } from "./extension-setup-registry";
 import type { GroupActionHandler } from "./group-actions";
 import { GroupActionsRenderer } from "./group-actions";
 import { PaneRenderer, type PaneRendererContext } from "./pane-renderer";
@@ -23,6 +25,7 @@ export type TabRendererContext = {
   unregister: (panelId: string) => void;
   onGroupAction: GroupActionHandler;
   getTabIndex: (panelId: string) => number;
+  setupRegistry: ExtensionSetupRegistry | null;
 };
 
 export class TabRenderer implements IContentRenderer {
@@ -37,6 +40,8 @@ export class TabRenderer implements IContentRenderer {
   private outerPanelApi: IDockviewPanelProps["api"] | null = null;
   private innerDisposables: Array<() => void> = [];
   private outerVisibilityCallbacks: Array<(visible: boolean) => void> = [];
+  private paneHeaderActions = new Map<string, HeaderAction[]>();
+  private groupActionRenderers: GroupActionsRenderer[] = [];
 
   constructor(private readonly context: TabRendererContext) {
     this.element.className = "tab-shell";
@@ -85,10 +90,25 @@ export class TabRenderer implements IContentRenderer {
             return () => {
               this.outerVisibilityCallbacks = this.outerVisibilityCallbacks.filter((c) => c !== cb);
             };
+          },
+          onHeaderActionsChanged: (paneId, actions) => {
+            this.paneHeaderActions.set(String(paneId), actions);
+            // Refresh any group whose active panel matches
+            for (const gar of this.groupActionRenderers) {
+              gar.refreshPanelActions();
+            }
           }
         }),
-      createRightHeaderActionComponent: (group: DockviewGroupPanel) =>
-        new GroupActionsRenderer(group, (action, panelId) => this.context.onGroupAction(action, panelId))
+      createRightHeaderActionComponent: (group: DockviewGroupPanel) => {
+        const gar = new GroupActionsRenderer(
+          group,
+          (action, panelId) => this.context.onGroupAction(action, panelId),
+          this.context.setupRegistry,
+          (panelId) => this.paneHeaderActions.get(panelId) ?? []
+        );
+        this.groupActionRenderers.push(gar);
+        return gar;
+      }
     });
 
     if (params.innerLayout) {
@@ -103,6 +123,7 @@ export class TabRenderer implements IContentRenderer {
     this._innerDockview.onDidAddPanel(() => this.syncOuterTitle());
     this._innerDockview.onDidRemovePanel((panel) => {
       const paneId = asPaneId(panel.id);
+      this.paneHeaderActions.delete(panel.id);
       this.context.paneContext.firePreCloseHook(paneId);
       this.syncOuterTitle();
     });
@@ -201,6 +222,8 @@ export class TabRenderer implements IContentRenderer {
 
     this.innerDisposables.length = 0;
     this.outerVisibilityCallbacks.length = 0;
+    this.groupActionRenderers.length = 0;
+    this.paneHeaderActions.clear();
 
     this.paneRenderer?.dispose();
     this.paneRenderer = null;

@@ -32,23 +32,14 @@ import {
   type PaneId,
   type TerminalRuntimeId
 } from "../shared/ids";
-import {
-  createPaneParams,
-  getDefaultPaneTitle,
-  isPaneParams,
-  type PaneParams
-} from "../shared/pane-params";
-import type { TerminalRuntimeEvent, TerminalRuntimeSummary } from "../shared/rpc";
 import { info } from "../shared/logger";
+import { createPaneParams, getDefaultPaneTitle, isPaneParams, type PaneParams } from "../shared/pane-params";
+import type { TerminalRuntimeEvent, TerminalRuntimeSummary } from "../shared/rpc";
 import type { LayoutableTabParams } from "../shared/tab-params";
 import { AppOwner, EventBus } from "./event-bus";
-import {
-  isV1Layout,
-  migrateV1Layout,
-  panelToSummary,
-  sanitizeSerializedLayout,
-  titleFromLeaf
-} from "./helpers";
+import { EXT_MANAGER_COMPONENT, EXT_MANAGER_TAB_ID, ExtManagerRenderer } from "./ext-manager";
+import { ExtensionSetupRegistry } from "./extension-setup-registry";
+import { isV1Layout, migrateV1Layout, panelToSummary, sanitizeSerializedLayout, titleFromLeaf } from "./helpers";
 import { getHostRpc, setRendererRpcHandlers } from "./lib/host-rpc";
 import type { PaneRendererContext } from "./pane-renderer";
 import { TabRenderer } from "./tab-renderer";
@@ -91,6 +82,7 @@ class WorkspaceApp {
   private readonly workspaceHost = document.createElement("section");
 
   private dockview: DockviewApi | null = null;
+  private readonly setupRegistry = new ExtensionSetupRegistry();
   private resizeObserver: ResizeObserver | null = null;
   private saveTimer = 0;
   private terminalEventUnsubscribe: (() => void) | null = null;
@@ -114,6 +106,9 @@ class WorkspaceApp {
     this.shell.append(this.titlebar, this.workspaceHost);
     this.root.replaceChildren(this.shell);
 
+    // Eager-load all extension setup modules before creating dockview
+    await this.setupRegistry.loadAll(this.bootstrap.extensions);
+
     const paneContext: PaneRendererContext = {
       workspaceRoot: this.bootstrap.cwd,
       getTerminalRuntime: (runtimeId) => this.terminalRuntimes.get(runtimeId) ?? null,
@@ -136,15 +131,20 @@ class WorkspaceApp {
     this.dockview = createDockview(this.workspaceHost, {
       className: "dockview-theme-flmux",
       defaultRenderer: "always",
-      createComponent: () =>
-        new TabRenderer({
+      createComponent: (options) => {
+        if (options.name === EXT_MANAGER_COMPONENT) {
+          return new ExtManagerRenderer(this.hostRpc);
+        }
+        return new TabRenderer({
           paneContext,
           markDirty: () => this.queueSave(),
           register: (panelId, renderer) => this.tabRenderers.set(panelId, renderer),
           unregister: (panelId) => this.tabRenderers.delete(panelId),
           onGroupAction: (action, panelId) => this.handleInnerGroupAction(action, panelId),
-          getTabIndex: (panelId) => this.dockview?.panels.findIndex((p) => p.id === panelId) ?? 0
-        })
+          getTabIndex: (panelId) => this.dockview?.panels.findIndex((p) => p.id === panelId) ?? 0,
+          setupRegistry: this.setupRegistry
+        });
+      }
     });
 
     this.dockview.onDidLayoutChange(() => {
@@ -159,16 +159,23 @@ class WorkspaceApp {
       this.preCloseHooks.delete(paneId);
     });
     this.attachResizeObserver();
+    this.setupResizeHandles();
     this.terminalEventUnsubscribe =
       this.hostRpc.subscribe?.("terminal.event", (event) => this.handleTerminalEvent(event)) ?? null;
     window.addEventListener("flmux:layout-dirty", this.handleDirty);
     window.addEventListener("beforeunload", this.handleBeforeUnload);
 
     // Listen for app:title events from extensions
-    this.eventBus.on(AppOwner.paneId, AppOwner.tabId, "app:title", (event) => {
-      const title = (event.data as { title?: string })?.title;
-      if (typeof title === "string") this.titlebarTitle.textContent = title;
-    }, { global: true });
+    this.eventBus.on(
+      AppOwner.paneId,
+      AppOwner.tabId,
+      "app:title",
+      (event) => {
+        const title = (event.data as { title?: string })?.title;
+        if (typeof title === "string") this.titlebarTitle.textContent = title;
+      },
+      { global: true }
+    );
 
     await this.restoreOrSeedLayout();
   }
@@ -187,7 +194,8 @@ class WorkspaceApp {
     center.append(
       this.makeTitlebarBtn(">_", "New Terminal Tab", () => void this.openNewTerminalTab()),
       this.makeTitlebarBtn("\u{1F310}", "New Browser Tab", () => void this.openNewBrowserTab()),
-      this.buildSessionMenu()
+      this.buildSessionMenu(),
+      this.buildSettingsMenu()
     );
 
     // Right: window controls (no-drag)
@@ -196,7 +204,12 @@ class WorkspaceApp {
     right.append(
       this.makeWindowBtn("\u2500", "Minimize", () => void this.hostRpc.request("window.minimize", undefined)),
       this.makeWindowBtn("\u25A1", "Maximize", () => void this.hostRpc.request("window.maximize", undefined)),
-      this.makeWindowBtn("\u2715", "Close", () => void this.hostRpc.request("window.close", undefined), "window-btn-close")
+      this.makeWindowBtn(
+        "\u2715",
+        "Close",
+        () => void this.hostRpc.request("window.close", undefined),
+        "window-btn-close"
+      )
     );
 
     this.titlebar.replaceChildren(left, center, right);
@@ -251,7 +264,7 @@ class WorkspaceApp {
     menu.append(
       makeItem("Save Session\u2026", () => void this.saveSessionAs()),
       makeItem("Load Session\u2026", () => void this.showLoadSessionMenu(menu)),
-      makeItem("Load Last Session", () => void this.loadLastSession()),
+      makeItem("Load Last Session", () => void this.loadLastSession())
     );
 
     trigger.addEventListener("click", (e) => {
@@ -265,6 +278,62 @@ class WorkspaceApp {
 
     wrapper.append(trigger, menu);
     return wrapper;
+  }
+
+  private buildSettingsMenu(): HTMLElement {
+    const wrapper = document.createElement("div");
+    wrapper.className = "titlebar-menu-wrapper";
+
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "titlebar-btn";
+    trigger.textContent = "\u2699\uFE0F";
+    trigger.title = "Settings";
+
+    const menu = document.createElement("div");
+    menu.className = "titlebar-menu";
+    menu.hidden = true;
+
+    const extBtn = document.createElement("button");
+    extBtn.type = "button";
+    extBtn.className = "titlebar-menu-item";
+    extBtn.textContent = "Extensions";
+    extBtn.addEventListener("click", () => {
+      menu.hidden = true;
+      this.openExtensionManager();
+    });
+    menu.append(extBtn);
+
+    trigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      menu.hidden = !menu.hidden;
+    });
+
+    document.addEventListener("click", (e: MouseEvent) => {
+      if (!wrapper.contains(e.target as Node)) menu.hidden = true;
+    });
+
+    wrapper.append(trigger, menu);
+    return wrapper;
+  }
+
+  private openExtensionManager(): void {
+    if (!this.dockview) return;
+
+    // Singleton: focus existing tab if open
+    const existing = this.dockview.getPanel(EXT_MANAGER_TAB_ID);
+    if (existing) {
+      existing.focus();
+      return;
+    }
+
+    this.dockview.addPanel({
+      id: EXT_MANAGER_TAB_ID,
+      component: EXT_MANAGER_COMPONENT,
+      title: "Extensions",
+      params: { tabKind: "tab", layoutMode: "simple" }
+    });
+    this.dockview.getPanel(EXT_MANAGER_TAB_ID)?.focus();
   }
 
   /** Create a new layoutable tab with a fresh terminal inside. */
@@ -792,6 +861,26 @@ class WorkspaceApp {
 
   private handleInnerGroupAction(action: string, activePanelId: string | null): void {
     const ref = activePanelId ? asPaneId(activePanelId) : undefined;
+
+    // Check extension-registered group actions
+    const extAction = this.setupRegistry.findGroupAction(action);
+    if (extAction) {
+      const found = ref ? this.findPane(ref) : null;
+      const tabId = found ? asTabId(found.outerPanel.id) : asTabId("");
+      extAction.run({
+        activePaneId: ref ?? null,
+        tabId,
+        openPane: (leaf: PaneCreateInput, placement?) => {
+          void this.openLeaf(leaf, {
+            referencePaneId: placement?.referencePaneId ?? ref,
+            direction: placement?.direction
+          });
+        }
+      });
+      return;
+    }
+
+    // Builtin actions
     switch (action) {
       case "terminal":
         void this.openLeaf({ kind: "terminal" }, ref ? { referencePaneId: ref, direction: "within" } : {});
@@ -832,7 +921,6 @@ class WorkspaceApp {
     }
     return undefined;
   }
-
 
   /** Extract the live cwd from a terminal pane's runtime, falling back to params cwd. */
   private getTerminalCwd(params: Record<string, unknown> | undefined): string | undefined {
@@ -978,6 +1066,88 @@ class WorkspaceApp {
     const rect = this.workspaceHost.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) {
       this.dockview.layout(rect.width, rect.height, true);
+    }
+  }
+
+  private setupResizeHandles(): void {
+    const runtime = window as Window & { __electrobun?: unknown; __electrobunWindowId?: unknown };
+    const isElectrobun =
+      typeof runtime.__electrobun !== "undefined" || typeof runtime.__electrobunWindowId === "number";
+    if (!isElectrobun) return;
+
+    const edges = ["n", "s", "e", "w", "nw", "ne", "sw", "se"] as const;
+
+    for (const edge of edges) {
+      const el = document.createElement("div");
+      el.className = `resize-handle resize-${edge}`;
+      document.body.appendChild(el);
+
+      el.addEventListener("pointerdown", (e: PointerEvent) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        el.setPointerCapture(e.pointerId);
+
+        const startX = e.screenX;
+        const startY = e.screenY;
+
+        void this.hostRpc.request("window.frame.get", undefined).then((initial) => {
+          let rafId = 0;
+          let latestX = startX;
+          let latestY = startY;
+
+          const applyResize = (): void => {
+            rafId = 0;
+            const dx = latestX - startX;
+            const dy = latestY - startY;
+            let x = initial.x;
+            let y = initial.y;
+            let w = initial.width;
+            let h = initial.height;
+
+            if (edge.includes("e")) w += dx;
+            if (edge.includes("w")) {
+              x += dx;
+              w -= dx;
+            }
+            if (edge.includes("s")) h += dy;
+            if (edge.includes("n")) {
+              y += dy;
+              h -= dy;
+            }
+
+            if (w < 400) {
+              if (edge.includes("w")) x = initial.x + initial.width - 400;
+              w = 400;
+            }
+            if (h < 300) {
+              if (edge.includes("n")) y = initial.y + initial.height - 300;
+              h = 300;
+            }
+
+            void this.hostRpc.request("window.frame.set", { x, y, width: w, height: h, maximized: false });
+          };
+
+          const onMove = (ev: PointerEvent): void => {
+            latestX = ev.screenX;
+            latestY = ev.screenY;
+            if (!rafId) rafId = requestAnimationFrame(applyResize);
+          };
+
+          const onUp = (): void => {
+            el.removeEventListener("pointermove", onMove);
+            el.removeEventListener("pointerup", onUp);
+            el.removeEventListener("lostpointercapture", onUp);
+            if (rafId) {
+              cancelAnimationFrame(rafId);
+              applyResize();
+            }
+          };
+
+          el.addEventListener("pointermove", onMove);
+          el.addEventListener("pointerup", onUp);
+          el.addEventListener("lostpointercapture", onUp);
+        });
+      });
     }
   }
 

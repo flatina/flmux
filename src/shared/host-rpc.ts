@@ -40,6 +40,30 @@ export interface HostRpcMethodMap {
     params: { extensionId: string };
     result: { ok: true; source: string } | { ok: false; error: string };
   };
+  "extension.listAll": {
+    params: undefined;
+    result: {
+      extensions: Array<{
+        id: string;
+        name: string;
+        version: string;
+        embedded: boolean;
+        disabled: boolean;
+      }>;
+    };
+  };
+  "extension.enable": {
+    params: { extensionId: string };
+    result: { ok: true };
+  };
+  "extension.disable": {
+    params: { extensionId: string };
+    result: { ok: true };
+  };
+  "extension.uninstall": {
+    params: { extensionId: string };
+    result: { ok: true } | { ok: false; error: string };
+  };
   "fs.readDir": {
     params: { path: string; dirsOnly?: boolean };
     result: { entries: FsEntry[] };

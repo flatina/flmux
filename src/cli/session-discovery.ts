@@ -1,75 +1,86 @@
 import { readdir, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { SystemIdentifyResult } from "../shared/app-rpc";
 import type { SessionId } from "../shared/ids";
-import { getSessionDir, getSessionRecordPath } from "../shared/paths";
-import { isSessionRecord, type SessionRecord } from "../shared/session-record";
+import { getAppRpcIpcPath } from "../shared/ipc-paths";
+import { callJsonRpcIpc } from "../shared/json-rpc-ipc";
+import { PTYD_PROTOCOL_VERSION, type PtydIdentifyResult } from "../shared/ptyd-control-plane";
 import { isRpcEndpointReachable } from "./rpc-client";
 
-export interface DiscoveredSession extends SessionRecord {
+const PTYD_LOCK_PREFIX = "flmux-ptyd-";
+const PTYD_LOCK_SUFFIX = ".lock";
+
+interface PtydLockSnapshot {
+  sessionId: SessionId;
+  controlIpcPath: string;
+  startedAt: string;
+  lockPath: string;
+}
+
+export interface DiscoveredSession {
+  app: "flmux";
+  sessionId: SessionId;
+  workspaceRoot: string;
+  pid: number;
+  ipcPath: string;
+  startedAt: string;
   reachable: boolean;
 }
 
-async function readSessionRecords(): Promise<SessionRecord[]> {
-  try {
-    const entries = await readdir(getSessionDir(), { withFileTypes: true });
-    const sessions = await Promise.all(
-      entries
-        .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
-        .map(async (entry) => {
-          const sessionId = entry.name.replace(/\.json$/u, "");
-
-          try {
-            const content = await readFile(getSessionRecordPath(sessionId), "utf8");
-            const parsed = JSON.parse(content) as unknown;
-            return isSessionRecord(parsed) ? parsed : null;
-          } catch {
-            return null;
-          }
-        })
-    );
-
-    return sessions
-      .filter((session): session is SessionRecord => session !== null)
-      .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
-  } catch {
-    return [];
-  }
-}
-
-async function isSessionReachable(session: SessionRecord): Promise<boolean> {
-  return isRpcEndpointReachable({ ipcPath: session.ipcPath });
+export interface RecoverablePtydSession {
+  sessionId: SessionId;
+  controlIpcPath: string;
+  startedAt: string;
 }
 
 export async function listSessions(): Promise<DiscoveredSession[]> {
-  const sessions = await readSessionRecords();
-
+  const locks = await listLivePtydLocks();
   const discovered = await Promise.all(
-    sessions.map(async (session) => ({
-      ...session,
-      reachable: await isSessionReachable(session)
-    }))
+    locks.map(async (lock) => {
+      const ipcPath = getAppRpcIpcPath(lock.sessionId);
+      const reachable = await isRpcEndpointReachable({ ipcPath });
+      if (!reachable) {
+        return null;
+      }
+
+      const identify = await identifyApp(ipcPath);
+      if (!identify) {
+        return null;
+      }
+
+      return {
+        app: "flmux" as const,
+        sessionId: identify.sessionId,
+        workspaceRoot: identify.workspaceRoot,
+        pid: identify.pid,
+        ipcPath,
+        startedAt: lock.startedAt,
+        reachable: true
+      };
+    })
   );
 
-  // Auto-remove: unreachable sessions + duplicate IPC paths (keep newest)
-  const seen = new Map<string, DiscoveredSession>();
-  for (const session of discovered) {
-    if (!session.reachable) {
-      void removeStaleSessionRecord(session.sessionId);
-      continue;
-    }
-
-    const existing = seen.get(session.ipcPath);
-    if (existing) {
-      // Keep the newer one (sessions sorted newest first)
-      void removeStaleSessionRecord(session.sessionId);
-    } else {
-      seen.set(session.ipcPath, session);
-    }
-  }
-
-  return discovered.filter((s) => seen.get(s.ipcPath)?.sessionId === s.sessionId);
+  return discovered
+    .filter((session): session is DiscoveredSession => session !== null)
+    .sort((left, right) => right.startedAt.localeCompare(left.startedAt));
 }
 
-export async function resolveSession(sessionId?: SessionId | string): Promise<SessionRecord> {
+export async function listRecoverablePtydSessions(): Promise<RecoverablePtydSession[]> {
+  const locks = await listLivePtydLocks();
+  const liveSessions = new Set((await listSessions()).map((session) => session.sessionId));
+
+  return locks
+    .filter((lock) => !liveSessions.has(lock.sessionId))
+    .map((lock) => ({
+      sessionId: lock.sessionId,
+      controlIpcPath: lock.controlIpcPath,
+      startedAt: lock.startedAt
+    }))
+    .sort((left, right) => bcmp(right.startedAt, left.startedAt));
+}
+
+export async function resolveSession(sessionId?: SessionId | string): Promise<DiscoveredSession> {
   const sessions = await listSessions();
   if (sessions.length === 0) {
     throw new Error("No running flmux sessions found.");
@@ -81,49 +92,123 @@ export async function resolveSession(sessionId?: SessionId | string): Promise<Se
       throw new Error(`Session not found: ${sessionId}`);
     }
 
-    if (!session.reachable) {
-      throw new Error(`Session is not reachable: ${sessionId}`);
-    }
-
     return session;
   }
 
-  const reachable = sessions.find((entry) => entry.reachable);
-  if (!reachable) {
-    throw new Error("No reachable flmux sessions found.");
-  }
-
-  return reachable;
+  return sessions[0]!;
 }
 
-export async function removeStaleSessionRecord(sessionId: SessionId | string): Promise<void> {
+export async function cleanupStaleSessions(): Promise<{ removed: string[]; kept: string[] }> {
+  const entries = await scanPtydLockEntries();
+  const removed: string[] = [];
+  const kept: string[] = [];
+
+  for (const entry of entries) {
+    const identified = await identifyPtyd(entry.controlIpcPath);
+    if (!identified || identified.protocolVersion !== PTYD_PROTOCOL_VERSION) {
+      await removeLockPath(entry.lockPath);
+      removed.push(entry.sessionId);
+    } else {
+      kept.push(entry.sessionId);
+    }
+  }
+
+  return { removed, kept };
+}
+
+async function listLivePtydLocks(): Promise<PtydLockSnapshot[]> {
+  const entries = await scanPtydLockEntries();
+  const live: PtydLockSnapshot[] = [];
+
+  for (const entry of entries) {
+    const identified = await identifyPtyd(entry.controlIpcPath);
+    if (!identified || identified.protocolVersion !== PTYD_PROTOCOL_VERSION) {
+      void removeLockPath(entry.lockPath);
+      continue;
+    }
+
+    live.push(entry);
+  }
+
+  return live.sort((left, right) => right.startedAt.localeCompare(left.startedAt));
+}
+
+async function scanPtydLockEntries(): Promise<PtydLockSnapshot[]> {
+  const entries = await readdir(tmpdir(), { withFileTypes: true }).catch(() => []);
+  const sessions: PtydLockSnapshot[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    if (!entry.name.startsWith(PTYD_LOCK_PREFIX) || !entry.name.endsWith(PTYD_LOCK_SUFFIX)) continue;
+
+    try {
+      const lockPath = join(tmpdir(), entry.name);
+      const raw = await readFile(lockPath, "utf8");
+      const parsed = JSON.parse(raw) as {
+        sessionId?: SessionId;
+        controlIpcPath?: string;
+        startedAt?: string;
+      };
+      if (
+        typeof parsed.sessionId !== "string" ||
+        typeof parsed.controlIpcPath !== "string" ||
+        typeof parsed.startedAt !== "string"
+      ) {
+        continue;
+      }
+
+      sessions.push({
+        sessionId: parsed.sessionId,
+        controlIpcPath: parsed.controlIpcPath,
+        startedAt: parsed.startedAt,
+        lockPath
+      });
+    } catch {
+      // skip invalid lock
+    }
+  }
+
+  return sessions;
+}
+
+async function identifyPtyd(controlIpcPath: string): Promise<PtydIdentifyResult | null> {
   try {
-    await rm(getSessionRecordPath(sessionId), { force: true });
+    return await callJsonRpcIpc<PtydIdentifyResult>(
+      {
+        ipcPath: controlIpcPath
+      },
+      "system.identify",
+      undefined,
+      600
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function identifyApp(ipcPath: string): Promise<SystemIdentifyResult | null> {
+  try {
+    return await callJsonRpcIpc<SystemIdentifyResult>(
+      {
+        ipcPath
+      },
+      "system.identify",
+      undefined,
+      1500
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function removeLockPath(lockPath: string): Promise<void> {
+  try {
+    await rm(lockPath, { force: true });
   } catch {
     // best effort cleanup
   }
 }
 
-export async function cleanupStaleSessions(): Promise<{ removed: string[]; kept: string[] }> {
-  const sessions = await readSessionRecords();
-  const removed: string[] = [];
-  const kept: string[] = [];
-
-  const results = await Promise.all(
-    sessions.map(async (session) => ({
-      session,
-      reachable: await isSessionReachable(session)
-    }))
-  );
-
-  for (const { session, reachable } of results) {
-    if (reachable) {
-      kept.push(session.sessionId);
-    } else {
-      await removeStaleSessionRecord(session.sessionId);
-      removed.push(session.sessionId);
-    }
-  }
-
-  return { removed, kept };
+function bcmp(left: string, right: string): number {
+  return left.localeCompare(right);
 }

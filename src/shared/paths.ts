@@ -1,5 +1,3 @@
-import type { SessionId } from "./ids";
-
 declare const process:
   | {
       env: Record<string, string | undefined>;
@@ -79,10 +77,6 @@ export function getFlmuxLastPath(): string {
 
 export function getSessionDir(): string {
   return joinPath(getFlmuxDataDir(), "sessions");
-}
-
-export function getSessionRecordPath(sessionId: SessionId | string): string {
-  return joinPath(getSessionDir(), `${sessionId}.json`);
 }
 
 export function getExtensionsDir(): string {

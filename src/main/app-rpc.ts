@@ -77,6 +77,7 @@ export interface WorkspaceRpcAdapter {
 export interface CreateAppRpcHandlersOptions {
   workspace: WorkspaceRpcAdapter;
   sessionId: SessionId;
+  workspaceRoot: string;
   pid?: number;
   platform?: string;
   requestQuit?: () => void;
@@ -99,18 +100,15 @@ export class AppRpcDispatcher {
 export function createAppRpcHandlers(options: CreateAppRpcHandlersOptions): AppRpcHandlers {
   return {
     "system.ping": () => ({ pong: true }),
-    "system.identify": async () => {
-      const summary = await options.workspace.getSummary();
-
-      return {
-        app: "flmux",
-        sessionId: options.sessionId,
-        pid: options.pid ?? process.pid,
-        platform: options.platform ?? process.platform,
-        activePaneId: summary.activePaneId,
-        paneCount: summary.panes.length
-      };
-    },
+    "system.identify": () => ({
+      app: "flmux",
+      sessionId: options.sessionId,
+      workspaceRoot: options.workspaceRoot,
+      pid: options.pid ?? process.pid,
+      platform: options.platform ?? process.platform,
+      activePaneId: null,
+      paneCount: 0
+    }),
     "app.summary": () => options.workspace.getSummary(),
     "pane.open": (params) => options.workspace.openPane(params),
     "pane.focus": (params) => options.workspace.focusPane(params),

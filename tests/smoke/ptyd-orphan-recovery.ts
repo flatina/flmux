@@ -2,8 +2,7 @@ import { resolve } from "node:path";
 import { callJsonRpcIpc } from "../../src/shared/json-rpc-ipc";
 import { getPtydControlIpcPath } from "../../src/shared/ipc-paths";
 import { createAppRpcClient } from "../../src/cli/app-rpc-client";
-import { cleanupStaleSessions, resolveSession } from "../../src/cli/session-discovery";
-import { listRecoverablePtydSessions } from "../../src/main/ptyd-session-recovery";
+import { cleanupStaleSessions, listRecoverablePtydSessions, resolveSession } from "../../src/cli/session-discovery";
 import { assert, sleep, waitForApp } from "./helpers";
 
 const projectRoot = resolve(import.meta.dir, "../..");

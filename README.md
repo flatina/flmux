@@ -92,9 +92,12 @@ flmux split --direction right           # split current terminal
 flmux edit myfile.ts                    # open file in editor
 flmux explorer .                        # open file explorer
 flmux tab list                          # list workspace tabs
+flmux session list                      # list recoverable/running sessions
 flmux ptyd status --session <id>        # show daemon lifecycle state
 flmux quit                              # close the app
 ```
+
+If flmux crashes, start it again. When exactly one orphan terminal session exists and no live session is running, flmux will recover that session automatically. If recovery is ambiguous, inspect sessions with `flmux session list` and use `--session <id>` for session-specific commands.
 
 ### Browser Automation
 

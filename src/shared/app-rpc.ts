@@ -9,6 +9,7 @@ export interface SystemPingResult {
 export interface SystemIdentifyResult {
   app: "flmux";
   sessionId: SessionId;
+  workspaceRoot: string;
   pid: number;
   platform: string;
   activePaneId: PaneId | null;

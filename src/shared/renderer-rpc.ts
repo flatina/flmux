@@ -1,5 +1,6 @@
 import type {
   AppSummary,
+  BrowserPaneListResult,
   PaneCloseParams,
   PaneFocusParams,
   PaneMessageParams,
@@ -54,6 +55,10 @@ export interface RendererRpcMethodMap {
   "workspace.pane.message": {
     params: PaneMessageParams;
     result: PaneMessageResult;
+  };
+  "workspace.browser.list": {
+    params: undefined;
+    result: BrowserPaneListResult;
   };
 }
 

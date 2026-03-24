@@ -153,6 +153,99 @@ export interface BrowserTargetsResult {
   targets: BrowserTarget[];
 }
 
+export type BrowserAutomationStatus = "ready" | "pending" | "unsupported";
+
+export interface BrowserPaneInfo {
+  paneId: PaneId;
+  tabId: TabId;
+  title: string;
+  url: string | null;
+  adapter: BrowserPaneAdapter;
+  webviewId: number | null;
+  automationStatus: BrowserAutomationStatus;
+  automationReason?: string;
+}
+
+export interface BrowserPaneListResult {
+  ok: true;
+  panes: BrowserPaneInfo[];
+}
+
+export interface BrowserPaneResult {
+  ok: true;
+  paneId: PaneId;
+}
+
+export interface BrowserNewParams {
+  url?: string;
+}
+
+export interface BrowserConnectParams {
+  paneId: PaneId;
+}
+
+export type BrowserConnectErrorCode =
+  | "pane_not_found"
+  | "unsupported_adapter"
+  | "pane_not_ready"
+  | "cdp_unavailable"
+  | "target_not_found"
+  | "target_ambiguous";
+
+export type BrowserConnectResult =
+  | {
+      ok: true;
+      paneId: PaneId;
+      url: string | null;
+      title: string;
+      cdpBaseUrl: string;
+      targetId: string;
+      webSocketDebuggerUrl: string;
+    }
+  | {
+      ok: false;
+      paneId: PaneId;
+      error: string;
+      code: BrowserConnectErrorCode;
+      candidates?: Array<{ id: string; title: string; url: string }>;
+    };
+
+export interface BrowserNavigateParams {
+  paneId: PaneId;
+  url: string;
+  waitUntil?: "none" | "load" | "idle";
+  idleMs?: number;
+}
+
+export interface BrowserNavigateResult {
+  ok: true;
+  paneId: PaneId;
+  url: string;
+}
+
+export interface BrowserGetParams {
+  paneId: PaneId;
+  field: "url" | "title";
+}
+
+export interface BrowserGetResult {
+  ok: true;
+  paneId: PaneId;
+  field: "url" | "title";
+  value: string;
+}
+
+export interface BrowserSnapshotParams {
+  paneId: PaneId;
+  compact?: boolean;
+}
+
+export interface BrowserSnapshotResult {
+  ok: true;
+  paneId: PaneId;
+  snapshot: string;
+}
+
 export interface AppRpcMethodMap {
   "system.ping": {
     params: undefined;
@@ -205,6 +298,38 @@ export interface AppRpcMethodMap {
   "browser.targets": {
     params: undefined;
     result: BrowserTargetsResult;
+  };
+  "browser.new": {
+    params: BrowserNewParams;
+    result: BrowserPaneResult;
+  };
+  "browser.list": {
+    params: undefined;
+    result: BrowserPaneListResult;
+  };
+  "browser.focus": {
+    params: BrowserConnectParams;
+    result: BrowserPaneResult;
+  };
+  "browser.close": {
+    params: BrowserConnectParams;
+    result: BrowserPaneResult;
+  };
+  "browser.connect": {
+    params: BrowserConnectParams;
+    result: BrowserConnectResult;
+  };
+  "browser.navigate": {
+    params: BrowserNavigateParams;
+    result: BrowserNavigateResult;
+  };
+  "browser.get": {
+    params: BrowserGetParams;
+    result: BrowserGetResult;
+  };
+  "browser.snapshot": {
+    params: BrowserSnapshotParams;
+    result: BrowserSnapshotResult;
   };
   "app.quit": {
     params: undefined;

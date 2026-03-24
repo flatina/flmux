@@ -5,6 +5,8 @@ import "./styles.css";
 import { type AddPanelOptions, createDockview, type DockviewApi } from "dockview-core";
 import type {
   AppSummary,
+  BrowserPaneInfo,
+  BrowserPaneListResult,
   PaneCloseParams,
   PaneCreateInput,
   PaneFocusParams,
@@ -40,7 +42,15 @@ import { AppOwner, EventBus } from "./event-bus";
 import { EXT_MANAGER_COMPONENT, EXT_MANAGER_TAB_ID, ExtManagerRenderer } from "./ext-manager";
 import { ExtensionSetupRegistry } from "./extension-setup-registry";
 import { PlaceholderRenderer } from "./placeholder-renderer";
-import { isV1Layout, migrateV1Layout, panelToSummary, sanitizeSerializedLayout, titleFromLeaf } from "./helpers";
+import {
+  browserTitleFromUrl,
+  isV1Layout,
+  migrateV1Layout,
+  normalizeBrowserUrlValue,
+  panelToSummary,
+  sanitizeSerializedLayout,
+  titleFromLeaf
+} from "./helpers";
 import { getHostRpc, setRendererRpcHandlers } from "./lib/host-rpc";
 import type { PaneRendererContext } from "./pane-renderer";
 import { TabRenderer } from "./tab-renderer";
@@ -66,13 +76,15 @@ async function bootstrapRenderer(): Promise<void> {
     "workspace.tab.list": () => app.tabListFromRpc(),
     "workspace.tab.focus": (params) => app.tabFocusFromRpc(params),
     "workspace.tab.close": (params) => app.tabCloseFromRpc(params),
-    "workspace.pane.message": (params) => app.paneMessageFromRpc(params)
+    "workspace.pane.message": (params) => app.paneMessageFromRpc(params),
+    "workspace.browser.list": () => app.browserListFromRpc()
   });
 }
 
 class WorkspaceApp {
   private readonly hostRpc = getHostRpc();
   private readonly eventBus = new EventBus();
+  private readonly browserPaneInfos = new Map<PaneId, BrowserPaneInfo>();
   private readonly terminalRuntimes = new Map<TerminalRuntimeId, TerminalRuntimeSummary>();
   private readonly preCloseHooks = new Map<PaneId, () => void>();
   private readonly tabRenderers = new Map<string, TabRenderer>();
@@ -126,6 +138,13 @@ class WorkspaceApp {
       firePreCloseHook: (paneId) => {
         this.preCloseHooks.get(paneId)?.();
         this.preCloseHooks.delete(paneId);
+      },
+      setBrowserPaneInfo: (paneId, info) => {
+        if (info) {
+          this.browserPaneInfos.set(paneId, info);
+        } else {
+          this.browserPaneInfos.delete(paneId);
+        }
       }
     };
 
@@ -669,6 +688,69 @@ class WorkspaceApp {
     }
 
     return { tabs };
+  }
+
+  browserListFromRpc(): BrowserPaneListResult {
+    if (!this.dockview) {
+      throw new Error("Dockview is not ready");
+    }
+
+    const panes: BrowserPaneInfo[] = [];
+    const pushBrowserPane = (paneId: PaneId, tabId: ReturnType<typeof asTabId>, title: string, params: PaneParams) => {
+      if (params.kind !== "browser") {
+        return;
+      }
+
+      const cached = this.browserPaneInfos.get(paneId);
+      if (cached) {
+        panes.push(cached);
+        return;
+      }
+
+      panes.push({
+        paneId,
+        tabId,
+        title,
+        url: normalizeBrowserUrlValue(params.url),
+        adapter: params.adapter,
+        webviewId: null,
+        automationStatus: params.adapter === "web-iframe" ? "unsupported" : "pending",
+        automationReason:
+          params.adapter === "web-iframe"
+            ? "iframe browser panes do not expose CDP automation"
+            : "browser pane has not reported live webview state yet"
+      });
+    };
+
+    for (const panel of this.dockview.panels) {
+      const tabId = asTabId(panel.id);
+      const renderer = this.tabRenderers.get(panel.id);
+      if (renderer?.isLayoutable && renderer.innerApi) {
+        for (const innerPanel of renderer.innerApi.panels) {
+          const innerParams = innerPanel.params as PaneParams;
+          if (isPaneParams(innerParams)) {
+            pushBrowserPane(
+              asPaneId(innerPanel.id),
+              tabId,
+              innerPanel.title ?? browserTitleFromUrl(innerParams.kind === "browser" ? innerParams.url : ""),
+              innerParams
+            );
+          }
+        }
+      } else {
+        const params = panel.params as PaneParams;
+        if (isPaneParams(params)) {
+          pushBrowserPane(
+            asPaneId(panel.id),
+            tabId,
+            panel.title ?? browserTitleFromUrl(params.kind === "browser" ? params.url : ""),
+            params
+          );
+        }
+      }
+    }
+
+    return { ok: true, panes };
   }
 
   tabOpenFromRpc(params: TabOpenParams): TabResult {

@@ -3,6 +3,16 @@ import type {
   AppRpcParams,
   AppRpcResult,
   AppSummary,
+  BrowserConnectParams,
+  BrowserConnectResult,
+  BrowserGetParams,
+  BrowserGetResult,
+  BrowserNavigateParams,
+  BrowserNavigateResult,
+  BrowserPaneListResult,
+  BrowserPaneResult,
+  BrowserSnapshotParams,
+  BrowserSnapshotResult,
   BrowserTargetsResult,
   PaneCloseParams,
   PaneFocusParams,
@@ -34,6 +44,14 @@ export interface WorkspaceRpcAdapter {
   focusTab(params: TabFocusParams): Promise<TabResult>;
   closeTab(params: TabCloseParams): Promise<TabResult>;
   getBrowserTargets(): Promise<BrowserTargetsResult>;
+  listBrowserPanes(): Promise<BrowserPaneListResult>;
+  browserNew(params: AppRpcParams<"browser.new">): Promise<BrowserPaneResult>;
+  browserFocus(params: BrowserConnectParams): Promise<BrowserPaneResult>;
+  browserClose(params: BrowserConnectParams): Promise<BrowserPaneResult>;
+  browserConnect(params: BrowserConnectParams): Promise<BrowserConnectResult>;
+  browserNavigate(params: BrowserNavigateParams): Promise<BrowserNavigateResult>;
+  browserGet(params: BrowserGetParams): Promise<BrowserGetResult>;
+  browserSnapshot(params: BrowserSnapshotParams): Promise<BrowserSnapshotResult>;
   sendPaneMessage(params: PaneMessageParams): Promise<PaneMessageResult>;
 }
 
@@ -84,6 +102,14 @@ export function createAppRpcHandlers(options: CreateAppRpcHandlersOptions): AppR
     "tab.focus": (params) => options.workspace.focusTab(params),
     "tab.close": (params) => options.workspace.closeTab(params),
     "browser.targets": () => options.workspace.getBrowserTargets(),
+    "browser.new": (params) => options.workspace.browserNew(params),
+    "browser.list": () => options.workspace.listBrowserPanes(),
+    "browser.focus": (params) => options.workspace.browserFocus(params),
+    "browser.close": (params) => options.workspace.browserClose(params),
+    "browser.connect": (params) => options.workspace.browserConnect(params),
+    "browser.navigate": (params) => options.workspace.browserNavigate(params),
+    "browser.get": (params) => options.workspace.browserGet(params),
+    "browser.snapshot": (params) => options.workspace.browserSnapshot(params),
     "app.quit": () => {
       setTimeout(() => process.exit(0), 100);
       return { ok: true };

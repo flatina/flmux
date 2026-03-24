@@ -13,11 +13,13 @@ import type {
   IDockviewPanelProps,
   PanelUpdateEvent
 } from "dockview-core";
+import type { BrowserPaneInfo } from "../shared/app-rpc";
 import type { WebviewTagElement } from "electrobun/view";
 import type { ExtensionRegistryEntry, HeaderAction, MountedExtension, PaneEvent } from "../shared/extension-spi";
 import type { TabId } from "../shared/ids";
 import { asPaneId, type PaneId, type TerminalRuntimeId } from "../shared/ids";
 import type {
+  BrowserPaneAdapter,
   BrowserPaneParams,
   EditorPaneParams,
   ExplorerPaneParams,
@@ -60,6 +62,7 @@ export type PaneRendererContext = {
   firePreCloseHook: (paneId: PaneId) => void;
   subscribeOuterVisibility?: (callback: (visible: boolean) => void) => () => void;
   onHeaderActionsChanged?: (paneId: PaneId, actions: HeaderAction[]) => void;
+  setBrowserPaneInfo?: (paneId: PaneId, info: BrowserPaneInfo | null) => void;
 };
 
 export class PaneRenderer implements IContentRenderer {
@@ -79,6 +82,7 @@ export class PaneRenderer implements IContentRenderer {
   private terminalCreatePromise: Promise<void> | null = null;
 
   private browserPaneId: string | null = null;
+  private browserAdapter: BrowserPaneAdapter | null = null;
   private browserInput: HTMLInputElement | null = null;
   private browserWebview: WebviewTagElement | null = null;
   private browserDisposables: Array<() => void> = [];
@@ -858,6 +862,7 @@ export class PaneRenderer implements IContentRenderer {
     this.disposeBrowserView();
 
     this.browserPaneId = this.props.api.id;
+    this.browserAdapter = "electrobun-native";
 
     const shell = document.createElement("div");
     shell.className = "browser-pane";
@@ -943,6 +948,8 @@ export class PaneRenderer implements IContentRenderer {
       }
       this.props?.api.setTitle(browserTitleFromUrl(url));
       this.context.markDirty();
+      this.emitBrowserPaneInfo(url);
+      void this.injectBrowserPaneMarker();
     };
 
     // Lazily create the webview — Electrobun navigates to a default page on DOM insert,
@@ -957,7 +964,11 @@ export class PaneRenderer implements IContentRenderer {
       webview.renderer = "native";
       webview.setAttribute("src", url);
 
-      webview.on("dom-ready", () => syncDimensions());
+      webview.on("dom-ready", () => {
+        syncDimensions();
+        this.emitBrowserPaneInfo();
+        void this.injectBrowserPaneMarker();
+      });
       webview.on("did-navigate", handleDidNavigate);
       webview.on("did-commit-navigation", handleDidNavigate);
 
@@ -968,6 +979,7 @@ export class PaneRenderer implements IContentRenderer {
 
       shell.appendChild(webview);
       this.browserWebview = webview;
+      this.emitBrowserPaneInfo();
 
       requestAnimationFrame(() => syncVisibility());
       return webview;
@@ -1036,6 +1048,7 @@ export class PaneRenderer implements IContentRenderer {
       shell.append(toolbar, welcome);
       this.element.replaceChildren(shell);
       this.browserInput = address;
+      this.emitBrowserPaneInfo();
     } else {
       welcome.style.display = "none";
       shell.append(toolbar, welcome);
@@ -1052,6 +1065,7 @@ export class PaneRenderer implements IContentRenderer {
 
     this.disposeBrowserView();
     this.browserPaneId = this.props.api.id;
+    this.browserAdapter = "web-iframe";
 
     const shell = document.createElement("div");
     shell.className = "browser-pane";
@@ -1134,6 +1148,7 @@ export class PaneRenderer implements IContentRenderer {
     this.element.replaceChildren(shell);
     this.browserInput = address;
     this.props.api.setTitle(browserTitleFromUrl(params.url));
+    this.emitBrowserPaneInfo(iframe.src);
   }
 
   private syncBrowserParams(params: BrowserPaneParams): void {
@@ -1155,6 +1170,7 @@ export class PaneRenderer implements IContentRenderer {
       this.browserWebview.loadURL(normalizedUrl);
     }
     this.browserWebview.syncDimensions(true);
+    this.emitBrowserPaneInfo(normalizedUrl);
   }
 
   private navigateBrowser(url: string): void {
@@ -1168,6 +1184,7 @@ export class PaneRenderer implements IContentRenderer {
     this.props.api.updateParameters({ url });
     this.props.api.setTitle(browserTitleFromUrl(url));
     this.context.markDirty();
+    this.emitBrowserPaneInfo(url);
   }
 
   private disposeBrowserView(): void {
@@ -1185,8 +1202,59 @@ export class PaneRenderer implements IContentRenderer {
       this.browserWebview = null;
     }
 
+    if (this.browserPaneId) {
+      this.context.setBrowserPaneInfo?.(asPaneId(this.browserPaneId), null);
+    }
     this.browserPaneId = null;
+    this.browserAdapter = null;
     this.browserInput = null;
+  }
+
+  private async injectBrowserPaneMarker(): Promise<void> {
+    if (!this.browserWebview || !this.browserPaneId) {
+      return;
+    }
+
+    try {
+      const marker = `__FLMUX_PANE__:${this.browserPaneId}`;
+      this.browserWebview.executeJavascript(`window.name = ${JSON.stringify(marker)};`);
+    } catch {
+      // best effort
+    }
+  }
+
+  private emitBrowserPaneInfo(nextUrl?: string | null): void {
+    if (!this.context.setBrowserPaneInfo || !this.props || this.props.params.kind !== "browser") {
+      return;
+    }
+
+    const adapter = this.browserAdapter ?? this.props.params.adapter;
+    const url = normalizeBrowserUrlValue(nextUrl ?? this.browserInput?.value ?? this.props.params.url);
+    const title = this.props.api.title ?? browserTitleFromUrl(url);
+    const webviewId = typeof this.browserWebview?.webviewId === "number" ? this.browserWebview.webviewId : null;
+
+    let automationStatus: BrowserPaneInfo["automationStatus"] = "pending";
+    let automationReason: string | undefined;
+    if (adapter === "web-iframe") {
+      automationStatus = "unsupported";
+      automationReason = "iframe browser panes do not expose CDP automation";
+    } else if (webviewId !== null) {
+      automationStatus = "ready";
+    } else {
+      automationReason = "native browser pane has not finished creating its webview";
+    }
+
+    const paneId = asPaneId(this.props.api.id);
+    this.context.setBrowserPaneInfo(paneId, {
+      paneId,
+      tabId: this.context.getTabId(),
+      title,
+      url,
+      adapter,
+      webviewId,
+      automationStatus,
+      automationReason
+    });
   }
 }
 

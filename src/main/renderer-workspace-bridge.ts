@@ -1,7 +1,10 @@
 import type {
   AppSummary,
+  BrowserPaneListResult,
+  BrowserPaneResult,
   BrowserTarget,
   BrowserTargetsResult,
+  BrowserConnectParams,
   PaneCloseParams,
   PaneFocusParams,
   PaneMessageParams,
@@ -94,6 +97,30 @@ export class RendererWorkspaceBridge {
     } catch {
       return { ok: true, cdpBaseUrl: this.cdpBaseUrl, targets: [] };
     }
+  }
+
+  async listBrowserPanes(): Promise<BrowserPaneListResult> {
+    return this.getRequestProxy()["workspace.browser.list"](undefined);
+  }
+
+  async browserNew(params: { url?: string }): Promise<BrowserPaneResult> {
+    const result = await this.openPane({
+      leaf: {
+        kind: "browser",
+        url: params.url
+      }
+    });
+    return { ok: true, paneId: result.paneId };
+  }
+
+  async browserFocus(params: BrowserConnectParams): Promise<BrowserPaneResult> {
+    const result = await this.focusPane({ paneId: params.paneId });
+    return { ok: true, paneId: result.paneId };
+  }
+
+  async browserClose(params: BrowserConnectParams): Promise<BrowserPaneResult> {
+    const result = await this.closePane({ paneId: params.paneId });
+    return { ok: true, paneId: result.paneId };
   }
 
   private getRequestProxy(): RendererRpcRequestProxy {

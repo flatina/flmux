@@ -32,6 +32,13 @@ import { RendererWorkspaceBridge } from "./renderer-workspace-bridge";
 import { resolveAppWorkingDirectory, resolveWorkspaceRoot } from "./runtime-paths";
 import { startWebServer } from "./web-server";
 import { startWebUiServer, type WebUiServer } from "./web-ui-server";
+import {
+  browserNew,
+  browserConnect,
+  browserGet,
+  browserNavigate,
+  browserSnapshot
+} from "./browser-automation";
 
 export async function runAppMain(): Promise<void> {
   const config = loadConfig();
@@ -306,6 +313,27 @@ export async function runAppMain(): Promise<void> {
   }
 
   const workspaceBridge = new RendererWorkspaceBridge(() => mainWindow);
+  const workspace = {
+    getSummary: () => workspaceBridge.getSummary(),
+    openPane: (params) => workspaceBridge.openPane(params),
+    focusPane: (params) => workspaceBridge.focusPane(params),
+    closePane: (params) => workspaceBridge.closePane(params),
+    splitPane: (params) => workspaceBridge.splitPane(params),
+    openTab: (params) => workspaceBridge.openTab(params),
+    listTabs: () => workspaceBridge.listTabs(),
+    focusTab: (params) => workspaceBridge.focusTab(params),
+    closeTab: (params) => workspaceBridge.closeTab(params),
+    getBrowserTargets: () => workspaceBridge.getBrowserTargets(),
+    listBrowserPanes: () => workspaceBridge.listBrowserPanes(),
+    browserNew: (params) => browserNew(workspaceBridge, params),
+    browserFocus: (params) => workspaceBridge.browserFocus(params),
+    browserClose: (params) => workspaceBridge.browserClose(params),
+    browserConnect: (params) => browserConnect(workspaceBridge, params),
+    browserNavigate: (params) => browserNavigate(workspaceBridge, params),
+    browserGet: (params) => browserGet(workspaceBridge, params),
+    browserSnapshot: (params) => browserSnapshot(workspaceBridge, params),
+    sendPaneMessage: (params) => workspaceBridge.sendPaneMessage(params)
+  } satisfies import("./app-rpc").WorkspaceRpcAdapter;
 
   // Probe CDP port asynchronously — updates cdpBaseUrl when found
   void probeCdpPort().then((cdpBaseUrl) => {
@@ -316,7 +344,7 @@ export async function runAppMain(): Promise<void> {
   });
 
   appRpcServer = await startAppRpcServer({
-    workspace: workspaceBridge,
+    workspace,
     sessionId,
     workspaceRoot: workspaceCwd,
     ipcPath: getAppRpcIpcPath(workspaceCwd),

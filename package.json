@@ -25,6 +25,7 @@
     "smoke:cowsay": "bun tests/smoke/extension-cowsay.ts",
     "e2e": "bun tests/e2e/run.ts",
     "cli": "bun run src/cli/index.ts",
+    "flweb": "bun run src/flweb/index.ts",
     "browser": "bun run src/browser-ctl/index.ts",
     "release:build": "bun scripts/build-release.ts",
     "release:publish": "bun scripts/publish-release.ts"

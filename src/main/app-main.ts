@@ -34,6 +34,7 @@ import { startWebServer } from "./web-server";
 import { startWebUiServer, type WebUiServer } from "./web-ui-server";
 import {
   browserBack,
+  browserBox,
   browserConnect,
   browserClick,
   browserEval,
@@ -339,6 +340,7 @@ export async function runAppMain(): Promise<void> {
     browserConnect: (params) => browserConnect(workspaceBridge, params),
     browserNavigate: (params) => browserNavigate(workspaceBridge, params),
     browserGet: (params) => browserGet(workspaceBridge, params),
+    browserBox: (params) => browserBox(workspaceBridge, params),
     browserSnapshot: (params) => browserSnapshot(workspaceBridge, params),
     browserClick: (params) => browserClick(workspaceBridge, params),
     browserFill: (params) => browserFill(workspaceBridge, params),

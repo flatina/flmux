@@ -236,6 +236,22 @@ export interface BrowserGetResult {
   value: string;
 }
 
+export interface BrowserBoxParams {
+  paneId: PaneId;
+  target: string;
+}
+
+export interface BrowserBoxResult {
+  ok: true;
+  paneId: PaneId;
+  box: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+}
+
 export interface BrowserSnapshotParams {
   paneId: PaneId;
   compact?: boolean;
@@ -375,6 +391,10 @@ export interface AppRpcMethodMap {
   "browser.get": {
     params: BrowserGetParams;
     result: BrowserGetResult;
+  };
+  "browser.box": {
+    params: BrowserBoxParams;
+    result: BrowserBoxResult;
   };
   "browser.snapshot": {
     params: BrowserSnapshotParams;

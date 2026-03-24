@@ -9,6 +9,8 @@ import type {
   BrowserActionResult,
   BrowserEvalParams,
   BrowserEvalResult,
+  BrowserBoxParams,
+  BrowserBoxResult,
   BrowserGetParams,
   BrowserGetResult,
   BrowserFillParams,
@@ -59,6 +61,7 @@ export interface WorkspaceRpcAdapter {
   browserConnect(params: BrowserConnectParams): Promise<BrowserConnectResult>;
   browserNavigate(params: BrowserNavigateParams): Promise<BrowserNavigateResult>;
   browserGet(params: BrowserGetParams): Promise<BrowserGetResult>;
+  browserBox(params: BrowserBoxParams): Promise<BrowserBoxResult>;
   browserSnapshot(params: BrowserSnapshotParams): Promise<BrowserSnapshotResult>;
   browserClick(params: BrowserClickParams): Promise<BrowserActionResult>;
   browserFill(params: BrowserFillParams): Promise<BrowserActionResult>;
@@ -125,6 +128,7 @@ export function createAppRpcHandlers(options: CreateAppRpcHandlersOptions): AppR
     "browser.connect": (params) => options.workspace.browserConnect(params),
     "browser.navigate": (params) => options.workspace.browserNavigate(params),
     "browser.get": (params) => options.workspace.browserGet(params),
+    "browser.box": (params) => options.workspace.browserBox(params),
     "browser.snapshot": (params) => options.workspace.browserSnapshot(params),
     "browser.click": (params) => options.workspace.browserClick(params),
     "browser.fill": (params) => options.workspace.browserFill(params),

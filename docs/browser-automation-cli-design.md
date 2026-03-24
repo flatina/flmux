@@ -111,6 +111,7 @@ Current implemented commands:
 - `flweb get html <ref-or-selector>`
 - `flweb get value <ref-or-selector>`
 - `flweb get attr <ref-or-selector> <name>`
+- `flweb get box <ref-or-selector>`
 - `flweb eval <js>`
 - `flweb wait <ms-or-selector>`
 - `flweb wait --text <text>`
@@ -124,7 +125,6 @@ Current implemented commands:
 
 Planned next wave after current implementation:
 
-- `flweb get box <ref-or-selector>`
 - `flweb screenshot [path]`
 
 ### Output
@@ -216,6 +216,9 @@ Pane-aware browser RPCs should be additive and should not depend on clients manu
 - `browser.get`
   - input: `{ paneId: PaneId, field: "url" | "title" | "text" | "html" | "value" | "attr", target?: string, name?: string }`
   - result: `{ ok: true, paneId, field, value }`
+- `browser.box`
+  - input: `{ paneId: PaneId, target: string }`
+  - result: `{ ok: true, paneId, box: { x, y, width, height } }`
 - `browser.snapshot`
   - input: `{ paneId: PaneId, compact?: boolean }`
   - result: `{ ok: true, paneId, snapshot }`

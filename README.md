@@ -139,6 +139,7 @@ flweb get text @e1
 flweb get html #result
 flweb get value @e3
 flweb get attr @e4 placeholder
+flweb get box @e3
 flweb eval "document.title"
 flweb back
 flweb forward

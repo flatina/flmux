@@ -2,6 +2,8 @@ import { BrowserView } from "electrobun/bun";
 import { sleep } from "@flatina/browser-ctl/cdp";
 import type {
   BrowserActionResult,
+  BrowserBoxParams,
+  BrowserBoxResult,
   BrowserClickParams,
   BrowserConnectParams,
   BrowserConnectResult,
@@ -119,6 +121,18 @@ export async function browserGet(workspace: BrowserWorkspace, params: BrowserGet
               : `const el = ${buildResolveTargetExpression(params.target ?? "")}; if (!(el instanceof HTMLElement)) throw new Error("Target not found: ${escapeJs(params.target ?? "")}"); return el.getAttribute(${JSON.stringify(params.name ?? "")}) ?? "";`;
   const value = await evaluateInWebview<string>(pane.view, expression);
   return { ok: true, paneId: params.paneId, field: params.field, value };
+}
+
+export async function browserBox(workspace: BrowserWorkspace, params: BrowserBoxParams): Promise<BrowserBoxResult> {
+  const pane = await requireBrowserPaneAndView(workspace, params.paneId);
+  const box = await evaluateInWebview<{ x: number; y: number; width: number; height: number }>(
+    pane.view,
+    `const el = ${buildResolveTargetExpression(params.target)};
+     if (!(el instanceof HTMLElement)) throw new Error("Target not found: ${escapeJs(params.target)}");
+     const rect = el.getBoundingClientRect();
+     return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };`
+  );
+  return { ok: true, paneId: params.paneId, box };
 }
 
 export async function browserSnapshot(

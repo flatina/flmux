@@ -361,6 +361,25 @@ const main = defineCommand({
             }
             console.log(result.value);
           }
+        }),
+        box: defineCommand({
+          meta: { name: "box", description: "Get bounding box from a ref or selector" },
+          args: {
+            ...commonArgs,
+            target: { type: "positional", required: true, description: "Ref or selector" }
+          },
+          run: async ({ args }) => {
+            const client = await getClient(args.session);
+            const result = await client.call("browser.box", {
+              paneId: resolveBrowserPaneId(args.pane),
+              target: args.target
+            }, FLWEB_RPC_TIMEOUT_MS);
+            if (args.json) {
+              printJson(result);
+              return;
+            }
+            console.log(JSON.stringify(result.box, null, 2));
+          }
         })
       }
     }),

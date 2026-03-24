@@ -74,6 +74,11 @@ async function main() {
     `email placeholder is name@example.com (got ${emailPlaceholder.stdout})`
   );
 
+  const nameBox = runCli(["src/flweb/index.ts", "get", "box", "@e3"], envWithPane);
+  assert(nameBox.code === 0, `flweb get box exits 0 (${nameBox.stderr || "ok"})`);
+  const parsedBox = JSON.parse(nameBox.stdout) as { width: number; height: number };
+  assert(parsedBox.width > 0 && parsedBox.height > 0, `box has positive size (${nameBox.stdout})`);
+
   const focusName = runCli(["src/flweb/index.ts", "click", "@e2"], envWithPane);
   assert(focusName.code === 0, `flweb click focus button exits 0 (${focusName.stderr || "ok"})`);
 

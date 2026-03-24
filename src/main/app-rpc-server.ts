@@ -1,9 +1,10 @@
 import type { SessionId } from "../shared/ids";
 import { startJsonRpcIpcServer } from "../shared/json-rpc-ipc";
-import { AppRpcDispatcher, createAppRpcHandlers, type WorkspaceRpcAdapter } from "./app-rpc";
+import type { RendererWorkspaceBridge } from "./renderer-workspace-bridge";
+import { AppRpcDispatcher, createAppRpcHandlers } from "./app-rpc";
 
 export interface StartAppRpcServerOptions {
-  workspace: WorkspaceRpcAdapter;
+  bridge: RendererWorkspaceBridge;
   sessionId: SessionId;
   workspaceRoot: string;
   ipcPath: string;
@@ -20,7 +21,7 @@ export interface StartedAppRpcServer {
 export async function startAppRpcServer(options: StartAppRpcServerOptions): Promise<StartedAppRpcServer> {
   const dispatcher = new AppRpcDispatcher(
     createAppRpcHandlers({
-      workspace: options.workspace,
+      bridge: options.bridge,
       sessionId: options.sessionId,
       workspaceRoot: options.workspaceRoot,
       pid: options.pid,

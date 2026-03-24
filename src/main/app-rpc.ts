@@ -2,80 +2,33 @@ import type {
   AppRpcMethod,
   AppRpcParams,
   AppRpcResult,
-  AppSummary,
-  BrowserConnectParams,
-  BrowserConnectResult,
-  BrowserClickParams,
-  BrowserActionResult,
-  BrowserEvalParams,
-  BrowserEvalResult,
-  BrowserBoxParams,
-  BrowserBoxResult,
-  BrowserGetParams,
-  BrowserGetResult,
-  BrowserFillParams,
-  BrowserNavigateParams,
-  BrowserNavigateResult,
-  BrowserPaneListResult,
-  BrowserPaneResult,
-  BrowserPageActionParams,
-  BrowserPressParams,
-  BrowserSnapshotParams,
-  BrowserSnapshotResult,
-  BrowserWaitParams,
-  BrowserTargetsResult,
-  PaneCloseParams,
-  PaneFocusParams,
-  PaneMessageParams,
-  PaneMessageResult,
-  PaneOpenParams,
-  PaneResult,
-  PaneSplitParams,
-  TabCloseParams,
-  TabFocusParams,
-  TabListResult,
-  TabOpenParams,
-  TabResult
+  BrowserPaneResult
 } from "../shared/app-rpc";
 import type { SessionId } from "../shared/ids";
+import type { RendererWorkspaceBridge } from "./renderer-workspace-bridge";
+import {
+  browserBack,
+  browserBox,
+  browserClick,
+  browserConnect,
+  browserEval,
+  browserFill,
+  browserForward,
+  browserGet,
+  browserNavigate,
+  browserNew,
+  browserPress,
+  browserReload,
+  browserSnapshot,
+  browserWait
+} from "./browser-automation";
 
 export type AppRpcHandlers = {
   [Method in AppRpcMethod]: (params: AppRpcParams<Method>) => Promise<AppRpcResult<Method>> | AppRpcResult<Method>;
 };
 
-export interface WorkspaceRpcAdapter {
-  getSummary(): Promise<AppSummary>;
-  openPane(params: PaneOpenParams): Promise<PaneResult>;
-  focusPane(params: PaneFocusParams): Promise<PaneResult>;
-  closePane(params: PaneCloseParams): Promise<PaneResult>;
-  splitPane(params: PaneSplitParams): Promise<PaneResult>;
-  openTab(params: TabOpenParams): Promise<TabResult>;
-  listTabs(): Promise<TabListResult>;
-  focusTab(params: TabFocusParams): Promise<TabResult>;
-  closeTab(params: TabCloseParams): Promise<TabResult>;
-  getBrowserTargets(): Promise<BrowserTargetsResult>;
-  listBrowserPanes(): Promise<BrowserPaneListResult>;
-  browserNew(params: AppRpcParams<"browser.new">): Promise<BrowserPaneResult>;
-  browserFocus(params: BrowserConnectParams): Promise<BrowserPaneResult>;
-  browserClose(params: BrowserConnectParams): Promise<BrowserPaneResult>;
-  browserConnect(params: BrowserConnectParams): Promise<BrowserConnectResult>;
-  browserNavigate(params: BrowserNavigateParams): Promise<BrowserNavigateResult>;
-  browserGet(params: BrowserGetParams): Promise<BrowserGetResult>;
-  browserBox(params: BrowserBoxParams): Promise<BrowserBoxResult>;
-  browserSnapshot(params: BrowserSnapshotParams): Promise<BrowserSnapshotResult>;
-  browserClick(params: BrowserClickParams): Promise<BrowserActionResult>;
-  browserFill(params: BrowserFillParams): Promise<BrowserActionResult>;
-  browserPress(params: BrowserPressParams): Promise<BrowserActionResult>;
-  browserWait(params: BrowserWaitParams): Promise<BrowserActionResult>;
-  browserEval(params: BrowserEvalParams): Promise<BrowserEvalResult>;
-  browserBack(params: BrowserPageActionParams): Promise<BrowserNavigateResult>;
-  browserForward(params: BrowserPageActionParams): Promise<BrowserNavigateResult>;
-  browserReload(params: BrowserPageActionParams): Promise<BrowserNavigateResult>;
-  sendPaneMessage(params: PaneMessageParams): Promise<PaneMessageResult>;
-}
-
 export interface CreateAppRpcHandlersOptions {
-  workspace: WorkspaceRpcAdapter;
+  bridge: RendererWorkspaceBridge;
   sessionId: SessionId;
   workspaceRoot: string;
   pid?: number;
@@ -109,37 +62,41 @@ export function createAppRpcHandlers(options: CreateAppRpcHandlersOptions): AppR
       activePaneId: null,
       paneCount: 0
     }),
-    "app.summary": () => options.workspace.getSummary(),
-    "pane.open": (params) => options.workspace.openPane(params),
-    "pane.focus": (params) => options.workspace.focusPane(params),
-    "pane.close": (params) => options.workspace.closePane(params),
-    "pane.split": (params) => options.workspace.splitPane(params),
-    "pane.message": (params) => options.workspace.sendPaneMessage(params),
-    "tab.open": (params) => options.workspace.openTab(params),
-    "tab.list": () => options.workspace.listTabs(),
-    "tab.focus": (params) => options.workspace.focusTab(params),
-    "tab.close": (params) => options.workspace.closeTab(params),
-    "browser.targets": () => options.workspace.getBrowserTargets(),
-    "browser.new": (params) => options.workspace.browserNew(params),
-    "browser.list": () => options.workspace.listBrowserPanes(),
-    "browser.focus": (params) => options.workspace.browserFocus(params),
-    "browser.close": (params) => options.workspace.browserClose(params),
-    "browser.connect": (params) => options.workspace.browserConnect(params),
-    "browser.navigate": (params) => options.workspace.browserNavigate(params),
-    "browser.get": (params) => options.workspace.browserGet(params),
-    "browser.box": (params) => options.workspace.browserBox(params),
-    "browser.snapshot": (params) => options.workspace.browserSnapshot(params),
-    "browser.click": (params) => options.workspace.browserClick(params),
-    "browser.fill": (params) => options.workspace.browserFill(params),
-    "browser.press": (params) => options.workspace.browserPress(params),
-    "browser.wait": (params) => options.workspace.browserWait(params),
-    "browser.eval": (params) => options.workspace.browserEval(params),
-    "browser.back": (params) => options.workspace.browserBack(params),
-    "browser.forward": (params) => options.workspace.browserForward(params),
-    "browser.reload": (params) => options.workspace.browserReload(params),
+    "app.summary": () => options.bridge.getSummary(),
+    "pane.open": (params) => options.bridge.openPane(params),
+    "pane.focus": (params) => options.bridge.focusPane(params),
+    "pane.close": (params) => options.bridge.closePane(params),
+    "pane.split": (params) => options.bridge.splitPane(params),
+    "pane.message": (params) => options.bridge.sendPaneMessage(params),
+    "tab.open": (params) => options.bridge.openTab(params),
+    "tab.list": () => options.bridge.listTabs(),
+    "tab.focus": (params) => options.bridge.focusTab(params),
+    "tab.close": (params) => options.bridge.closeTab(params),
+    "browser.targets": () => options.bridge.getBrowserTargets(),
+    "browser.new": (params) => browserNew(options.bridge, params),
+    "browser.list": () => options.bridge.listBrowserPanes(),
+    "browser.focus": async (params) => toBrowserPaneResult((await options.bridge.focusPane({ paneId: params.paneId })).paneId),
+    "browser.close": async (params) => toBrowserPaneResult((await options.bridge.closePane({ paneId: params.paneId })).paneId),
+    "browser.connect": (params) => browserConnect(options.bridge, params),
+    "browser.navigate": (params) => browserNavigate(options.bridge, params),
+    "browser.get": (params) => browserGet(options.bridge, params),
+    "browser.box": (params) => browserBox(options.bridge, params),
+    "browser.snapshot": (params) => browserSnapshot(options.bridge, params),
+    "browser.click": (params) => browserClick(options.bridge, params),
+    "browser.fill": (params) => browserFill(options.bridge, params),
+    "browser.press": (params) => browserPress(options.bridge, params),
+    "browser.wait": (params) => browserWait(options.bridge, params),
+    "browser.eval": (params) => browserEval(options.bridge, params),
+    "browser.back": (params) => browserBack(options.bridge, params),
+    "browser.forward": (params) => browserForward(options.bridge, params),
+    "browser.reload": (params) => browserReload(options.bridge, params),
     "app.quit": () => {
       options.requestQuit?.();
       return { ok: true };
     }
   };
+}
+
+function toBrowserPaneResult(paneId: BrowserPaneResult["paneId"]): BrowserPaneResult {
+  return { ok: true, paneId };
 }

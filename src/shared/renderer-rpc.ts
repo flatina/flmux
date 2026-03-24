@@ -13,7 +13,7 @@ import type {
   TabListResult,
   TabOpenParams,
   TabResult
-} from "./app-rpc";
+} from "./workspace-types";
 
 export interface RendererRpcMethodMap {
   "workspace.summary": {

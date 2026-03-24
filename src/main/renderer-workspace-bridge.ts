@@ -1,6 +1,5 @@
 import type {
   AppSummary,
-  BrowserConnectParams,
   BrowserPaneListResult,
   BrowserPaneResult,
   BrowserTarget,
@@ -110,16 +109,6 @@ export class RendererWorkspaceBridge {
         url: params.url
       }
     });
-    return { ok: true, paneId: result.paneId };
-  }
-
-  async browserFocus(params: BrowserConnectParams): Promise<BrowserPaneResult> {
-    const result = await this.focusPane({ paneId: params.paneId });
-    return { ok: true, paneId: result.paneId };
-  }
-
-  async browserClose(params: BrowserConnectParams): Promise<BrowserPaneResult> {
-    const result = await this.closePane({ paneId: params.paneId });
     return { ok: true, paneId: result.paneId };
   }
 

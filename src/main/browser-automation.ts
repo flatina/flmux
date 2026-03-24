@@ -6,6 +6,7 @@ import type {
   BrowserBoxResult,
   BrowserClickParams,
   BrowserConnectParams,
+  BrowserConnectErrorCode,
   BrowserConnectResult,
   BrowserEvalParams,
   BrowserEvalResult,
@@ -30,63 +31,47 @@ type BrowserWorkspace = {
 };
 
 const DEFAULT_AUTOMATION_BLANK_URL = "about:blank#flmux-browser";
+const BROWSER_POLL_TIMEOUT_MS = 15_000;
+
+type BrowserConnectSuccess = Extract<BrowserConnectResult, { ok: true }>;
+
+class BrowserAutomationError extends Error {
+  constructor(
+    readonly code: BrowserConnectErrorCode,
+    message: string
+  ) {
+    super(message);
+  }
+}
 
 export async function browserNew(workspace: BrowserWorkspace, params: BrowserNewParams): Promise<BrowserPaneResult> {
   const created = await workspace.browserNew({
     url: params.url?.trim().length ? normalizeAutomationUrl(params.url) : DEFAULT_AUTOMATION_BLANK_URL
   });
 
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    const result = await browserConnect(workspace, { paneId: created.paneId });
-    if (result.ok) {
-      return created;
-    }
-    if (result.code === "unsupported_adapter" || result.code === "pane_not_found") {
+  await pollUntil(
+    async () => {
+      const result = await tryConnect(workspace, created.paneId);
+      if (result.ok) {
+        return true;
+      }
+      if (result.code === "pane_not_ready") {
+        return null;
+      }
       throw new Error(result.error);
-    }
-    await sleep(200);
-  }
+    },
+    `Browser pane ${created.paneId} did not become automation-ready in time`,
+    200
+  );
 
-  throw new Error(`Browser pane ${created.paneId} did not become automation-ready in time`);
+  return created;
 }
 
 export async function browserConnect(
   workspace: BrowserWorkspace,
   params: BrowserConnectParams
 ): Promise<BrowserConnectResult> {
-  const pane = await getBrowserPane(workspace, params.paneId);
-  if (!pane.ok) {
-    return pane;
-  }
-
-  const view = requireBrowserView(pane.pane);
-  if (!view.ok) {
-    return view;
-  }
-
-  try {
-    const [url, title] = await Promise.all([
-      evaluateInWebview<string>(view.view, "return window.location.href"),
-      evaluateInWebview<string>(view.view, "return document.title")
-    ]);
-
-    return {
-      ok: true,
-      paneId: pane.pane.paneId,
-      url,
-      title,
-      adapter: pane.pane.adapter,
-      webviewId: pane.pane.webviewId
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      paneId: params.paneId,
-      code: "pane_not_ready",
-      error: error instanceof Error ? error.message : String(error)
-    };
-  }
+  return tryConnect(workspace, params.paneId);
 }
 
 export async function browserNavigate(
@@ -238,69 +223,41 @@ export async function browserReload(
 }
 
 async function requireBrowserPaneAndView(workspace: BrowserWorkspace, paneId: BrowserConnectParams["paneId"]) {
-  const paneResult = await getBrowserPane(workspace, paneId);
-  if (!paneResult.ok) {
-    throw new Error(paneResult.error);
-  }
-
-  const viewResult = requireBrowserView(paneResult.pane);
-  if (!viewResult.ok) {
-    throw new Error(viewResult.error);
-  }
-
-  return { pane: paneResult.pane, view: viewResult.view };
+  const pane = await getBrowserPaneOrThrow(workspace, paneId);
+  return { pane, view: requireBrowserViewOrThrow(pane) };
 }
 
-async function getBrowserPane(
+async function getBrowserPaneOrThrow(
   workspace: BrowserWorkspace,
   paneId: BrowserConnectParams["paneId"]
-): Promise<{ ok: true; pane: BrowserPaneInfo } | { ok: false; paneId: BrowserConnectParams["paneId"]; code: BrowserConnectResult extends infer _X ? never : never; error: string }> {
+): Promise<BrowserPaneInfo> {
   const { panes } = await workspace.listBrowserPanes();
   const pane = panes.find((candidate) => candidate.paneId === paneId);
   if (!pane) {
-    return {
-      ok: false,
-      paneId,
-      code: undefined as never,
-      error: `Browser pane not found: ${paneId}`
-    };
+    throw new BrowserAutomationError("pane_not_found", `Browser pane not found: ${paneId}`);
   }
 
-  return { ok: true, pane };
+  return pane;
 }
 
-function requireBrowserView(
-  pane: BrowserPaneInfo
-): { ok: true; view: BrowserView } | { ok: false; paneId: BrowserConnectParams["paneId"]; code: BrowserConnectResult extends infer _X ? never : never; error: string } {
+function requireBrowserViewOrThrow(pane: BrowserPaneInfo): BrowserView {
   if (pane.adapter !== "electrobun-native") {
-    return {
-      ok: false,
-      paneId: pane.paneId,
-      code: undefined as never,
-      error: pane.automationReason ?? `Browser pane ${pane.paneId} is not automatable`
-    };
+    throw new BrowserAutomationError(
+      "unsupported_adapter",
+      pane.automationReason ?? `Browser pane ${pane.paneId} is not automatable`
+    );
   }
 
   if (pane.automationStatus !== "ready" || typeof pane.webviewId !== "number") {
-    return {
-      ok: false,
-      paneId: pane.paneId,
-      code: undefined as never,
-      error: pane.automationReason ?? `Browser pane ${pane.paneId} is not ready`
-    };
+    throw new BrowserAutomationError("pane_not_ready", pane.automationReason ?? `Browser pane ${pane.paneId} is not ready`);
   }
 
   const view = BrowserView.getById(pane.webviewId);
   if (!view?.rpc?.request?.evaluateJavascriptWithResponse) {
-    return {
-      ok: false,
-      paneId: pane.paneId,
-      code: undefined as never,
-      error: `BrowserView RPC is not available for webview ${pane.webviewId}`
-    };
+    throw new BrowserAutomationError("pane_not_ready", `BrowserView RPC is not available for webview ${pane.webviewId}`);
   }
 
-  return { ok: true, view: view as BrowserView };
+  return view as BrowserView;
 }
 
 async function evaluateInWebview<T>(view: BrowserView, scriptBody: string): Promise<T> {
@@ -314,66 +271,48 @@ async function evaluateInWebview<T>(view: BrowserView, scriptBody: string): Prom
 }
 
 async function waitForWebviewLoad(view: BrowserView, idleMs: number, includeIdle: boolean): Promise<void> {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    const state = await evaluateInWebview<string>(view, "return document.readyState");
-    if (state === "complete") {
+  await pollUntil(
+    async () => {
+      const state = await evaluateInWebview<string>(view, "return document.readyState");
+      if (state !== "complete") {
+        return null;
+      }
       if (includeIdle && idleMs > 0) {
         await sleep(idleMs);
       }
-      return;
-    }
-    await sleep(100);
-  }
-  throw new Error("Timed out waiting for browser load");
+      return true;
+    },
+    "Timed out waiting for browser load"
+  );
 }
 
 async function waitForTarget(view: BrowserView, target: string): Promise<void> {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    const exists = await evaluateInWebview<boolean>(view, `return !!(${buildResolveTargetExpression(target)})`);
-    if (exists) {
-      return;
-    }
-    await sleep(100);
-  }
-  throw new Error(`Timed out waiting for target: ${target}`);
+  await pollUntil(
+    async () =>
+      (await evaluateInWebview<boolean>(view, `return !!(${buildResolveTargetExpression(target)})`)) ? true : null,
+    `Timed out waiting for target: ${target}`
+  );
 }
 
 async function waitForText(view: BrowserView, text: string): Promise<void> {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    const bodyText = await evaluateInWebview<string>(view, "return document.body?.innerText ?? ''");
-    if (bodyText.includes(text)) {
-      return;
-    }
-    await sleep(100);
-  }
-  throw new Error(`Timed out waiting for text: ${text}`);
+  await pollUntil(
+    async () => ((await evaluateInWebview<string>(view, "return document.body?.innerText ?? ''")).includes(text) ? true : null),
+    `Timed out waiting for text: ${text}`
+  );
 }
 
 async function waitForUrl(view: BrowserView, pattern: string): Promise<void> {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    const currentUrl = await evaluateInWebview<string>(view, "return window.location.href");
-    if (matchUrlPattern(currentUrl, pattern)) {
-      return;
-    }
-    await sleep(100);
-  }
-  throw new Error(`Timed out waiting for URL pattern: ${pattern}`);
+  await pollUntil(
+    async () => (matchUrlPattern(await evaluateInWebview<string>(view, "return window.location.href"), pattern) ? true : null),
+    `Timed out waiting for URL pattern: ${pattern}`
+  );
 }
 
 async function waitForFunction(view: BrowserView, expression: string): Promise<void> {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    const result = await evaluateInWebview<unknown>(view, `return !!(${expression})`);
-    if (Boolean(result)) {
-      return;
-    }
-    await sleep(100);
-  }
-  throw new Error(`Timed out waiting for function: ${expression}`);
+  await pollUntil(
+    async () => (Boolean(await evaluateInWebview<unknown>(view, `return !!(${expression})`)) ? true : null),
+    `Timed out waiting for function: ${expression}`
+  );
 }
 
 async function runHistoryAction(
@@ -398,30 +337,101 @@ async function waitForPaneReady(
   waitUntil: "none" | "load" | "idle",
   idleMs: number,
   expectedUrl?: string
-): Promise<Extract<BrowserConnectResult, { ok: true }>> {
+): Promise<BrowserConnectSuccess> {
   if (waitUntil === "none") {
-    const connection = await browserConnect(workspace, { paneId });
+    const connection = await tryConnect(workspace, paneId);
     if (!connection.ok) {
       throw new Error(connection.error);
     }
     return connection;
   }
 
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    const connection = await browserConnect(workspace, { paneId });
-    if (connection.ok) {
-      if (!expectedUrl || connection.url === expectedUrl) {
-        if (waitUntil === "idle" && idleMs > 0) {
-          await sleep(idleMs);
+  return pollUntil(
+    async () => {
+      const connection = await tryConnect(workspace, paneId);
+      if (!connection.ok) {
+        if (connection.code === "pane_not_ready") {
+          return null;
         }
-        return connection;
+        throw new Error(connection.error);
       }
+      if (expectedUrl && connection.url !== expectedUrl) {
+        return null;
+      }
+      if (waitUntil === "idle" && idleMs > 0) {
+        await sleep(idleMs);
+      }
+      return connection;
+    },
+    `Browser pane ${paneId} did not become ready in time`,
+    200
+  );
+}
+
+async function connectOrThrow(workspace: BrowserWorkspace, paneId: BrowserConnectParams["paneId"]): Promise<BrowserConnectSuccess> {
+  const pane = await getBrowserPaneOrThrow(workspace, paneId);
+  const view = requireBrowserViewOrThrow(pane);
+  const [url, title] = await Promise.all([
+    evaluateInWebview<string>(view, "return window.location.href"),
+    evaluateInWebview<string>(view, "return document.title")
+  ]);
+
+  return {
+    ok: true,
+    paneId: pane.paneId,
+    url,
+    title,
+    adapter: pane.adapter,
+    webviewId: pane.webviewId
+  };
+}
+
+async function tryConnect(
+  workspace: BrowserWorkspace,
+  paneId: BrowserConnectParams["paneId"]
+): Promise<BrowserConnectResult> {
+  try {
+    return await connectOrThrow(workspace, paneId);
+  } catch (error) {
+    return toBrowserConnectFailure(paneId, error);
+  }
+}
+
+async function pollUntil<T>(
+  check: () => Promise<T | null>,
+  timeoutMessage: string,
+  intervalMs = 100
+): Promise<T> {
+  const deadline = Date.now() + BROWSER_POLL_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const result = await check();
+    if (result !== null) {
+      return result;
     }
-    await sleep(200);
+    await sleep(intervalMs);
+  }
+  throw new Error(timeoutMessage);
+}
+
+function toBrowserConnectFailure(
+  paneId: BrowserConnectParams["paneId"],
+  error: unknown
+): Extract<BrowserConnectResult, { ok: false }> {
+  if (error instanceof BrowserAutomationError) {
+    return {
+      ok: false,
+      paneId,
+      code: error.code,
+      error: error.message
+    };
   }
 
-  throw new Error(`Browser pane ${paneId} did not become ready in time`);
+  return {
+    ok: false,
+    paneId,
+    code: "pane_not_ready",
+    error: error instanceof Error ? error.message : String(error)
+  };
 }
 
 function normalizeAutomationUrl(input: string): string {

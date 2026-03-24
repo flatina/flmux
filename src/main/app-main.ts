@@ -1,32 +1,19 @@
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { BrowserView, BrowserWindow } from "electrobun/bun";
 import type { BootstrapState } from "../shared/bootstrap-state";
-import {
-  disableExtension,
-  enableExtension,
-  loadExtensionSettings,
-  saveExtensionSettings
-} from "../shared/extension-settings";
-import { createFlmuxLastFile, type FlmuxLastFile } from "../shared/flmux-last";
-import type { HostPushMessage, HostPushPayload, HostRpcParams } from "../shared/host-rpc";
+import { createFlmuxLastFile } from "../shared/flmux-last";
+import type { HostPushMessage, HostPushPayload } from "../shared/host-rpc";
 import { createSessionId } from "../shared/ids";
 import { getAppRpcIpcPath } from "../shared/ipc-paths";
-import { debug, info, setLogLevel } from "../shared/logger";
+import { info, setLogLevel } from "../shared/logger";
 import type { MainviewRpcSchema } from "../shared/mainview-rpc";
-import { getFlmuxDataDir } from "../shared/paths";
 import { type StartedAppRpcServer, startAppRpcServer } from "./app-rpc-server";
 import { buildWebRenderer } from "./build-web-renderer";
 import { probeCdpPort } from "./cdp-discovery";
 import { loadConfig } from "./config-loader";
-import {
-  EXTENSION_ID_PATTERN,
-  buildExtensionRegistry,
-  discoverAllExtensions,
-  discoverExtensions,
-  loadExtensionSource
-} from "./extension-discovery";
+import { buildExtensionRegistry, discoverExtensions } from "./extension-discovery";
 import { FlmuxLastStore } from "./flmux-last-store";
+import { createHostRpcDispatcher } from "./host-rpc";
 import { PtydClient } from "./ptyd-client";
 import { resolveStartupSessionId } from "./ptyd-session-recovery";
 import { RendererWorkspaceBridge } from "./renderer-workspace-bridge";
@@ -83,208 +70,21 @@ export async function runAppMain(): Promise<void> {
 
   bootstrapState.liveTerminalRuntimes = ptydClient.list();
   bootstrapState.terminalRuntimeOwner = "ptyd";
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const hostRpcHandlers: Record<string, (params: any) => any> = {
-    "bootstrap.get": async () => bootstrapState,
-    "flmuxLast.load": async () => ({
-      file: await flmuxLastStore.load()
-    }),
-    "flmuxLast.save": async ({ file }: { file: FlmuxLastFile }) => {
-      await flmuxLastStore.save(file);
-      return { ok: true };
-    },
-    "session.save": async ({ name, file }: { name: string; file: FlmuxLastFile }) => {
-      const dir = join(getFlmuxDataDir(), "sessions");
-      await mkdir(dir, { recursive: true });
-      await writeFile(join(dir, `${sanitizeFileName(name)}.json`), JSON.stringify(file, null, 2), "utf-8");
-      info("session", `saved "${name}"`);
-      return { ok: true };
-    },
-    "session.load": async ({ name }: { name: string }) => {
-      const path = join(getFlmuxDataDir(), "sessions", `${sanitizeFileName(name)}.json`);
-      try {
-        const raw = await readFile(path, "utf-8");
-        return { file: JSON.parse(raw) as FlmuxLastFile };
-      } catch {
-        return { file: null };
-      }
-    },
-    "session.list": async () => {
-      const dir = join(getFlmuxDataDir(), "sessions");
-      try {
-        const files = await readdir(dir);
-        const sessions = [];
-        for (const f of files) {
-          if (!f.endsWith(".json")) continue;
-          try {
-            const raw = await readFile(join(dir, f), "utf-8");
-            const parsed = JSON.parse(raw) as FlmuxLastFile;
-            sessions.push({ name: f.replace(/\.json$/, ""), savedAt: parsed.savedAt ?? "" });
-          } catch {
-            /* skip invalid */
-          }
-        }
-        sessions.sort((a, b) => b.savedAt.localeCompare(a.savedAt));
-        return { sessions };
-      } catch {
-        return { sessions: [] };
-      }
-    },
-    "extension.sourceLoad": async ({ extensionId }: { extensionId: string }) => {
-      info("ext", `load ${extensionId}`);
-      return loadExtensionSource(discoveredExtensions, extensionId);
-    },
-    "extension.listAll": async () => {
-      const all = discoverAllExtensions(workspaceCwd);
-      return {
-        extensions: all.map((ext) => ({
-          id: ext.manifest.id,
-          name: ext.manifest.name,
-          version: ext.manifest.version,
-          embedded: ext.embedded,
-          disabled: ext.disabled
-        }))
-      };
-    },
-    "extension.enable": async ({ extensionId }: { extensionId: string }) => {
-      if (!EXTENSION_ID_PATTERN.test(extensionId)) return { ok: true as const };
-      const settings = loadExtensionSettings();
-      saveExtensionSettings(enableExtension(settings, extensionId));
-      info("ext", `enabled ${extensionId}`);
-      return { ok: true as const };
-    },
-    "extension.disable": async ({ extensionId }: { extensionId: string }) => {
-      if (!EXTENSION_ID_PATTERN.test(extensionId)) return { ok: true as const };
-      const settings = loadExtensionSettings();
-      saveExtensionSettings(disableExtension(settings, extensionId));
-      info("ext", `disabled ${extensionId}`);
-      return { ok: true as const };
-    },
-    "extension.uninstall": async ({ extensionId }: { extensionId: string }) => {
-      if (!EXTENSION_ID_PATTERN.test(extensionId)) return { ok: false as const, error: "Invalid extension ID" };
-      const all = discoverAllExtensions(workspaceCwd);
-      const ext = all.find((e) => e.manifest.id === extensionId);
-      if (!ext) return { ok: false as const, error: `Extension not found: ${extensionId}` };
-      if (ext.embedded) return { ok: false as const, error: "Cannot uninstall built-in extension" };
-
-      const { rmSync } = await import("node:fs");
-      try {
-        rmSync(ext.path, { recursive: true, force: true });
-        // Also remove from disabled list if present
-        const settings = loadExtensionSettings();
-        saveExtensionSettings(enableExtension(settings, extensionId));
-        info("ext", `uninstalled ${extensionId}`);
-        return { ok: true as const };
-      } catch (err) {
-        return { ok: false as const, error: `Failed to uninstall: ${err}` };
-      }
-    },
-    "fs.readDir": async ({ path, dirsOnly }: { path: string; dirsOnly?: boolean }) => ({
-      entries: await readDirEntries(path, dirsOnly ?? false)
-    }),
-    "fs.readFile": async ({ path }: { path: string }) => {
-      try {
-        const content = await readFile(path, "utf-8");
-        return { ok: true, content };
-      } catch (error) {
-        return { ok: false, error: String(error) };
-      }
-    },
-    "fs.writeFile": async ({ path, content }: { path: string; content: string }) => {
-      try {
-        await writeFile(path, content, "utf-8");
-        return { ok: true };
-      } catch (error) {
-        return { ok: false, error: String(error) };
-      }
-    },
-    "window.minimize": async () => {
-      mainWindow.minimize();
-      return { ok: true };
-    },
-    "window.maximize": async () => {
-      if (mainWindow.isMaximized()) {
-        mainWindow.unmaximize();
-        return { ok: true, maximized: false };
-      }
-
-      mainWindow.maximize();
-      return { ok: true, maximized: true };
-    },
-    "window.close": async () => {
-      requestQuit();
-      return { ok: true };
-    },
-    "window.frame.get": async () => {
-      const frame = mainWindow.getFrame();
-      return {
-        x: frame.x,
-        y: frame.y,
-        width: frame.width,
-        height: frame.height,
-        maximized: mainWindow.isMaximized()
-      };
-    },
-    "window.frame.set": async ({ x, y, width, height }: { x: number; y: number; width: number; height: number }) => {
-      mainWindow.setFrame(x, y, width, height);
-      return { ok: true };
-    },
-    "terminal.create": async ({
-      runtimeId,
-      paneId,
-      cwd,
-      shell,
-      renderer,
-      cols,
-      rows,
-      workspaceRoot
-    }: HostRpcParams<"terminal.create">) => {
-      debug("term", `create runtime=${runtimeId} cwd=${cwd ?? workspaceCwd}`);
-      const result = await ptydClient.createTerminal({
-        runtimeId,
-        paneId,
-        cwd,
-        shell,
-        renderer,
-        cols,
-        rows,
-        workspaceRoot: workspaceRoot ?? workspaceCwd
-      });
-      syncTerminalBootstrapState();
-      return result;
-    },
-    "terminal.kill": async ({ runtimeId }: HostRpcParams<"terminal.kill">) => {
-      debug("term", `kill runtime=${runtimeId}`);
-      const result = await ptydClient.killTerminal({ runtimeId });
-      syncTerminalBootstrapState();
-      return result;
-    },
-    "terminal.input": async ({ runtimeId, data }: HostRpcParams<"terminal.input">) =>
-      ptydClient.input({ runtimeId, data }),
-    "terminal.resize": async ({ runtimeId, cols, rows }: HostRpcParams<"terminal.resize">) => {
-      const result = await ptydClient.resize({
-        runtimeId,
-        cols,
-        rows
-      });
-      syncTerminalBootstrapState();
-      return result;
-    },
-    "terminal.history": async ({ runtimeId, maxBytes }: HostRpcParams<"terminal.history">) => {
-      const result = await ptydClient.history({ runtimeId, maxBytes });
-      return {
-        ok: true,
-        runtimeId: result.runtimeId,
-        data: result.data
-      };
-    }
-  };
+  const hostRpcDispatcher = createHostRpcDispatcher({
+    bootstrapState,
+    flmuxLastStore,
+    workspaceRoot: workspaceCwd,
+    discoveredExtensions,
+    ptydClient,
+    getMainWindow: () => mainWindow,
+    requestQuit,
+    syncTerminalBootstrapState
+  });
 
   const rpc = BrowserView.defineRPC<MainviewRpcSchema>({
     maxRequestTime: 15_000,
     handlers: {
-      requests: hostRpcHandlers as any,
+      requests: hostRpcDispatcher.handlers,
       messages: {}
     }
   });
@@ -339,11 +139,7 @@ export async function runAppMain(): Promise<void> {
       host: config.web.host,
       port: config.web.port,
       viewsDir: webOutputDir,
-      handleHostRpc: async (method, params) => {
-        const handler = hostRpcHandlers[method];
-        if (!handler) throw new Error(`Unknown method: ${method}`);
-        return handler(params);
-      },
+      handleHostRpc: (method, params) => hostRpcDispatcher.invoke(method, params),
       handleRendererRpc: () => {}
     });
   }
@@ -423,52 +219,4 @@ export async function runAppMain(): Promise<void> {
     // Also push to web UI clients
     webUiServer?.pushMessage(message, payload);
   }
-}
-
-async function readDirEntries(
-  dirPath: string,
-  dirsOnly: boolean
-): Promise<
-  Array<{
-    name: string;
-    path: string;
-    isDir: boolean;
-    size?: number;
-  }>
-> {
-  const items = await readdir(dirPath, { withFileTypes: true });
-  const entries = await Promise.all(
-    items
-      .filter((item) => !dirsOnly || item.isDirectory())
-      .map(async (item) => {
-        const itemPath = join(dirPath, item.name);
-        if (item.isDirectory()) {
-          return {
-            name: item.name,
-            path: itemPath,
-            isDir: true
-          };
-        }
-
-        const itemStat = await stat(itemPath);
-        return {
-          name: item.name,
-          path: itemPath,
-          isDir: false,
-          size: itemStat.size
-        };
-      })
-  );
-
-  return entries.sort((left, right) => {
-    if (left.isDir !== right.isDir) {
-      return left.isDir ? -1 : 1;
-    }
-
-    return left.name.localeCompare(right.name);
-  });
-}
-
-function sanitizeFileName(name: string): string {
-  return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim() || "unnamed";
 }

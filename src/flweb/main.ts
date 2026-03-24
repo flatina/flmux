@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 
 import { defineCommand, runMain } from "citty";
-import { resolveBrowserPaneId, printJson } from "../cli/browser-utils";
+import type { AppRpcMethod, AppRpcParams, AppRpcResult } from "../shared/app-rpc";
+import { printJson, resolveBrowserPaneId } from "../cli/browser-utils";
 import { getClient, sessionArg } from "../cli/commands/_utils";
 
 const FLWEB_RPC_TIMEOUT_MS = 20_000;
@@ -11,6 +12,43 @@ const commonArgs = {
   json: { type: "boolean" as const, description: "Print JSON output" },
   pane: { type: "string" as const, description: "Browser pane ID (falls back to FLMUX_BROWSER)" }
 };
+
+type CommonArgs = {
+  session?: string;
+  json?: boolean;
+  pane?: string;
+};
+
+type PaneScopedBrowserMethod = {
+  [Method in Extract<AppRpcMethod, `browser.${string}`>]: AppRpcParams<Method> extends { paneId: string } ? Method : never;
+}[Extract<AppRpcMethod, `browser.${string}`>];
+
+type GetterSpec = {
+  field: "url" | "title" | "text" | "html" | "value" | "attr";
+  name: string;
+  description: string;
+  target?: boolean;
+  attrName?: boolean;
+  printer?: (result: AppRpcResult<"browser.get"> | AppRpcResult<"browser.box">) => void;
+  method?: "browser.get" | "browser.box";
+};
+
+const getterSpecs: GetterSpec[] = [
+  { name: "url", field: "url", description: "Get the current URL" },
+  { name: "title", field: "title", description: "Get the current page title" },
+  { name: "text", field: "text", description: "Get text content from a ref or selector", target: true },
+  { name: "html", field: "html", description: "Get innerHTML from a ref or selector", target: true },
+  { name: "value", field: "value", description: "Get input value from a ref or selector", target: true },
+  { name: "attr", field: "attr", description: "Get an attribute from a ref or selector", target: true, attrName: true },
+  {
+    name: "box",
+    field: "text",
+    description: "Get bounding box from a ref or selector",
+    target: true,
+    method: "browser.box",
+    printer: (result) => console.log(JSON.stringify((result as AppRpcResult<"browser.box">).box, null, 2))
+  }
+];
 
 const main = defineCommand({
   meta: {
@@ -25,15 +63,10 @@ const main = defineCommand({
         compact: { type: "boolean", description: "Compact snapshot output" }
       },
       run: async ({ args }) => {
-        const client = await getClient(args.session);
-        const result = await client.call("browser.snapshot", {
-          paneId: resolveBrowserPaneId(args.pane),
+        const result = await callPaneBrowser(args, "browser.snapshot", {
           compact: !!args.compact
-        }, FLWEB_RPC_TIMEOUT_MS);
-        if (args.json) {
-          printJson(result);
-          return;
-        }
+        });
+        if (printMaybeJson(args.json, result)) return;
         console.log(result.snapshot);
       }
     }),
@@ -50,95 +83,18 @@ const main = defineCommand({
         idleMs: { type: "string", description: "Idle wait window in milliseconds" }
       },
       run: async ({ args }) => {
-        const client = await getClient(args.session);
-        const result = await client.call("browser.navigate", {
-          paneId: resolveBrowserPaneId(args.pane),
+        const result = await callPaneBrowser(args, "browser.navigate", {
           url: args.url,
-          waitUntil: args.waitUntil === "none" || args.waitUntil === "idle" ? args.waitUntil : "load",
-          idleMs: args.idleMs ? Number(args.idleMs) : undefined
-        }, FLWEB_RPC_TIMEOUT_MS);
-        if (args.json) {
-          printJson(result);
-          return;
-        }
+          waitUntil: normalizeWaitUntil(args.waitUntil),
+          idleMs: parseIdleMs(args.idleMs)
+        });
+        if (printMaybeJson(args.json, result)) return;
         console.log(result.url);
       }
     }),
-    back: defineCommand({
-      meta: { name: "back", description: "Navigate back in history" },
-      args: {
-        ...commonArgs,
-        waitUntil: {
-          type: "string",
-          description: "Wait strategy: none, load, idle",
-          default: "load"
-        },
-        idleMs: { type: "string", description: "Idle wait window in milliseconds" }
-      },
-      run: async ({ args }) => {
-        const client = await getClient(args.session);
-        const result = await client.call("browser.back", {
-          paneId: resolveBrowserPaneId(args.pane),
-          waitUntil: args.waitUntil === "none" || args.waitUntil === "idle" ? args.waitUntil : "load",
-          idleMs: args.idleMs ? Number(args.idleMs) : undefined
-        }, FLWEB_RPC_TIMEOUT_MS);
-        if (args.json) {
-          printJson(result);
-          return;
-        }
-        console.log(result.url);
-      }
-    }),
-    forward: defineCommand({
-      meta: { name: "forward", description: "Navigate forward in history" },
-      args: {
-        ...commonArgs,
-        waitUntil: {
-          type: "string",
-          description: "Wait strategy: none, load, idle",
-          default: "load"
-        },
-        idleMs: { type: "string", description: "Idle wait window in milliseconds" }
-      },
-      run: async ({ args }) => {
-        const client = await getClient(args.session);
-        const result = await client.call("browser.forward", {
-          paneId: resolveBrowserPaneId(args.pane),
-          waitUntil: args.waitUntil === "none" || args.waitUntil === "idle" ? args.waitUntil : "load",
-          idleMs: args.idleMs ? Number(args.idleMs) : undefined
-        }, FLWEB_RPC_TIMEOUT_MS);
-        if (args.json) {
-          printJson(result);
-          return;
-        }
-        console.log(result.url);
-      }
-    }),
-    reload: defineCommand({
-      meta: { name: "reload", description: "Reload the current page" },
-      args: {
-        ...commonArgs,
-        waitUntil: {
-          type: "string",
-          description: "Wait strategy: none, load, idle",
-          default: "load"
-        },
-        idleMs: { type: "string", description: "Idle wait window in milliseconds" }
-      },
-      run: async ({ args }) => {
-        const client = await getClient(args.session);
-        const result = await client.call("browser.reload", {
-          paneId: resolveBrowserPaneId(args.pane),
-          waitUntil: args.waitUntil === "none" || args.waitUntil === "idle" ? args.waitUntil : "load",
-          idleMs: args.idleMs ? Number(args.idleMs) : undefined
-        }, FLWEB_RPC_TIMEOUT_MS);
-        if (args.json) {
-          printJson(result);
-          return;
-        }
-        console.log(result.url);
-      }
-    }),
+    back: createHistoryCommand("back", "Navigate back in history", "browser.back"),
+    forward: createHistoryCommand("forward", "Navigate forward in history", "browser.forward"),
+    reload: createHistoryCommand("reload", "Reload the current page", "browser.reload"),
     click: defineCommand({
       meta: { name: "click", description: "Click a ref or selector" },
       args: {
@@ -146,15 +102,9 @@ const main = defineCommand({
         target: { type: "positional", required: true, description: "Ref or selector" }
       },
       run: async ({ args }) => {
-        const client = await getClient(args.session);
-        const result = await client.call(
-          "browser.click",
-          {
-            paneId: resolveBrowserPaneId(args.pane),
-            target: args.target
-          },
-          FLWEB_RPC_TIMEOUT_MS
-        );
+        const result = await callPaneBrowser(args, "browser.click", {
+          target: args.target
+        });
         if (args.json) {
           printJson(result);
         }
@@ -168,16 +118,10 @@ const main = defineCommand({
         text: { type: "positional", required: true, description: "Text value" }
       },
       run: async ({ args }) => {
-        const client = await getClient(args.session);
-        const result = await client.call(
-          "browser.fill",
-          {
-            paneId: resolveBrowserPaneId(args.pane),
-            target: args.target,
-            text: args.text
-          },
-          FLWEB_RPC_TIMEOUT_MS
-        );
+        const result = await callPaneBrowser(args, "browser.fill", {
+          target: args.target,
+          text: args.text
+        });
         if (args.json) {
           printJson(result);
         }
@@ -190,15 +134,9 @@ const main = defineCommand({
         key: { type: "positional", required: true, description: "Key name" }
       },
       run: async ({ args }) => {
-        const client = await getClient(args.session);
-        const result = await client.call(
-          "browser.press",
-          {
-            paneId: resolveBrowserPaneId(args.pane),
-            key: args.key
-          },
-          FLWEB_RPC_TIMEOUT_MS
-        );
+        const result = await callPaneBrowser(args, "browser.press", {
+          key: args.key
+        });
         if (args.json) {
           printJson(result);
         }
@@ -215,31 +153,7 @@ const main = defineCommand({
         fn: { type: "string", description: "Wait until this JavaScript expression becomes truthy" }
       },
       run: async ({ args }) => {
-        const client = await getClient(args.session);
-        const raw = args.value;
-        const asNumber = Number(raw);
-        const params = args.text
-          ? { kind: "text" as const, text: args.text }
-          : args.url
-            ? { kind: "url" as const, pattern: args.url }
-            : args.fn
-              ? { kind: "fn" as const, expression: args.fn }
-              : raw === "load"
-                ? { kind: "load" as const }
-                : raw === "idle"
-                  ? { kind: "idle" as const, ms: args.ms ? Number(args.ms) : 500 }
-                  : Number.isFinite(asNumber) && asNumber >= 0
-                    ? { kind: "duration" as const, ms: asNumber }
-                    : { kind: "target" as const, target: raw };
-
-        const result = await client.call(
-          "browser.wait",
-          {
-            paneId: resolveBrowserPaneId(args.pane),
-            ...params
-          },
-          FLWEB_RPC_TIMEOUT_MS
-        );
+        const result = await callPaneBrowser(args, "browser.wait", normalizeWaitParams(args));
         if (args.json) {
           printJson(result);
         }
@@ -247,141 +161,7 @@ const main = defineCommand({
     }),
     get: defineCommand({
       meta: { name: "get", description: "Read a value from the active browser pane" },
-      subCommands: {
-        url: defineCommand({
-          meta: { name: "url", description: "Get the current URL" },
-          args: commonArgs,
-          run: async ({ args }) => {
-            const client = await getClient(args.session);
-            const result = await client.call("browser.get", {
-              paneId: resolveBrowserPaneId(args.pane),
-              field: "url"
-            }, FLWEB_RPC_TIMEOUT_MS);
-            if (args.json) {
-              printJson(result);
-              return;
-            }
-            console.log(result.value);
-          }
-        }),
-        title: defineCommand({
-          meta: { name: "title", description: "Get the current page title" },
-          args: commonArgs,
-          run: async ({ args }) => {
-            const client = await getClient(args.session);
-            const result = await client.call("browser.get", {
-              paneId: resolveBrowserPaneId(args.pane),
-              field: "title"
-            }, FLWEB_RPC_TIMEOUT_MS);
-            if (args.json) {
-              printJson(result);
-              return;
-            }
-            console.log(result.value);
-          }
-        }),
-        text: defineCommand({
-          meta: { name: "text", description: "Get text content from a ref or selector" },
-          args: {
-            ...commonArgs,
-            target: { type: "positional", required: true, description: "Ref or selector" }
-          },
-          run: async ({ args }) => {
-            const client = await getClient(args.session);
-            const result = await client.call("browser.get", {
-              paneId: resolveBrowserPaneId(args.pane),
-              field: "text",
-              target: args.target
-            }, FLWEB_RPC_TIMEOUT_MS);
-            if (args.json) {
-              printJson(result);
-              return;
-            }
-            console.log(result.value);
-          }
-        }),
-        html: defineCommand({
-          meta: { name: "html", description: "Get innerHTML from a ref or selector" },
-          args: {
-            ...commonArgs,
-            target: { type: "positional", required: true, description: "Ref or selector" }
-          },
-          run: async ({ args }) => {
-            const client = await getClient(args.session);
-            const result = await client.call("browser.get", {
-              paneId: resolveBrowserPaneId(args.pane),
-              field: "html",
-              target: args.target
-            }, FLWEB_RPC_TIMEOUT_MS);
-            if (args.json) {
-              printJson(result);
-              return;
-            }
-            console.log(result.value);
-          }
-        }),
-        value: defineCommand({
-          meta: { name: "value", description: "Get input value from a ref or selector" },
-          args: {
-            ...commonArgs,
-            target: { type: "positional", required: true, description: "Ref or selector" }
-          },
-          run: async ({ args }) => {
-            const client = await getClient(args.session);
-            const result = await client.call("browser.get", {
-              paneId: resolveBrowserPaneId(args.pane),
-              field: "value",
-              target: args.target
-            }, FLWEB_RPC_TIMEOUT_MS);
-            if (args.json) {
-              printJson(result);
-              return;
-            }
-            console.log(result.value);
-          }
-        }),
-        attr: defineCommand({
-          meta: { name: "attr", description: "Get an attribute from a ref or selector" },
-          args: {
-            ...commonArgs,
-            target: { type: "positional", required: true, description: "Ref or selector" },
-            name: { type: "positional", required: true, description: "Attribute name" }
-          },
-          run: async ({ args }) => {
-            const client = await getClient(args.session);
-            const result = await client.call("browser.get", {
-              paneId: resolveBrowserPaneId(args.pane),
-              field: "attr",
-              target: args.target,
-              name: args.name
-            }, FLWEB_RPC_TIMEOUT_MS);
-            if (args.json) {
-              printJson(result);
-              return;
-            }
-            console.log(result.value);
-          }
-        }),
-        box: defineCommand({
-          meta: { name: "box", description: "Get bounding box from a ref or selector" },
-          args: {
-            ...commonArgs,
-            target: { type: "positional", required: true, description: "Ref or selector" }
-          },
-          run: async ({ args }) => {
-            const client = await getClient(args.session);
-            const result = await client.call("browser.box", {
-              paneId: resolveBrowserPaneId(args.pane),
-              target: args.target
-            }, FLWEB_RPC_TIMEOUT_MS);
-            if (args.json) {
-              printJson(result);
-              return;
-            }
-            console.log(JSON.stringify(result.box, null, 2));
-          }
-        })
-      }
+      subCommands: Object.fromEntries(getterSpecs.map((spec) => [spec.name, createGetterCommand(spec)]))
     }),
     eval: defineCommand({
       meta: { name: "eval", description: "Evaluate JavaScript in the page context" },
@@ -390,15 +170,10 @@ const main = defineCommand({
         script: { type: "positional", required: true, description: "JavaScript expression or return statement" }
       },
       run: async ({ args }) => {
-        const client = await getClient(args.session);
-        const result = await client.call("browser.eval", {
-          paneId: resolveBrowserPaneId(args.pane),
+        const result = await callPaneBrowser(args, "browser.eval", {
           script: args.script
-        }, FLWEB_RPC_TIMEOUT_MS);
-        if (args.json) {
-          printJson(result);
-          return;
-        }
+        });
+        if (printMaybeJson(args.json, result)) return;
         if (typeof result.value === "string") {
           console.log(result.value);
           return;
@@ -411,4 +186,124 @@ const main = defineCommand({
 
 export function runFlweb(): Promise<void> {
   return runMain(main);
+}
+
+function createHistoryCommand(
+  name: string,
+  description: string,
+  method: Extract<PaneScopedBrowserMethod, "browser.back" | "browser.forward" | "browser.reload">
+) {
+  return defineCommand({
+    meta: { name, description },
+    args: {
+      ...commonArgs,
+      waitUntil: {
+        type: "string",
+        description: "Wait strategy: none, load, idle",
+        default: "load"
+      },
+      idleMs: { type: "string", description: "Idle wait window in milliseconds" }
+    },
+    run: async ({ args }) => {
+      const result = await callPaneBrowser(args, method, {
+        waitUntil: normalizeWaitUntil(args.waitUntil),
+        idleMs: parseIdleMs(args.idleMs)
+      });
+      if (printMaybeJson(args.json, result)) return;
+      console.log(result.url);
+    }
+  });
+}
+
+function createGetterCommand(spec: GetterSpec) {
+  return defineCommand({
+    meta: { name: spec.name, description: spec.description },
+    args: {
+      ...commonArgs,
+      ...(spec.target ? { target: { type: "positional" as const, required: true, description: "Ref or selector" } } : {}),
+      ...(spec.attrName ? { name: { type: "positional" as const, required: true, description: "Attribute name" } } : {})
+    },
+    run: async ({ args }) => {
+      if (spec.method === "browser.box") {
+        const result = await callPaneBrowser(args, "browser.box", {
+          target: args.target
+        });
+        if (printMaybeJson(args.json, result)) return;
+        spec.printer?.(result);
+        return;
+      }
+
+      const result = await callPaneBrowser(args, "browser.get", {
+        field: spec.field,
+        target: spec.target ? args.target : undefined,
+        name: spec.attrName ? args.name : undefined
+      });
+      if (printMaybeJson(args.json, result)) return;
+      console.log(result.value);
+    }
+  });
+}
+
+async function callPaneBrowser<Method extends PaneScopedBrowserMethod>(
+  args: CommonArgs,
+  method: Method,
+  params: Omit<AppRpcParams<Method>, "paneId">
+): Promise<AppRpcResult<Method>> {
+  const client = await getClient(args.session);
+  return client.call(
+    method,
+    {
+      paneId: resolveBrowserPaneId(args.pane),
+      ...params
+    } as AppRpcParams<Method>,
+    FLWEB_RPC_TIMEOUT_MS
+  );
+}
+
+function printMaybeJson(json: boolean | undefined, result: unknown): boolean {
+  if (!json) {
+    return false;
+  }
+
+  printJson(result);
+  return true;
+}
+
+function normalizeWaitUntil(value?: string): "none" | "load" | "idle" {
+  return value === "none" || value === "idle" ? value : "load";
+}
+
+function parseIdleMs(value?: string): number | undefined {
+  return value ? Number(value) : undefined;
+}
+
+function normalizeWaitParams(args: {
+  value?: string;
+  ms?: string;
+  text?: string;
+  url?: string;
+  fn?: string;
+}): Omit<AppRpcParams<"browser.wait">, "paneId"> {
+  const raw = args.value;
+  const asNumber = Number(raw);
+
+  if (args.text) {
+    return { kind: "text", text: args.text };
+  }
+  if (args.url) {
+    return { kind: "url", pattern: args.url };
+  }
+  if (args.fn) {
+    return { kind: "fn", expression: args.fn };
+  }
+  if (raw === "load") {
+    return { kind: "load" };
+  }
+  if (raw === "idle") {
+    return { kind: "idle", ms: args.ms ? Number(args.ms) : 500 };
+  }
+  if (Number.isFinite(asNumber) && asNumber >= 0) {
+    return { kind: "duration", ms: asNumber };
+  }
+  return { kind: "target", target: raw };
 }

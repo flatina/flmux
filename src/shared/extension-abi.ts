@@ -122,20 +122,36 @@ export interface GroupActionDescriptor {
   run: (ctx: GroupActionContext) => void;
 }
 
+export interface PaneOpenOptions {
+  singleton?: boolean;
+}
+
 export interface GroupActionContext {
   activePaneId: PaneId | null;
   tabId: TabId;
-  openPane: (leaf: PaneCreateInput, placement?: { referencePaneId?: PaneId; direction?: PaneCreateDirection }) => void;
+  openPane: (
+    leaf: PaneCreateInput,
+    placement?: { referencePaneId?: PaneId; direction?: PaneCreateDirection },
+    options?: PaneOpenOptions
+  ) => void;
+  openWorkspaceTab: (id: string) => void;
 }
 
 export interface GroupActionsModifier {
   hide(...ids: string[]): void;
 }
 
+export interface WorkspaceTabDescriptor {
+  id: string;
+  title: string;
+  singleton?: boolean;
+}
+
 export interface ExtensionSetupContext {
   extensionId: string;
   registerGroupAction(action: GroupActionDescriptor): Disposable;
   onCreateGroupActions(handler: (actions: GroupActionsModifier) => void): Disposable;
+  registerWorkspaceTab(descriptor: WorkspaceTabDescriptor): Disposable;
 }
 
 export interface ExtensionSetup {

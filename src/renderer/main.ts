@@ -39,6 +39,7 @@ import type { LayoutableTabParams } from "../shared/tab-params";
 import { AppOwner, EventBus } from "./event-bus";
 import { EXT_MANAGER_COMPONENT, EXT_MANAGER_TAB_ID, ExtManagerRenderer } from "./ext-manager";
 import { ExtensionSetupRegistry } from "./extension-setup-registry";
+import { PlaceholderRenderer } from "./placeholder-renderer";
 import { isV1Layout, migrateV1Layout, panelToSummary, sanitizeSerializedLayout, titleFromLeaf } from "./helpers";
 import { getHostRpc, setRendererRpcHandlers } from "./lib/host-rpc";
 import type { PaneRendererContext } from "./pane-renderer";
@@ -132,9 +133,30 @@ class WorkspaceApp {
       className: "dockview-theme-flmux",
       defaultRenderer: "always",
       createComponent: (options) => {
+        // Built-in singleton: Extension Manager
         if (options.name === EXT_MANAGER_COMPONENT) {
           return new ExtManagerRenderer(this.hostRpc);
         }
+        // Extension workspace tab (registered or disabled/missing)
+        if (this.setupRegistry.isExtensionTabId(options.name)) {
+          const tab = this.setupRegistry.findWorkspaceTab(options.name);
+          if (tab) {
+            // Registered extension tab → extension pane in simple tab
+            return new TabRenderer({
+              paneContext,
+              markDirty: () => this.queueSave(),
+              register: (panelId, renderer) => this.tabRenderers.set(panelId, renderer),
+              unregister: (panelId) => this.tabRenderers.delete(panelId),
+              onGroupAction: (action, panelId) => this.handleInnerGroupAction(action, panelId),
+              getTabIndex: (panelId) => this.dockview?.panels.findIndex((p) => p.id === panelId) ?? 0,
+              setupRegistry: this.setupRegistry
+            });
+          }
+          // Disabled/missing extension → placeholder
+          const extId = options.name.split(":")[0];
+          return new PlaceholderRenderer(extId);
+        }
+        // Default: regular tab
         return new TabRenderer({
           paneContext,
           markDirty: () => this.queueSave(),
@@ -318,22 +340,61 @@ class WorkspaceApp {
   }
 
   private openExtensionManager(): void {
+    this.openSingletonWorkspaceTab(EXT_MANAGER_TAB_ID, EXT_MANAGER_COMPONENT, "Extensions");
+  }
+
+  /** Open a workspace tab by registered qualifiedId. Handles singleton focus-or-create. */
+  private openRegisteredWorkspaceTab(qualifiedId: string): void {
     if (!this.dockview) return;
 
-    // Singleton: focus existing tab if open
-    const existing = this.dockview.getPanel(EXT_MANAGER_TAB_ID);
+    const tab = this.setupRegistry.findWorkspaceTab(qualifiedId);
+    if (!tab) return;
+
+    if (tab.singleton) {
+      this.openSingletonWorkspaceTab(qualifiedId, qualifiedId, tab.title, {
+        tabKind: "tab",
+        layoutMode: "simple",
+        ownerExtensionId: tab.extensionId,
+        contributionId: tab.contributionId
+      });
+    } else {
+      const tabId = createTabId("ext");
+      this.dockview.addPanel({
+        id: tabId,
+        component: qualifiedId,
+        title: tab.title,
+        params: {
+          tabKind: "tab",
+          layoutMode: "simple",
+          ownerExtensionId: tab.extensionId,
+          contributionId: tab.contributionId
+        }
+      });
+      this.dockview.getPanel(tabId)?.focus();
+    }
+  }
+
+  private openSingletonWorkspaceTab(
+    id: string,
+    component: string,
+    title: string,
+    params?: Record<string, unknown>
+  ): void {
+    if (!this.dockview) return;
+
+    const existing = this.dockview.getPanel(id);
     if (existing) {
       existing.focus();
       return;
     }
 
     this.dockview.addPanel({
-      id: EXT_MANAGER_TAB_ID,
-      component: EXT_MANAGER_COMPONENT,
-      title: "Extensions",
-      params: { tabKind: "tab", layoutMode: "simple" }
+      id,
+      component,
+      title,
+      params: params ?? { tabKind: "tab", layoutMode: "simple" }
     });
-    this.dockview.getPanel(EXT_MANAGER_TAB_ID)?.focus();
+    this.dockview.getPanel(id)?.focus();
   }
 
   /** Create a new layoutable tab with a fresh terminal inside. */
@@ -870,11 +931,19 @@ class WorkspaceApp {
       extAction.run({
         activePaneId: ref ?? null,
         tabId,
-        openPane: (leaf: PaneCreateInput, placement?) => {
+        openPane: (leaf: PaneCreateInput, placement?, options?) => {
+          if (options?.singleton && leaf.kind === "extension") {
+            const focused = this.focusExistingSingletonPane(ref, leaf.extensionId, leaf.contributionId);
+            if (focused) return;
+          }
           void this.openLeaf(leaf, {
             referencePaneId: placement?.referencePaneId ?? ref,
             direction: placement?.direction
           });
+        },
+        openWorkspaceTab: (id: string) => {
+          const qualifiedId = `${extAction.qualifiedId.split(":")[0]}:${id}`;
+          this.openRegisteredWorkspaceTab(qualifiedId);
         }
       });
       return;
@@ -898,6 +967,32 @@ class WorkspaceApp {
         void this.splitFromPane(ref, "below");
         break;
     }
+  }
+
+  /** Find and focus an existing pane matching extensionId+contributionId in the same inner dockview. */
+  private focusExistingSingletonPane(
+    referencePaneId: PaneId | undefined,
+    extensionId: string,
+    contributionId: string
+  ): boolean {
+    const found = referencePaneId ? this.findPane(referencePaneId) : null;
+    const innerApi = found
+      ? this.tabRenderers.get(found.outerPanel.id)?.innerApi
+      : null;
+    if (!innerApi) return false;
+
+    for (const panel of innerApi.panels) {
+      const params = panel.params as Record<string, unknown>;
+      if (
+        params.kind === "extension" &&
+        params.extensionId === extensionId &&
+        params.contributionId === contributionId
+      ) {
+        panel.focus();
+        return true;
+      }
+    }
+    return false;
   }
 
   private async splitFromPane(

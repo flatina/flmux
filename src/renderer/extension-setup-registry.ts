@@ -4,7 +4,8 @@ import type {
   ExtensionSetupContext,
   GroupActionContext,
   GroupActionDescriptor,
-  GroupActionsModifier
+  GroupActionsModifier,
+  WorkspaceTabDescriptor
 } from "../shared/extension-abi";
 import { warn } from "../shared/logger";
 
@@ -19,6 +20,14 @@ export interface RegisteredGroupAction {
   run: (ctx: GroupActionContext) => void;
 }
 
+export interface RegisteredWorkspaceTab {
+  qualifiedId: string;
+  extensionId: string;
+  contributionId: string;
+  title: string;
+  singleton: boolean;
+}
+
 type CreateGroupActionsHandler = (modifier: GroupActionsModifier) => void;
 
 // ── Registry ──
@@ -26,6 +35,7 @@ type CreateGroupActionsHandler = (modifier: GroupActionsModifier) => void;
 export class ExtensionSetupRegistry {
   private readonly groupActions: RegisteredGroupAction[] = [];
   private readonly createGroupActionsHandlers: CreateGroupActionsHandler[] = [];
+  private readonly workspaceTabs = new Map<string, RegisteredWorkspaceTab>();
   private readonly disposableStack = new DisposableStack();
 
   /** Sorted group actions after applying modifier hooks. */
@@ -79,6 +89,16 @@ export class ExtensionSetupRegistry {
   /** Find a registered group action by qualifiedId. */
   findGroupAction(qualifiedId: string): RegisteredGroupAction | undefined {
     return this.groupActions.find((a) => a.qualifiedId === qualifiedId);
+  }
+
+  /** Find a registered workspace tab by qualifiedId. */
+  findWorkspaceTab(qualifiedId: string): RegisteredWorkspaceTab | undefined {
+    return this.workspaceTabs.get(qualifiedId);
+  }
+
+  /** Check if a qualifiedId belongs to any registered (or unregistered) extension workspace tab. */
+  isExtensionTabId(qualifiedId: string): boolean {
+    return qualifiedId.includes(":");
   }
 
   /** Load all extension setup modules and initialize them. */
@@ -148,6 +168,23 @@ export class ExtensionSetupRegistry {
             if (idx >= 0) this.createGroupActionsHandlers.splice(idx, 1);
           }
         };
+      },
+
+      registerWorkspaceTab: (descriptor: WorkspaceTabDescriptor): Disposable => {
+        const qualifiedId = `${extensionId}:${descriptor.id}`;
+        const registered: RegisteredWorkspaceTab = {
+          qualifiedId,
+          extensionId,
+          contributionId: descriptor.id,
+          title: descriptor.title,
+          singleton: descriptor.singleton ?? false
+        };
+        this.workspaceTabs.set(qualifiedId, registered);
+        return {
+          [Symbol.dispose]: () => {
+            this.workspaceTabs.delete(qualifiedId);
+          }
+        };
       }
     };
   }
@@ -156,5 +193,6 @@ export class ExtensionSetupRegistry {
     this.disposableStack.dispose();
     this.groupActions.length = 0;
     this.createGroupActionsHandlers.length = 0;
+    this.workspaceTabs.clear();
   }
 }

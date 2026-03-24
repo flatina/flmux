@@ -1028,6 +1028,9 @@ export class PaneRenderer implements IContentRenderer {
         navigateToUrl(normalizeUrl((e.target as HTMLInputElement).value));
       }
     });
+    welcome.querySelectorAll<HTMLButtonElement>(".browser-welcome-link").forEach((btn) => {
+      btn.addEventListener("click", () => { if (btn.dataset.url) navigateToUrl(btn.dataset.url); });
+    });
 
     if (isBlank) {
       shell.append(toolbar, welcome);
@@ -1122,6 +1125,9 @@ export class PaneRenderer implements IContentRenderer {
       if ((e as KeyboardEvent).key === "Enter") {
         navigateFromWelcome(normalizeUrl((e.target as HTMLInputElement).value));
       }
+    });
+    welcome.querySelectorAll<HTMLButtonElement>(".browser-welcome-link").forEach((btn) => {
+      btn.addEventListener("click", () => { if (btn.dataset.url) navigateFromWelcome(btn.dataset.url); });
     });
 
     shell.append(toolbar, welcome, iframe);
@@ -1282,6 +1288,11 @@ function createBrowserWelcome(): HTMLElement {
   <div class="browser-welcome-title">flmux</div>
   <div class="browser-welcome-subtitle">Search or enter a URL to get started</div>
   <input class="browser-welcome-input" type="text" placeholder="Search or enter URL" spellcheck="false" autocomplete="off" />
+  <div class="browser-welcome-links">
+    <button type="button" class="browser-welcome-link" data-url="https://www.google.com">Google</button>
+    <button type="button" class="browser-welcome-link" data-url="https://github.com">GitHub</button>
+    <button type="button" class="browser-welcome-link" data-url="https://developer.mozilla.org">MDN</button>
+  </div>
 </div>`;
   return el;
 }

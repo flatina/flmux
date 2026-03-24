@@ -445,6 +445,27 @@ input {
   outline: none;
 }
 
+.browser-welcome-links {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.browser-welcome-link {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  padding: 6px 16px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.browser-welcome-link:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
 .browser-welcome-input:focus {
   border-color: var(--accent);
   background: rgba(255, 255, 255, 0.08);

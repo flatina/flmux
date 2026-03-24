@@ -26,6 +26,14 @@ Two command surfaces are used:
 
 This keeps high-frequency automation verbs short while reserving `flmux` for workspace object management.
 
+Supported target forms currently include:
+
+- ref: `@e1`
+- CSS selector: `#result`
+- text locator: `text=Focus Name`
+- label locator: `label=Email`
+- role locator: `role=button[name='Reveal Result']`
+
 ## User Workflow
 
 ```sh

@@ -502,7 +502,52 @@ function buildResolveTargetExpression(target: string): string {
   return `(() => {
     const raw = (${literal} || '').trim();
     if (!raw) return null;
+    const isVisible = (el) => {
+      if (!(el instanceof HTMLElement)) return false;
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+    };
+    const textOf = (el) => {
+      if (!(el instanceof HTMLElement)) return '';
+      return (el.innerText || el.textContent || el.getAttribute('aria-label') || el.getAttribute('placeholder') || '').trim().replace(/\\s+/g, ' ');
+    };
+    const implicitRole = (el) => {
+      if (!(el instanceof HTMLElement)) return '';
+      return el.getAttribute('role')
+        || (el.tagName === 'A' ? 'link' : '')
+        || (el.tagName === 'BUTTON' ? 'button' : '')
+        || (el.tagName === 'TEXTAREA' ? 'textbox' : '')
+        || (el.tagName === 'SELECT' ? 'combobox' : '')
+        || (el.tagName === 'INPUT'
+          ? ({ checkbox: 'checkbox', radio: 'radio', button: 'button', submit: 'button', text: 'textbox', email: 'textbox', search: 'searchbox', password: 'textbox' }[el.type] || 'textbox')
+          : '');
+    };
     if (raw.startsWith('@')) return document.querySelector('[data-flmux-ref="' + raw.slice(1) + '"]');
+    if (raw.startsWith('text=')) {
+      const query = raw.slice(5).trim();
+      return Array.from(document.querySelectorAll('body *')).find((el) => isVisible(el) && textOf(el).includes(query)) ?? null;
+    }
+    if (raw.startsWith('label=')) {
+      const query = raw.slice(6).trim();
+      const label = Array.from(document.querySelectorAll('label')).find((el) => textOf(el).includes(query));
+      if (!label) return null;
+      if ('control' in label && label.control) return label.control;
+      return label.querySelector('input,textarea,select,[contenteditable="true"]');
+    }
+    if (raw.startsWith('role=')) {
+      const spec = raw.slice(5).trim();
+      const match = spec.match(/^([a-zA-Z0-9_-]+)(?:\\[name=(['"]?)(.*?)\\2\\])?$/);
+      if (!match) return null;
+      const role = match[1];
+      const name = (match[3] || '').trim();
+      return Array.from(document.querySelectorAll('body *')).find((el) => {
+        if (!isVisible(el)) return false;
+        if (implicitRole(el) !== role) return false;
+        if (!name) return true;
+        return textOf(el) === name;
+      }) ?? null;
+    }
     return document.querySelector(raw);
   })()`;
 }

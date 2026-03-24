@@ -60,14 +60,14 @@ async function main() {
   const fillName = runCli(["src/flweb/index.ts", "fill", "@e3", "Jane"], envWithPane);
   assert(fillName.code === 0, `flweb fill name exits 0 (${fillName.stderr || "ok"})`);
 
-  const fillEmail = runCli(["src/flweb/index.ts", "fill", "@e4", "jane@example.com"], envWithPane);
+  const fillEmail = runCli(["src/flweb/index.ts", "fill", "label=Email", "jane@example.com"], envWithPane);
   assert(fillEmail.code === 0, `flweb fill email exits 0 (${fillEmail.stderr || "ok"})`);
 
   const nameValue = runCli(["src/flweb/index.ts", "get", "value", "@e3"], envWithPane);
   assert(nameValue.code === 0, `flweb get value name exits 0 (${nameValue.stderr || "ok"})`);
   assert(nameValue.stdout === "Jane", `name value is Jane (got ${nameValue.stdout})`);
 
-  const emailPlaceholder = runCli(["src/flweb/index.ts", "get", "attr", "@e4", "placeholder"], envWithPane);
+  const emailPlaceholder = runCli(["src/flweb/index.ts", "get", "attr", "label=Email", "placeholder"], envWithPane);
   assert(emailPlaceholder.code === 0, `flweb get attr exits 0 (${emailPlaceholder.stderr || "ok"})`);
   assert(
     emailPlaceholder.stdout === "name@example.com",
@@ -79,8 +79,12 @@ async function main() {
   const parsedBox = JSON.parse(nameBox.stdout) as { width: number; height: number };
   assert(parsedBox.width > 0 && parsedBox.height > 0, `box has positive size (${nameBox.stdout})`);
 
-  const focusName = runCli(["src/flweb/index.ts", "click", "@e2"], envWithPane);
+  const focusName = runCli(["src/flweb/index.ts", "click", "text=Focus Name"], envWithPane);
   assert(focusName.code === 0, `flweb click focus button exits 0 (${focusName.stderr || "ok"})`);
+
+  const revealText = runCli(["src/flweb/index.ts", "get", "text", "role=button[name='Reveal Result']"], envWithPane);
+  assert(revealText.code === 0, `flweb get text role locator exits 0 (${revealText.stderr || "ok"})`);
+  assert(revealText.stdout === "Reveal Result", `role locator resolves reveal button text (got ${revealText.stdout})`);
 
   const fillNameAgain = runCli(["src/flweb/index.ts", "fill", "@e3", "Agent"], envWithPane);
   assert(fillNameAgain.code === 0, `flweb refill name exits 0 (${fillNameAgain.stderr || "ok"})`);

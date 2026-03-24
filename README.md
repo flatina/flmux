@@ -127,6 +127,9 @@ flweb snapshot --compact
 flweb navigate https://example.com/docs
 flweb click @e1
 flweb fill @e3 "hello"
+flweb fill "label=Email" "user@example.com"
+flweb click "text=Focus Name"
+flweb get text "role=button[name='Reveal Result']"
 flweb press Enter
 flweb wait load
 flweb wait "#result:not([hidden])"

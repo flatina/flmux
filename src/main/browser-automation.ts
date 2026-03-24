@@ -106,7 +106,18 @@ export async function browserNavigate(
 
 export async function browserGet(workspace: BrowserWorkspace, params: BrowserGetParams): Promise<BrowserGetResult> {
   const pane = await requireBrowserPaneAndView(workspace, params.paneId);
-  const expression = params.field === "url" ? "return window.location.href" : "return document.title";
+  const expression =
+    params.field === "url"
+      ? "return window.location.href"
+      : params.field === "title"
+        ? "return document.title"
+        : params.field === "text"
+          ? `const el = ${buildResolveTargetExpression(params.target ?? "")}; if (!(el instanceof HTMLElement)) throw new Error("Target not found: ${escapeJs(params.target ?? "")}"); return (el.innerText || el.textContent || "").trim();`
+          : params.field === "html"
+            ? `const el = ${buildResolveTargetExpression(params.target ?? "")}; if (!(el instanceof HTMLElement)) throw new Error("Target not found: ${escapeJs(params.target ?? "")}"); return el.innerHTML;`
+            : params.field === "value"
+              ? `const el = ${buildResolveTargetExpression(params.target ?? "")}; if (!(el instanceof HTMLElement) || !('value' in el)) throw new Error("Target is not readable as value: ${escapeJs(params.target ?? "")}"); return String(el.value ?? "");`
+              : `const el = ${buildResolveTargetExpression(params.target ?? "")}; if (!(el instanceof HTMLElement)) throw new Error("Target not found: ${escapeJs(params.target ?? "")}"); return el.getAttribute(${JSON.stringify(params.name ?? "")}) ?? "";`;
   const value = await evaluateInWebview<string>(pane.view, expression);
   return { ok: true, paneId: params.paneId, field: params.field, value };
 }

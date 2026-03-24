@@ -62,6 +62,10 @@ async function main() {
   assert(snapshot.code === 0, `flweb snapshot exits 0 (${snapshot.stderr || "ok"})`);
   assert(snapshot.stdout.includes("@e1"), "snapshot contains refs");
 
+  const firstText = runCli(["src/flweb/index.ts", "get", "text", "@e1"], envWithPane);
+  assert(firstText.code === 0, `flweb get text exits 0 (${firstText.stderr || "ok"})`);
+  assert(firstText.stdout === "/health", `get text @e1 returns /health (got ${firstText.stdout})`);
+
   const clicked = runCli(["src/flweb/index.ts", "click", "@e1"], envWithPane);
   assert(clicked.code === 0, `flweb click exits 0 (${clicked.stderr || "ok"})`);
 

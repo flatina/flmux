@@ -196,6 +196,88 @@ const main = defineCommand({
             }
             console.log(result.value);
           }
+        }),
+        text: defineCommand({
+          meta: { name: "text", description: "Get text content from a ref or selector" },
+          args: {
+            ...commonArgs,
+            target: { type: "positional", required: true, description: "Ref or selector" }
+          },
+          run: async ({ args }) => {
+            const client = await getClient(args.session);
+            const result = await client.call("browser.get", {
+              paneId: resolveBrowserPaneId(args.pane),
+              field: "text",
+              target: args.target
+            }, FLWEB_RPC_TIMEOUT_MS);
+            if (args.json) {
+              printJson(result);
+              return;
+            }
+            console.log(result.value);
+          }
+        }),
+        html: defineCommand({
+          meta: { name: "html", description: "Get innerHTML from a ref or selector" },
+          args: {
+            ...commonArgs,
+            target: { type: "positional", required: true, description: "Ref or selector" }
+          },
+          run: async ({ args }) => {
+            const client = await getClient(args.session);
+            const result = await client.call("browser.get", {
+              paneId: resolveBrowserPaneId(args.pane),
+              field: "html",
+              target: args.target
+            }, FLWEB_RPC_TIMEOUT_MS);
+            if (args.json) {
+              printJson(result);
+              return;
+            }
+            console.log(result.value);
+          }
+        }),
+        value: defineCommand({
+          meta: { name: "value", description: "Get input value from a ref or selector" },
+          args: {
+            ...commonArgs,
+            target: { type: "positional", required: true, description: "Ref or selector" }
+          },
+          run: async ({ args }) => {
+            const client = await getClient(args.session);
+            const result = await client.call("browser.get", {
+              paneId: resolveBrowserPaneId(args.pane),
+              field: "value",
+              target: args.target
+            }, FLWEB_RPC_TIMEOUT_MS);
+            if (args.json) {
+              printJson(result);
+              return;
+            }
+            console.log(result.value);
+          }
+        }),
+        attr: defineCommand({
+          meta: { name: "attr", description: "Get an attribute from a ref or selector" },
+          args: {
+            ...commonArgs,
+            target: { type: "positional", required: true, description: "Ref or selector" },
+            name: { type: "positional", required: true, description: "Attribute name" }
+          },
+          run: async ({ args }) => {
+            const client = await getClient(args.session);
+            const result = await client.call("browser.get", {
+              paneId: resolveBrowserPaneId(args.pane),
+              field: "attr",
+              target: args.target,
+              name: args.name
+            }, FLWEB_RPC_TIMEOUT_MS);
+            if (args.json) {
+              printJson(result);
+              return;
+            }
+            console.log(result.value);
+          }
         })
       }
     })

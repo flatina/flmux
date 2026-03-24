@@ -224,13 +224,15 @@ export interface BrowserNavigateResult {
 
 export interface BrowserGetParams {
   paneId: PaneId;
-  field: "url" | "title";
+  field: "url" | "title" | "text" | "html" | "value" | "attr";
+  target?: string;
+  name?: string;
 }
 
 export interface BrowserGetResult {
   ok: true;
   paneId: PaneId;
-  field: "url" | "title";
+  field: "url" | "title" | "text" | "html" | "value" | "attr";
   value: string;
 }
 

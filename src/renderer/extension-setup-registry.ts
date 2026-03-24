@@ -6,7 +6,7 @@ import type {
   GroupActionDescriptor,
   GroupActionsModifier,
   WorkspaceTabDescriptor
-} from "../shared/extension-abi";
+} from "../shared/extension-spi";
 import { warn } from "../shared/logger";
 
 // ── Registered state ──

@@ -1,4 +1,4 @@
-import type { ExtensionRegistryEntry } from "./extension-abi";
+import type { ExtensionRegistryEntry } from "./extension-spi";
 import type { SessionId } from "./ids";
 import type { BrowserPaneAdapter, TerminalRenderer } from "./pane-params";
 import type { TerminalRuntimeSummary } from "./rpc";

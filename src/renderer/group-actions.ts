@@ -1,5 +1,5 @@
 import type { DockviewGroupPanel, IGroupHeaderProps, IHeaderActionsRenderer } from "dockview-core";
-import type { HeaderAction } from "../shared/extension-abi";
+import type { HeaderAction } from "../shared/extension-spi";
 import type { ExtensionSetupRegistry } from "./extension-setup-registry";
 
 export const BUILTIN_ACTIONS: ReadonlyArray<{ id: string; icon: string; tooltip: string }> = [

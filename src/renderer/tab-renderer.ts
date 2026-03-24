@@ -9,7 +9,7 @@ import {
   type PanelUpdateEvent,
   type SerializedDockview
 } from "dockview-core";
-import type { HeaderAction } from "../shared/extension-abi";
+import type { HeaderAction } from "../shared/extension-spi";
 import { asPaneId, asTabId, type PaneId } from "../shared/ids";
 import type { PaneParams } from "../shared/pane-params";
 import { isLayoutableTabParams, type LayoutableTabParams } from "../shared/tab-params";

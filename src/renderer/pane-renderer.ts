@@ -14,7 +14,7 @@ import type {
   PanelUpdateEvent
 } from "dockview-core";
 import type { WebviewTagElement } from "electrobun/view";
-import type { ExtensionRegistryEntry, HeaderAction, MountedExtension, PaneEvent } from "../shared/extension-abi";
+import type { ExtensionRegistryEntry, HeaderAction, MountedExtension, PaneEvent } from "../shared/extension-spi";
 import type { TabId } from "../shared/ids";
 import { asPaneId, type PaneId, type TerminalRuntimeId } from "../shared/ids";
 import type {

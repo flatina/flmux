@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import type { ExtensionManifest, ExtensionRegistryEntry } from "../shared/extension-abi";
+import type { ExtensionManifest, ExtensionRegistryEntry } from "../shared/extension-spi";
 import { isExtensionDisabled, loadExtensionSettings } from "../shared/extension-settings";
 import { getExtensionsDir } from "../shared/paths";
 

@@ -1,4 +1,4 @@
-import type { ExtensionSetup } from "../../src/shared/extension-abi";
+import type { ExtensionSetup } from "../../src/shared/extension-spi";
 
 export default {
   onInit(ctx) {

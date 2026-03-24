@@ -1,4 +1,4 @@
-import type { ExtensionMount, HeaderAction, PaneEvent } from "../../src/shared/extension-abi";
+import type { ExtensionMount, HeaderAction, PaneEvent } from "../../src/shared/extension-spi";
 
 interface EventLogEntry {
   direction: "sent" | "received";

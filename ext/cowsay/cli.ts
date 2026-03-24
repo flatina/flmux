@@ -1,4 +1,4 @@
-import type { ExtensionCliCommand } from "../../src/shared/extension-abi";
+import type { ExtensionCliCommand } from "../../src/shared/extension-spi";
 
 export const command: ExtensionCliCommand = {
   meta: { name: "cowsay", description: "Open or message a cowsay pane" },

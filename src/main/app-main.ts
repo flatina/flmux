@@ -35,9 +35,13 @@ import { startWebUiServer, type WebUiServer } from "./web-ui-server";
 import {
   browserNew,
   browserConnect,
+  browserClick,
+  browserFill,
   browserGet,
   browserNavigate,
-  browserSnapshot
+  browserPress,
+  browserSnapshot,
+  browserWait
 } from "./browser-automation";
 
 export async function runAppMain(): Promise<void> {
@@ -332,6 +336,10 @@ export async function runAppMain(): Promise<void> {
     browserNavigate: (params) => browserNavigate(workspaceBridge, params),
     browserGet: (params) => browserGet(workspaceBridge, params),
     browserSnapshot: (params) => browserSnapshot(workspaceBridge, params),
+    browserClick: (params) => browserClick(workspaceBridge, params),
+    browserFill: (params) => browserFill(workspaceBridge, params),
+    browserPress: (params) => browserPress(workspaceBridge, params),
+    browserWait: (params) => browserWait(workspaceBridge, params),
     sendPaneMessage: (params) => workspaceBridge.sendPaneMessage(params)
   } satisfies import("./app-rpc").WorkspaceRpcAdapter;
 

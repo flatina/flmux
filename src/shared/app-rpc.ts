@@ -198,9 +198,8 @@ export type BrowserConnectResult =
       paneId: PaneId;
       url: string | null;
       title: string;
-      cdpBaseUrl: string;
-      targetId: string;
-      webSocketDebuggerUrl: string;
+      adapter: BrowserPaneAdapter;
+      webviewId: number | null;
     }
   | {
       ok: false;
@@ -244,6 +243,34 @@ export interface BrowserSnapshotResult {
   ok: true;
   paneId: PaneId;
   snapshot: string;
+}
+
+export interface BrowserClickParams {
+  paneId: PaneId;
+  target: string;
+}
+
+export interface BrowserFillParams {
+  paneId: PaneId;
+  target: string;
+  text: string;
+}
+
+export interface BrowserPressParams {
+  paneId: PaneId;
+  key: string;
+}
+
+export interface BrowserWaitParams {
+  paneId: PaneId;
+  kind: "duration" | "load" | "idle" | "target";
+  target?: string;
+  ms?: number;
+}
+
+export interface BrowserActionResult {
+  ok: true;
+  paneId: PaneId;
 }
 
 export interface AppRpcMethodMap {
@@ -330,6 +357,22 @@ export interface AppRpcMethodMap {
   "browser.snapshot": {
     params: BrowserSnapshotParams;
     result: BrowserSnapshotResult;
+  };
+  "browser.click": {
+    params: BrowserClickParams;
+    result: BrowserActionResult;
+  };
+  "browser.fill": {
+    params: BrowserFillParams;
+    result: BrowserActionResult;
+  };
+  "browser.press": {
+    params: BrowserPressParams;
+    result: BrowserActionResult;
+  };
+  "browser.wait": {
+    params: BrowserWaitParams;
+    result: BrowserActionResult;
   };
   "app.quit": {
     params: undefined;

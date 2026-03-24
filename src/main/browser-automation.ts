@@ -1,49 +1,29 @@
-import { CDPClient, sleep } from "@flatina/browser-ctl/cdp";
+import { BrowserView } from "electrobun/bun";
+import { sleep } from "@flatina/browser-ctl/cdp";
 import type {
+  BrowserActionResult,
+  BrowserClickParams,
   BrowserConnectParams,
   BrowserConnectResult,
+  BrowserFillParams,
   BrowserGetParams,
   BrowserGetResult,
   BrowserNavigateParams,
   BrowserNavigateResult,
   BrowserNewParams,
-  BrowserPaneResult,
   BrowserPaneInfo,
+  BrowserPaneResult,
+  BrowserPressParams,
   BrowserSnapshotParams,
-  BrowserSnapshotResult
+  BrowserSnapshotResult,
+  BrowserWaitParams
 } from "../shared/app-rpc";
 
 type BrowserWorkspace = {
   browserNew(params: BrowserNewParams): Promise<BrowserPaneResult>;
   listBrowserPanes(): Promise<{ ok: true; panes: BrowserPaneInfo[] }>;
-  getBrowserTargets(): Promise<{
-    ok: true;
-    cdpBaseUrl: string | null;
-    targets: Array<{ id: string; title: string; url: string; webSocketDebuggerUrl: string }>;
-  }>;
 };
 
-const INTERACTIVE_ROLES = new Set([
-  "button",
-  "textbox",
-  "link",
-  "combobox",
-  "checkbox",
-  "radio",
-  "menuitem",
-  "menuitemcheckbox",
-  "menuitemradio",
-  "option",
-  "searchbox",
-  "slider",
-  "spinbutton",
-  "switch",
-  "tab",
-  "treeitem",
-  "listbox"
-]);
-
-const PANE_MARKER_PREFIX = "__FLMUX_PANE__:";
 const DEFAULT_AUTOMATION_BLANK_URL = "about:blank#flmux-browser";
 
 export async function browserNew(workspace: BrowserWorkspace, params: BrowserNewParams): Promise<BrowserPaneResult> {
@@ -70,158 +50,236 @@ export async function browserConnect(
   workspace: BrowserWorkspace,
   params: BrowserConnectParams
 ): Promise<BrowserConnectResult> {
-  const { panes } = await workspace.listBrowserPanes();
-  const pane = panes.find((candidate) => candidate.paneId === params.paneId);
-  if (!pane) {
-    return {
-      ok: false,
-      paneId: params.paneId,
-      code: "pane_not_found",
-      error: `Browser pane not found: ${params.paneId}`
-    };
+  const pane = await getBrowserPane(workspace, params.paneId);
+  if (!pane.ok) {
+    return pane;
   }
 
-  if (pane.adapter !== "electrobun-native") {
-    return {
-      ok: false,
-      paneId: params.paneId,
-      code: "unsupported_adapter",
-      error: `Browser pane ${params.paneId} is using adapter ${pane.adapter}, which is not automatable`
-    };
+  const view = requireBrowserView(pane.pane);
+  if (!view.ok) {
+    return view;
   }
 
-  if (pane.automationStatus !== "ready") {
+  try {
+    const [url, title] = await Promise.all([
+      evaluateInWebview<string>(view.view, "return window.location.href"),
+      evaluateInWebview<string>(view.view, "return document.title")
+    ]);
+
+    return {
+      ok: true,
+      paneId: pane.pane.paneId,
+      url,
+      title,
+      adapter: pane.pane.adapter,
+      webviewId: pane.pane.webviewId
+    };
+  } catch (error) {
     return {
       ok: false,
       paneId: params.paneId,
       code: "pane_not_ready",
-      error: pane.automationReason ?? `Browser pane ${params.paneId} is not automation-ready yet`
+      error: error instanceof Error ? error.message : String(error)
     };
   }
-
-  const targetsResult = await workspace.getBrowserTargets();
-  if (!targetsResult.cdpBaseUrl) {
-    return {
-      ok: false,
-      paneId: params.paneId,
-      code: "cdp_unavailable",
-      error: "No CDP endpoint is available for browser automation"
-    };
-  }
-
-  const pageTargets = targetsResult.targets.filter((target) => !target.url.startsWith("views://"));
-  const orderedTargets = orderTargetsByHint(pageTargets, pane.url);
-  const marker = `${PANE_MARKER_PREFIX}${pane.paneId}`;
-  for (const target of orderedTargets) {
-    const matched = await targetMatchesMarker(target.webSocketDebuggerUrl, marker);
-    if (!matched) continue;
-    return {
-      ok: true,
-      paneId: pane.paneId,
-      url: pane.url,
-      title: pane.title,
-      cdpBaseUrl: targetsResult.cdpBaseUrl,
-      targetId: target.id,
-      webSocketDebuggerUrl: target.webSocketDebuggerUrl
-    };
-  }
-
-  return {
-    ok: false,
-    paneId: pane.paneId,
-    code: pageTargets.length <= 1 ? "target_not_found" : "target_ambiguous",
-    error:
-      pageTargets.length <= 1
-        ? `No live CDP target found for browser pane ${pane.paneId}`
-        : `Could not uniquely map browser pane ${pane.paneId} to a live CDP target`,
-    candidates: pageTargets.map((target) => ({
-      id: target.id,
-      title: target.title,
-      url: target.url
-    }))
-  };
 }
 
 export async function browserNavigate(
   workspace: BrowserWorkspace,
   params: BrowserNavigateParams
 ): Promise<BrowserNavigateResult> {
-  const connection = await requireConnectedTarget(workspace, params.paneId);
-  const client = await CDPClient.connect(connection.webSocketDebuggerUrl);
+  const pane = await requireBrowserPaneAndView(workspace, params.paneId);
+  const url = normalizeAutomationUrl(params.url);
+  pane.view.loadURL(url);
 
-  try {
-    const url = normalizeAutomationUrl(params.url);
-    const result = await client.call<{ errorText?: string }>("Page.navigate", { url });
-    if (result.errorText) {
-      throw new Error(`Navigation failed: ${result.errorText}`);
-    }
-
-    const waitUntil = params.waitUntil ?? "load";
-    if (waitUntil === "load") {
-      await waitForLoad(client);
-    } else if (waitUntil === "idle") {
-      await waitForNetworkIdle(client, params.idleMs ?? 500);
-    }
-
-    return {
-      ok: true,
-      paneId: params.paneId,
-      url
-    };
-  } finally {
-    await client.close();
+  const waitUntil = params.waitUntil ?? "load";
+  if (waitUntil !== "none") {
+    await waitForWebviewLoad(pane.view, params.idleMs ?? 500, waitUntil === "idle");
   }
+
+  return {
+    ok: true,
+    paneId: params.paneId,
+    url: await evaluateInWebview<string>(pane.view, "return window.location.href")
+  };
 }
 
 export async function browserGet(workspace: BrowserWorkspace, params: BrowserGetParams): Promise<BrowserGetResult> {
-  const connection = await requireConnectedTarget(workspace, params.paneId);
-  const client = await CDPClient.connect(connection.webSocketDebuggerUrl);
-
-  try {
-    const expression = params.field === "url" ? "window.location.href" : "document.title";
-    const value = await client.evalJS(expression);
-    return {
-      ok: true,
-      paneId: params.paneId,
-      field: params.field,
-      value: typeof value === "string" ? value : String(value ?? "")
-    };
-  } finally {
-    await client.close();
-  }
+  const pane = await requireBrowserPaneAndView(workspace, params.paneId);
+  const expression = params.field === "url" ? "return window.location.href" : "return document.title";
+  const value = await evaluateInWebview<string>(pane.view, expression);
+  return { ok: true, paneId: params.paneId, field: params.field, value };
 }
 
 export async function browserSnapshot(
   workspace: BrowserWorkspace,
   params: BrowserSnapshotParams
 ): Promise<BrowserSnapshotResult> {
-  const connection = await requireConnectedTarget(workspace, params.paneId);
-  const client = await CDPClient.connect(connection.webSocketDebuggerUrl);
-
-  try {
-    const snapshot = await buildTransientSnapshot(client, { compact: params.compact ?? false });
-    return {
-      ok: true,
-      paneId: params.paneId,
-      snapshot
-    };
-  } finally {
-    await client.close();
-  }
+  const pane = await requireBrowserPaneAndView(workspace, params.paneId);
+  const snapshot = await evaluateInWebview<string>(pane.view, buildSnapshotScript(!!params.compact));
+  return { ok: true, paneId: params.paneId, snapshot };
 }
 
-async function requireConnectedTarget(workspace: BrowserWorkspace, paneId: BrowserConnectParams["paneId"]) {
-  const result = await browserConnect(workspace, { paneId });
-  if (!result.ok) {
-    const error = new Error(result.error) as Error & {
-      code?: string;
-      candidates?: Array<{ id: string; title: string; url: string }>;
-    };
-    error.code = result.code;
-    error.candidates = result.candidates;
-    throw error;
+export async function browserClick(workspace: BrowserWorkspace, params: BrowserClickParams): Promise<BrowserActionResult> {
+  const pane = await requireBrowserPaneAndView(workspace, params.paneId);
+  await evaluateInWebview(pane.view, `
+    const el = ${buildResolveTargetExpression(params.target)};
+    if (!(el instanceof HTMLElement)) throw new Error("Target not found: ${escapeJs(params.target)}");
+    setTimeout(() => el.click(), 0);
+    return true;
+  `);
+  return { ok: true, paneId: params.paneId };
+}
+
+export async function browserFill(workspace: BrowserWorkspace, params: BrowserFillParams): Promise<BrowserActionResult> {
+  const pane = await requireBrowserPaneAndView(workspace, params.paneId);
+  await evaluateInWebview(pane.view, `
+    const el = ${buildResolveTargetExpression(params.target)};
+    if (!(el instanceof HTMLElement)) throw new Error("Target not found: ${escapeJs(params.target)}");
+    if (!('value' in el)) throw new Error("Target is not fillable: ${escapeJs(params.target)}");
+    el.focus();
+    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const nativeSet = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+    if (nativeSet) nativeSet.call(el, ${JSON.stringify(params.text)});
+    else el.value = ${JSON.stringify(params.text)};
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  `);
+  return { ok: true, paneId: params.paneId };
+}
+
+export async function browserPress(workspace: BrowserWorkspace, params: BrowserPressParams): Promise<BrowserActionResult> {
+  const pane = await requireBrowserPaneAndView(workspace, params.paneId);
+  await evaluateInWebview(pane.view, `
+    const target = document.activeElement instanceof HTMLElement ? document.activeElement : document.body;
+    const init = { key: ${JSON.stringify(params.key)}, bubbles: true, cancelable: true };
+    setTimeout(() => {
+      target.dispatchEvent(new KeyboardEvent('keydown', init));
+      target.dispatchEvent(new KeyboardEvent('keyup', init));
+    }, 0);
+    return true;
+  `);
+  return { ok: true, paneId: params.paneId };
+}
+
+export async function browserWait(workspace: BrowserWorkspace, params: BrowserWaitParams): Promise<BrowserActionResult> {
+  const pane = await requireBrowserPaneAndView(workspace, params.paneId);
+
+  if (params.kind === "duration") {
+    await sleep(params.ms ?? 0);
+  } else if (params.kind === "load") {
+    await waitForWebviewLoad(pane.view, 0, false);
+  } else if (params.kind === "idle") {
+    await waitForWebviewLoad(pane.view, params.ms ?? 500, true);
+  } else {
+    await waitForTarget(pane.view, params.target ?? "");
   }
-  return result;
+
+  return { ok: true, paneId: params.paneId };
+}
+
+async function requireBrowserPaneAndView(workspace: BrowserWorkspace, paneId: BrowserConnectParams["paneId"]) {
+  const paneResult = await getBrowserPane(workspace, paneId);
+  if (!paneResult.ok) {
+    throw new Error(paneResult.error);
+  }
+
+  const viewResult = requireBrowserView(paneResult.pane);
+  if (!viewResult.ok) {
+    throw new Error(viewResult.error);
+  }
+
+  return { pane: paneResult.pane, view: viewResult.view };
+}
+
+async function getBrowserPane(
+  workspace: BrowserWorkspace,
+  paneId: BrowserConnectParams["paneId"]
+): Promise<{ ok: true; pane: BrowserPaneInfo } | { ok: false; paneId: BrowserConnectParams["paneId"]; code: BrowserConnectResult extends infer _X ? never : never; error: string }> {
+  const { panes } = await workspace.listBrowserPanes();
+  const pane = panes.find((candidate) => candidate.paneId === paneId);
+  if (!pane) {
+    return {
+      ok: false,
+      paneId,
+      code: undefined as never,
+      error: `Browser pane not found: ${paneId}`
+    };
+  }
+
+  return { ok: true, pane };
+}
+
+function requireBrowserView(
+  pane: BrowserPaneInfo
+): { ok: true; view: BrowserView } | { ok: false; paneId: BrowserConnectParams["paneId"]; code: BrowserConnectResult extends infer _X ? never : never; error: string } {
+  if (pane.adapter !== "electrobun-native") {
+    return {
+      ok: false,
+      paneId: pane.paneId,
+      code: undefined as never,
+      error: pane.automationReason ?? `Browser pane ${pane.paneId} is not automatable`
+    };
+  }
+
+  if (pane.automationStatus !== "ready" || typeof pane.webviewId !== "number") {
+    return {
+      ok: false,
+      paneId: pane.paneId,
+      code: undefined as never,
+      error: pane.automationReason ?? `Browser pane ${pane.paneId} is not ready`
+    };
+  }
+
+  const view = BrowserView.getById(pane.webviewId);
+  if (!view?.rpc?.request?.evaluateJavascriptWithResponse) {
+    return {
+      ok: false,
+      paneId: pane.paneId,
+      code: undefined as never,
+      error: `BrowserView RPC is not available for webview ${pane.webviewId}`
+    };
+  }
+
+  return { ok: true, view: view as BrowserView };
+}
+
+async function evaluateInWebview<T>(view: BrowserView, scriptBody: string): Promise<T> {
+  const rpc = view.rpc as unknown as {
+    request: {
+      evaluateJavascriptWithResponse: (params: { script: string }) => Promise<unknown>;
+    };
+  };
+  const result = await rpc.request.evaluateJavascriptWithResponse({ script: scriptBody });
+  return result as T;
+}
+
+async function waitForWebviewLoad(view: BrowserView, idleMs: number, includeIdle: boolean): Promise<void> {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    const state = await evaluateInWebview<string>(view, "return document.readyState");
+    if (state === "complete") {
+      if (includeIdle && idleMs > 0) {
+        await sleep(idleMs);
+      }
+      return;
+    }
+    await sleep(100);
+  }
+  throw new Error("Timed out waiting for browser load");
+}
+
+async function waitForTarget(view: BrowserView, target: string): Promise<void> {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    const exists = await evaluateInWebview<boolean>(view, `return !!(${buildResolveTargetExpression(target)})`);
+    if (exists) {
+      return;
+    }
+    await sleep(100);
+  }
+  throw new Error(`Timed out waiting for target: ${target}`);
 }
 
 function normalizeAutomationUrl(input: string): string {
@@ -241,141 +299,72 @@ function normalizeAutomationUrl(input: string): string {
   return `https://www.google.com/search?q=${encodeURIComponent(value)}`;
 }
 
-function orderTargetsByHint(
-  targets: Array<{ id: string; title: string; url: string; webSocketDebuggerUrl: string }>,
-  urlHint: string | null
-): Array<{ id: string; title: string; url: string; webSocketDebuggerUrl: string }> {
-  if (!urlHint || urlHint === "about:blank") {
-    return targets;
-  }
-
-  const exact = targets.filter((target) => target.url === urlHint);
-  const rest = targets.filter((target) => target.url !== urlHint);
-  return [...exact, ...rest];
-}
-
-async function targetMatchesMarker(wsUrl: string, marker: string): Promise<boolean> {
-  const client = await CDPClient.connect(wsUrl, ["Runtime"]);
-  try {
-    const value = await client.evalJS("window.name");
-    return value === marker;
-  } catch {
-    return false;
-  } finally {
-    await client.close();
-  }
-}
-
-async function buildTransientSnapshot(client: CDPClient, options?: { compact?: boolean }): Promise<string> {
-  const response = await client.call<{ nodes?: Array<Record<string, unknown>> }>("Accessibility.getFullAXTree", {}, 10_000);
-  const nodes = response.nodes ?? [];
-  const lines: string[] = [];
-  let counter = 0;
-
-  for (const node of nodes) {
-    const role = getStringValue(node.role);
-    if (!role || !INTERACTIVE_ROLES.has(role)) continue;
-    if (node.ignored || node.backendDOMNodeId == null) continue;
-
-    const name = getStringValue(node.name) ?? "";
-    const value = getPropertyValue(node.properties, "value");
-    const valueStr = typeof value === "string" ? value : "";
-    if (options?.compact && !name && !valueStr) continue;
-
-    counter += 1;
-    let line = `@e${counter} ${role}`;
-    if (name) line += ` "${name}"`;
-    if (valueStr.length > 0) line += ` value="${valueStr}"`;
-    const checked = getPropertyValue(node.properties, "checked");
-    const disabled = getPropertyValue(node.properties, "disabled");
-    if (checked === true || checked === "true") line += " [checked]";
-    if (disabled) line += " [disabled]";
-    lines.push(line);
-  }
-
-  return lines.length ? lines.join("\n") : "(no interactive elements found)";
-}
-
-function getStringValue(candidate: unknown): string | null {
-  if (!candidate || typeof candidate !== "object") {
-    return null;
-  }
-
-  const value = (candidate as { value?: unknown }).value;
-  return typeof value === "string" ? value : null;
-}
-
-function getPropertyValue(properties: unknown, name: string): unknown {
-  if (!Array.isArray(properties)) {
-    return undefined;
-  }
-
-  for (const property of properties) {
-    if (!property || typeof property !== "object") continue;
-    if ((property as { name?: unknown }).name !== name) continue;
-    return (property as { value?: { value?: unknown } }).value?.value;
-  }
-
-  return undefined;
-}
-
-async function waitForLoad(client: CDPClient, timeoutMs = 30_000): Promise<void> {
-  const state = await client.evalJS("document.readyState");
-  if (state === "complete") {
-    return;
-  }
-  await client.once("Page.loadEventFired", timeoutMs);
-}
-
-async function waitForNetworkIdle(client: CDPClient, idleMs = 500, timeoutMs = 30_000): Promise<void> {
-  try {
-    await client.call("Network.enable", {}, 3000);
-  } catch {
-    // ignore
-  }
-
-  let inflight = 0;
-  let idleTimer: ReturnType<typeof setTimeout> | null = null;
-
-  return new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      cleanup();
-      reject(new Error("waitForNetworkIdle timed out"));
-    }, timeoutMs);
-
-    const checkIdle = () => {
-      if (inflight <= 0) {
-        idleTimer = setTimeout(() => {
-          cleanup();
-          resolve();
-        }, idleMs);
-      }
+function buildSnapshotScript(compact: boolean): string {
+  return `
+    const selectors = [
+      'a[href]',
+      'button',
+      'input',
+      'textarea',
+      'select',
+      '[role="button"]',
+      '[role="link"]',
+      '[role="textbox"]',
+      '[role="checkbox"]',
+      '[role="radio"]',
+      '[role="tab"]',
+      '[contenteditable="true"]',
+      '[tabindex]'
+    ];
+    const seen = new Set();
+    const lines = [];
+    let counter = 0;
+    document.querySelectorAll('[data-flmux-ref]').forEach((el) => el.removeAttribute('data-flmux-ref'));
+    const isVisible = (el) => {
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
     };
-
-    const onRequest = () => {
-      inflight += 1;
-      if (idleTimer) {
-        clearTimeout(idleTimer);
-        idleTimer = null;
-      }
+    const roleOf = (el) => {
+      return el.getAttribute('role')
+        || (el.tagName === 'A' ? 'link' : '')
+        || (el.tagName === 'BUTTON' ? 'button' : '')
+        || (el.tagName === 'TEXTAREA' ? 'textbox' : '')
+        || (el.tagName === 'SELECT' ? 'combobox' : '')
+        || (el.tagName === 'INPUT'
+          ? ({ checkbox: 'checkbox', radio: 'radio', button: 'button', submit: 'button', text: 'textbox', email: 'textbox', search: 'searchbox', password: 'textbox' }[el.type] || 'textbox')
+          : '');
     };
+    for (const el of document.querySelectorAll(selectors.join(','))) {
+      if (!(el instanceof HTMLElement)) continue;
+      if (seen.has(el)) continue;
+      seen.add(el);
+      if (!isVisible(el)) continue;
+      const role = roleOf(el);
+      const name = (el.getAttribute('aria-label') || el.innerText || el.textContent || el.getAttribute('placeholder') || '').trim().replace(/\\s+/g, ' ');
+      const value = 'value' in el && typeof el.value === 'string' ? el.value.trim() : '';
+      if (${compact ? "true" : "false"} && !name && !value) continue;
+      counter += 1;
+      el.setAttribute('data-flmux-ref', 'e' + counter);
+      let line = '@e' + counter + ' ' + (role || 'element');
+      if (name) line += ' "' + name.replace(/"/g, '\\\\"') + '"';
+      if (value) line += ' value="' + value.replace(/"/g, '\\\\"') + '"';
+      lines.push(line);
+    }
+    return lines.length ? lines.join('\\n') : '(no interactive elements found)';
+  `;
+}
 
-    const onDone = () => {
-      inflight = Math.max(0, inflight - 1);
-      checkIdle();
-    };
+function buildResolveTargetExpression(target: string): string {
+  const literal = JSON.stringify(target);
+  return `(() => {
+    const raw = (${literal} || '').trim();
+    if (!raw) return null;
+    if (raw.startsWith('@')) return document.querySelector('[data-flmux-ref="' + raw.slice(1) + '"]');
+    return document.querySelector(raw);
+  })()`;
+}
 
-    const cleanup = () => {
-      clearTimeout(timeout);
-      if (idleTimer) clearTimeout(idleTimer);
-      client.off("Network.requestWillBeSent", onRequest);
-      client.off("Network.loadingFinished", onDone);
-      client.off("Network.loadingFailed", onDone);
-    };
-
-    client.on("Network.requestWillBeSent", onRequest);
-    client.on("Network.loadingFinished", onDone);
-    client.on("Network.loadingFailed", onDone);
-    checkIdle();
-  });
+function escapeJs(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
 }

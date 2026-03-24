@@ -5,14 +5,19 @@ import type {
   AppSummary,
   BrowserConnectParams,
   BrowserConnectResult,
+  BrowserClickParams,
+  BrowserActionResult,
   BrowserGetParams,
   BrowserGetResult,
+  BrowserFillParams,
   BrowserNavigateParams,
   BrowserNavigateResult,
   BrowserPaneListResult,
   BrowserPaneResult,
+  BrowserPressParams,
   BrowserSnapshotParams,
   BrowserSnapshotResult,
+  BrowserWaitParams,
   BrowserTargetsResult,
   PaneCloseParams,
   PaneFocusParams,
@@ -52,6 +57,10 @@ export interface WorkspaceRpcAdapter {
   browserNavigate(params: BrowserNavigateParams): Promise<BrowserNavigateResult>;
   browserGet(params: BrowserGetParams): Promise<BrowserGetResult>;
   browserSnapshot(params: BrowserSnapshotParams): Promise<BrowserSnapshotResult>;
+  browserClick(params: BrowserClickParams): Promise<BrowserActionResult>;
+  browserFill(params: BrowserFillParams): Promise<BrowserActionResult>;
+  browserPress(params: BrowserPressParams): Promise<BrowserActionResult>;
+  browserWait(params: BrowserWaitParams): Promise<BrowserActionResult>;
   sendPaneMessage(params: PaneMessageParams): Promise<PaneMessageResult>;
 }
 
@@ -110,6 +119,10 @@ export function createAppRpcHandlers(options: CreateAppRpcHandlersOptions): AppR
     "browser.navigate": (params) => options.workspace.browserNavigate(params),
     "browser.get": (params) => options.workspace.browserGet(params),
     "browser.snapshot": (params) => options.workspace.browserSnapshot(params),
+    "browser.click": (params) => options.workspace.browserClick(params),
+    "browser.fill": (params) => options.workspace.browserFill(params),
+    "browser.press": (params) => options.workspace.browserPress(params),
+    "browser.wait": (params) => options.workspace.browserWait(params),
     "app.quit": () => {
       setTimeout(() => process.exit(0), 100);
       return { ok: true };

@@ -159,8 +159,8 @@ A shared module should own:
 - pane id resolution
 - pane validation
 - browser pane summary lookup
-- live automation target resolution
-- browser-ctl invocation glue
+- BrowserView resolution from `webviewId`
+- page-action execution against the resolved webview
 
 Suggested modules:
 
@@ -179,13 +179,13 @@ Instead:
 
 1. resolve flmux browser pane id
 2. ask flmux for live automation metadata for that pane
-3. let the flmux app process execute the CDP/browser-ctl work
+3. let the flmux app process execute the browser actions through Electrobun's built-in per-webview RPC
 
-This keeps `PaneId` as the stable external handle and CDP as an internal implementation detail.
+This keeps `PaneId` as the stable external handle and keeps page execution inside the owning desktop app process.
 
 ## Required RPC Additions
 
-Current app RPC already exposes raw `browser.targets`, but the new automation path is pane-aware.
+Current app RPC already exposes raw `browser.targets`, but the primary automation path is pane-aware and does not require raw CDP targeting.
 
 Pane-aware browser RPCs should be additive and should not depend on clients manually consuming raw target lists.
 
@@ -205,8 +205,8 @@ Pane-aware browser RPCs should be additive and should not depend on clients manu
 - `browser.connect`
   - input: `{ paneId: PaneId }`
   - result:
-    - `{ ok: true, paneId, url, title, cdpBaseUrl, targetId, webSocketDebuggerUrl }`
-    - or `{ ok: false, error, code, candidates? }`
+    - `{ ok: true, paneId, url, title, adapter, webviewId }`
+    - or `{ ok: false, error, code }`
 - `browser.navigate`
   - input: `{ paneId: PaneId, url: string, waitUntil?: "none" | "load" | "idle", idleMs?: number }`
   - result: `{ ok: true, paneId, url }`
@@ -216,6 +216,18 @@ Pane-aware browser RPCs should be additive and should not depend on clients manu
 - `browser.snapshot`
   - input: `{ paneId: PaneId, compact?: boolean }`
   - result: `{ ok: true, paneId, snapshot }`
+- `browser.click`
+  - input: `{ paneId: PaneId, target: string }`
+  - result: `{ ok: true, paneId }`
+- `browser.fill`
+  - input: `{ paneId: PaneId, target: string, text: string }`
+  - result: `{ ok: true, paneId }`
+- `browser.press`
+  - input: `{ paneId: PaneId, key: string }`
+  - result: `{ ok: true, paneId }`
+- `browser.wait`
+  - input: `{ paneId: PaneId, kind: "duration" | "load" | "idle" | "target", target?: string, ms?: number }`
+  - result: `{ ok: true, paneId }`
 
 `browser.targets` should stay available for future `flmux cdp` use cases, but it is not the primary automation surface.
 
@@ -243,17 +255,12 @@ This is implemented via a renderer RPC that lists live browser pane metadata, in
 
 ### Main
 
-Main owns:
+Main owns the app RPC surface and resolves:
 
-- discovered CDP base URL
-- raw CDP target list
-- app RPC surface
+- `paneId -> BrowserPaneInfo`
+- `BrowserPaneInfo.webviewId -> BrowserView.getById(webviewId)`
 
-Main should combine renderer pane metadata with CDP target discovery to map:
-
-- `browser pane id -> live CDP target`
-
-This mapping must be recomputed dynamically and must tolerate navigation and target replacement.
+Once the `BrowserView` is resolved, automation runs through Electrobun's built-in webview RPC and `evaluateJavascriptWithResponse`.
 
 ## Mapping Strategy
 
@@ -263,15 +270,12 @@ Public handle:
 
 Internal live mapping:
 
-- inject a pane marker into the native webview:
-  - `window.name = "__FLMUX_PANE__:<paneId>"`
-- enumerate CDP page targets
-- probe each target for `window.name`
-- prefer URL ordering only as a scan optimization, not as identity
-- if no marker matches, return an explicit error
-- if multiple live targets would be plausible, return an explicit ambiguity error
+- create a native browser pane
+- wait for renderer metadata to report `webviewId`
+- resolve `BrowserView.getById(webviewId)` in main
+- execute page actions through `BrowserView.rpc.request.evaluateJavascriptWithResponse`
 
-This keeps `PaneId` as the external identity while avoiding raw URL/title-only matching.
+This keeps `PaneId` as the external identity and avoids fragile URL/title or CDP-target guessing for the primary path.
 
 ## Reference Storage
 
@@ -281,11 +285,12 @@ The long-lived owner is the flmux app process, not the short-lived `flweb` proce
 
 Design direction:
 
-- browser-ctl should be moved from file-backed refs to an in-memory `RefStore` abstraction
-- flmux should keep refs in memory, keyed by `PaneId`
-- pane close should clear the in-memory refs for that pane
+- snapshots should stamp the page DOM with transient `data-flmux-ref="eN"` attributes
+- subsequent commands like `click @e1` should resolve against those DOM attributes
+- a fresh snapshot should rewrite the current ref set
+- pane close or navigation naturally invalidates stale refs
 
-This avoids stale files and fits the app-RPC thin-client model.
+This avoids stale files and keeps the ref lifecycle local to the active browser page.
 
 ## Non-Goals
 
@@ -306,18 +311,18 @@ Locked:
 - keep flmux-aware management under `flmux browser`
 - use `flmux cdp` for future raw low-level CDP commands
 
-### 2. Pane-to-CDP Matching Reliability
+### 2. Pane-to-Webview Reliability
 
-Current MVP uses a pane marker injected into `window.name` plus explicit error-on-failure.
+Current implementation relies on renderer metadata exposing `webviewId`, and main resolving `BrowserView.getById(webviewId)`.
 
-If this proves unreliable in practice, the next escalation path is a deeper Electrobun/WebView2 integration that exposes a stable native target handle per pane.
+If this proves unreliable in practice, the next escalation path is a tighter Electrobun integration or an explicit flmux-owned webview registry in main.
 
 ### 3. Ref Storage Path
 
 Locked:
 
 - do not use a refs file
-- move browser-ctl toward in-memory refs owned by the flmux app process
+- do not persist refs outside the live page DOM
 
 ### 4. `browser.new` Readiness Semantics
 

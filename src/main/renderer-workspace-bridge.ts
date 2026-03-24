@@ -1,10 +1,10 @@
 import type {
   AppSummary,
+  BrowserConnectParams,
   BrowserPaneListResult,
   BrowserPaneResult,
   BrowserTarget,
   BrowserTargetsResult,
-  BrowserConnectParams,
   PaneCloseParams,
   PaneFocusParams,
   PaneMessageParams,

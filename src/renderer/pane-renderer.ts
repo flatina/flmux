@@ -41,6 +41,31 @@ import { getHostRpc } from "./lib/host-rpc";
 
 const hostRpc = getHostRpc();
 
+export type BrowserAutomationHandle = {
+  connect: () => Promise<{
+    ok: true;
+    paneId: PaneId;
+    url: string | null;
+    title: string;
+    adapter: BrowserPaneAdapter;
+    webviewId: number | null;
+  }>;
+  navigate: (params: { url: string; waitUntil?: "none" | "load" | "idle"; idleMs?: number }) => Promise<{
+    ok: true;
+    paneId: PaneId;
+    url: string;
+  }>;
+  get: (field: "url" | "title") => Promise<{ ok: true; paneId: PaneId; field: "url" | "title"; value: string }>;
+  snapshot: (params: { compact?: boolean }) => Promise<{ ok: true; paneId: PaneId; snapshot: string }>;
+  click: (params: { target: string }) => Promise<{ ok: true; paneId: PaneId }>;
+  fill: (params: { target: string; text: string }) => Promise<{ ok: true; paneId: PaneId }>;
+  press: (params: { key: string }) => Promise<{ ok: true; paneId: PaneId }>;
+  wait: (params: { kind: "duration" | "load" | "idle" | "target"; target?: string; ms?: number }) => Promise<{
+    ok: true;
+    paneId: PaneId;
+  }>;
+};
+
 export type PaneRendererContext = {
   workspaceRoot: string;
   getTerminalRuntime: (runtimeId: TerminalRuntimeId) => TerminalRuntimeSummary | null;
@@ -63,6 +88,8 @@ export type PaneRendererContext = {
   subscribeOuterVisibility?: (callback: (visible: boolean) => void) => () => void;
   onHeaderActionsChanged?: (paneId: PaneId, actions: HeaderAction[]) => void;
   setBrowserPaneInfo?: (paneId: PaneId, info: BrowserPaneInfo | null) => void;
+  registerBrowserAutomationHandle?: (paneId: PaneId, handle: BrowserAutomationHandle) => void;
+  unregisterBrowserAutomationHandle?: (paneId: PaneId) => void;
 };
 
 export class PaneRenderer implements IContentRenderer {
@@ -86,6 +113,15 @@ export class PaneRenderer implements IContentRenderer {
   private browserInput: HTMLInputElement | null = null;
   private browserWebview: WebviewTagElement | null = null;
   private browserDisposables: Array<() => void> = [];
+  private browserMessageSeq = 0;
+  private browserPendingMessages = new Map<
+    string,
+    {
+      resolve: (value: unknown) => void;
+      reject: (error: Error) => void;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >();
 
   private editorPaneId: string | null = null;
   private editorView: EditorView | null = null;
@@ -131,6 +167,9 @@ export class PaneRenderer implements IContentRenderer {
     this.disposeExtensionView();
     if (this.props) {
       this.context.unregisterPreCloseHook(asPaneId(this.props.api.id));
+    }
+    if (this.browserPaneId) {
+      this.context.unregisterBrowserAutomationHandle?.(asPaneId(this.browserPaneId));
     }
     this.props = null;
     this.element.replaceChildren();
@@ -863,6 +902,7 @@ export class PaneRenderer implements IContentRenderer {
 
     this.browserPaneId = this.props.api.id;
     this.browserAdapter = "electrobun-native";
+    this.context.registerBrowserAutomationHandle?.(asPaneId(this.browserPaneId), this.createBrowserAutomationHandle());
 
     const shell = document.createElement("div");
     shell.className = "browser-pane";
@@ -952,6 +992,31 @@ export class PaneRenderer implements IContentRenderer {
       void this.injectBrowserPaneMarker();
     };
 
+    const handleHostMessage = (event: CustomEvent) => {
+      const detail = event.detail;
+      if (!detail || typeof detail !== "object") {
+        return;
+      }
+
+      const payload = detail as { __flmuxBrowserEval?: string; ok?: boolean; value?: unknown; error?: string };
+      if (typeof payload.__flmuxBrowserEval !== "string") {
+        return;
+      }
+
+      const pending = this.browserPendingMessages.get(payload.__flmuxBrowserEval);
+      if (!pending) {
+        return;
+      }
+
+      this.browserPendingMessages.delete(payload.__flmuxBrowserEval);
+      clearTimeout(pending.timer);
+      if (payload.ok === false) {
+        pending.reject(new Error(payload.error ?? "Browser evaluation failed"));
+      } else {
+        pending.resolve(payload.value);
+      }
+    };
+
     // Lazily create the webview — Electrobun navigates to a default page on DOM insert,
     // so we defer creation until the user actually navigates (same pattern as multitab-browser).
     // Set src BEFORE appending to DOM — Electrobun loads its default page on insert,
@@ -971,10 +1036,12 @@ export class PaneRenderer implements IContentRenderer {
       });
       webview.on("did-navigate", handleDidNavigate);
       webview.on("did-commit-navigation", handleDidNavigate);
+      webview.on("host-message", handleHostMessage);
 
       this.browserDisposables.push(
         () => webview.off("did-navigate", handleDidNavigate),
-        () => webview.off("did-commit-navigation", handleDidNavigate)
+        () => webview.off("did-commit-navigation", handleDidNavigate),
+        () => webview.off("host-message", handleHostMessage)
       );
 
       shell.appendChild(webview);
@@ -1066,6 +1133,7 @@ export class PaneRenderer implements IContentRenderer {
     this.disposeBrowserView();
     this.browserPaneId = this.props.api.id;
     this.browserAdapter = "web-iframe";
+    this.context.registerBrowserAutomationHandle?.(asPaneId(this.browserPaneId), this.createBrowserAutomationHandle());
 
     const shell = document.createElement("div");
     shell.className = "browser-pane";
@@ -1204,10 +1272,16 @@ export class PaneRenderer implements IContentRenderer {
 
     if (this.browserPaneId) {
       this.context.setBrowserPaneInfo?.(asPaneId(this.browserPaneId), null);
+      this.context.unregisterBrowserAutomationHandle?.(asPaneId(this.browserPaneId));
     }
     this.browserPaneId = null;
     this.browserAdapter = null;
     this.browserInput = null;
+    for (const [, pending] of this.browserPendingMessages) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error("Browser pane disposed"));
+    }
+    this.browserPendingMessages.clear();
   }
 
   private async injectBrowserPaneMarker(): Promise<void> {
@@ -1217,7 +1291,38 @@ export class PaneRenderer implements IContentRenderer {
 
     try {
       const marker = `__FLMUX_PANE__:${this.browserPaneId}`;
-      this.browserWebview.executeJavascript(`window.name = ${JSON.stringify(marker)};`);
+      this.browserWebview.executeJavascript(`
+        (() => {
+          window.name = ${JSON.stringify(marker)};
+          if (window.__flmuxBrowserRpcReady) return;
+          window.__flmuxBrowserRpcReady = true;
+          const original = window.__electrobun?.receiveMessageFromBun;
+          window.__electrobun.receiveMessageFromBun = async (msg) => {
+            if (msg?.type !== "request" || msg.method !== "evaluateJavascriptWithResponse") {
+              if (typeof original === "function") original(msg);
+              return;
+            }
+            try {
+              const resultFn = new Function(msg.params?.script ?? "");
+              let result = resultFn();
+              if (result instanceof Promise) result = await result;
+              window.__electrobunBunBridge?.postMessage(JSON.stringify({
+                type: "response",
+                id: msg.id,
+                success: true,
+                payload: result
+              }));
+            } catch (error) {
+              window.__electrobunBunBridge?.postMessage(JSON.stringify({
+                type: "response",
+                id: msg.id,
+                success: false,
+                error: error instanceof Error ? error.message : String(error)
+              }));
+            }
+          };
+        })();
+      `);
     } catch {
       // best effort
     }
@@ -1256,6 +1361,274 @@ export class PaneRenderer implements IContentRenderer {
       automationReason
     });
   }
+
+  private createBrowserAutomationHandle(): BrowserAutomationHandle {
+    return {
+      connect: async () => {
+        const paneId = this.requireBrowserPaneId();
+        this.ensureBrowserAutomationReady();
+        const [url, title] = await Promise.all([
+          this.evalBrowserScript<string>("window.location.href"),
+          this.evalBrowserScript<string>("document.title")
+        ]);
+        return {
+          ok: true,
+          paneId,
+          url,
+          title,
+          adapter: this.browserAdapter ?? "electrobun-native",
+          webviewId: typeof this.browserWebview?.webviewId === "number" ? this.browserWebview.webviewId : null
+        };
+      },
+      navigate: async ({ url, waitUntil, idleMs }) => {
+        const paneId = this.requireBrowserPaneId();
+        this.ensureBrowserAutomationReady();
+        const normalizedUrl = normalizeUrl(url);
+        this.navigateBrowser(normalizedUrl);
+        if (waitUntil !== "none") {
+          await this.waitForBrowserLoad(idleMs ?? 500, waitUntil === "idle");
+        }
+        return {
+          ok: true,
+          paneId,
+          url: await this.evalBrowserScript<string>("window.location.href")
+        };
+      },
+      get: async (field) => {
+        const paneId = this.requireBrowserPaneId();
+        this.ensureBrowserAutomationReady();
+        const value = await this.evalBrowserScript<string>(field === "url" ? "window.location.href" : "document.title");
+        return { ok: true, paneId, field, value };
+      },
+      snapshot: async ({ compact }) => {
+        const paneId = this.requireBrowserPaneId();
+        this.ensureBrowserAutomationReady();
+        const snapshot = await this.evalBrowserScript<string>(buildSnapshotExpression(!!compact));
+        return { ok: true, paneId, snapshot };
+      },
+      click: async ({ target }) => {
+        const paneId = this.requireBrowserPaneId();
+        this.ensureBrowserAutomationReady();
+        await this.evalBrowserScript(
+          `(() => {
+            const el = ${buildResolveTargetExpression(target)};
+            if (!(el instanceof HTMLElement)) throw new Error('Target not found: ' + ${JSON.stringify(target)});
+            setTimeout(() => el.click(), 0);
+            return true;
+          })()`
+        );
+        return { ok: true, paneId };
+      },
+      fill: async ({ target, text }) => {
+        const paneId = this.requireBrowserPaneId();
+        this.ensureBrowserAutomationReady();
+        await this.evalBrowserScript(
+          `(() => {
+            const el = ${buildResolveTargetExpression(target)};
+            if (!(el instanceof HTMLElement)) throw new Error('Target not found: ' + ${JSON.stringify(target)});
+            const input = el;
+            if (!('value' in input)) throw new Error('Target is not fillable: ' + ${JSON.stringify(target)});
+            input.focus();
+            const proto = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+            const nativeSet = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+            if (nativeSet) nativeSet.call(input, ${JSON.stringify(text)});
+            else input.value = ${JSON.stringify(text)};
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            return true;
+          })()`
+        );
+        return { ok: true, paneId };
+      },
+      press: async ({ key }) => {
+        const paneId = this.requireBrowserPaneId();
+        this.ensureBrowserAutomationReady();
+        await this.evalBrowserScript(
+          `(() => {
+            const target = document.activeElement instanceof HTMLElement ? document.activeElement : document.body;
+            const init = { key: ${JSON.stringify(key)}, bubbles: true, cancelable: true };
+            setTimeout(() => {
+              target.dispatchEvent(new KeyboardEvent('keydown', init));
+              target.dispatchEvent(new KeyboardEvent('keyup', init));
+            }, 0);
+            return true;
+          })()`
+        );
+        return { ok: true, paneId };
+      },
+      wait: async ({ kind, target, ms }) => {
+        const paneId = this.requireBrowserPaneId();
+        this.ensureBrowserAutomationReady();
+        if (kind === "duration") {
+          await new Promise((resolve) => setTimeout(resolve, ms ?? 0));
+        } else if (kind === "load") {
+          await this.waitForBrowserLoad(0, false);
+        } else if (kind === "idle") {
+          await this.waitForBrowserLoad(ms ?? 500, true);
+        } else {
+          await this.waitForTarget(target ?? "");
+        }
+        return { ok: true, paneId };
+      }
+    };
+  }
+
+  private requireBrowserPaneId(): PaneId {
+    if (!this.browserPaneId) {
+      throw new Error("Browser pane is not mounted");
+    }
+
+    return asPaneId(this.browserPaneId);
+  }
+
+  private ensureBrowserAutomationReady(): void {
+    if (this.browserAdapter === "web-iframe") {
+      throw new Error("iframe browser panes do not expose automation");
+    }
+    if (!this.browserWebview || typeof this.browserWebview.webviewId !== "number") {
+      throw new Error("browser pane has not finished creating its native webview");
+    }
+  }
+
+  private async evalBrowserScript<T>(expression: string, timeoutMs = 10_000): Promise<T> {
+    if (!this.browserWebview || !this.browserPaneId) {
+      throw new Error("Browser pane is not ready");
+    }
+
+    const requestId = `${this.browserPaneId}:${++this.browserMessageSeq}`;
+    const js = `
+      (() => {
+        const send = (payload) => window.__electrobunSendToHost?.({ __flmuxBrowserEval: ${JSON.stringify(requestId)}, ...payload });
+        Promise.resolve()
+          .then(() => (${expression}))
+          .then((value) => send({ ok: true, value }))
+          .catch((error) => send({ ok: false, error: error instanceof Error ? error.message : String(error) }));
+      })();
+    `;
+
+    return new Promise<T>((resolve, reject) => {
+      const webview = this.browserWebview;
+      if (!webview) {
+        reject(new Error("Browser pane is not ready"));
+        return;
+      }
+
+      const timer = setTimeout(() => {
+        this.browserPendingMessages.delete(requestId);
+        reject(new Error(`Timed out waiting for browser script: ${expression}`));
+      }, timeoutMs);
+
+      this.browserPendingMessages.set(requestId, {
+        resolve: resolve as (value: unknown) => void,
+        reject,
+        timer
+      });
+
+      try {
+        webview.executeJavascript(js);
+      } catch (error) {
+        clearTimeout(timer);
+        this.browserPendingMessages.delete(requestId);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+  }
+
+  private async waitForBrowserLoad(idleMs: number, includeIdle: boolean): Promise<void> {
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline) {
+      const ready = await this.evalBrowserScript<string>("document.readyState");
+      if (ready === "complete") {
+        if (includeIdle && idleMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, idleMs));
+        }
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    throw new Error("Timed out waiting for browser load");
+  }
+
+  private async waitForTarget(target: string): Promise<void> {
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline) {
+      const exists = await this.evalBrowserScript<boolean>(
+        `(() => !!(${buildResolveTargetExpression(target)}))()`
+      );
+      if (exists) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    throw new Error(`Timed out waiting for target: ${target}`);
+  }
+}
+
+function buildSnapshotExpression(compact: boolean): string {
+  return `(() => {
+    const selectors = [
+      'a[href]',
+      'button',
+      'input',
+      'textarea',
+      'select',
+      '[role="button"]',
+      '[role="link"]',
+      '[role="textbox"]',
+      '[role="checkbox"]',
+      '[role="radio"]',
+      '[role="tab"]',
+      '[contenteditable="true"]',
+      '[tabindex]'
+    ];
+    const seen = new Set();
+    const lines = [];
+    let counter = 0;
+    document.querySelectorAll('[data-flmux-ref]').forEach((el) => el.removeAttribute('data-flmux-ref'));
+    const isVisible = (el) => {
+      const style = window.getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+    };
+    const roleOf = (el) => {
+      return el.getAttribute('role')
+        || (el.tagName === 'A' ? 'link' : '')
+        || (el.tagName === 'BUTTON' ? 'button' : '')
+        || (el.tagName === 'TEXTAREA' ? 'textbox' : '')
+        || (el.tagName === 'SELECT' ? 'combobox' : '')
+        || (el.tagName === 'INPUT'
+          ? ({ checkbox: 'checkbox', radio: 'radio', button: 'button', submit: 'button', text: 'textbox', email: 'textbox', search: 'searchbox', password: 'textbox' }[el.type] || 'textbox')
+          : '');
+    };
+    for (const el of document.querySelectorAll(selectors.join(','))) {
+      if (!(el instanceof HTMLElement)) continue;
+      if (seen.has(el)) continue;
+      seen.add(el);
+      if (!isVisible(el)) continue;
+      const role = roleOf(el);
+      const name = (el.getAttribute('aria-label') || el.innerText || el.textContent || el.getAttribute('placeholder') || '').trim().replace(/\\s+/g, ' ');
+      const value = 'value' in el && typeof el.value === 'string' ? el.value.trim() : '';
+      if (${compact ? "true" : "false"} && !name && !value) continue;
+      counter += 1;
+      el.setAttribute('data-flmux-ref', 'e' + counter);
+      let line = '@e' + counter + ' ' + (role || 'element');
+      if (name) line += ' \"' + name.replace(/\"/g, '\\\\\"') + '\"';
+      if (value) line += ' value=\"' + value.replace(/\"/g, '\\\\\"') + '\"';
+      lines.push(line);
+    }
+    return lines.length ? lines.join('\\n') : '(no interactive elements found)';
+  })()`;
+}
+
+function buildResolveTargetExpression(target: string): string {
+  return `(() => {
+    const raw = (${JSON.stringify(target)} || '').trim();
+    if (!raw) return null;
+    if (raw.startsWith('@')) return document.querySelector('[data-flmux-ref=\"' + raw.slice(1) + '\"]');
+    return document.querySelector(raw);
+  })()`;
 }
 
 function playBellSound(): void {

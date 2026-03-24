@@ -2,6 +2,8 @@ import { defineCommand } from "citty";
 import { resolveBrowserPaneId, printJson, printPaneIds } from "../browser-utils";
 import { getClient, sessionArg } from "./_utils";
 
+const BROWSER_RPC_TIMEOUT_MS = 20_000;
+
 export default defineCommand({
   meta: { name: "browser", description: "Manage flmux browser panes" },
   subCommands: {
@@ -14,7 +16,7 @@ export default defineCommand({
       },
       run: async ({ args }) => {
         const client = await getClient(args.session);
-        const result = await client.call("browser.new", { url: args.url });
+        const result = await client.call("browser.new", { url: args.url }, BROWSER_RPC_TIMEOUT_MS);
         if (args.json) {
           printJson(result);
           return;
@@ -30,7 +32,7 @@ export default defineCommand({
       },
       run: async ({ args }) => {
         const client = await getClient(args.session);
-        const result = await client.call("browser.list", undefined);
+        const result = await client.call("browser.list", undefined, BROWSER_RPC_TIMEOUT_MS);
         if (args.json) {
           printJson(result);
           return;
@@ -47,7 +49,11 @@ export default defineCommand({
       },
       run: async ({ args }) => {
         const client = await getClient(args.session);
-        const result = await client.call("browser.focus", { paneId: resolveBrowserPaneId(args.pane) });
+        const result = await client.call(
+          "browser.focus",
+          { paneId: resolveBrowserPaneId(args.pane) },
+          BROWSER_RPC_TIMEOUT_MS
+        );
         if (args.json) {
           printJson(result);
           return;
@@ -64,7 +70,11 @@ export default defineCommand({
       },
       run: async ({ args }) => {
         const client = await getClient(args.session);
-        const result = await client.call("browser.close", { paneId: resolveBrowserPaneId(args.pane) });
+        const result = await client.call(
+          "browser.close",
+          { paneId: resolveBrowserPaneId(args.pane) },
+          BROWSER_RPC_TIMEOUT_MS
+        );
         if (args.json) {
           printJson(result);
           return;
@@ -81,7 +91,11 @@ export default defineCommand({
       },
       run: async ({ args }) => {
         const client = await getClient(args.session);
-        const result = await client.call("browser.connect", { paneId: resolveBrowserPaneId(args.pane) });
+        const result = await client.call(
+          "browser.connect",
+          { paneId: resolveBrowserPaneId(args.pane) },
+          BROWSER_RPC_TIMEOUT_MS
+        );
         if (args.json) {
           printJson(result);
           return;

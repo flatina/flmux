@@ -16,6 +16,7 @@
     "smoke:webserver": "bun tests/smoke/web-server.ts",
     "smoke:lifecycle": "bun tests/smoke/panel-lifecycle.ts",
     "smoke:browser": "bun tests/smoke/browser-about.ts",
+    "smoke:browser-cli": "bun tests/smoke/browser-automation-cli.ts",
     "smoke:layout": "bun tests/smoke/layout-restore.ts",
     "smoke:tabs": "bun tests/smoke/tab-lifecycle.ts",
     "smoke:nested": "bun tests/smoke/nested-split.ts",

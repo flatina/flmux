@@ -8,11 +8,13 @@
  */
 import { callJsonRpc } from "../../src/cli/rpc-client";
 import { getPtydControlIpcPath } from "../../src/shared/ipc-paths";
+import { resolveSession } from "../../src/cli/session-discovery";
 import { assert, sleep, waitForApp } from "./helpers";
 
 async function main() {
   const client = await waitForApp();
-  const ptyd = { ipcPath: getPtydControlIpcPath(process.cwd()) };
+  const session = await resolveSession();
+  const ptyd = { ipcPath: getPtydControlIpcPath(session.sessionId) };
 
   const s0 = await client.call("app.summary", undefined);
   const t1 = s0.panes.find((p) => p.kind === "terminal");

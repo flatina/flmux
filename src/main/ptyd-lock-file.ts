@@ -1,12 +1,11 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { PtyDaemonId } from "../shared/ids";
-import { getWorkspaceKey, normalizeWorkspaceRoot } from "../shared/ipc-paths";
+import type { PtyDaemonId, SessionId } from "../shared/ids";
 
 export interface PtydLockEntry {
   daemonId: PtyDaemonId;
-  workspaceRoot: string;
+  sessionId: SessionId;
   pid: number;
   controlIpcPath: string;
   eventsIpcPath: string;
@@ -17,8 +16,8 @@ export interface PtydLockEntry {
 export class PtydLockFile {
   readonly filePath: string;
 
-  constructor(workspaceRoot: string) {
-    this.filePath = resolvePtydLockPath(workspaceRoot);
+  constructor(sessionId: SessionId | string) {
+    this.filePath = resolvePtydLockPath(sessionId);
   }
 
   async load(): Promise<PtydLockEntry | null> {
@@ -58,8 +57,8 @@ export class PtydLockFile {
   }
 }
 
-function resolvePtydLockPath(workspaceRoot: string): string {
-  return join(tmpdir(), `flmux-ptyd-${getWorkspaceKey(workspaceRoot)}.lock`);
+function resolvePtydLockPath(sessionId: SessionId | string): string {
+  return join(tmpdir(), `flmux-ptyd-${sessionId}.lock`);
 }
 
 function isPtydLockEntry(value: unknown): value is PtydLockEntry {
@@ -70,9 +69,8 @@ function isPtydLockEntry(value: unknown): value is PtydLockEntry {
   const entry = value as Partial<PtydLockEntry>;
   return (
     typeof entry.daemonId === "string" &&
-    typeof entry.workspaceRoot === "string" &&
+    typeof entry.sessionId === "string" &&
     typeof entry.pid === "number" &&
-    entry.workspaceRoot === normalizeWorkspaceRoot(entry.workspaceRoot) &&
     typeof entry.controlIpcPath === "string" &&
     typeof entry.eventsIpcPath === "string" &&
     typeof entry.startedAt === "string" &&

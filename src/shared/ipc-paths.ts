@@ -1,26 +1,17 @@
-import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { SessionId } from "./ids";
 
-export function normalizeWorkspaceRoot(workspaceRoot: string): string {
-  const normalized = workspaceRoot.replace(/[\\/]+/g, "/");
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+export function getAppRpcIpcPath(sessionId: SessionId | string): string {
+  return resolveIpcPath(`flmux-app-${sessionId}`);
 }
 
-export function getWorkspaceKey(workspaceRoot: string): string {
-  return createHash("sha256").update(normalizeWorkspaceRoot(workspaceRoot)).digest("hex").slice(0, 16);
+export function getPtydControlIpcPath(sessionId: SessionId | string): string {
+  return resolveIpcPath(`flmux-ptyd-${sessionId}-control`);
 }
 
-export function getAppRpcIpcPath(workspaceRoot: string): string {
-  return resolveIpcPath(`flmux-app-${getWorkspaceKey(workspaceRoot)}`);
-}
-
-export function getPtydControlIpcPath(workspaceRoot: string): string {
-  return resolveIpcPath(`flmux-ptyd-${getWorkspaceKey(workspaceRoot)}-control`);
-}
-
-export function getPtydEventsIpcPath(workspaceRoot: string): string {
-  return resolveIpcPath(`flmux-ptyd-${getWorkspaceKey(workspaceRoot)}-events`);
+export function getPtydEventsIpcPath(sessionId: SessionId | string): string {
+  return resolveIpcPath(`flmux-ptyd-${sessionId}-events`);
 }
 
 function resolveIpcPath(name: string): string {

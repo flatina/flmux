@@ -2,12 +2,13 @@ import { spawn } from "node:child_process";
 import { createConnection, type Socket } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import type { HostPushMessage, HostPushPayload } from "../shared/host-rpc";
-import type { TerminalRuntimeId } from "../shared/ids";
-import { getPtydControlIpcPath, getPtydEventsIpcPath, normalizeWorkspaceRoot } from "../shared/ipc-paths";
+import type { SessionId, TerminalRuntimeId } from "../shared/ids";
+import { getPtydControlIpcPath, getPtydEventsIpcPath } from "../shared/ipc-paths";
 import { createJsonLineParser } from "../shared/json-lines";
 import { callJsonRpcIpc } from "../shared/json-rpc-ipc";
 import {
   PTYD_PROTOCOL_VERSION,
+  type PtydDaemonStatusResult,
   type PtydIdentifyResult,
   type PtydMethod,
   type PtydParams,
@@ -21,12 +22,13 @@ const PTYD_START_TIMEOUT_MS = 5_000;
 const PTYD_PING_TIMEOUT_MS = 600;
 
 export interface StartPtydClientOptions {
+  sessionId: SessionId;
   push: <Message extends HostPushMessage>(message: Message, payload: HostPushPayload<Message>) => void;
 }
 
 export class PtydClient {
   private readonly runtimes = new Map<TerminalRuntimeId, TerminalRuntimeSummary>();
-  private readonly lockFile = new PtydLockFile(resolveAppWorkingDirectory());
+  private readonly lockFile: PtydLockFile;
   private endpoint: RpcEndpoint;
   private eventsIpcPath: string;
   private eventSocket: Socket | null = null;
@@ -34,16 +36,20 @@ export class PtydClient {
   private disposed = false;
 
   private constructor(
+    private readonly sessionId: SessionId,
     private lockEntry: PtydLockEntry,
-    private readonly options: StartPtydClientOptions
+    private readonly options: Omit<StartPtydClientOptions, "sessionId">
   ) {
+    this.lockFile = new PtydLockFile(sessionId);
     this.endpoint = toRpcEndpoint(lockEntry);
     this.eventsIpcPath = lockEntry.eventsIpcPath;
   }
 
   static async start(options: StartPtydClientOptions): Promise<PtydClient> {
-    const lockEntry = await ensurePtydStarted();
-    const client = new PtydClient(lockEntry, options);
+    const lockEntry = await ensurePtydStarted(options.sessionId);
+    const client = new PtydClient(options.sessionId, lockEntry, {
+      push: options.push
+    });
     await client.refreshRuntimes();
     client.connectEventStream();
     return client;
@@ -89,6 +95,10 @@ export class PtydClient {
     } catch {
       // best effort — daemon may already be gone
     }
+  }
+
+  async getDaemonStatus(): Promise<PtydDaemonStatusResult> {
+    return this.call("daemon.status", undefined);
   }
 
   async dispose(): Promise<void> {
@@ -179,7 +189,7 @@ export class PtydClient {
       return;
     }
 
-    this.lockEntry = await ensurePtydStarted(this.lockFile);
+    this.lockEntry = await ensurePtydStarted(this.sessionId, this.lockFile);
     this.endpoint = toRpcEndpoint(this.lockEntry);
     this.eventsIpcPath = this.lockEntry.eventsIpcPath;
     await this.refreshRuntimes();
@@ -188,10 +198,9 @@ export class PtydClient {
   }
 }
 
-async function ensurePtydStarted(lockFile = new PtydLockFile(resolveAppWorkingDirectory())): Promise<PtydLockEntry> {
-  const workspaceRoot = resolveAppWorkingDirectory();
-  const controlIpcPath = getPtydControlIpcPath(workspaceRoot);
-  const eventsIpcPath = getPtydEventsIpcPath(workspaceRoot);
+async function ensurePtydStarted(sessionId: SessionId, lockFile = new PtydLockFile(sessionId)): Promise<PtydLockEntry> {
+  const controlIpcPath = getPtydControlIpcPath(sessionId);
+  const eventsIpcPath = getPtydEventsIpcPath(sessionId);
   const existing = await lockFile.load();
   if (existing && (await isPtydReachable(existing))) {
     return existing;
@@ -199,7 +208,7 @@ async function ensurePtydStarted(lockFile = new PtydLockFile(resolveAppWorkingDi
 
   const identified = await identifyPtyd(controlIpcPath);
   if (identified && identified.protocolVersion === PTYD_PROTOCOL_VERSION) {
-    const recovered = toLockEntry(workspaceRoot, identified, eventsIpcPath);
+    const recovered = toLockEntry(sessionId, identified, eventsIpcPath);
     await lockFile.write(recovered);
     return recovered;
   }
@@ -217,7 +226,8 @@ async function ensurePtydStarted(lockFile = new PtydLockFile(resolveAppWorkingDi
     env: {
       ...process.env,
       FLMUX_PTYD_MANAGED: "1",
-      FLMUX_ROOT: workspaceRoot
+      FLMUX_PTYD_SESSION_ID: sessionId,
+      FLMUX_ROOT: resolveAppWorkingDirectory()
     }
   }).unref();
 
@@ -234,7 +244,7 @@ async function ensurePtydStarted(lockFile = new PtydLockFile(resolveAppWorkingDi
 
     const nextIdentify = await identifyPtyd(controlIpcPath);
     if (nextIdentify && nextIdentify.protocolVersion === PTYD_PROTOCOL_VERSION) {
-      const recovered = toLockEntry(workspaceRoot, nextIdentify, eventsIpcPath);
+      const recovered = toLockEntry(sessionId, nextIdentify, eventsIpcPath);
       await lockFile.write(recovered);
       return recovered;
     }
@@ -283,13 +293,13 @@ function toRpcEndpoint(lockEntry: PtydLockEntry): RpcEndpoint {
 }
 
 function toLockEntry(
-  workspaceRoot: string,
+  sessionId: SessionId,
   identify: PtydIdentifyResult,
-  eventsIpcPath = getPtydEventsIpcPath(workspaceRoot)
+  eventsIpcPath = getPtydEventsIpcPath(sessionId)
 ): PtydLockEntry {
   return {
     daemonId: identify.daemonId,
-    workspaceRoot: normalizeWorkspaceRoot(workspaceRoot),
+    sessionId,
     pid: identify.pid,
     controlIpcPath: identify.controlIpcPath,
     eventsIpcPath: identify.eventsIpcPath || eventsIpcPath,

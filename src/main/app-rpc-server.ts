@@ -11,6 +11,7 @@ export interface StartAppRpcServerOptions {
   ipcPath: string;
   pid?: number;
   platform?: string;
+  requestQuit?: () => void;
 }
 
 export interface StartedAppRpcServer {
@@ -25,7 +26,8 @@ export async function startAppRpcServer(options: StartAppRpcServerOptions): Prom
       workspace: options.workspace,
       sessionId: options.sessionId,
       pid: options.pid,
-      platform: options.platform
+      platform: options.platform,
+      requestQuit: options.requestQuit
     })
   );
 

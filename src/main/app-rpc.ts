@@ -79,6 +79,7 @@ export interface CreateAppRpcHandlersOptions {
   sessionId: SessionId;
   pid?: number;
   platform?: string;
+  requestQuit?: () => void;
 }
 
 export class AppRpcDispatcher {
@@ -139,7 +140,7 @@ export function createAppRpcHandlers(options: CreateAppRpcHandlersOptions): AppR
     "browser.forward": (params) => options.workspace.browserForward(params),
     "browser.reload": (params) => options.workspace.browserReload(params),
     "app.quit": () => {
-      setTimeout(() => process.exit(0), 100);
+      options.requestQuit?.();
       return { ok: true };
     }
   };

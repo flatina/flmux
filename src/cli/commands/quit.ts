@@ -2,7 +2,7 @@ import { defineCommand } from "citty";
 import { getClient, sessionArg } from "./_utils";
 
 export default defineCommand({
-  meta: { name: "quit", description: "Quit the running flmux app (and ptyd if configured)" },
+  meta: { name: "quit", description: "Quit the running flmux app" },
   args: { ...sessionArg },
   run: async ({ args }) => {
     const client = await getClient(args.session);

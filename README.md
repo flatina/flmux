@@ -15,7 +15,7 @@ Terminal/Browser on Dockview on Electrobun with some additional features.
 - CodeMirror(https://codemirror.net/) based text editor tab
 - File explorer tab
 - Extensions tab for additional content
-- external ptyd process: sessions persist even if flmux crashes
+- external ptyd process: terminal sessions survive flmux crashes
 - Web access: Open the same workspace in a browser via WebSocket
 - CLI Script: create panes, switch tabs, send events
 
@@ -92,6 +92,7 @@ flmux split --direction right           # split current terminal
 flmux edit myfile.ts                    # open file in editor
 flmux explorer .                        # open file explorer
 flmux tab list                          # list workspace tabs
+flmux ptyd status --session <id>        # show daemon lifecycle state
 flmux quit                              # close the app
 ```
 
@@ -172,9 +173,6 @@ level = "info"             # error | warn | info | debug
 enabled = false            # web UI server
 host = "127.0.0.1"
 port = 3000
-
-[ptyd]
-stopOnExit = true          # stop terminal daemon on app exit
 ```
 
 ## Extensions

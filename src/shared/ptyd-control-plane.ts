@@ -1,8 +1,8 @@
-import type { PtyDaemonId, TerminalRuntimeId } from "./ids";
+import type { PtyDaemonId, SessionId, TerminalRuntimeId } from "./ids";
 import type { TerminalRenderer } from "./pane-params";
 import type { TerminalRuntimeSummary } from "./rpc";
 
-export const PTYD_PROTOCOL_VERSION = "1";
+export const PTYD_PROTOCOL_VERSION = "4";
 
 export interface PtydPingResult {
   pong: true;
@@ -11,6 +11,7 @@ export interface PtydPingResult {
 export interface PtydIdentifyResult {
   app: "flmux-ptyd";
   daemonId: PtyDaemonId;
+  sessionId: SessionId;
   pid: number;
   controlIpcPath: string;
   eventsIpcPath: string;
@@ -20,6 +21,18 @@ export interface PtydIdentifyResult {
 
 export interface PtydTerminalListResult {
   terminals: TerminalRuntimeSummary[];
+}
+
+export interface PtydDaemonStatusResult {
+  ok: true;
+  daemonId: PtyDaemonId;
+  sessionId: SessionId;
+  pid: number;
+  controlIpcPath: string;
+  eventsIpcPath: string;
+  startedAt: string;
+  protocolVersion: string;
+  terminalCount: number;
 }
 
 export interface PtydTerminalCreateParams {
@@ -121,6 +134,10 @@ export interface PtydMethodMap {
   "daemon.stop": {
     params: undefined;
     result: PtydStopResult;
+  };
+  "daemon.status": {
+    params: undefined;
+    result: PtydDaemonStatusResult;
   };
 }
 

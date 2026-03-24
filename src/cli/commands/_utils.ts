@@ -2,6 +2,7 @@ import type { SessionId } from "../../shared/ids";
 import { getPtydControlIpcPath } from "../../shared/ipc-paths";
 import type { AppRpcClient } from "../app-rpc-client";
 import { resolveAppRpcClient } from "../context";
+import { resolveSession } from "../session-discovery";
 
 export function output(value: unknown): void {
   console.log(JSON.stringify(value, null, 2));
@@ -12,9 +13,25 @@ export async function getClient(sessionId?: string): Promise<AppRpcClient> {
   return client;
 }
 
-export function getPtydEndpoint(): { ipcPath: string } {
+export async function getPtydEndpoint(sessionId?: string): Promise<{ ipcPath: string }> {
+  if (!sessionId) {
+    const envSessionId = process.env.FLMUX_SESSION_ID?.trim();
+    if (envSessionId) {
+      return {
+        ipcPath: getPtydControlIpcPath(envSessionId)
+      };
+    }
+  }
+
+  if (sessionId) {
+    return {
+      ipcPath: getPtydControlIpcPath(sessionId)
+    };
+  }
+
+  const session = await resolveSession();
   return {
-    ipcPath: getPtydControlIpcPath(process.env.FLMUX_ROOT ?? process.cwd())
+    ipcPath: getPtydControlIpcPath(session.sessionId)
   };
 }
 

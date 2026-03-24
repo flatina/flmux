@@ -7,6 +7,8 @@
  *   bun tests/e2e/run.ts terminal-flmux-cli       → run specific test
  */
 import { resolve } from "node:path";
+import { getPtydControlIpcPath } from "../../src/shared/ipc-paths";
+import { callJsonRpcIpc } from "../../src/shared/json-rpc-ipc";
 import { waitForApp } from "../smoke/helpers";
 
 const projectRoot = resolve(import.meta.dir, "../..");
@@ -68,16 +70,32 @@ async function main() {
     }
   } finally {
     console.log("Stopping app...");
+    let sessionId: string | null = null;
     try {
       const client = await waitForApp(3000, 500);
+      const identify = await client.call("system.identify", undefined);
+      sessionId = identify.sessionId;
       await client.call("app.quit", undefined);
     } catch {
       // fallback to kill
     }
     app.kill();
     await app.exited;
-    // Wait for ptyd to shut down
-    await new Promise((r) => setTimeout(r, 2000));
+    if (sessionId) {
+      try {
+        await callJsonRpcIpc(
+          {
+            ipcPath: getPtydControlIpcPath(sessionId)
+          },
+          "daemon.stop",
+          undefined,
+          1000
+        );
+      } catch {
+        // best effort cleanup
+      }
+    }
+    await new Promise((r) => setTimeout(r, 1000));
     console.log("Done.");
   }
 }

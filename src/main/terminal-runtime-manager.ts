@@ -2,7 +2,7 @@ import { basename } from "node:path";
 import { loadTerminalHooks } from "./terminal-env-config";
 import { type IPty, spawn } from "bun-pty";
 import type { HostPushMessage, HostPushPayload, HostRpcParams, HostRpcResult } from "../shared/host-rpc";
-import type { TerminalRuntimeId } from "../shared/ids";
+import type { SessionId, TerminalRuntimeId } from "../shared/ids";
 import { getAppRpcIpcPath } from "../shared/ipc-paths";
 import type { TerminalRuntimeSummary } from "../shared/rpc";
 
@@ -13,6 +13,7 @@ interface TerminalRuntimeRecord {
 
 interface TerminalRuntimeManagerOptions {
   defaultCwd: string;
+  sessionId: SessionId;
   defaultShell?: string | null;
   push: <Message extends HostPushMessage>(message: Message, payload: HostPushPayload<Message>) => void;
 }
@@ -71,7 +72,7 @@ export class TerminalRuntimeManager {
       cols,
       rows,
       name: resolveTerminalName(),
-      env: createPtyEnv(wsRoot, params.paneId ?? null)
+      env: createPtyEnv(wsRoot, this.options.sessionId, params.paneId ?? null)
     });
 
     const record: TerminalRuntimeRecord = {
@@ -267,7 +268,7 @@ function resolveTerminalName(): string {
   return process.platform === "win32" ? "xterm-color" : "xterm-256color";
 }
 
-function createPtyEnv(workspaceRoot: string, paneId: string | null): Record<string, string> {
+function createPtyEnv(workspaceRoot: string, sessionId: SessionId, paneId: string | null): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (typeof value === "string") {
@@ -277,7 +278,8 @@ function createPtyEnv(workspaceRoot: string, paneId: string | null): Record<stri
 
   const effectiveRoot = workspaceRoot || process.env.FLMUX_ROOT || process.cwd();
   env.TERM = process.platform === "win32" ? "xterm-color" : "xterm-256color";
-  env.FLMUX_APP_IPC = getAppRpcIpcPath(effectiveRoot);
+  env.FLMUX_APP_IPC = getAppRpcIpcPath(sessionId);
+  env.FLMUX_SESSION_ID = sessionId;
   env.FLMUX_ROOT = effectiveRoot;
   if (paneId) {
     env.FLMUX_PANE_ID = paneId;

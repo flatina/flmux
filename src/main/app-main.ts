@@ -28,6 +28,7 @@ import {
 } from "./extension-discovery";
 import { FlmuxLastStore } from "./flmux-last-store";
 import { PtydClient } from "./ptyd-client";
+import { resolveStartupSessionId } from "./ptyd-session-recovery";
 import { RendererWorkspaceBridge } from "./renderer-workspace-bridge";
 import { resolveAppWorkingDirectory, resolveWorkspaceRoot } from "./runtime-paths";
 import { startWebServer } from "./web-server";
@@ -53,10 +54,11 @@ export async function runAppMain(): Promise<void> {
   const config = loadConfig();
   const shouldRestore =
     config.app.restoreLayout && !process.argv.includes("--fresh") && process.env.FLMUX_FRESH !== "1";
-  const sessionId = createSessionId();
+  const sessionId = (await resolveStartupSessionId()) ?? createSessionId();
   const flmuxLastStore = new FlmuxLastStore();
   const initialRestoreFile = shouldRestore ? await flmuxLastStore.load() : null;
   const workspaceCwd = resolveAppWorkingDirectory();
+  const appRpcIpcPath = getAppRpcIpcPath(sessionId);
   process.env.FLMUX_ROOT = workspaceCwd;
   setLogLevel(config.log.level);
   info("app", `starting session=${sessionId} root=${workspaceCwd}`);
@@ -90,6 +92,7 @@ export async function runAppMain(): Promise<void> {
   };
 
   const ptydClient = await PtydClient.start({
+    sessionId,
     push: publishHostMessage
   });
   info("ptyd", `connected terminals=${ptydClient.list().length}`);
@@ -226,7 +229,7 @@ export async function runAppMain(): Promise<void> {
       return { ok: true, maximized: true };
     },
     "window.close": async () => {
-      mainWindow.close();
+      requestQuit();
       return { ok: true };
     },
     "window.frame.get": async () => {
@@ -365,9 +368,10 @@ export async function runAppMain(): Promise<void> {
     workspace,
     sessionId,
     workspaceRoot: workspaceCwd,
-    ipcPath: getAppRpcIpcPath(workspaceCwd),
+    ipcPath: appRpcIpcPath,
     pid: process.pid,
-    platform: process.platform
+    platform: process.platform,
+    requestQuit
   });
 
   // Web UI server (optional, enabled via [web] in flmux.toml)
@@ -399,6 +403,15 @@ export async function runAppMain(): Promise<void> {
   process.on("SIGTERM", () => {
     void shutdown().finally(() => process.exit(0));
   });
+
+  function requestQuit(): void {
+    try {
+      mainWindow.close();
+    } catch {
+      // best effort
+    }
+    void shutdown();
+  }
 
   async function shutdown(): Promise<void> {
     if (shuttingDown) {
@@ -432,9 +445,7 @@ export async function runAppMain(): Promise<void> {
       appRpcServer = null;
     }
 
-    if (config.ptyd.stopOnExit) {
-      await ptydClient.stopDaemon();
-    }
+    await ptydClient.stopDaemon();
     await ptydClient.dispose();
     webServer.stop();
     webUiServer?.stop();

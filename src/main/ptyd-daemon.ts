@@ -1,11 +1,13 @@
+import { spawn } from "node:child_process";
 import { createServer, type Server, type Socket } from "node:net";
-import { asPtyDaemonId, type PtyDaemonId, type TerminalRuntimeId } from "../shared/ids";
-import { getPtydControlIpcPath, getPtydEventsIpcPath, normalizeWorkspaceRoot } from "../shared/ipc-paths";
+import { asPtyDaemonId, asSessionId, type PtyDaemonId, type SessionId, type TerminalRuntimeId } from "../shared/ids";
+import { getPtydControlIpcPath, getPtydEventsIpcPath } from "../shared/ipc-paths";
 import { cleanupIpcListenerPath, prepareIpcListenerPath } from "../shared/ipc-socket";
 import { toJsonLine } from "../shared/json-lines";
 import { startJsonRpcIpcServer } from "../shared/json-rpc-ipc";
 import {
   PTYD_PROTOCOL_VERSION,
+  type PtydDaemonStatusResult,
   type PtydIdentifyResult,
   type PtydMethod,
   type PtydParams,
@@ -20,18 +22,19 @@ const MAX_HISTORY_BYTES = 200_000;
 
 export async function runPtydDaemonProcess(): Promise<void> {
   const daemonId = asPtyDaemonId(crypto.randomUUID());
+  const sessionId = asSessionId(process.env.FLMUX_PTYD_SESSION_ID?.trim() || crypto.randomUUID());
   const startedAt = new Date().toISOString();
   const defaultCwd = resolveAppWorkingDirectory();
-  const workspaceRoot = normalizeWorkspaceRoot(defaultCwd);
-  const controlIpcPath = getPtydControlIpcPath(defaultCwd);
-  const eventsIpcPath = getPtydEventsIpcPath(defaultCwd);
-  const lockFile = new PtydLockFile(defaultCwd);
+  const controlIpcPath = getPtydControlIpcPath(sessionId);
+  const eventsIpcPath = getPtydEventsIpcPath(sessionId);
+  const lockFile = new PtydLockFile(sessionId);
   const subscribers = new Set<Socket>();
   const outputHistory = new Map<TerminalRuntimeId, string>();
   let shuttingDown = false;
 
   const terminalRuntimeManager = new TerminalRuntimeManager({
     defaultCwd,
+    sessionId,
     push: (_message, payload) => {
       handleTerminalEvent(payload as TerminalRuntimeEvent);
     }
@@ -42,6 +45,7 @@ export async function runPtydDaemonProcess(): Promise<void> {
     invoke: async (method, params) => {
       return invokePtydMethod(method as PtydMethod, params as PtydParams<PtydMethod>, {
         daemonId,
+        sessionId,
         controlIpcPath,
         eventsIpcPath,
         startedAt,
@@ -55,7 +59,7 @@ export async function runPtydDaemonProcess(): Promise<void> {
 
   const lockEntry: PtydLockEntry = {
     daemonId,
-    workspaceRoot,
+    sessionId,
     pid: process.pid,
     controlIpcPath,
     eventsIpcPath,
@@ -64,6 +68,7 @@ export async function runPtydDaemonProcess(): Promise<void> {
   };
 
   await lockFile.write(lockEntry);
+  spawnPtydTrayHelper(controlIpcPath);
 
   process.on("SIGINT", () => {
     void shutdown().finally(() => process.exit(0));
@@ -118,6 +123,7 @@ async function invokePtydMethod<Method extends PtydMethod>(
   params: PtydParams<Method>,
   context: {
     daemonId: PtyDaemonId;
+    sessionId: SessionId;
     controlIpcPath: string;
     eventsIpcPath: string;
     startedAt: string;
@@ -133,6 +139,7 @@ async function invokePtydMethod<Method extends PtydMethod>(
       const result: PtydIdentifyResult = {
         app: "flmux-ptyd",
         daemonId: context.daemonId,
+        sessionId: context.sessionId,
         pid: process.pid,
         controlIpcPath: context.controlIpcPath,
         eventsIpcPath: context.eventsIpcPath,
@@ -168,6 +175,20 @@ async function invokePtydMethod<Method extends PtydMethod>(
         void context.shutdown();
       });
       return { ok: true } as PtydResult<Method>;
+    case "daemon.status": {
+      const result: PtydDaemonStatusResult = {
+        ok: true,
+        daemonId: context.daemonId,
+        sessionId: context.sessionId,
+        pid: process.pid,
+        controlIpcPath: context.controlIpcPath,
+        eventsIpcPath: context.eventsIpcPath,
+        startedAt: context.startedAt,
+        protocolVersion: PTYD_PROTOCOL_VERSION,
+        terminalCount: context.terminalRuntimeManager.list().length
+      };
+      return result as PtydResult<Method>;
+    }
   }
 }
 
@@ -221,4 +242,106 @@ async function stopEventStreamServer(server: Server, ipcPath: string, subscriber
     });
   });
   await cleanupIpcListenerPath(ipcPath);
+}
+
+function spawnPtydTrayHelper(controlIpcPath: string): boolean {
+  if (process.platform !== "win32") {
+    return false;
+  }
+
+  const shell = Bun.which("pwsh.exe") ?? Bun.which("pwsh") ?? Bun.which("powershell.exe") ?? Bun.which("powershell");
+  if (!shell) {
+    return false;
+  }
+
+  const script = createWindowsTrayScript();
+  const encoded = Buffer.from(script, "utf16le").toString("base64");
+
+  try {
+    spawn(shell, ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-EncodedCommand", encoded], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+      env: {
+        ...process.env,
+        FLMUX_PTYD_CONTROL_IPC: controlIpcPath
+      }
+    }).unref();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function createWindowsTrayScript(): string {
+  return `
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+$controlIpc = $env:FLMUX_PTYD_CONTROL_IPC
+if (-not $controlIpc) { exit 0 }
+$pipeName = $controlIpc -replace '^\\\\\\\\\\.\\\\pipe\\\\', ''
+
+function Invoke-Rpc($method, $params = $null, $timeoutMs = 1200) {
+  $client = New-Object System.IO.Pipes.NamedPipeClientStream('.', $pipeName, [System.IO.Pipes.PipeDirection]::InOut)
+  try {
+    $client.Connect($timeoutMs)
+    $writer = New-Object System.IO.StreamWriter($client)
+    $reader = New-Object System.IO.StreamReader($client)
+    $writer.AutoFlush = $true
+    $id = [guid]::NewGuid().ToString()
+    $payload = @{ jsonrpc = '2.0'; id = $id; method = $method; params = $params } | ConvertTo-Json -Compress -Depth 10
+    $writer.WriteLine($payload)
+    $line = $reader.ReadLine()
+    if (-not $line) { return $null }
+    $response = $line | ConvertFrom-Json
+    if ($response.error) { throw $response.error.message }
+    return $response.result
+  }
+  finally {
+    $client.Dispose()
+  }
+}
+
+$notify = New-Object System.Windows.Forms.NotifyIcon
+$notify.Icon = [System.Drawing.SystemIcons]::Application
+$notify.Text = 'flmux ptyd'
+$notify.Visible = $true
+
+$menu = New-Object System.Windows.Forms.ContextMenuStrip
+$statusItem = $menu.Items.Add('flmux ptyd')
+$statusItem.Enabled = $false
+$stopItem = $menu.Items.Add('Stop ptyd')
+$notify.ContextMenuStrip = $menu
+
+function Cleanup-AndExit {
+  $timer.Stop()
+  $timer.Dispose()
+  $notify.Visible = $false
+  $notify.Dispose()
+  [System.Windows.Forms.Application]::ExitThread()
+}
+
+$stopItem.Add_Click({
+  try { Invoke-Rpc 'daemon.stop' $null | Out-Null } catch {}
+  Cleanup-AndExit
+})
+
+$timer = New-Object System.Windows.Forms.Timer
+$timer.Interval = 2000
+$timer.Add_Tick({
+  try {
+    $status = Invoke-Rpc 'daemon.status' $null
+    if (-not $status) { Cleanup-AndExit; return }
+    $statusItem.Text = \"Session $($status.sessionId.Substring(0, 8)) | terminals: $($status.terminalCount)\"
+    $tooltip = \"flmux ptyd ($($status.terminalCount) terminals)\"
+    $notify.Text = $tooltip.Substring(0, [Math]::Min(63, $tooltip.Length))
+  }
+  catch {
+    Cleanup-AndExit
+  }
+})
+$timer.Start()
+[System.Windows.Forms.Application]::Run()
+`;
 }

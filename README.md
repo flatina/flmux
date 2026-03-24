@@ -95,6 +95,61 @@ flmux tab list                          # list workspace tabs
 flmux quit                              # close the app
 ```
 
+### Browser Automation
+
+`flmux browser` manages browser panes. `flweb` is the hot-path browser automation CLI.
+
+Typical workflow:
+
+```powershell
+$env:FLMUX_BROWSER = (flmux browser new https://example.com)
+flmux browser connect
+flweb snapshot --compact
+flweb click @e1
+flweb wait load
+flweb get url
+```
+
+Current browser pane management commands:
+
+```powershell
+flmux browser new https://example.com
+flmux browser list
+flmux browser connect --json
+flmux browser focus
+flmux browser close
+```
+
+Current `flweb` commands:
+
+```powershell
+flweb snapshot --compact
+flweb navigate https://example.com/docs
+flweb click @e1
+flweb fill @e3 "hello"
+flweb press Enter
+flweb wait load
+flweb wait "#result:not([hidden])"
+flweb get url
+flweb get title
+flweb get text @e1
+flweb get html #result
+flweb get value @e3
+flweb get attr @e4 placeholder
+flweb eval "document.title"
+flweb back
+flweb forward
+flweb reload
+```
+
+Automation targets are explicit:
+
+- `--pane <paneId>`
+- or `FLMUX_BROWSER`
+- otherwise the command errors
+
+Refs like `@e1` come from `flweb snapshot`. Re-run `snapshot` after page changes if a ref becomes stale.
+
 ## Configuration
 
 `flmux.toml` in the project root:

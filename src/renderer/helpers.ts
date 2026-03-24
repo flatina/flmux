@@ -7,7 +7,7 @@ import {
   type PaneParams,
   type TerminalPaneParams
 } from "../shared/pane-params";
-import { isLayoutableTabParams, isTabParams } from "../shared/tab-params";
+import { createSimpleTabParams, isLayoutableTabParams, isTabParams } from "../shared/tab-params";
 
 export function buildPaneHeader(kind: string, status: string): HTMLElement {
   const header = document.createElement("div");
@@ -75,13 +75,24 @@ export function sanitizeSerializedLayout(layout: SerializedDockview): {
   for (const panel of Object.values(nextLayout.panels)) {
     const params = panel.params;
 
-    if (isBrowserPaneParams(params)) {
-      const normalizedUrl = normalizeBrowserUrlValue(params.url);
+    if (isLegacyExtensionTabParams(params)) {
+      panel.params = createSimpleTabParams({
+        kind: "extension",
+        extensionId: params.ownerExtensionId,
+        contributionId: params.contributionId
+      });
+      changed = true;
+    }
+
+    const canonicalParams = panel.params;
+
+    if (isBrowserPaneParams(canonicalParams)) {
+      const normalizedUrl = normalizeBrowserUrlValue(canonicalParams.url);
       const normalizedTitle = browserTitleFromUrl(normalizedUrl);
 
-      if (normalizedUrl !== params.url) {
+      if (normalizedUrl !== canonicalParams.url) {
         panel.params = {
-          ...params,
+          ...canonicalParams,
           url: normalizedUrl
         };
         changed = true;
@@ -94,10 +105,10 @@ export function sanitizeSerializedLayout(layout: SerializedDockview): {
     }
 
     // Recursively sanitize inner layouts in layoutable tabs
-    if (isLayoutableTabParams(params) && params.innerLayout) {
-      const innerResult = sanitizeSerializedLayout(params.innerLayout as SerializedDockview);
+    if (isLayoutableTabParams(canonicalParams) && canonicalParams.innerLayout) {
+      const innerResult = sanitizeSerializedLayout(canonicalParams.innerLayout as SerializedDockview);
       if (innerResult.changed) {
-        panel.params = { ...params, innerLayout: innerResult.layout };
+        panel.params = { ...canonicalParams, innerLayout: innerResult.layout };
         changed = true;
       }
     }
@@ -225,7 +236,23 @@ export function migrateV1Layout(layout: SerializedDockview): SerializedDockview 
     if (!kind) {
       continue;
     }
-    panel.params = { tabKind: "tab", layoutMode: "simple", paneKind: kind, ...params };
+    panel.params = createSimpleTabParams(params as PaneParams);
   }
   return migrated;
+}
+
+function isLegacyExtensionTabParams(
+  value: unknown
+): value is { tabKind: "tab"; layoutMode: "simple"; ownerExtensionId: string; contributionId: string } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const params = value as Record<string, unknown>;
+  return (
+    params.tabKind === "tab" &&
+    params.layoutMode === "simple" &&
+    typeof params.ownerExtensionId === "string" &&
+    typeof params.contributionId === "string"
+  );
 }

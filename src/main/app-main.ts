@@ -196,8 +196,6 @@ export async function runAppMain(): Promise<void> {
         return { ok: false, error: String(error) };
       }
     },
-    "fs.watch": async () => ({ ok: true }),
-    "fs.unwatch": async () => ({ ok: true }),
     "window.minimize": async () => {
       mainWindow.minimize();
       return { ok: true };

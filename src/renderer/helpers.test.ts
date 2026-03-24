@@ -44,7 +44,6 @@ describe("isV1Layout / migrateV1Layout", () => {
     const termPanel = (migrated.panels as Record<string, any>)["pane.abc"];
     expect(termPanel.params.tabKind).toBe("tab");
     expect(termPanel.params.layoutMode).toBe("simple");
-    expect(termPanel.params.paneKind).toBe("terminal");
     expect(termPanel.params.kind).toBe("terminal");
     expect(termPanel.params.runtimeId).toBe("rt.abc");
   });
@@ -53,7 +52,7 @@ describe("isV1Layout / migrateV1Layout", () => {
     const migrated = migrateV1Layout(v1Layout);
     const browserPanel = (migrated.panels as Record<string, any>)["pane.def"];
     expect(browserPanel.params.tabKind).toBe("tab");
-    expect(browserPanel.params.paneKind).toBe("browser");
+    expect(browserPanel.params.kind).toBe("browser");
     expect(browserPanel.params.url).toBe("https://example.com");
   });
 

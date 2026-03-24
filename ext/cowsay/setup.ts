@@ -2,18 +2,16 @@ import type { ExtensionSetup } from "../../src/shared/extension-abi";
 
 export default {
   onInit(ctx) {
-    // Register a singleton workspace tab for cowsay
     const tab = ctx.registerWorkspaceTab({
       id: "cowsay",
-      title: "Cowsay",
+      title: "Cowsay Lab",
       singleton: true
     });
 
-    // Register 🐮 group action that opens cowsay as singleton pane
-    const action = ctx.registerGroupAction({
+    const paneAction = ctx.registerGroupAction({
       id: "moo",
       icon: "\u{1F42E}",
-      tooltip: "Open Cowsay",
+      tooltip: "Open Cowsay Pane",
       order: 50,
       run(actionCtx) {
         actionCtx.openPane(
@@ -24,6 +22,16 @@ export default {
       }
     });
 
+    const tabAction = ctx.registerGroupAction({
+      id: "moo-tab",
+      icon: "Lab",
+      tooltip: "Open Cowsay Workspace Tab",
+      order: 55,
+      run(actionCtx) {
+        actionCtx.openWorkspaceTab("cowsay");
+      }
+    });
+
     const hide = ctx.onCreateGroupActions(() => {
       // actions.hide("browser", "explorer"); // example
     });
@@ -31,7 +39,8 @@ export default {
     return {
       [Symbol.dispose]() {
         tab[Symbol.dispose]();
-        action[Symbol.dispose]();
+        paneAction[Symbol.dispose]();
+        tabAction[Symbol.dispose]();
         hide[Symbol.dispose]();
       }
     };

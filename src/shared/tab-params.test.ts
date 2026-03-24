@@ -3,7 +3,15 @@ import { isLayoutableTabParams, isTabParams } from "./tab-params";
 
 describe("isTabParams", () => {
   test("accepts simple tab", () => {
-    expect(isTabParams({ tabKind: "tab", layoutMode: "simple", paneKind: "browser" })).toBe(true);
+    expect(
+      isTabParams({
+        tabKind: "tab",
+        layoutMode: "simple",
+        kind: "browser",
+        url: "https://example.com",
+        adapter: "electrobun-native"
+      })
+    ).toBe(true);
   });
 
   test("accepts layoutable tab", () => {
@@ -31,7 +39,15 @@ describe("isLayoutableTabParams", () => {
   });
 
   test("rejects simple tab", () => {
-    expect(isLayoutableTabParams({ tabKind: "tab", layoutMode: "simple", paneKind: "browser" })).toBe(false);
+    expect(
+      isLayoutableTabParams({
+        tabKind: "tab",
+        layoutMode: "simple",
+        kind: "browser",
+        url: "https://example.com",
+        adapter: "electrobun-native"
+      })
+    ).toBe(false);
   });
 
   test("rejects non-tab", () => {

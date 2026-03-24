@@ -94,7 +94,6 @@ export type PaneCreateInput =
       title?: string;
       rootPath?: string;
       mode?: ExplorerMode;
-      watchEnabled?: boolean;
     }
   | {
       kind: "extension";

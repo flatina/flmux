@@ -29,7 +29,6 @@ export interface ExplorerPaneParams {
   kind: "explorer";
   rootPath: string;
   mode: ExplorerMode;
-  watchEnabled: boolean;
 }
 
 export interface ExtensionPaneParams {
@@ -135,8 +134,7 @@ export function createPaneParams<Kind extends PaneKind>(
       return {
         kind,
         rootPath: explorerOverrides.rootPath ?? ".",
-        mode: explorerOverrides.mode ?? "filetree",
-        watchEnabled: explorerOverrides.watchEnabled ?? true
+        mode: explorerOverrides.mode ?? "filetree"
       } as PaneParamsByKind[Kind];
     }
     case "extension": {

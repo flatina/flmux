@@ -96,6 +96,5 @@ describe("createPaneParams", () => {
     const params = createPaneParams("explorer");
     expect(params.kind).toBe("explorer");
     expect(params.mode).toBe("filetree");
-    expect(params.watchEnabled).toBe(true);
   });
 });

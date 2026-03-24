@@ -76,14 +76,6 @@ export interface HostRpcMethodMap {
     params: { path: string; content: string };
     result: { ok: true } | { ok: false; error: string };
   };
-  "fs.watch": {
-    params: { paths: string[] };
-    result: { ok: true } | { ok: false; path: string; error: string };
-  };
-  "fs.unwatch": {
-    params: { paths: string[] };
-    result: { ok: true };
-  };
   "window.minimize": {
     params: undefined;
     result: { ok: true };
@@ -165,10 +157,6 @@ export interface HostRpcMethodMap {
 }
 
 export interface HostPushMessageMap {
-  "fs.changed": {
-    path: string;
-    entries: FsEntry[];
-  };
   "flmuxLast.changed": {
     file: FlmuxLastFile | null;
   };

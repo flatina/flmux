@@ -1,13 +1,12 @@
 import type { PaneId } from "./ids";
-import type { PaneKind } from "./pane-params";
+import { isPaneParams, type PaneParams } from "./pane-params";
 
 export type LayoutMode = "simple" | "stack" | "layoutable";
 
-export interface SimpleTabParams {
+export type SimpleTabParams = {
   tabKind: "tab";
   layoutMode: "simple";
-  paneKind: PaneKind;
-}
+} & PaneParams;
 
 export interface StackTabParams {
   tabKind: "tab";
@@ -21,15 +20,7 @@ export interface LayoutableTabParams {
   activePaneId: PaneId | null;
 }
 
-/** Tab owned by an extension via registerWorkspaceTab. */
-export interface ExtensionTabParams {
-  tabKind: "tab";
-  layoutMode: "simple";
-  ownerExtensionId: string;
-  contributionId: string;
-}
-
-export type TabParams = SimpleTabParams | StackTabParams | LayoutableTabParams | ExtensionTabParams;
+export type TabParams = SimpleTabParams | StackTabParams | LayoutableTabParams;
 
 export function isTabParams(value: unknown): value is TabParams {
   return !!value && typeof value === "object" && (value as { tabKind?: unknown }).tabKind === "tab";
@@ -37,4 +28,16 @@ export function isTabParams(value: unknown): value is TabParams {
 
 export function isLayoutableTabParams(value: unknown): value is LayoutableTabParams {
   return isTabParams(value) && value.layoutMode === "layoutable";
+}
+
+export function isSimpleTabParams(value: unknown): value is SimpleTabParams {
+  return isTabParams(value) && value.layoutMode === "simple" && isPaneParams(value);
+}
+
+export function createSimpleTabParams(params: PaneParams): SimpleTabParams {
+  return {
+    tabKind: "tab",
+    layoutMode: "simple",
+    ...params
+  };
 }

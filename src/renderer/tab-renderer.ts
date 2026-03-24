@@ -66,7 +66,10 @@ export class TabRenderer implements IContentRenderer {
       this.mountLayoutable(props.params as LayoutableTabParams);
     } else {
       this._layoutMode = "simple";
-      this.paneRenderer = new PaneRenderer(this.context.paneContext);
+      this.paneRenderer = new PaneRenderer({
+        ...this.context.paneContext,
+        getTabId: () => asTabId(this.outerPanelId ?? "")
+      });
       this.paneRenderer.init(parameters);
       this.element.append(this.paneRenderer.element);
     }

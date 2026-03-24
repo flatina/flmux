@@ -1,6 +1,6 @@
 {
   "id": "sample.cowsay",
-  "name": "Cowsay",
+  "name": "Cowsay Lab",
   "version": "0.1.0",
   "apiVersion": 2,
   "setupEntry": "./setup.ts",
@@ -8,10 +8,10 @@
   "cliEntry": "./cli.ts",
   "contributions": {
     "panels": [
-      { "id": "cowsay", "kind": "panel", "title": "Cowsay" }
+      { "id": "cowsay", "kind": "panel", "title": "Cowsay Lab" }
     ],
     "events": [
-      { "id": "said", "description": "Emitted when user types in the cowsay input" }
+      { "id": "said", "description": "Emitted when the user sends a cowsay message inside the active tab" }
     ],
     "commands": [
       { "id": "cowsay", "description": "Open or message a cowsay pane" }

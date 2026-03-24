@@ -22,7 +22,7 @@ import type {
   TabSummary
 } from "../shared/app-rpc";
 import type { BootstrapState } from "../shared/bootstrap-state";
-import { createFlmuxLastFile } from "../shared/flmux-last";
+import { createFlmuxLastFile, type FlmuxLastFile, type WindowFrame } from "../shared/flmux-last";
 import {
   asPaneId,
   asTabId,
@@ -35,7 +35,7 @@ import {
 import { info } from "../shared/logger";
 import { createPaneParams, getDefaultPaneTitle, isPaneParams, type PaneParams } from "../shared/pane-params";
 import type { TerminalRuntimeEvent, TerminalRuntimeSummary } from "../shared/rpc";
-import type { LayoutableTabParams } from "../shared/tab-params";
+import { createSimpleTabParams, type LayoutableTabParams } from "../shared/tab-params";
 import { AppOwner, EventBus } from "./event-bus";
 import { EXT_MANAGER_COMPONENT, EXT_MANAGER_TAB_ID, ExtManagerRenderer } from "./ext-manager";
 import { ExtensionSetupRegistry } from "./extension-setup-registry";
@@ -352,10 +352,11 @@ class WorkspaceApp {
 
     if (tab.singleton) {
       this.openSingletonWorkspaceTab(qualifiedId, qualifiedId, tab.title, {
-        tabKind: "tab",
-        layoutMode: "simple",
-        ownerExtensionId: tab.extensionId,
-        contributionId: tab.contributionId
+        ...createSimpleTabParams({
+          kind: "extension",
+          extensionId: tab.extensionId,
+          contributionId: tab.contributionId
+        })
       });
     } else {
       const tabId = createTabId("ext");
@@ -363,12 +364,11 @@ class WorkspaceApp {
         id: tabId,
         component: qualifiedId,
         title: tab.title,
-        params: {
-          tabKind: "tab",
-          layoutMode: "simple",
-          ownerExtensionId: tab.extensionId,
+        params: createSimpleTabParams({
+          kind: "extension",
+          extensionId: tab.extensionId,
           contributionId: tab.contributionId
-        }
+        })
       });
       this.dockview.getPanel(tabId)?.focus();
     }
@@ -450,19 +450,10 @@ class WorkspaceApp {
   private async saveSessionAs(): Promise<void> {
     const name = prompt("Session name:", `session-${new Date().toISOString().slice(0, 10)}`);
     if (!name?.trim()) return;
-
     if (!this.dockview) return;
 
-    for (const renderer of this.tabRenderers.values()) {
-      renderer.flushInnerLayout();
-    }
-
     const windowFrame = await this.hostRpc.request("window.frame.get", undefined);
-    const file = createFlmuxLastFile({
-      activePaneId: this.getActivePaneId(),
-      workspaceLayout: sanitizeSerializedLayout(this.dockview.toJSON()).layout,
-      window: windowFrame
-    });
+    const file = this.captureWorkspaceFile(windowFrame);
     file.name = name.trim();
 
     await this.hostRpc.request("session.save", { name: name.trim(), file });
@@ -503,41 +494,13 @@ class WorkspaceApp {
   }
 
   private async loadNamedSession(name: string): Promise<void> {
-    if (!this.dockview) return;
-
     const { file } = await this.hostRpc.request("session.load", { name });
-    if (!file?.workspaceLayout) return;
-
-    try {
-      const source = isV1Layout(file.workspaceLayout) ? migrateV1Layout(file.workspaceLayout) : file.workspaceLayout;
-      const { layout } = sanitizeSerializedLayout(source);
-      this.dockview.fromJSON(layout);
-      if (file.activePaneId) {
-        this.dockview.getPanel(file.activePaneId)?.focus();
-      }
-      this.queueSave();
-    } catch {
-      // ignore
-    }
+    await this.restoreWorkspaceFile(file);
   }
 
   private async loadLastSession(): Promise<void> {
-    if (!this.dockview) return;
-
     const { file } = await this.hostRpc.request("flmuxLast.load", undefined);
-    if (!file?.workspaceLayout) return;
-
-    try {
-      const source = isV1Layout(file.workspaceLayout) ? migrateV1Layout(file.workspaceLayout) : file.workspaceLayout;
-      const { layout } = sanitizeSerializedLayout(source);
-      this.dockview.fromJSON(layout);
-      if (file.activePaneId) {
-        this.dockview.getPanel(file.activePaneId)?.focus();
-      }
-      this.queueSave();
-    } catch {
-      // ignore invalid layout
-    }
+    await this.restoreWorkspaceFile(file);
   }
 
   private async restoreOrSeedLayout(): Promise<void> {
@@ -547,23 +510,8 @@ class WorkspaceApp {
 
     const { file } = await this.hostRpc.request("flmuxLast.load", undefined);
 
-    if (this.bootstrap.restoreLayout && file?.workspaceLayout) {
-      try {
-        const source = isV1Layout(file.workspaceLayout) ? migrateV1Layout(file.workspaceLayout) : file.workspaceLayout;
-        const { changed, layout } = sanitizeSerializedLayout(source);
-        this.dockview.fromJSON(layout);
-        if (file.activePaneId) {
-          this.dockview.getPanel(file.activePaneId)?.focus();
-        }
-        if (this.dockview.panels.length > 0) {
-          if (changed) {
-            this.queueSave();
-          }
-          return;
-        }
-      } catch {
-        // fall through to starter panels
-      }
+    if (this.bootstrap.restoreLayout && (await this.restoreWorkspaceFile(file))) {
+      return;
     }
 
     // Fresh start: single layoutable tab with one terminal
@@ -611,8 +559,7 @@ class WorkspaceApp {
       throw new Error(`pane.focus target pane not found: ${params.paneId}`);
     }
 
-    found.outerPanel.focus();
-    found.innerPanel?.focus();
+    this.focusPane(params.paneId);
     return this.makePaneResult(params.paneId);
   }
 
@@ -909,8 +856,7 @@ class WorkspaceApp {
     if (leaf.kind === "explorer") {
       return createPaneParams("explorer", {
         rootPath: leaf.rootPath ?? this.bootstrap.cwd,
-        mode: leaf.mode ?? "filetree",
-        watchEnabled: leaf.watchEnabled ?? true
+        mode: leaf.mode ?? "filetree"
       });
     }
 
@@ -1041,17 +987,8 @@ class WorkspaceApp {
       return;
     }
 
-    // Flush inner layouts before serializing
-    for (const renderer of this.tabRenderers.values()) {
-      renderer.flushInnerLayout();
-    }
-
     const windowFrame = await this.hostRpc.request("window.frame.get", undefined);
-    const file = createFlmuxLastFile({
-      activePaneId: this.getActivePaneId(),
-      workspaceLayout: sanitizeSerializedLayout(this.dockview.toJSON()).layout,
-      window: windowFrame
-    });
+    const file = this.captureWorkspaceFile(windowFrame);
 
     await this.hostRpc.request("flmuxLast.save", { file });
   }
@@ -1090,6 +1027,57 @@ class WorkspaceApp {
     }
 
     return asPaneId(this.dockview.activePanel.id);
+  }
+
+  private captureWorkspaceFile(windowFrame?: WindowFrame): FlmuxLastFile {
+    if (!this.dockview) {
+      throw new Error("Dockview is not ready");
+    }
+
+    for (const renderer of this.tabRenderers.values()) {
+      renderer.flushInnerLayout();
+    }
+
+    return createFlmuxLastFile({
+      activePaneId: this.getActivePaneId(),
+      workspaceLayout: sanitizeSerializedLayout(this.dockview.toJSON()).layout,
+      window: windowFrame
+    });
+  }
+
+  private async restoreWorkspaceFile(file: Pick<FlmuxLastFile, "workspaceLayout" | "activePaneId"> | null): Promise<boolean> {
+    if (!this.dockview || !file?.workspaceLayout) {
+      return false;
+    }
+
+    try {
+      const source = isV1Layout(file.workspaceLayout) ? migrateV1Layout(file.workspaceLayout) : file.workspaceLayout;
+      const { changed, layout } = sanitizeSerializedLayout(source);
+      this.dockview.fromJSON(layout);
+      if (file.activePaneId) {
+        this.focusPane(file.activePaneId);
+      }
+      if (this.dockview.panels.length === 0) {
+        return false;
+      }
+      if (changed) {
+        this.queueSave();
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private focusPane(paneId: PaneId): boolean {
+    const found = this.findPane(paneId);
+    if (!found) {
+      return false;
+    }
+
+    found.outerPanel.focus();
+    found.innerPanel?.focus();
+    return true;
   }
 
   private findPane(paneId: PaneId): {

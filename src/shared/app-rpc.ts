@@ -275,6 +275,23 @@ export interface BrowserActionResult {
   paneId: PaneId;
 }
 
+export interface BrowserEvalParams {
+  paneId: PaneId;
+  script: string;
+}
+
+export interface BrowserEvalResult {
+  ok: true;
+  paneId: PaneId;
+  value: unknown;
+}
+
+export interface BrowserPageActionParams {
+  paneId: PaneId;
+  waitUntil?: "none" | "load" | "idle";
+  idleMs?: number;
+}
+
 export interface AppRpcMethodMap {
   "system.ping": {
     params: undefined;
@@ -375,6 +392,22 @@ export interface AppRpcMethodMap {
   "browser.wait": {
     params: BrowserWaitParams;
     result: BrowserActionResult;
+  };
+  "browser.eval": {
+    params: BrowserEvalParams;
+    result: BrowserEvalResult;
+  };
+  "browser.back": {
+    params: BrowserPageActionParams;
+    result: BrowserNavigateResult;
+  };
+  "browser.forward": {
+    params: BrowserPageActionParams;
+    result: BrowserNavigateResult;
+  };
+  "browser.reload": {
+    params: BrowserPageActionParams;
+    result: BrowserNavigateResult;
   };
   "app.quit": {
     params: undefined;

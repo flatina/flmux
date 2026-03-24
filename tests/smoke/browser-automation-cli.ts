@@ -76,6 +76,22 @@ async function main() {
   assert(currentUrl.code === 0, `flweb get url exits 0 (${currentUrl.stderr || "ok"})`);
   assert(currentUrl.stdout.endsWith("/health"), `click followed /health link (got ${currentUrl.stdout})`);
 
+  const pageTitle = runCli(["src/flweb/index.ts", "eval", "window.location.pathname"], envWithPane);
+  assert(pageTitle.code === 0, `flweb eval exits 0 (${pageTitle.stderr || "ok"})`);
+  assert(pageTitle.stdout === "/health", `eval window.location.pathname returns /health (got ${pageTitle.stdout})`);
+
+  const wentBack = runCli(["src/flweb/index.ts", "back"], envWithPane);
+  assert(wentBack.code === 0, `flweb back exits 0 (${wentBack.stderr || "ok"})`);
+  assert(wentBack.stdout.endsWith("/about"), `back returns to /about (got ${wentBack.stdout})`);
+
+  const wentForward = runCli(["src/flweb/index.ts", "forward"], envWithPane);
+  assert(wentForward.code === 0, `flweb forward exits 0 (${wentForward.stderr || "ok"})`);
+  assert(wentForward.stdout.endsWith("/health"), `forward returns to /health (got ${wentForward.stdout})`);
+
+  const reloaded = runCli(["src/flweb/index.ts", "reload"], envWithPane);
+  assert(reloaded.code === 0, `flweb reload exits 0 (${reloaded.stderr || "ok"})`);
+  assert(reloaded.stdout.endsWith("/health"), `reload stays on /health (got ${reloaded.stdout})`);
+
   const closed = runCli(["src/cli/index.ts", "browser", "close"], envWithPane);
   assert(closed.code === 0, `browser close exits 0 (${closed.stderr || "ok"})`);
 

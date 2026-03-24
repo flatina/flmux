@@ -93,6 +93,21 @@ async function main() {
     `result text matches submission (got ${resultText.stdout})`
   );
 
+  const resultHtml = runCli(["src/flweb/index.ts", "get", "html", "#result"], envWithPane);
+  assert(resultHtml.code === 0, `flweb get html exits 0 (${resultHtml.stderr || "ok"})`);
+  assert(resultHtml.stdout === "submitted:Agent|jane@example.com", `result html matches text (got ${resultHtml.stdout})`);
+
+  const statusEval = runCli(["src/flweb/index.ts", "eval", "document.querySelector('#status').textContent"], envWithPane);
+  assert(statusEval.code === 0, `flweb eval exits 0 (${statusEval.stderr || "ok"})`);
+  assert(
+    statusEval.stdout.includes("Agent") && statusEval.stdout.includes("jane@example.com"),
+    `eval reads status text (got ${statusEval.stdout})`
+  );
+
+  const reloaded = runCli(["src/flweb/index.ts", "reload"], envWithPane);
+  assert(reloaded.code === 0, `flweb reload exits 0 (${reloaded.stderr || "ok"})`);
+  assert(reloaded.stdout.endsWith("/automation"), `reload stays on fixture page (got ${reloaded.stdout})`);
+
   const closed = runCli(["src/cli/index.ts", "browser", "close"], envWithPane);
   assert(closed.code === 0, `browser close exits 0 (${closed.stderr || "ok"})`);
 

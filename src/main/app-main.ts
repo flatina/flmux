@@ -33,13 +33,17 @@ import { resolveAppWorkingDirectory, resolveWorkspaceRoot } from "./runtime-path
 import { startWebServer } from "./web-server";
 import { startWebUiServer, type WebUiServer } from "./web-ui-server";
 import {
-  browserNew,
+  browserBack,
   browserConnect,
   browserClick,
+  browserEval,
   browserFill,
+  browserForward,
   browserGet,
   browserNavigate,
+  browserNew,
   browserPress,
+  browserReload,
   browserSnapshot,
   browserWait
 } from "./browser-automation";
@@ -340,6 +344,10 @@ export async function runAppMain(): Promise<void> {
     browserFill: (params) => browserFill(workspaceBridge, params),
     browserPress: (params) => browserPress(workspaceBridge, params),
     browserWait: (params) => browserWait(workspaceBridge, params),
+    browserEval: (params) => browserEval(workspaceBridge, params),
+    browserBack: (params) => browserBack(workspaceBridge, params),
+    browserForward: (params) => browserForward(workspaceBridge, params),
+    browserReload: (params) => browserReload(workspaceBridge, params),
     sendPaneMessage: (params) => workspaceBridge.sendPaneMessage(params)
   } satisfies import("./app-rpc").WorkspaceRpcAdapter;
 

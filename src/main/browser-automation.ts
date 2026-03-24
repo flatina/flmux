@@ -5,6 +5,8 @@ import type {
   BrowserClickParams,
   BrowserConnectParams,
   BrowserConnectResult,
+  BrowserEvalParams,
+  BrowserEvalResult,
   BrowserFillParams,
   BrowserGetParams,
   BrowserGetResult,
@@ -13,6 +15,7 @@ import type {
   BrowserNewParams,
   BrowserPaneInfo,
   BrowserPaneResult,
+  BrowserPageActionParams,
   BrowserPressParams,
   BrowserSnapshotParams,
   BrowserSnapshotResult,
@@ -91,16 +94,12 @@ export async function browserNavigate(
   const pane = await requireBrowserPaneAndView(workspace, params.paneId);
   const url = normalizeAutomationUrl(params.url);
   pane.view.loadURL(url);
-
-  const waitUntil = params.waitUntil ?? "load";
-  if (waitUntil !== "none") {
-    await waitForWebviewLoad(pane.view, params.idleMs ?? 500, waitUntil === "idle");
-  }
+  await waitForPaneReady(workspace, params.paneId, params.waitUntil ?? "load", params.idleMs ?? 500, url);
 
   return {
     ok: true,
     paneId: params.paneId,
-    url: await evaluateInWebview<string>(pane.view, "return window.location.href")
+    url
   };
 }
 
@@ -188,6 +187,34 @@ export async function browserWait(workspace: BrowserWorkspace, params: BrowserWa
   }
 
   return { ok: true, paneId: params.paneId };
+}
+
+export async function browserEval(workspace: BrowserWorkspace, params: BrowserEvalParams): Promise<BrowserEvalResult> {
+  const pane = await requireBrowserPaneAndView(workspace, params.paneId);
+  const script = params.script.trim().startsWith("return ") ? params.script : `return (${params.script})`;
+  const value = await evaluateInWebview<unknown>(pane.view, script);
+  return { ok: true, paneId: params.paneId, value };
+}
+
+export async function browserBack(
+  workspace: BrowserWorkspace,
+  params: BrowserPageActionParams
+): Promise<BrowserNavigateResult> {
+  return runHistoryAction(workspace, params, "window.history.back()");
+}
+
+export async function browserForward(
+  workspace: BrowserWorkspace,
+  params: BrowserPageActionParams
+): Promise<BrowserNavigateResult> {
+  return runHistoryAction(workspace, params, "window.history.forward()");
+}
+
+export async function browserReload(
+  workspace: BrowserWorkspace,
+  params: BrowserPageActionParams
+): Promise<BrowserNavigateResult> {
+  return runHistoryAction(workspace, params, "window.location.reload()");
 }
 
 async function requireBrowserPaneAndView(workspace: BrowserWorkspace, paneId: BrowserConnectParams["paneId"]) {
@@ -291,6 +318,54 @@ async function waitForTarget(view: BrowserView, target: string): Promise<void> {
     await sleep(100);
   }
   throw new Error(`Timed out waiting for target: ${target}`);
+}
+
+async function runHistoryAction(
+  workspace: BrowserWorkspace,
+  params: BrowserPageActionParams,
+  expression: string
+): Promise<BrowserNavigateResult> {
+  const pane = await requireBrowserPaneAndView(workspace, params.paneId);
+  pane.view.executeJavascript(expression);
+  const connection = await waitForPaneReady(workspace, params.paneId, params.waitUntil ?? "load", params.idleMs ?? 500);
+
+  return {
+    ok: true,
+    paneId: params.paneId,
+    url: connection.url ?? ""
+  };
+}
+
+async function waitForPaneReady(
+  workspace: BrowserWorkspace,
+  paneId: BrowserConnectParams["paneId"],
+  waitUntil: "none" | "load" | "idle",
+  idleMs: number,
+  expectedUrl?: string
+): Promise<Extract<BrowserConnectResult, { ok: true }>> {
+  if (waitUntil === "none") {
+    const connection = await browserConnect(workspace, { paneId });
+    if (!connection.ok) {
+      throw new Error(connection.error);
+    }
+    return connection;
+  }
+
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    const connection = await browserConnect(workspace, { paneId });
+    if (connection.ok) {
+      if (!expectedUrl || connection.url === expectedUrl) {
+        if (waitUntil === "idle" && idleMs > 0) {
+          await sleep(idleMs);
+        }
+        return connection;
+      }
+    }
+    await sleep(200);
+  }
+
+  throw new Error(`Browser pane ${paneId} did not become ready in time`);
 }
 
 function normalizeAutomationUrl(input: string): string {

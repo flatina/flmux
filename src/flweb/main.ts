@@ -64,6 +64,81 @@ const main = defineCommand({
         console.log(result.url);
       }
     }),
+    back: defineCommand({
+      meta: { name: "back", description: "Navigate back in history" },
+      args: {
+        ...commonArgs,
+        waitUntil: {
+          type: "string",
+          description: "Wait strategy: none, load, idle",
+          default: "load"
+        },
+        idleMs: { type: "string", description: "Idle wait window in milliseconds" }
+      },
+      run: async ({ args }) => {
+        const client = await getClient(args.session);
+        const result = await client.call("browser.back", {
+          paneId: resolveBrowserPaneId(args.pane),
+          waitUntil: args.waitUntil === "none" || args.waitUntil === "idle" ? args.waitUntil : "load",
+          idleMs: args.idleMs ? Number(args.idleMs) : undefined
+        }, FLWEB_RPC_TIMEOUT_MS);
+        if (args.json) {
+          printJson(result);
+          return;
+        }
+        console.log(result.url);
+      }
+    }),
+    forward: defineCommand({
+      meta: { name: "forward", description: "Navigate forward in history" },
+      args: {
+        ...commonArgs,
+        waitUntil: {
+          type: "string",
+          description: "Wait strategy: none, load, idle",
+          default: "load"
+        },
+        idleMs: { type: "string", description: "Idle wait window in milliseconds" }
+      },
+      run: async ({ args }) => {
+        const client = await getClient(args.session);
+        const result = await client.call("browser.forward", {
+          paneId: resolveBrowserPaneId(args.pane),
+          waitUntil: args.waitUntil === "none" || args.waitUntil === "idle" ? args.waitUntil : "load",
+          idleMs: args.idleMs ? Number(args.idleMs) : undefined
+        }, FLWEB_RPC_TIMEOUT_MS);
+        if (args.json) {
+          printJson(result);
+          return;
+        }
+        console.log(result.url);
+      }
+    }),
+    reload: defineCommand({
+      meta: { name: "reload", description: "Reload the current page" },
+      args: {
+        ...commonArgs,
+        waitUntil: {
+          type: "string",
+          description: "Wait strategy: none, load, idle",
+          default: "load"
+        },
+        idleMs: { type: "string", description: "Idle wait window in milliseconds" }
+      },
+      run: async ({ args }) => {
+        const client = await getClient(args.session);
+        const result = await client.call("browser.reload", {
+          paneId: resolveBrowserPaneId(args.pane),
+          waitUntil: args.waitUntil === "none" || args.waitUntil === "idle" ? args.waitUntil : "load",
+          idleMs: args.idleMs ? Number(args.idleMs) : undefined
+        }, FLWEB_RPC_TIMEOUT_MS);
+        if (args.json) {
+          printJson(result);
+          return;
+        }
+        console.log(result.url);
+      }
+    }),
     click: defineCommand({
       meta: { name: "click", description: "Click a ref or selector" },
       args: {
@@ -279,6 +354,29 @@ const main = defineCommand({
             console.log(result.value);
           }
         })
+      }
+    }),
+    eval: defineCommand({
+      meta: { name: "eval", description: "Evaluate JavaScript in the page context" },
+      args: {
+        ...commonArgs,
+        script: { type: "positional", required: true, description: "JavaScript expression or return statement" }
+      },
+      run: async ({ args }) => {
+        const client = await getClient(args.session);
+        const result = await client.call("browser.eval", {
+          paneId: resolveBrowserPaneId(args.pane),
+          script: args.script
+        }, FLWEB_RPC_TIMEOUT_MS);
+        if (args.json) {
+          printJson(result);
+          return;
+        }
+        if (typeof result.value === "string") {
+          console.log(result.value);
+          return;
+        }
+        console.log(JSON.stringify(result.value, null, 2));
       }
     })
   }

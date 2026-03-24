@@ -208,21 +208,29 @@ const main = defineCommand({
       meta: { name: "wait", description: "Wait for time, load, idle, or target presence" },
       args: {
         ...commonArgs,
-        value: { type: "positional", required: true, description: "ms, load, idle, or ref/selector" },
-        ms: { type: "string", description: "Idle window in ms for wait idle" }
+        value: { type: "positional", required: false, description: "ms, load, idle, or ref/selector" },
+        ms: { type: "string", description: "Idle window in ms for wait idle" },
+        text: { type: "string", description: "Wait until page text includes this string" },
+        url: { type: "string", description: "Wait until the current URL matches this glob pattern" },
+        fn: { type: "string", description: "Wait until this JavaScript expression becomes truthy" }
       },
       run: async ({ args }) => {
         const client = await getClient(args.session);
         const raw = args.value;
         const asNumber = Number(raw);
-        const params =
-          raw === "load"
-            ? { kind: "load" as const }
-            : raw === "idle"
-              ? { kind: "idle" as const, ms: args.ms ? Number(args.ms) : 500 }
-              : Number.isFinite(asNumber) && asNumber >= 0
-                ? { kind: "duration" as const, ms: asNumber }
-                : { kind: "target" as const, target: raw };
+        const params = args.text
+          ? { kind: "text" as const, text: args.text }
+          : args.url
+            ? { kind: "url" as const, pattern: args.url }
+            : args.fn
+              ? { kind: "fn" as const, expression: args.fn }
+              : raw === "load"
+                ? { kind: "load" as const }
+                : raw === "idle"
+                  ? { kind: "idle" as const, ms: args.ms ? Number(args.ms) : 500 }
+                  : Number.isFinite(asNumber) && asNumber >= 0
+                    ? { kind: "duration" as const, ms: asNumber }
+                    : { kind: "target" as const, target: raw };
 
         const result = await client.call(
           "browser.wait",

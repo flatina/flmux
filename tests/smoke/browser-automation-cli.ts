@@ -72,6 +72,9 @@ async function main() {
   const waited = runCli(["src/flweb/index.ts", "wait", "load"], envWithPane);
   assert(waited.code === 0, `flweb wait load exits 0 (${waited.stderr || "ok"})`);
 
+  const waitedUrl = runCli(["src/flweb/index.ts", "wait", "--url", "**/health"], envWithPane);
+  assert(waitedUrl.code === 0, `flweb wait --url exits 0 (${waitedUrl.stderr || "ok"})`);
+
   const currentUrl = runCli(["src/flweb/index.ts", "get", "url"], envWithPane);
   assert(currentUrl.code === 0, `flweb get url exits 0 (${currentUrl.stderr || "ok"})`);
   assert(currentUrl.stdout.endsWith("/health"), `click followed /health link (got ${currentUrl.stdout})`);

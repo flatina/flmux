@@ -98,15 +98,12 @@ No fallback to last-active browser pane.
 
 ### Commands
 
-Initial MVP:
+Current implemented commands:
 
 - `flweb snapshot`
 - `flweb navigate <url>`
 - `flweb get url`
 - `flweb get title`
-
-Planned next wave after runtime stabilization:
-
 - `flweb click <ref-or-selector>`
 - `flweb fill <ref-or-selector> <text>`
 - `flweb press <key>`
@@ -114,15 +111,21 @@ Planned next wave after runtime stabilization:
 - `flweb get html <ref-or-selector>`
 - `flweb get value <ref-or-selector>`
 - `flweb get attr <ref-or-selector> <name>`
-- `flweb get box <ref-or-selector>`
 - `flweb eval <js>`
 - `flweb wait <ms-or-selector>`
+- `flweb wait --text <text>`
+- `flweb wait --url <pattern>`
+- `flweb wait --fn <expression>`
 - `flweb wait load`
 - `flweb wait idle [idleMs]`
-- `flweb screenshot [path]`
 - `flweb back`
 - `flweb forward`
 - `flweb reload`
+
+Planned next wave after current implementation:
+
+- `flweb get box <ref-or-selector>`
+- `flweb screenshot [path]`
 
 ### Output
 
@@ -211,7 +214,7 @@ Pane-aware browser RPCs should be additive and should not depend on clients manu
   - input: `{ paneId: PaneId, url: string, waitUntil?: "none" | "load" | "idle", idleMs?: number }`
   - result: `{ ok: true, paneId, url }`
 - `browser.get`
-  - input: `{ paneId: PaneId, field: "url" | "title" }`
+  - input: `{ paneId: PaneId, field: "url" | "title" | "text" | "html" | "value" | "attr", target?: string, name?: string }`
   - result: `{ ok: true, paneId, field, value }`
 - `browser.snapshot`
   - input: `{ paneId: PaneId, compact?: boolean }`
@@ -226,8 +229,20 @@ Pane-aware browser RPCs should be additive and should not depend on clients manu
   - input: `{ paneId: PaneId, key: string }`
   - result: `{ ok: true, paneId }`
 - `browser.wait`
-  - input: `{ paneId: PaneId, kind: "duration" | "load" | "idle" | "target", target?: string, ms?: number }`
+  - input: `{ paneId: PaneId, kind: "duration" | "load" | "idle" | "target" | "text" | "url" | "fn", target?: string, text?: string, pattern?: string, expression?: string, ms?: number }`
   - result: `{ ok: true, paneId }`
+- `browser.eval`
+  - input: `{ paneId: PaneId, script: string }`
+  - result: `{ ok: true, paneId, value }`
+- `browser.back`
+  - input: `{ paneId: PaneId, waitUntil?: "none" | "load" | "idle", idleMs?: number }`
+  - result: `{ ok: true, paneId, url }`
+- `browser.forward`
+  - input: `{ paneId: PaneId, waitUntil?: "none" | "load" | "idle", idleMs?: number }`
+  - result: `{ ok: true, paneId, url }`
+- `browser.reload`
+  - input: `{ paneId: PaneId, waitUntil?: "none" | "load" | "idle", idleMs?: number }`
+  - result: `{ ok: true, paneId, url }`
 
 `browser.targets` should stay available for future `flmux cdp` use cases, but it is not the primary automation surface.
 

@@ -86,6 +86,12 @@ async function main() {
   const waitResult = runCli(["src/flweb/index.ts", "wait", "#result:not([hidden])"], envWithPane);
   assert(waitResult.code === 0, `flweb wait target exits 0 (${waitResult.stderr || "ok"})`);
 
+  const waitText = runCli(["src/flweb/index.ts", "wait", "--text", "submitted:Agent|jane@example.com"], envWithPane);
+  assert(waitText.code === 0, `flweb wait --text exits 0 (${waitText.stderr || "ok"})`);
+
+  const waitFn = runCli(["src/flweb/index.ts", "wait", "--fn", "document.querySelector('#result') && !document.querySelector('#result').hidden"], envWithPane);
+  assert(waitFn.code === 0, `flweb wait --fn exits 0 (${waitFn.stderr || "ok"})`);
+
   const resultText = runCli(["src/flweb/index.ts", "get", "text", "#result"], envWithPane);
   assert(resultText.code === 0, `flweb get text result exits 0 (${resultText.stderr || "ok"})`);
   assert(

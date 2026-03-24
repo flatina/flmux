@@ -130,6 +130,9 @@ flweb fill @e3 "hello"
 flweb press Enter
 flweb wait load
 flweb wait "#result:not([hidden])"
+flweb wait --text "Success"
+flweb wait --url "**/dashboard"
+flweb wait --fn "document.readyState === 'complete'"
 flweb get url
 flweb get title
 flweb get text @e1

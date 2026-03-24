@@ -182,6 +182,12 @@ export async function browserWait(workspace: BrowserWorkspace, params: BrowserWa
     await waitForWebviewLoad(pane.view, 0, false);
   } else if (params.kind === "idle") {
     await waitForWebviewLoad(pane.view, params.ms ?? 500, true);
+  } else if (params.kind === "text") {
+    await waitForText(pane.view, params.text ?? "");
+  } else if (params.kind === "url") {
+    await waitForUrl(pane.view, params.pattern ?? "");
+  } else if (params.kind === "fn") {
+    await waitForFunction(pane.view, params.expression ?? "");
   } else {
     await waitForTarget(pane.view, params.target ?? "");
   }
@@ -320,6 +326,42 @@ async function waitForTarget(view: BrowserView, target: string): Promise<void> {
   throw new Error(`Timed out waiting for target: ${target}`);
 }
 
+async function waitForText(view: BrowserView, text: string): Promise<void> {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    const bodyText = await evaluateInWebview<string>(view, "return document.body?.innerText ?? ''");
+    if (bodyText.includes(text)) {
+      return;
+    }
+    await sleep(100);
+  }
+  throw new Error(`Timed out waiting for text: ${text}`);
+}
+
+async function waitForUrl(view: BrowserView, pattern: string): Promise<void> {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    const currentUrl = await evaluateInWebview<string>(view, "return window.location.href");
+    if (matchUrlPattern(currentUrl, pattern)) {
+      return;
+    }
+    await sleep(100);
+  }
+  throw new Error(`Timed out waiting for URL pattern: ${pattern}`);
+}
+
+async function waitForFunction(view: BrowserView, expression: string): Promise<void> {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    const result = await evaluateInWebview<unknown>(view, `return !!(${expression})`);
+    if (Boolean(result)) {
+      return;
+    }
+    await sleep(100);
+  }
+  throw new Error(`Timed out waiting for function: ${expression}`);
+}
+
 async function runHistoryAction(
   workspace: BrowserWorkspace,
   params: BrowserPageActionParams,
@@ -453,4 +495,13 @@ function buildResolveTargetExpression(target: string): string {
 
 function escapeJs(value: string): string {
   return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+}
+
+function matchUrlPattern(url: string, pattern: string): boolean {
+  if (!pattern) {
+    return false;
+  }
+
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*");
+  return new RegExp(`^${escaped}$`).test(url);
 }

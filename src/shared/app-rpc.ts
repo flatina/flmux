@@ -265,8 +265,11 @@ export interface BrowserPressParams {
 
 export interface BrowserWaitParams {
   paneId: PaneId;
-  kind: "duration" | "load" | "idle" | "target";
+  kind: "duration" | "load" | "idle" | "target" | "text" | "url" | "fn";
   target?: string;
+  text?: string;
+  pattern?: string;
+  expression?: string;
   ms?: number;
 }
 

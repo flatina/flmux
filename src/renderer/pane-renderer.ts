@@ -3,7 +3,7 @@ import { html as langHtml } from "@codemirror/lang-html";
 import { javascript as langJs } from "@codemirror/lang-javascript";
 import { json as langJson } from "@codemirror/lang-json";
 import { markdown as langMd } from "@codemirror/lang-markdown";
-import { oneDark } from "@codemirror/theme-one-dark";
+import { Compartment } from "@codemirror/state";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { basicSetup, EditorView } from "codemirror";
@@ -13,8 +13,8 @@ import type {
   IDockviewPanelProps,
   PanelUpdateEvent
 } from "dockview-core";
-import type { BrowserPaneInfo } from "../shared/app-rpc";
 import type { WebviewTagElement } from "electrobun/view";
+import type { BrowserPaneInfo } from "../shared/app-rpc";
 import type { ExtensionRegistryEntry, HeaderAction, MountedExtension, PaneEvent } from "../shared/extension-spi";
 import type { TabId } from "../shared/ids";
 import { asPaneId, type PaneId, type TerminalRuntimeId } from "../shared/ids";
@@ -38,6 +38,7 @@ import {
   normalizeUrl
 } from "./helpers";
 import { getHostRpc } from "./lib/host-rpc";
+import { getEditorThemeExtension, getTerminalTheme, onThemeChange } from "./theme";
 
 const hostRpc = getHostRpc();
 
@@ -93,6 +94,8 @@ export class PaneRenderer implements IContentRenderer {
   private editorPaneId: string | null = null;
   private editorView: EditorView | null = null;
   private editorDirty = false;
+  private editorThemeCompartment = new Compartment();
+  private editorThemeUnsub: (() => void) | null = null;
 
   private explorerPaneId: string | null = null;
   private explorerList: HTMLElement | null = null;
@@ -287,7 +290,7 @@ export class PaneRenderer implements IContentRenderer {
       doc: "",
       extensions: [
         basicSetup,
-        oneDark,
+        this.editorThemeCompartment.of(getEditorThemeExtension()),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             this.editorDirty = true;
@@ -310,6 +313,9 @@ export class PaneRenderer implements IContentRenderer {
 
     this.editorView = view;
     this.editorDirty = false;
+    this.editorThemeUnsub = onThemeChange(() => {
+      view.dispatch({ effects: this.editorThemeCompartment.reconfigure(getEditorThemeExtension()) });
+    });
 
     if (params.filePath) {
       void this.loadEditorFile(params.filePath, updateStatus);
@@ -317,6 +323,8 @@ export class PaneRenderer implements IContentRenderer {
   }
 
   private disposeEditorView(): void {
+    this.editorThemeUnsub?.();
+    this.editorThemeUnsub = null;
     this.editorView?.destroy();
     this.editorView = null;
     this.editorPaneId = null;
@@ -539,13 +547,7 @@ export class PaneRenderer implements IContentRenderer {
       fontFamily: '"Cascadia Code", Consolas, "Courier New", monospace',
       fontSize: 13,
       lineHeight: 1.2,
-      theme: {
-        background: "#0b1016",
-        foreground: "#e8edf2",
-        cursor: "#ffad5a",
-        cursorAccent: "#0b1016",
-        selectionBackground: "rgba(255, 173, 90, 0.25)"
-      }
+      theme: getTerminalTheme()
     });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
@@ -612,6 +614,10 @@ export class PaneRenderer implements IContentRenderer {
       }
     });
 
+    const themeUnsub = onThemeChange(() => {
+      terminal.options.theme = getTerminalTheme();
+    });
+
     this.terminalDisposables.push(
       () => inputDisposable.dispose(),
       () => visibilityDisposable.dispose(),
@@ -620,7 +626,8 @@ export class PaneRenderer implements IContentRenderer {
       () => titleDisposable.dispose(),
       () => bellDisposable.dispose(),
       () => activeDisposable.dispose(),
-      () => unsubscribeTerminal?.()
+      () => unsubscribeTerminal?.(),
+      themeUnsub
     );
 
     // Outer tab visibility: inner panels don't get Dockview visibility events,
@@ -1051,7 +1058,9 @@ export class PaneRenderer implements IContentRenderer {
       }
     });
     welcome.querySelectorAll<HTMLButtonElement>(".browser-welcome-link").forEach((btn) => {
-      btn.addEventListener("click", () => { if (btn.dataset.url) navigateToUrl(btn.dataset.url); });
+      btn.addEventListener("click", () => {
+        if (btn.dataset.url) navigateToUrl(btn.dataset.url);
+      });
     });
 
     if (isBlank) {
@@ -1151,7 +1160,9 @@ export class PaneRenderer implements IContentRenderer {
       }
     });
     welcome.querySelectorAll<HTMLButtonElement>(".browser-welcome-link").forEach((btn) => {
-      btn.addEventListener("click", () => { if (btn.dataset.url) navigateFromWelcome(btn.dataset.url); });
+      btn.addEventListener("click", () => {
+        if (btn.dataset.url) navigateFromWelcome(btn.dataset.url);
+      });
     });
 
     shell.append(toolbar, welcome, iframe);
@@ -1297,7 +1308,6 @@ export class PaneRenderer implements IContentRenderer {
       automationReason
     });
   }
-
 }
 
 function playBellSound(): void {

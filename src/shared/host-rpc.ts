@@ -3,6 +3,7 @@ import type { FlmuxLastFile, WindowFrame } from "./flmux-last";
 import type { TerminalRuntimeId } from "./ids";
 import type { TerminalRenderer } from "./pane-params";
 import type { TerminalRuntimeEvent, TerminalRuntimeSummary } from "./rpc";
+import type { UiTheme } from "./ui-settings";
 
 export interface FsEntry {
   name: string;
@@ -63,6 +64,10 @@ export interface HostRpcMethodMap {
   "extension.uninstall": {
     params: { extensionId: string };
     result: { ok: true } | { ok: false; error: string };
+  };
+  "uiSettings.setTheme": {
+    params: { theme: UiTheme };
+    result: { ok: true };
   };
   "fs.readDir": {
     params: { path: string; dirsOnly?: boolean };

@@ -38,8 +38,8 @@ export const mount: ExtensionMount = (host, context) => {
     "flex-direction:column",
     "gap:12px",
     "padding:14px",
-    "background:linear-gradient(180deg,#11161d,#1a212b)",
-    "color:#e8edf2",
+    "background:linear-gradient(180deg,var(--surface),var(--panel))",
+    "color:var(--text)",
     'font-family:"Cascadia Code",Consolas,monospace',
     "box-sizing:border-box"
   ].join(";");
@@ -51,8 +51,8 @@ export const mount: ExtensionMount = (host, context) => {
     "gap:12px",
     "align-items:flex-start",
     "padding:10px 12px",
-    "border:1px solid rgba(255,255,255,0.08)",
-    "background:rgba(255,255,255,0.03)",
+    "border:1px solid var(--divider)",
+    "background:var(--subtle)",
     "border-radius:10px"
   ].join(";");
 
@@ -63,7 +63,7 @@ export const mount: ExtensionMount = (host, context) => {
 
   const subtitle = document.createElement("div");
   subtitle.textContent = "Interactive fixture for extension state, events, header actions, and restore.";
-  subtitle.style.cssText = "margin-top:4px;color:#9db0c3;font-size:12px;max-width:680px;";
+  subtitle.style.cssText = "margin-top:4px;color:var(--muted);font-size:12px;max-width:680px;";
 
   titleBlock.append(title, subtitle);
 
@@ -72,7 +72,7 @@ export const mount: ExtensionMount = (host, context) => {
     "margin:0",
     "font-size:11px",
     "line-height:1.5",
-    "color:#9db0c3",
+    "color:var(--muted)",
     "text-align:right",
     "white-space:pre-wrap"
   ].join(";");
@@ -108,9 +108,9 @@ export const mount: ExtensionMount = (host, context) => {
   const hint = document.createElement("div");
   hint.style.cssText = [
     "padding:10px 12px",
-    "border-left:3px solid #ffb45e",
-    "background:rgba(255,180,94,0.08)",
-    "color:#d6dee8",
+    "border-left:3px solid var(--accent)",
+    "background:var(--subtle)",
+    "color:var(--text)",
     "font-size:12px",
     "line-height:1.6"
   ].join(";");
@@ -134,7 +134,7 @@ export const mount: ExtensionMount = (host, context) => {
   cowOutput.style.cssText = [
     "margin:0",
     "white-space:pre-wrap",
-    "color:#f3f6f8",
+    "color:var(--text)",
     "font-size:13px",
     "line-height:1.35",
     "overflow:auto"
@@ -146,7 +146,7 @@ export const mount: ExtensionMount = (host, context) => {
   stats.style.cssText = [
     "margin:0",
     "white-space:pre-wrap",
-    "color:#c4d0db",
+    "color:var(--muted)",
     "font-size:12px",
     "line-height:1.6"
   ].join(";");
@@ -164,7 +164,7 @@ export const mount: ExtensionMount = (host, context) => {
   log.style.cssText = [
     "margin:0",
     "white-space:pre-wrap",
-    "color:#d7dee6",
+    "color:var(--text)",
     "font-size:11px",
     "line-height:1.5",
     "overflow:auto",
@@ -405,15 +405,15 @@ function makeCard(label: string): { root: HTMLDivElement; body: HTMLDivElement }
     "flex-direction:column",
     "gap:10px",
     "padding:12px",
-    "border:1px solid rgba(255,255,255,0.08)",
-    "background:rgba(0,0,0,0.18)",
+    "border:1px solid var(--divider)",
+    "background:var(--subtle)",
     "border-radius:10px",
     "min-height:0"
   ].join(";");
 
   const title = document.createElement("div");
   title.textContent = label;
-  title.style.cssText = "font-size:12px;font-weight:700;color:#9db0c3;text-transform:uppercase;";
+  title.style.cssText = "font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;";
 
   const body = document.createElement("div");
   body.style.cssText = "min-height:0;display:flex;flex-direction:column;";
@@ -445,9 +445,9 @@ function fieldStyle(): string {
     "width:100%",
     "padding:9px 11px",
     "border-radius:8px",
-    "border:1px solid rgba(255,255,255,0.14)",
-    "background:#0f141b",
-    "color:#e8edf2",
+    "border:1px solid var(--border)",
+    "background:var(--input-bg)",
+    "color:var(--text)",
     "font:inherit",
     "font-size:13px",
     "box-sizing:border-box"

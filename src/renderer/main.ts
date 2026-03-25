@@ -6,9 +6,9 @@ import { type AddPanelOptions, createDockview, type DockviewApi } from "dockview
 import type {
   AppSummary,
   BrowserNewParams,
-  BrowserPaneResult,
   BrowserPaneInfo,
   BrowserPaneListResult,
+  BrowserPaneResult,
   PaneCloseParams,
   PaneCreateInput,
   PaneFocusParams,
@@ -38,19 +38,16 @@ import { info } from "../shared/logger";
 import { createPaneParams, isPaneParams, type PaneParams } from "../shared/pane-params";
 import type { TerminalRuntimeEvent, TerminalRuntimeSummary } from "../shared/rpc";
 import { createSimpleTabParams, type LayoutableTabParams } from "../shared/tab-params";
+import type { UiTheme } from "../shared/ui-settings";
 import { AppOwner, EventBus } from "./event-bus";
 import { EXT_MANAGER_COMPONENT, EXT_MANAGER_TAB_ID, ExtManagerRenderer } from "./ext-manager";
 import { ExtensionSetupRegistry } from "./extension-setup-registry";
-import { PlaceholderRenderer } from "./placeholder-renderer";
-import {
-  isV1Layout,
-  migrateV1Layout,
-  sanitizeSerializedLayout,
-  titleFromLeaf
-} from "./helpers";
+import { isV1Layout, migrateV1Layout, sanitizeSerializedLayout, titleFromLeaf } from "./helpers";
 import { getHostRpc, setRendererRpcHandlers } from "./lib/host-rpc";
 import type { PaneRendererContext } from "./pane-renderer";
+import { PlaceholderRenderer } from "./placeholder-renderer";
 import { TabRenderer } from "./tab-renderer";
+import { getTheme, initTheme, setTheme } from "./theme";
 import {
   collectWorkspaceBrowserPaneInfos,
   collectWorkspacePaneSummaries,
@@ -66,6 +63,8 @@ void bootstrapRenderer();
 
 async function bootstrapRenderer(): Promise<void> {
   const bootstrap = await getHostRpc().request("bootstrap.get", undefined);
+  initTheme(bootstrap.uiTheme);
+
   const root = document.querySelector<HTMLElement>("#app");
   if (!root) {
     throw new Error("Renderer root #app not found");
@@ -162,7 +161,7 @@ class WorkspaceApp {
     };
 
     this.dockview = createDockview(this.workspaceHost, {
-      className: "dockview-theme-flmux",
+      theme: { name: "flmux", className: "dockview-theme-flmux" },
       defaultRenderer: "always",
       createComponent: (options) => {
         // Built-in singleton: Extension Manager
@@ -253,13 +252,13 @@ class WorkspaceApp {
       this.makeTitlebarBtn(">_", "New Terminal Tab", () => void this.openNewTerminalTab()),
       this.makeTitlebarBtn("\u{1F310}", "New Browser Tab", () => void this.openNewBrowserTab())
     ];
-    const extensionLaunchers = this.setupRegistry.listTitlebarWorkspaceTabs().map((tab) =>
-      this.makeTitlebarBtn(
-        tab.titlebar?.icon ?? tab.title,
-        tab.titlebar?.tooltip ?? tab.title,
-        () => this.openRegisteredWorkspaceTab(tab.qualifiedId)
-      )
-    );
+    const extensionLaunchers = this.setupRegistry
+      .listTitlebarWorkspaceTabs()
+      .map((tab) =>
+        this.makeTitlebarBtn(tab.titlebar?.icon ?? tab.title, tab.titlebar?.tooltip ?? tab.title, () =>
+          this.openRegisteredWorkspaceTab(tab.qualifiedId)
+        )
+      );
     center.append(...builtins, ...extensionLaunchers, this.buildSessionMenu(), this.buildSettingsMenu());
 
     // Right: window controls (no-drag)
@@ -366,15 +365,75 @@ class WorkspaceApp {
       menu.hidden = true;
       this.openExtensionManager();
     });
-    menu.append(extBtn);
+
+    const themeOptions: Array<{ value: UiTheme; label: string }> = [
+      { value: "system", label: "System Default" },
+      { value: "dark", label: "Dark" },
+      { value: "light", label: "Light" }
+    ];
+
+    const themeWrapper = document.createElement("div");
+    themeWrapper.className = "titlebar-submenu-wrapper";
+
+    const themeTrigger = document.createElement("button");
+    themeTrigger.type = "button";
+    themeTrigger.className = "titlebar-menu-item titlebar-submenu-trigger";
+    themeTrigger.textContent = "Theme";
+
+    const themeMenu = document.createElement("div");
+    themeMenu.className = "titlebar-submenu";
+    themeMenu.hidden = true;
+
+    const themeButtons: HTMLButtonElement[] = [];
+    const updateThemeButtons = () => {
+      const current = getTheme();
+      for (const btn of themeButtons) {
+        const isActive = btn.dataset.theme === current;
+        btn.classList.toggle("titlebar-menu-item-active", isActive);
+        btn.textContent = `${isActive ? "\u2022 " : "  "}${btn.dataset.label}`;
+      }
+    };
+
+    for (const opt of themeOptions) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "titlebar-menu-item";
+      btn.dataset.theme = opt.value;
+      btn.dataset.label = opt.label;
+      btn.addEventListener("click", () => {
+        setTheme(opt.value);
+        void this.hostRpc.request("uiSettings.setTheme", { theme: opt.value });
+        updateThemeButtons();
+        themeMenu.hidden = true;
+        menu.hidden = true;
+      });
+      themeButtons.push(btn);
+    }
+
+    updateThemeButtons();
+    themeTrigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      updateThemeButtons();
+      themeMenu.hidden = !themeMenu.hidden;
+    });
+    themeMenu.append(...themeButtons);
+    themeWrapper.append(themeTrigger, themeMenu);
+    menu.append(extBtn, themeWrapper);
 
     trigger.addEventListener("click", (e) => {
       e.stopPropagation();
       menu.hidden = !menu.hidden;
+      if (!menu.hidden) {
+        updateThemeButtons();
+        themeMenu.hidden = true;
+      }
     });
 
     document.addEventListener("click", (e: MouseEvent) => {
-      if (!wrapper.contains(e.target as Node)) menu.hidden = true;
+      if (!wrapper.contains(e.target as Node)) {
+        themeMenu.hidden = true;
+        menu.hidden = true;
+      }
     });
 
     wrapper.append(trigger, menu);
@@ -775,7 +834,9 @@ class WorkspaceApp {
   private async createParamsForLeaf(leaf: PaneCreateInput): Promise<PaneParams> {
     if (leaf.kind === "terminal") {
       const runtimeId = createTerminalRuntimeId();
-      const startupCommands = leaf.startupCommands?.map((command) => command.trim()).filter((command) => command.length > 0);
+      const startupCommands = leaf.startupCommands
+        ?.map((command) => command.trim())
+        .filter((command) => command.length > 0);
       if (startupCommands?.length) {
         this.pendingTerminalStartupCommands.set(runtimeId, startupCommands);
       }
@@ -870,9 +931,7 @@ class WorkspaceApp {
     contributionId: string
   ): boolean {
     const found = referencePaneId ? findWorkspacePane(this.dockview, this.tabRenderers, referencePaneId) : null;
-    const innerApi = found
-      ? this.tabRenderers.get(found.outerPanel.id)?.innerApi
-      : null;
+    const innerApi = found ? this.tabRenderers.get(found.outerPanel.id)?.innerApi : null;
     if (!innerApi) return false;
 
     for (const panel of innerApi.panels) {
@@ -1086,7 +1145,9 @@ class WorkspaceApp {
     });
   }
 
-  private async restoreWorkspaceFile(file: Pick<FlmuxLastFile, "workspaceLayout" | "activePaneId"> | null): Promise<boolean> {
+  private async restoreWorkspaceFile(
+    file: Pick<FlmuxLastFile, "workspaceLayout" | "activePaneId"> | null
+  ): Promise<boolean> {
     if (!this.dockview || !file?.workspaceLayout) {
       return false;
     }

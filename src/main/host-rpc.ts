@@ -1,30 +1,29 @@
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { BrowserWindow } from "electrobun/bun";
+import type { BootstrapState } from "../shared/bootstrap-state";
 import {
   disableExtension,
   enableExtension,
   loadExtensionSettings,
   saveExtensionSettings
 } from "../shared/extension-settings";
-import type { BootstrapState } from "../shared/bootstrap-state";
 import type { FlmuxLastFile } from "../shared/flmux-last";
 import type { HostRpcMethod, HostRpcParams, HostRpcResult } from "../shared/host-rpc";
 import { debug, info } from "../shared/logger";
 import { getFlmuxDataDir } from "../shared/paths";
+import { saveUiTheme } from "../shared/ui-settings";
 import {
-  EXTENSION_ID_PATTERN,
+  type DiscoveredExtension,
   discoverAllExtensions,
-  loadExtensionSource,
-  type DiscoveredExtension
+  EXTENSION_ID_PATTERN,
+  loadExtensionSource
 } from "./extension-discovery";
 import type { FlmuxLastStore } from "./flmux-last-store";
 import type { PtydClient } from "./ptyd-client";
 
 export type HostRpcHandlers = {
-  [Method in HostRpcMethod]: (
-    params: HostRpcParams<Method>
-  ) => Promise<HostRpcResult<Method>> | HostRpcResult<Method>;
+  [Method in HostRpcMethod]: (params: HostRpcParams<Method>) => Promise<HostRpcResult<Method>> | HostRpcResult<Method>;
 };
 
 export interface CreateHostRpcHandlersOptions {
@@ -101,6 +100,13 @@ export function createHostRpcHandlers(options: CreateHostRpcHandlersOptions): Ho
       const settings = loadExtensionSettings();
       saveExtensionSettings(disableExtension(settings, extensionId));
       info("ext", `disabled ${extensionId}`);
+      return { ok: true as const };
+    },
+    "uiSettings.setTheme": async ({ theme }) => {
+      if (!["system", "dark", "light"].includes(theme)) return { ok: true as const };
+      saveUiTheme(theme);
+      options.bootstrapState.uiTheme = theme;
+      info("ui", `theme set to ${theme}`);
       return { ok: true as const };
     },
     "extension.uninstall": async ({ extensionId }) => {
@@ -255,10 +261,7 @@ function getSessionsDir(): string {
   return join(getFlmuxDataDir(), "sessions");
 }
 
-async function readDirEntries(
-  dirPath: string,
-  dirsOnly: boolean
-): Promise<HostRpcResult<"fs.readDir">["entries"]> {
+async function readDirEntries(dirPath: string, dirsOnly: boolean): Promise<HostRpcResult<"fs.readDir">["entries"]> {
   const items = await readdir(dirPath, { withFileTypes: true });
   const entries = await Promise.all(
     items

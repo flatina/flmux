@@ -7,6 +7,7 @@ import { createSessionId } from "../shared/ids";
 import { getAppRpcIpcPath } from "../shared/ipc-paths";
 import { info, setLogLevel } from "../shared/logger";
 import type { MainviewRpcSchema } from "../shared/mainview-rpc";
+import { loadUiSettings } from "../shared/ui-settings";
 import { type StartedAppRpcServer, startAppRpcServer } from "./app-rpc-server";
 import { buildWebRenderer } from "./build-web-renderer";
 import { probeCdpPort } from "./cdp-discovery";
@@ -58,6 +59,7 @@ export async function runAppMain(): Promise<void> {
     extensions: buildExtensionRegistry(discoveredExtensions),
     restoreLayout: shouldRestore,
     webServerUrl: webServer.url,
+    uiTheme: loadUiSettings().theme,
     browserAutomation: {
       cdpBaseUrl: null
     }

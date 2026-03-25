@@ -2,6 +2,7 @@ import type { ExtensionRegistryEntry } from "./extension-spi";
 import type { SessionId } from "./ids";
 import type { BrowserPaneAdapter, TerminalRenderer } from "./pane-params";
 import type { TerminalRuntimeSummary } from "./rpc";
+import type { UiTheme } from "./ui-settings";
 
 export type TerminalRuntimeOwner = "ptyd" | "embedded" | "none";
 
@@ -16,6 +17,7 @@ export interface BootstrapState {
   extensions: ExtensionRegistryEntry[];
   restoreLayout: boolean;
   webServerUrl: string | null;
+  uiTheme: UiTheme;
   browserAutomation: {
     cdpBaseUrl: string | null;
   };

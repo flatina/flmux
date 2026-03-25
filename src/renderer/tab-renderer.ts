@@ -82,7 +82,7 @@ export class TabRenderer implements IContentRenderer {
     this.element.replaceChildren(host);
 
     this._innerDockview = createDockview(host, {
-      className: "dockview-theme-flmux",
+      theme: { name: "flmux", className: "dockview-theme-flmux" },
       defaultRenderer: "always",
       createComponent: () =>
         new PaneRenderer({

@@ -1,5 +1,4 @@
 import type { DockviewGroupPanel, IGroupHeaderProps, IHeaderActionsRenderer } from "dockview-core";
-import type { HeaderAction } from "../shared/extension-spi";
 import type { ExtensionSetupRegistry } from "./extension-setup-registry";
 
 export const BUILTIN_ACTIONS: ReadonlyArray<{ id: string; icon: string; tooltip: string }> = [
@@ -12,46 +11,25 @@ export const BUILTIN_ACTIONS: ReadonlyArray<{ id: string; icon: string; tooltip:
 
 export type GroupActionHandler = (action: string, activePanelId: string | null) => void;
 
-/** Callback to query the active panel's header actions (push-model). */
-export type HeaderActionsProvider = (panelId: string) => HeaderAction[];
-
 export class GroupActionsRenderer implements IHeaderActionsRenderer {
   readonly element = document.createElement("div");
   private groupActionsZone = document.createElement("div");
-  private panelActionsZone = document.createElement("div");
   private disposables: Array<() => void> = [];
   private currentGroup: IGroupHeaderProps["group"] | null = null;
 
   constructor(
     _group: DockviewGroupPanel,
     private readonly onAction: GroupActionHandler,
-    private readonly setupRegistry: ExtensionSetupRegistry | null,
-    private readonly headerActionsProvider?: HeaderActionsProvider
+    private readonly setupRegistry: ExtensionSetupRegistry | null
   ) {
     this.element.className = "group-actions";
     this.groupActionsZone.className = "group-actions-zone";
-    this.panelActionsZone.className = "panel-actions-zone";
-    this.element.append(this.panelActionsZone, this.groupActionsZone);
+    this.element.append(this.groupActionsZone);
   }
 
   init(params: IGroupHeaderProps): void {
     this.currentGroup = params.group;
-
     this.buildGroupActions();
-
-    // Subscribe to active panel changes for panel-dependent actions
-    if (this.headerActionsProvider) {
-      const sub = params.group.api.onDidActivePanelChange(() => {
-        this.buildPanelActions();
-      });
-      this.disposables.push(() => sub.dispose());
-      this.buildPanelActions();
-    }
-  }
-
-  /** Rebuild panel-dependent header actions (called on push updates from setHeaderActions). */
-  refreshPanelActions(): void {
-    this.buildPanelActions();
   }
 
   private buildGroupActions(): void {
@@ -74,28 +52,6 @@ export class GroupActionsRenderer implements IHeaderActionsRenderer {
         this.onAction(action.id, group.activePanel?.id ?? null);
       });
       this.groupActionsZone.append(btn);
-    }
-  }
-
-  private buildPanelActions(): void {
-    this.panelActionsZone.replaceChildren();
-    if (!this.headerActionsProvider || !this.currentGroup) return;
-
-    const activeId = this.currentGroup.activePanel?.id;
-    if (!activeId) return;
-
-    const actions = this.headerActionsProvider(activeId);
-    for (const action of actions) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "group-action-btn panel-action-btn";
-      btn.textContent = action.icon;
-      btn.title = action.tooltip ?? "";
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        action.onClick();
-      });
-      this.panelActionsZone.append(btn);
     }
   }
 

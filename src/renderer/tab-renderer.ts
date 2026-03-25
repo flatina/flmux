@@ -17,6 +17,7 @@ import type { ExtensionSetupRegistry } from "./extension-setup-registry";
 import type { GroupActionHandler } from "./group-actions";
 import { GroupActionsRenderer } from "./group-actions";
 import { PaneRenderer, type PaneRendererContext } from "./pane-renderer";
+import { PaneTabRenderer } from "./pane-tab-renderer";
 
 export type TabRendererContext = {
   paneContext: PaneRendererContext;
@@ -42,6 +43,7 @@ export class TabRenderer implements IContentRenderer {
   private outerVisibilityCallbacks: Array<(visible: boolean) => void> = [];
   private paneHeaderActions = new Map<string, HeaderAction[]>();
   private groupActionRenderers: GroupActionsRenderer[] = [];
+  private paneTabRenderers = new Map<string, PaneTabRenderer>();
 
   constructor(private readonly context: TabRendererContext) {
     this.element.className = "tab-shell";
@@ -83,6 +85,7 @@ export class TabRenderer implements IContentRenderer {
 
     this._innerDockview = createDockview(host, {
       theme: { name: "flmux", className: "dockview-theme-flmux" },
+      defaultTabComponent: "flmux-pane-tab",
       defaultRenderer: "always",
       createComponent: () =>
         new PaneRenderer({
@@ -96,19 +99,16 @@ export class TabRenderer implements IContentRenderer {
           },
           onHeaderActionsChanged: (paneId, actions) => {
             this.paneHeaderActions.set(String(paneId), actions);
-            // Refresh any group whose active panel matches
-            for (const gar of this.groupActionRenderers) {
-              gar.refreshPanelActions();
-            }
+            this.paneTabRenderers.get(String(paneId))?.refreshActions();
           }
         }),
+      createTabComponent: (options) => {
+        const tab = new PaneTabRenderer((panelId) => this.paneHeaderActions.get(panelId) ?? []);
+        this.paneTabRenderers.set(options.id, tab);
+        return tab as unknown as import("dockview-core").ITabRenderer;
+      },
       createRightHeaderActionComponent: (group: DockviewGroupPanel) => {
-        const gar = new GroupActionsRenderer(
-          group,
-          (action, panelId) => this.context.onGroupAction(action, panelId),
-          this.context.setupRegistry,
-          (panelId) => this.paneHeaderActions.get(panelId) ?? []
-        );
+        const gar = new GroupActionsRenderer(group, (action, panelId) => this.context.onGroupAction(action, panelId), this.context.setupRegistry);
         this.groupActionRenderers.push(gar);
         return gar;
       }
@@ -127,6 +127,7 @@ export class TabRenderer implements IContentRenderer {
     this._innerDockview.onDidRemovePanel((panel) => {
       const paneId = asPaneId(panel.id);
       this.paneHeaderActions.delete(panel.id);
+      this.paneTabRenderers.delete(panel.id);
       this.context.paneContext.firePreCloseHook(paneId);
       this.syncOuterTitle();
     });
@@ -227,6 +228,7 @@ export class TabRenderer implements IContentRenderer {
     this.outerVisibilityCallbacks.length = 0;
     this.groupActionRenderers.length = 0;
     this.paneHeaderActions.clear();
+    this.paneTabRenderers.clear();
 
     this.paneRenderer?.dispose();
     this.paneRenderer = null;

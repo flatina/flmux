@@ -299,6 +299,43 @@ input {
   color: var(--dv-inactivegroup-hiddenpanel-tab-color);
 }
 
+.pane-tab-menu-wrapper {
+  position: relative;
+}
+
+.pane-tab-menu-btn {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.pane-tab-popup-menu {
+  position: fixed;
+  z-index: 2000;
+  min-width: 120px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px var(--shadow);
+}
+
+.pane-tab-menu-item {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  padding: 6px 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pane-tab-menu-item:hover {
+  background: var(--hover);
+}
+
 .group-actions {
   display: flex;
   align-items: center;
@@ -306,8 +343,7 @@ input {
   padding: 0 4px;
 }
 
-.group-actions-zone,
-.panel-actions-zone {
+.group-actions-zone {
   display: flex;
   align-items: center;
   gap: 2px;

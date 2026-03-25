@@ -14,6 +14,7 @@ import { assert, sleep, waitForApp } from "./helpers";
 
 async function main() {
   const client = await waitForApp();
+  await sleep(1000);
 
   const before = await client.call("app.summary", undefined);
   const initialPanes = before.panes.length;

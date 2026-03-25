@@ -145,6 +145,11 @@ export interface WorkspaceTabDescriptor {
   id: string;
   title: string;
   singleton?: boolean;
+  titlebar?: {
+    icon: string;
+    tooltip?: string;
+    order?: number;
+  };
 }
 
 export interface ExtensionSetupContext {

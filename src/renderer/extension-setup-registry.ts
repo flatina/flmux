@@ -26,6 +26,11 @@ export interface RegisteredWorkspaceTab {
   contributionId: string;
   title: string;
   singleton: boolean;
+  titlebar?: {
+    icon: string;
+    tooltip?: string;
+    order: number;
+  };
 }
 
 type CreateGroupActionsHandler = (modifier: GroupActionsModifier) => void;
@@ -94,6 +99,12 @@ export class ExtensionSetupRegistry {
   /** Find a registered workspace tab by qualifiedId. */
   findWorkspaceTab(qualifiedId: string): RegisteredWorkspaceTab | undefined {
     return this.workspaceTabs.get(qualifiedId);
+  }
+
+  listTitlebarWorkspaceTabs(): RegisteredWorkspaceTab[] {
+    return Array.from(this.workspaceTabs.values())
+      .filter((tab) => !!tab.titlebar)
+      .sort((left, right) => (left.titlebar?.order ?? 100) - (right.titlebar?.order ?? 100));
   }
 
   /** Check if a qualifiedId belongs to any registered (or unregistered) extension workspace tab. */
@@ -177,7 +188,14 @@ export class ExtensionSetupRegistry {
           extensionId,
           contributionId: descriptor.id,
           title: descriptor.title,
-          singleton: descriptor.singleton ?? false
+          singleton: descriptor.singleton ?? false,
+          titlebar: descriptor.titlebar
+            ? {
+                icon: descriptor.titlebar.icon,
+                tooltip: descriptor.titlebar.tooltip,
+                order: descriptor.titlebar.order ?? 100
+              }
+            : undefined
         };
         this.workspaceTabs.set(qualifiedId, registered);
         return {

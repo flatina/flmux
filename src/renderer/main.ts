@@ -123,13 +123,13 @@ class WorkspaceApp {
     this.titlebar.className = "titlebar electrobun-webkit-app-region-drag";
     this.workspaceHost.className = "workspace-host dockview-theme-flmux";
 
+    // Eager-load all extension setup modules before creating dockview
+    await this.setupRegistry.loadAll(this.bootstrap.extensions);
+
     this.buildTitlebar();
 
     this.shell.append(this.titlebar, this.workspaceHost);
     this.root.replaceChildren(this.shell);
-
-    // Eager-load all extension setup modules before creating dockview
-    await this.setupRegistry.loadAll(this.bootstrap.extensions);
 
     const paneContext: PaneRendererContext = {
       workspaceRoot: this.bootstrap.cwd,
@@ -249,12 +249,18 @@ class WorkspaceApp {
     // Center: action buttons (no-drag)
     const center = document.createElement("div");
     center.className = "titlebar-center electrobun-webkit-app-region-no-drag";
-    center.append(
+    const builtins = [
       this.makeTitlebarBtn(">_", "New Terminal Tab", () => void this.openNewTerminalTab()),
-      this.makeTitlebarBtn("\u{1F310}", "New Browser Tab", () => void this.openNewBrowserTab()),
-      this.buildSessionMenu(),
-      this.buildSettingsMenu()
+      this.makeTitlebarBtn("\u{1F310}", "New Browser Tab", () => void this.openNewBrowserTab())
+    ];
+    const extensionLaunchers = this.setupRegistry.listTitlebarWorkspaceTabs().map((tab) =>
+      this.makeTitlebarBtn(
+        tab.titlebar?.icon ?? tab.title,
+        tab.titlebar?.tooltip ?? tab.title,
+        () => this.openRegisteredWorkspaceTab(tab.qualifiedId)
+      )
     );
+    center.append(...builtins, ...extensionLaunchers, this.buildSessionMenu(), this.buildSettingsMenu());
 
     // Right: window controls (no-drag)
     const right = document.createElement("div");

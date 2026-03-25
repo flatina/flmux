@@ -5,7 +5,12 @@ export default {
     const tab = ctx.registerWorkspaceTab({
       id: "cowsay",
       title: "Cowsay Lab",
-      singleton: true
+      singleton: true,
+      titlebar: {
+        icon: "\u{1F42E}",
+        tooltip: "Open Cowsay Workspace Tab",
+        order: 50
+      }
     });
 
     const paneAction = ctx.registerGroupAction({
@@ -22,16 +27,6 @@ export default {
       }
     });
 
-    const tabAction = ctx.registerGroupAction({
-      id: "moo-tab",
-      icon: "Lab",
-      tooltip: "Open Cowsay Workspace Tab",
-      order: 55,
-      run(actionCtx) {
-        actionCtx.openWorkspaceTab("cowsay");
-      }
-    });
-
     const hide = ctx.onCreateGroupActions(() => {
       // actions.hide("browser", "explorer"); // example
     });
@@ -40,7 +35,6 @@ export default {
       [Symbol.dispose]() {
         tab[Symbol.dispose]();
         paneAction[Symbol.dispose]();
-        tabAction[Symbol.dispose]();
         hide[Symbol.dispose]();
       }
     };

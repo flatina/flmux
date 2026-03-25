@@ -48,31 +48,40 @@ function joinPath(...parts: Array<string | null | undefined>): string {
 }
 
 function getHomeDir(): string {
-  const userProfile = getEnv("USERPROFILE");
-  if (userProfile) {
-    return userProfile;
+  if (getRuntimePlatform() === "win32") {
+    return getEnv("USERPROFILE")
+      ?? (getEnv("HOMEDRIVE") && getEnv("HOMEPATH") ? `${getEnv("HOMEDRIVE")}${getEnv("HOMEPATH")}` : null)
+      ?? getEnv("HOME")
+      ?? "C:\\Users\\Default";
   }
 
-  const homeDrive = getEnv("HOMEDRIVE");
-  const homePath = getEnv("HOMEPATH");
-  if (homeDrive && homePath) {
-    return `${homeDrive}${homePath}`;
-  }
-
-  return getEnv("HOME") ?? "~";
+  return getEnv("HOME") ?? "/root";
 }
 
+// ── XDG base directories ──
+
+/** $XDG_CONFIG_HOME/flmux — user-editable config (extensions.json, ui-settings.json) */
+export function getFlmuxConfigDir(): string {
+  const xdg = getEnv("XDG_CONFIG_HOME");
+  return joinPath(xdg || joinPath(getHomeDir(), ".config"), APP_DIR_NAME);
+}
+
+/** $XDG_DATA_HOME/flmux — app-managed data (extensions/, sessions/, browser-ctl-refs.json) */
 export function getFlmuxDataDir(): string {
-  const override = getEnv("FLMUX_DATA_DIR");
-  if (override) {
-    return override;
-  }
-
-  return joinPath(getHomeDir(), ".config", APP_DIR_NAME);
+  const xdg = getEnv("XDG_DATA_HOME");
+  return joinPath(xdg || joinPath(getHomeDir(), ".local", "share"), APP_DIR_NAME);
 }
+
+/** $XDG_STATE_HOME/flmux — ephemeral state (flmux-last.json) */
+export function getFlmuxStateDir(): string {
+  const xdg = getEnv("XDG_STATE_HOME");
+  return joinPath(xdg || joinPath(getHomeDir(), ".local", "state"), APP_DIR_NAME);
+}
+
+// ── Concrete paths ──
 
 export function getFlmuxLastPath(): string {
-  return joinPath(getFlmuxDataDir(), "flmux-last.json");
+  return joinPath(getFlmuxStateDir(), "flmux-last.json");
 }
 
 export function getSessionDir(): string {

@@ -1,13 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { getFlmuxDataDir } from "./paths";
+import { getFlmuxConfigDir } from "./paths";
 
 interface ExtensionSettings {
   disabled: string[];
 }
 
 function getSettingsPath(): string {
-  return join(getFlmuxDataDir(), "extensions.json");
+  return join(getFlmuxConfigDir(), "extensions.json");
 }
 
 export function loadExtensionSettings(): ExtensionSettings {

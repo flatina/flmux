@@ -6,7 +6,9 @@
  *   bun tests/e2e/run.ts                          → run all e2e tests
  *   bun tests/e2e/run.ts terminal-flmux-cli       → run specific test
  */
+import { mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { getPtydControlIpcPath } from "../../src/shared/ipc-paths";
 import { callJsonRpcIpc } from "../../src/shared/json-rpc-ipc";
 import { waitForApp } from "../smoke/helpers";
@@ -14,6 +16,15 @@ import { waitForApp } from "../smoke/helpers";
 const projectRoot = resolve(import.meta.dir, "../..");
 const testNames = process.argv.slice(2);
 const testWebRoot = resolve(projectRoot, "tests", "web");
+
+// Isolated XDG directories for test runs
+const xdgRoot = resolve(tmpdir(), `flmux-e2e-${Date.now()}`);
+const xdgEnv = {
+  XDG_CONFIG_HOME: resolve(xdgRoot, ".config"),
+  XDG_DATA_HOME: resolve(xdgRoot, ".local", "share"),
+  XDG_STATE_HOME: resolve(xdgRoot, ".local", "state")
+};
+for (const dir of Object.values(xdgEnv)) mkdirSync(dir, { recursive: true });
 
 async function main() {
   // Build first to ensure latest source is compiled
@@ -29,9 +40,10 @@ async function main() {
   }
 
   console.log("Starting app...");
+  const testEnv = { ...process.env, ...xdgEnv, FLMUX_FRESH: "1", FLMUX_WEB_ROOT: testWebRoot };
   const app = Bun.spawn([electrobunBin, "dev"], {
     cwd: projectRoot,
-    env: { ...process.env, FLMUX_FRESH: "1", FLMUX_WEB_ROOT: testWebRoot },
+    env: testEnv,
     stdout: "ignore",
     stderr: "ignore"
   });
@@ -51,7 +63,7 @@ async function main() {
       const testPath = resolve(import.meta.dir, `../smoke/${name}.ts`);
       const result = Bun.spawnSync(["bun", testPath], {
         cwd: projectRoot,
-        env: process.env,
+        env: testEnv,
         stdout: "inherit",
         stderr: "inherit"
       });
@@ -97,6 +109,7 @@ async function main() {
       }
     }
     await new Promise((r) => setTimeout(r, 1000));
+    rmSync(xdgRoot, { recursive: true, force: true });
     console.log("Done.");
   }
 }

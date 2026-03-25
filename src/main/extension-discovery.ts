@@ -14,7 +14,7 @@ export interface DiscoveredExtension {
 }
 
 /**
- * Scan embedded (ext/) and installed (~/.config/flmux/extensions/) directories
+ * Scan embedded (ext/) and installed ($XDG_DATA_HOME/flmux/extensions/) directories
  * for extensions with valid manifests.
  */
 export function discoverExtensions(workspaceRoot: string): DiscoveredExtension[] {
@@ -25,7 +25,7 @@ export function discoverExtensions(workspaceRoot: string): DiscoveredExtension[]
   const embeddedDir = join(workspaceRoot, "ext");
   scanDir(embeddedDir, true, results);
 
-  // Installed extensions: ~/.config/flmux/extensions/<id>/
+  // Installed extensions: $XDG_DATA_HOME/flmux/extensions/<id>/
   const installedDir = getExtensionsDir();
   scanDir(installedDir, false, results);
 

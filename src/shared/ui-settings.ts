@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { getFlmuxDataDir } from "./paths";
+import { getFlmuxConfigDir } from "./paths";
 
 export type ThemePreference = "system" | "dark" | "light";
 
@@ -11,7 +11,7 @@ interface UiSettings {
 const VALID_THEMES: readonly string[] = ["system", "dark", "light"];
 
 function getSettingsPath(): string {
-  return join(getFlmuxDataDir(), "ui-settings.json");
+  return join(getFlmuxConfigDir(), "ui-settings.json");
 }
 
 export function loadUiSettings(): UiSettings {

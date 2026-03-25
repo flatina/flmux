@@ -11,7 +11,7 @@ import {
 import type { FlmuxLastFile } from "../shared/flmux-last";
 import type { HostRpcMethod, HostRpcParams, HostRpcResult } from "../shared/host-rpc";
 import { debug, info } from "../shared/logger";
-import { getFlmuxDataDir } from "../shared/paths";
+import { getSessionDir } from "../shared/paths";
 import { saveUiTheme } from "../shared/ui-settings";
 import {
   type DiscoveredExtension,
@@ -222,14 +222,14 @@ export function createHostRpcHandlers(options: CreateHostRpcHandlersOptions): Ho
 }
 
 async function saveNamedSession(name: string, file: FlmuxLastFile): Promise<void> {
-  const sessionsDir = getSessionsDir();
+  const sessionsDir = getSessionDir();
   await mkdir(sessionsDir, { recursive: true });
   await writeFile(join(sessionsDir, `${sanitizeFileName(name)}.json`), JSON.stringify(file, null, 2), "utf-8");
 }
 
 async function loadNamedSession(name: string): Promise<FlmuxLastFile | null> {
   try {
-    const raw = await readFile(join(getSessionsDir(), `${sanitizeFileName(name)}.json`), "utf-8");
+    const raw = await readFile(join(getSessionDir(), `${sanitizeFileName(name)}.json`), "utf-8");
     return JSON.parse(raw) as FlmuxLastFile;
   } catch {
     return null;
@@ -238,12 +238,12 @@ async function loadNamedSession(name: string): Promise<FlmuxLastFile | null> {
 
 async function listNamedSessions(): Promise<Array<{ name: string; savedAt: string }>> {
   try {
-    const files = await readdir(getSessionsDir());
+    const files = await readdir(getSessionDir());
     const sessions: Array<{ name: string; savedAt: string }> = [];
     for (const fileName of files) {
       if (!fileName.endsWith(".json")) continue;
       try {
-        const raw = await readFile(join(getSessionsDir(), fileName), "utf-8");
+        const raw = await readFile(join(getSessionDir(), fileName), "utf-8");
         const parsed = JSON.parse(raw) as FlmuxLastFile;
         sessions.push({ name: fileName.replace(/\.json$/, ""), savedAt: parsed.savedAt ?? "" });
       } catch {
@@ -255,10 +255,6 @@ async function listNamedSessions(): Promise<Array<{ name: string; savedAt: strin
   } catch {
     return [];
   }
-}
-
-function getSessionsDir(): string {
-  return join(getFlmuxDataDir(), "sessions");
 }
 
 async function readDirEntries(dirPath: string, dirsOnly: boolean): Promise<HostRpcResult<"fs.readDir">["entries"]> {

@@ -15,13 +15,11 @@ import type {
   PaneOpenParams,
   PaneResult,
   PaneSplitParams,
-  PaneSummary,
   TabCloseParams,
   TabFocusParams,
   TabListResult,
   TabOpenParams,
-  TabResult,
-  TabSummary
+  TabResult
 } from "../shared/app-rpc";
 import type { BootstrapState } from "../shared/bootstrap-state";
 import { createFlmuxLastFile, type FlmuxLastFile, type WindowFrame } from "../shared/flmux-last";
@@ -35,7 +33,7 @@ import {
   type TerminalRuntimeId
 } from "../shared/ids";
 import { info } from "../shared/logger";
-import { createPaneParams, getDefaultPaneTitle, isPaneParams, type PaneParams } from "../shared/pane-params";
+import { createPaneParams, isPaneParams, type PaneParams } from "../shared/pane-params";
 import type { TerminalRuntimeEvent, TerminalRuntimeSummary } from "../shared/rpc";
 import { createSimpleTabParams, type LayoutableTabParams } from "../shared/tab-params";
 import { AppOwner, EventBus } from "./event-bus";
@@ -43,17 +41,23 @@ import { EXT_MANAGER_COMPONENT, EXT_MANAGER_TAB_ID, ExtManagerRenderer } from ".
 import { ExtensionSetupRegistry } from "./extension-setup-registry";
 import { PlaceholderRenderer } from "./placeholder-renderer";
 import {
-  browserTitleFromUrl,
   isV1Layout,
   migrateV1Layout,
-  normalizeBrowserUrlValue,
-  panelToSummary,
   sanitizeSerializedLayout,
   titleFromLeaf
 } from "./helpers";
 import { getHostRpc, setRendererRpcHandlers } from "./lib/host-rpc";
 import type { PaneRendererContext } from "./pane-renderer";
 import { TabRenderer } from "./tab-renderer";
+import {
+  collectWorkspaceBrowserPaneInfos,
+  collectWorkspacePaneSummaries,
+  collectWorkspaceTabSummaries,
+  findWorkspaceActiveInnerPaneId,
+  findWorkspacePane,
+  focusWorkspacePane,
+  getWorkspaceActivePaneId
+} from "./workspace-layout";
 
 void bootstrapRenderer();
 
@@ -573,12 +577,12 @@ class WorkspaceApp {
       throw new Error("Dockview is not ready");
     }
 
-    const found = this.findPane(params.paneId);
+    const found = findWorkspacePane(this.dockview, this.tabRenderers, params.paneId);
     if (!found) {
       throw new Error(`pane.focus target pane not found: ${params.paneId}`);
     }
 
-    this.focusPane(params.paneId);
+    focusWorkspacePane(this.dockview, this.tabRenderers, params.paneId);
     return this.makePaneResult(params.paneId);
   }
 
@@ -587,7 +591,7 @@ class WorkspaceApp {
       throw new Error("Dockview is not ready");
     }
 
-    const found = this.findPane(params.paneId);
+    const found = findWorkspacePane(this.dockview, this.tabRenderers, params.paneId);
     if (!found) {
       throw new Error(`pane.close target pane not found: ${params.paneId}`);
     }
@@ -611,7 +615,7 @@ class WorkspaceApp {
   }
 
   paneMessageFromRpc(params: PaneMessageParams): PaneMessageResult {
-    const found = this.findPane(params.paneId);
+    const found = findWorkspacePane(this.dockview, this.tabRenderers, params.paneId);
     if (!found) {
       return { ok: true, delivered: false };
     }
@@ -633,35 +637,9 @@ class WorkspaceApp {
       throw new Error("Dockview is not ready");
     }
 
-    const panes: PaneSummary[] = [];
-    for (const panel of this.dockview.panels) {
-      const tabId = asTabId(panel.id);
-      const renderer = this.tabRenderers.get(panel.id);
-      if (renderer?.isLayoutable && renderer.innerApi) {
-        for (const innerPanel of renderer.innerApi.panels) {
-          const innerParams = innerPanel.params as PaneParams;
-          if (isPaneParams(innerParams)) {
-            panes.push(
-              panelToSummary(
-                innerPanel.id,
-                tabId,
-                innerPanel.title ?? getDefaultPaneTitle(innerParams.kind),
-                innerParams
-              )
-            );
-          }
-        }
-      } else {
-        const params = panel.params as PaneParams;
-        if (isPaneParams(params)) {
-          panes.push(panelToSummary(panel.id, tabId, panel.title ?? getDefaultPaneTitle(params.kind), params));
-        }
-      }
-    }
-
     return {
-      activePaneId: this.getActivePaneId(),
-      panes,
+      activePaneId: getWorkspaceActivePaneId(this.dockview, this.tabRenderers),
+      panes: collectWorkspacePaneSummaries(this.dockview, this.tabRenderers),
       webServerUrl: this.bootstrap.webServerUrl,
       browserAutomation: {
         cdpBaseUrl: this.bootstrap.browserAutomation.cdpBaseUrl
@@ -674,20 +652,7 @@ class WorkspaceApp {
       throw new Error("Dockview is not ready");
     }
 
-    const tabs: TabSummary[] = [];
-    for (const panel of this.dockview.panels) {
-      const renderer = this.tabRenderers.get(panel.id);
-      const layoutMode = renderer?.isLayoutable ? "layoutable" : "simple";
-      const paneCount = renderer?.isLayoutable && renderer.innerApi ? renderer.innerApi.panels.length : 1;
-      tabs.push({
-        tabId: asTabId(panel.id),
-        layoutMode,
-        title: panel.title ?? "Tab",
-        paneCount
-      });
-    }
-
-    return { tabs };
+    return { tabs: collectWorkspaceTabSummaries(this.dockview, this.tabRenderers) };
   }
 
   browserListFromRpc(): BrowserPaneListResult {
@@ -695,62 +660,10 @@ class WorkspaceApp {
       throw new Error("Dockview is not ready");
     }
 
-    const panes: BrowserPaneInfo[] = [];
-    const pushBrowserPane = (paneId: PaneId, tabId: ReturnType<typeof asTabId>, title: string, params: PaneParams) => {
-      if (params.kind !== "browser") {
-        return;
-      }
-
-      const cached = this.browserPaneInfos.get(paneId);
-      if (cached) {
-        panes.push(cached);
-        return;
-      }
-
-      panes.push({
-        paneId,
-        tabId,
-        title,
-        url: normalizeBrowserUrlValue(params.url),
-        adapter: params.adapter,
-        webviewId: null,
-        automationStatus: params.adapter === "web-iframe" ? "unsupported" : "pending",
-        automationReason:
-          params.adapter === "web-iframe"
-            ? "iframe browser panes do not expose CDP automation"
-            : "browser pane has not reported live webview state yet"
-      });
+    return {
+      ok: true,
+      panes: collectWorkspaceBrowserPaneInfos(this.dockview, this.tabRenderers, this.browserPaneInfos)
     };
-
-    for (const panel of this.dockview.panels) {
-      const tabId = asTabId(panel.id);
-      const renderer = this.tabRenderers.get(panel.id);
-      if (renderer?.isLayoutable && renderer.innerApi) {
-        for (const innerPanel of renderer.innerApi.panels) {
-          const innerParams = innerPanel.params as PaneParams;
-          if (isPaneParams(innerParams)) {
-            pushBrowserPane(
-              asPaneId(innerPanel.id),
-              tabId,
-              innerPanel.title ?? browserTitleFromUrl(innerParams.kind === "browser" ? innerParams.url : ""),
-              innerParams
-            );
-          }
-        }
-      } else {
-        const params = panel.params as PaneParams;
-        if (isPaneParams(params)) {
-          pushBrowserPane(
-            asPaneId(panel.id),
-            tabId,
-            panel.title ?? browserTitleFromUrl(params.kind === "browser" ? params.url : ""),
-            params
-          );
-        }
-      }
-    }
-
-    return { ok: true, panes };
   }
 
   tabOpenFromRpc(params: TabOpenParams): TabResult {
@@ -854,7 +767,7 @@ class WorkspaceApp {
 
     // If reference pane is in a layoutable tab, split there
     if (options.referencePaneId) {
-      const found = this.findPane(options.referencePaneId);
+      const found = findWorkspacePane(this.dockview, this.tabRenderers, options.referencePaneId);
       if (found?.innerApi) {
         found.innerApi.addPanel({
           id: paneId,
@@ -954,7 +867,7 @@ class WorkspaceApp {
     // Check extension-registered group actions
     const extAction = this.setupRegistry.findGroupAction(action);
     if (extAction) {
-      const found = ref ? this.findPane(ref) : null;
+      const found = ref ? findWorkspacePane(this.dockview, this.tabRenderers, ref) : null;
       const tabId = found ? asTabId(found.outerPanel.id) : asTabId("");
       extAction.run({
         activePaneId: ref ?? null,
@@ -1003,7 +916,7 @@ class WorkspaceApp {
     extensionId: string,
     contributionId: string
   ): boolean {
-    const found = referencePaneId ? this.findPane(referencePaneId) : null;
+    const found = referencePaneId ? findWorkspacePane(this.dockview, this.tabRenderers, referencePaneId) : null;
     const innerApi = found
       ? this.tabRenderers.get(found.outerPanel.id)?.innerApi
       : null;
@@ -1027,22 +940,16 @@ class WorkspaceApp {
     referencePaneId: PaneId | undefined,
     direction: "left" | "right" | "above" | "below"
   ): Promise<void> {
-    const ref = referencePaneId ?? this.findActiveInnerPaneId();
-    if (!ref) {
+    const activeInnerPaneId = findWorkspaceActiveInnerPaneId(this.tabRenderers);
+    const resolvedReferencePaneId = referencePaneId ?? activeInnerPaneId;
+    if (!resolvedReferencePaneId) {
       await this.openLeaf({ kind: "terminal" });
       return;
     }
-    const cwd = this.getTerminalCwd(this.findPane(ref)?.innerPanel?.params ?? undefined);
-    await this.openLeaf({ kind: "terminal", cwd }, { referencePaneId: ref, direction });
-  }
-
-  private findActiveInnerPaneId(): PaneId | undefined {
-    for (const renderer of this.tabRenderers.values()) {
-      if (renderer.isLayoutable && renderer.innerApi?.activePanel) {
-        return asPaneId(renderer.innerApi.activePanel.id);
-      }
-    }
-    return undefined;
+    const cwd = this.getTerminalCwd(
+      findWorkspacePane(this.dockview, this.tabRenderers, resolvedReferencePaneId)?.innerPanel?.params ?? undefined
+    );
+    await this.openLeaf({ kind: "terminal", cwd }, { referencePaneId: resolvedReferencePaneId, direction });
   }
 
   /** Extract the live cwd from a terminal pane's runtime, falling back to params cwd. */
@@ -1094,21 +1001,8 @@ class WorkspaceApp {
     return {
       ok: true,
       paneId,
-      activePaneId: this.getActivePaneId()
+      activePaneId: getWorkspaceActivePaneId(this.dockview, this.tabRenderers)
     };
-  }
-
-  private getActivePaneId(): PaneId | null {
-    if (!this.dockview?.activePanel) {
-      return null;
-    }
-
-    const renderer = this.tabRenderers.get(this.dockview.activePanel.id);
-    if (renderer?.isLayoutable && renderer.innerApi?.activePanel) {
-      return asPaneId(renderer.innerApi.activePanel.id);
-    }
-
-    return asPaneId(this.dockview.activePanel.id);
   }
 
   private captureWorkspaceFile(windowFrame?: WindowFrame): FlmuxLastFile {
@@ -1121,7 +1015,7 @@ class WorkspaceApp {
     }
 
     return createFlmuxLastFile({
-      activePaneId: this.getActivePaneId(),
+      activePaneId: getWorkspaceActivePaneId(this.dockview, this.tabRenderers),
       workspaceLayout: sanitizeSerializedLayout(this.dockview.toJSON()).layout,
       window: windowFrame
     });
@@ -1137,7 +1031,7 @@ class WorkspaceApp {
       const { changed, layout } = sanitizeSerializedLayout(source);
       this.dockview.fromJSON(layout);
       if (file.activePaneId) {
-        this.focusPane(file.activePaneId);
+        focusWorkspacePane(this.dockview, this.tabRenderers, file.activePaneId);
       }
       if (this.dockview.panels.length === 0) {
         return false;
@@ -1149,58 +1043,6 @@ class WorkspaceApp {
     } catch {
       return false;
     }
-  }
-
-  private focusPane(paneId: PaneId): boolean {
-    const found = this.findPane(paneId);
-    if (!found) {
-      return false;
-    }
-
-    found.outerPanel.focus();
-    found.innerPanel?.focus();
-    return true;
-  }
-
-  private findPane(paneId: PaneId): {
-    outerPanel: { id: string; focus: () => void; api: { close: () => void }; params: Record<string, unknown> };
-    innerApi: DockviewApi | null;
-    innerPanel: {
-      id: string;
-      focus: () => void;
-      api: { close: () => void };
-      params: Record<string, unknown>;
-      title?: string;
-    } | null;
-  } | null {
-    if (!this.dockview) {
-      return null;
-    }
-
-    // Check outer Dockview (simple tabs where panel.id = pane.id)
-    const outerPanel = this.dockview.getPanel(paneId);
-    if (outerPanel) {
-      return { outerPanel: outerPanel as any, innerApi: null, innerPanel: null };
-    }
-
-    // Check inner Dockviews (layoutable tabs)
-    for (const [tabId, renderer] of this.tabRenderers) {
-      if (!renderer.isLayoutable || !renderer.innerApi) {
-        continue;
-      }
-
-      const innerPanel = renderer.innerApi.getPanel(paneId);
-      if (innerPanel) {
-        const outer = this.dockview.getPanel(tabId);
-        if (!outer) {
-          continue;
-        }
-
-        return { outerPanel: outer as any, innerApi: renderer.innerApi, innerPanel: innerPanel as any };
-      }
-    }
-
-    return null;
   }
 
   private updateOuterTabVisibility(): void {

@@ -38,7 +38,7 @@ import { info } from "../shared/logger";
 import { createPaneParams, isPaneParams, type PaneParams } from "../shared/pane-params";
 import type { TerminalRuntimeEvent, TerminalRuntimeSummary } from "../shared/rpc";
 import { createSimpleTabParams, type LayoutableTabParams } from "../shared/tab-params";
-import type { UiTheme } from "../shared/ui-settings";
+import type { ThemePreference } from "../shared/ui-settings";
 import { AppOwner, EventBus } from "./event-bus";
 import { EXT_MANAGER_COMPONENT, EXT_MANAGER_TAB_ID, ExtManagerRenderer } from "./ext-manager";
 import { ExtensionSetupRegistry } from "./extension-setup-registry";
@@ -366,7 +366,7 @@ class WorkspaceApp {
       this.openExtensionManager();
     });
 
-    const themeOptions: Array<{ value: UiTheme; label: string }> = [
+    const themeOptions: Array<{ value: ThemePreference; label: string }> = [
       { value: "system", label: "System Default" },
       { value: "dark", label: "Dark" },
       { value: "light", label: "Light" }
@@ -550,7 +550,7 @@ class WorkspaceApp {
 
     const sep = document.createElement("hr");
     sep.className = "session-list-item";
-    sep.style.cssText = "border:none;border-top:1px solid #444;margin:4px 0;";
+    sep.style.cssText = "border:none;border-top:1px solid var(--divider);margin:4px 0;";
     parentMenu.append(sep);
 
     for (const s of sessions) {

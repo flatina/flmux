@@ -1,19 +1,19 @@
 import type { ITheme } from "@xterm/xterm";
 import { oneDark } from "@codemirror/theme-one-dark";
 import type { Extension } from "@codemirror/state";
-import type { UiTheme } from "../shared/ui-settings";
+import type { ThemePreference } from "../shared/ui-settings";
 
 export type ResolvedTheme = "dark" | "light";
 
-let currentTheme: UiTheme = "dark";
+let currentPreference: ThemePreference = "dark";
 let resolved: ResolvedTheme = "dark";
 const listeners: Array<(theme: ResolvedTheme) => void> = [];
 
-function resolve(theme: UiTheme): ResolvedTheme {
-  if (theme === "system") {
+function resolve(preference: ThemePreference): ResolvedTheme {
+  if (preference === "system") {
     return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   }
-  return theme;
+  return preference;
 }
 
 function applyResolved(next: ResolvedTheme): void {
@@ -30,27 +30,27 @@ function applyResolved(next: ResolvedTheme): void {
 }
 
 /** Call once at startup before any DOM rendering. */
-export function initTheme(theme: UiTheme): void {
-  currentTheme = theme;
-  resolved = resolve(theme);
+export function initTheme(preference: ThemePreference): void {
+  currentPreference = preference;
+  resolved = resolve(preference);
   document.documentElement.dataset.theme = resolved;
 
   // Listen for OS color scheme changes (relevant when theme === "system")
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-    if (currentTheme === "system") {
+    if (currentPreference === "system") {
       applyResolved(resolve("system"));
     }
   });
 }
 
 /** Change theme and notify all listeners. */
-export function setTheme(theme: UiTheme): void {
-  currentTheme = theme;
-  applyResolved(resolve(theme));
+export function setTheme(preference: ThemePreference): void {
+  currentPreference = preference;
+  applyResolved(resolve(preference));
 }
 
-export function getTheme(): UiTheme {
-  return currentTheme;
+export function getTheme(): ThemePreference {
+  return currentPreference;
 }
 
 /** Subscribe to resolved theme changes. Returns unsubscribe function. */

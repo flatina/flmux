@@ -2,10 +2,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getFlmuxDataDir } from "./paths";
 
-export type UiTheme = "system" | "dark" | "light";
+export type ThemePreference = "system" | "dark" | "light";
 
 interface UiSettings {
-  theme: UiTheme;
+  theme: ThemePreference;
 }
 
 const VALID_THEMES: readonly string[] = ["system", "dark", "light"];
@@ -25,7 +25,7 @@ export function loadUiSettings(): UiSettings {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const theme =
       typeof parsed.theme === "string" && VALID_THEMES.includes(parsed.theme)
-        ? (parsed.theme as UiTheme)
+        ? (parsed.theme as ThemePreference)
         : "system";
     return { theme };
   } catch {
@@ -33,7 +33,7 @@ export function loadUiSettings(): UiSettings {
   }
 }
 
-export function saveUiTheme(theme: UiTheme): void {
+export function saveUiTheme(theme: ThemePreference): void {
   if (!VALID_THEMES.includes(theme)) return;
   const settings = loadUiSettings();
   settings.theme = theme;

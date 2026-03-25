@@ -18,7 +18,7 @@ export function resolveBrowserPaneId(value?: string): PaneId {
   return asPaneId(raw);
 }
 
-export function resolveSourcePaneId(value?: string): PaneId | undefined {
+export function resolveSenderPaneId(value?: string): PaneId | undefined {
   const raw = value?.trim() || process.env.FLMUX_PANE_ID?.trim();
   return raw ? asPaneId(raw) : undefined;
 }

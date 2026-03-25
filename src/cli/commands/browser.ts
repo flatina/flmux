@@ -1,5 +1,5 @@
 import { defineCommand } from "citty";
-import { resolveBrowserPaneId, resolveSourcePaneId, printJson, printPaneIds } from "../browser-utils";
+import { resolveBrowserPaneId, resolveSenderPaneId, printJson, printPaneIds } from "../browser-utils";
 import { getClient, sessionArg } from "./_utils";
 
 const BROWSER_RPC_TIMEOUT_MS = 20_000;
@@ -17,8 +17,7 @@ export default defineCommand({
           type: "string",
           description: "Browser placement: auto, within, left, right, above, below",
           default: "auto"
-        },
-        sourcePane: { type: "string", description: "Source pane ID (defaults to FLMUX_PANE_ID)" }
+        }
       },
       run: async ({ args }) => {
         const client = await getClient(args.session);
@@ -35,7 +34,7 @@ export default defineCommand({
           {
             url: args.url,
             placement,
-            sourcePaneId: resolveSourcePaneId(args.sourcePane)
+            senderPaneId: resolveSenderPaneId()
           },
           BROWSER_RPC_TIMEOUT_MS
         );

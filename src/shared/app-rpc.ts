@@ -76,7 +76,7 @@ export interface BrowserPaneResult {
 
 export interface BrowserNewParams {
   url?: string;
-  sourcePaneId?: PaneId;
+  senderPaneId?: PaneId;
   placement?: "auto" | "within" | "left" | "right" | "above" | "below";
 }
 

@@ -26,7 +26,8 @@ async function main() {
   const session = await resolveSession();
   const env = {
     ...process.env,
-    FLMUX_APP_IPC: session.ipcPath
+    FLMUX_APP_IPC: session.ipcPath,
+    FLMUX_PANE_ID: "terminal.DOES_NOT_EXIST"
   };
 
   const result = runCli(
@@ -36,9 +37,7 @@ async function main() {
       "new",
       "https://example.com",
       "--placement",
-      "right",
-      "--source-pane",
-      "terminal.DOES_NOT_EXIST"
+      "right"
     ],
     env
   );

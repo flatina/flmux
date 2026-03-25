@@ -829,7 +829,7 @@ class WorkspaceApp {
         void this.openLeaf({ kind: "terminal" }, ref ? { referencePaneId: ref, direction: "within" } : {});
         break;
       case "browser":
-        void this.openLeaf({ kind: "browser" }, ref ? { referencePaneId: ref, direction: "right" } : {});
+        void this.browserNewFromRpc({ senderPaneId: ref, placement: "auto" });
         break;
       case "explorer":
         void this.openLeaf({ kind: "explorer" }, ref ? { referencePaneId: ref, direction: "left" } : {});
@@ -890,22 +890,22 @@ class WorkspaceApp {
     direction?: "within" | "left" | "right" | "above" | "below";
   } {
     const requested = params.placement ?? "auto";
-    const sourcePaneId = params.sourcePaneId;
+    const senderPaneId = params.senderPaneId;
 
-    if (!sourcePaneId) {
+    if (!senderPaneId) {
       return {};
     }
 
     if (requested !== "auto") {
       return {
-        referencePaneId: sourcePaneId,
+        referencePaneId: senderPaneId,
         direction: requested
       };
     }
 
     return {
-      referencePaneId: sourcePaneId,
-      direction: this.resolveAutoBrowserDirection(sourcePaneId)
+      referencePaneId: senderPaneId,
+      direction: this.resolveAutoBrowserDirection(senderPaneId)
     };
   }
 

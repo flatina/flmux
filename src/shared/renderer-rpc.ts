@@ -64,7 +64,7 @@ export interface RendererRpcMethodMap {
   "workspace.browser.new": {
     params: {
       url?: string;
-      sourcePaneId?: PaneId;
+      senderPaneId?: PaneId;
       placement?: "auto" | "within" | "left" | "right" | "above" | "below";
     };
     result: {

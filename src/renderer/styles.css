@@ -308,11 +308,15 @@ input {
 
 .pane-tab-menu-wrapper {
   position: relative;
+  display: flex;
+  align-items: center;
+  margin-right: 2px;
 }
 
 .pane-tab-menu-btn {
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1;
+  cursor: pointer;
 }
 
 .pane-tab-popup-menu {

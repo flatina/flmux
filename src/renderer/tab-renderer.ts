@@ -11,7 +11,7 @@ import {
 } from "dockview-core";
 import type { HeaderAction } from "../shared/extension-spi";
 import { asPaneId, asTabId, type PaneId } from "../shared/ids";
-import type { PaneParams } from "../shared/pane-params";
+import { isPaneParams, type PaneKind, type PaneParams } from "../shared/pane-params";
 import { isLayoutableTabParams, type LayoutableTabParams } from "../shared/tab-params";
 import type { ExtensionSetupRegistry } from "./extension-setup-registry";
 import type { GroupActionHandler } from "./group-actions";
@@ -103,7 +103,7 @@ export class TabRenderer implements IContentRenderer {
           }
         }),
       createTabComponent: (options) => {
-        const tab = new PaneTabRenderer((panelId) => this.paneHeaderActions.get(panelId) ?? []);
+        const tab = new PaneTabRenderer((panelId) => this.getPaneTabMenuModel(panelId));
         this.paneTabRenderers.set(options.id, tab);
         return tab as unknown as import("dockview-core").ITabRenderer;
       },
@@ -213,6 +213,17 @@ export class TabRenderer implements IContentRenderer {
     }
   }
 
+  private getPaneTabMenuModel(panelId: string): { icon: string; label: string; actions: HeaderAction[] } {
+    const panel = this._innerDockview?.panels.find((candidate) => candidate.id === panelId) ?? null;
+    const params = isPaneParams(panel?.params) ? panel.params : null;
+    const kind = params?.kind ?? "extension";
+    return {
+      icon: paneKindIcon(kind),
+      label: `${paneKindLabel(kind)} Menu`,
+      actions: this.paneHeaderActions.get(panelId) ?? []
+    };
+  }
+
   update(event: PanelUpdateEvent): void {
     if (this._layoutMode === "simple" && this.paneRenderer) {
       this.paneRenderer.update(event);
@@ -249,5 +260,35 @@ export class TabRenderer implements IContentRenderer {
     this.outerPanelApi = null;
 
     this.element.replaceChildren();
+  }
+}
+
+function paneKindIcon(kind: PaneKind): string {
+  switch (kind) {
+    case "terminal":
+      return "\u{1F5A5}\uFE0F";
+    case "browser":
+      return "\u{1F310}";
+    case "editor":
+      return "\u{1F4C4}";
+    case "explorer":
+      return "\u{1F4C1}";
+    case "extension":
+      return "\u{1F9E9}";
+  }
+}
+
+function paneKindLabel(kind: PaneKind): string {
+  switch (kind) {
+    case "terminal":
+      return "Terminal";
+    case "browser":
+      return "Browser";
+    case "editor":
+      return "Editor";
+    case "explorer":
+      return "Explorer";
+    case "extension":
+      return "Extension";
   }
 }

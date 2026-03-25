@@ -4,7 +4,13 @@ import type { HeaderAction } from "../shared/extension-spi";
 
 type DisposableLike = { dispose(): void };
 
-export type PaneTabHeaderActionsProvider = (panelId: string) => HeaderAction[];
+export type PaneTabMenuModel = {
+  icon: string;
+  label: string;
+  actions: HeaderAction[];
+};
+
+export type PaneTabMenuProvider = (panelId: string) => PaneTabMenuModel;
 
 export class PaneTabRenderer extends DefaultTab {
   private panelId = "";
@@ -12,28 +18,22 @@ export class PaneTabRenderer extends DefaultTab {
   private readonly menuButton = document.createElement("div");
   private readonly panelDisposables: DisposableLike[] = [];
   private popupMenu: HTMLDivElement | null = null;
+  private closePanel: (() => void) | null = null;
 
-  constructor(private readonly getHeaderActions: PaneTabHeaderActionsProvider) {
+  constructor(private readonly getMenuModel: PaneTabMenuProvider) {
     super();
 
     this.menuWrapper.className = "pane-tab-menu-wrapper";
     this.menuButton.className = "dv-default-tab-action pane-tab-menu-btn";
-    this.menuButton.textContent = "\u2630";
-    this.menuButton.title = "Pane Actions";
 
     this.menuWrapper.append(this.menuButton);
-
-    const closeAction = this.element.querySelector(".dv-default-tab-action");
-    if (closeAction?.parentElement) {
-      closeAction.parentElement.insertBefore(this.menuWrapper, closeAction);
-    } else {
-      this.element.append(this.menuWrapper);
-    }
+    this.element.insertBefore(this.menuWrapper, this.element.firstChild);
   }
 
   override init(parameters: any): void {
     super.init(parameters);
     this.panelId = parameters.api.id;
+    this.closePanel = () => parameters.api.close();
 
     this.panelDisposables.push(
       addDisposableListener(this.menuButton, "pointerdown", (event) => {
@@ -63,15 +63,9 @@ export class PaneTabRenderer extends DefaultTab {
   }
 
   refreshActions(): void {
-    const actions = this.getHeaderActions(this.panelId);
-
-    if (actions.length === 0) {
-      this.menuWrapper.style.display = "none";
-      this.closePopup();
-      return;
-    }
-
-    this.menuWrapper.style.display = "";
+    const model = this.getMenuModel(this.panelId);
+    this.menuButton.textContent = model.icon;
+    this.menuButton.title = model.label;
     if (this.popupMenu) {
       this.renderPopupContents();
     }
@@ -86,7 +80,7 @@ export class PaneTabRenderer extends DefaultTab {
   }
 
   private openPopup(): void {
-    const actions = this.getHeaderActions(this.panelId);
+    const actions = this.getPopupActions();
     if (actions.length === 0) {
       return;
     }
@@ -107,7 +101,7 @@ export class PaneTabRenderer extends DefaultTab {
       return;
     }
 
-    const actions = this.getHeaderActions(this.panelId);
+    const actions = this.getPopupActions();
     this.popupMenu.replaceChildren();
     for (const action of actions) {
       const item = document.createElement("button");
@@ -123,6 +117,20 @@ export class PaneTabRenderer extends DefaultTab {
       });
       this.popupMenu.append(item);
     }
+  }
+
+  private getPopupActions(): HeaderAction[] {
+    const model = this.getMenuModel(this.panelId);
+    const actions = [...model.actions];
+    if (this.closePanel) {
+      actions.push({
+        id: "close",
+        icon: "Close",
+        tooltip: "Close",
+        onClick: () => this.closePanel?.()
+      });
+    }
+    return actions;
   }
 
   private closePopup(): void {

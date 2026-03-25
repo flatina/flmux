@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 export interface LaunchCommand {
   command: string;
@@ -28,6 +28,17 @@ export function resolveWorkspaceRoot(startPath = Bun.main): string | null {
 
 export function resolveAppWorkingDirectory(): string {
   return process.env.FLMUX_ROOT?.trim() || resolveWorkspaceRoot() || process.cwd();
+}
+
+export function resolveWebRoot(argv = process.argv): string | null {
+  const index = argv.findIndex((value) => value === "--web-root");
+  const value = index >= 0 ? argv[index + 1]?.trim() : "";
+  if (value) {
+    return resolve(value);
+  }
+
+  const envValue = process.env.FLMUX_WEB_ROOT?.trim();
+  return envValue ? resolve(envValue) : null;
 }
 
 export function resolvePtydLaunchCommand(): LaunchCommand {

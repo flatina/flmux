@@ -13,6 +13,7 @@ import { waitForApp } from "../smoke/helpers";
 
 const projectRoot = resolve(import.meta.dir, "../..");
 const testNames = process.argv.slice(2);
+const testWebRoot = resolve(projectRoot, "tests", "web");
 
 async function main() {
   // Build first to ensure latest source is compiled
@@ -30,7 +31,7 @@ async function main() {
   console.log("Starting app...");
   const app = Bun.spawn([electrobunBin, "dev"], {
     cwd: projectRoot,
-    env: { ...process.env, FLMUX_FRESH: "1" },
+    env: { ...process.env, FLMUX_FRESH: "1", FLMUX_WEB_ROOT: testWebRoot },
     stdout: "ignore",
     stderr: "ignore"
   });

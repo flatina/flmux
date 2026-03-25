@@ -17,7 +17,7 @@ import { createHostRpcDispatcher } from "./host-rpc";
 import { PtydClient } from "./ptyd-client";
 import { resolveStartupSessionId } from "./ptyd-session-recovery";
 import { RendererWorkspaceBridge } from "./renderer-workspace-bridge";
-import { resolveAppWorkingDirectory, resolveWorkspaceRoot } from "./runtime-paths";
+import { resolveAppWorkingDirectory, resolveWebRoot, resolveWorkspaceRoot } from "./runtime-paths";
 import { startWebServer } from "./web-server";
 import { startWebUiServer, type WebUiServer } from "./web-ui-server";
 
@@ -29,6 +29,7 @@ export async function runAppMain(): Promise<void> {
   const flmuxLastStore = new FlmuxLastStore();
   const initialRestoreFile = shouldRestore ? await flmuxLastStore.load() : null;
   const workspaceCwd = resolveAppWorkingDirectory();
+  const webRoot = resolveWebRoot();
   const appRpcIpcPath = getAppRpcIpcPath(sessionId);
   process.env.FLMUX_ROOT = workspaceCwd;
   setLogLevel(config.log.level);
@@ -37,7 +38,7 @@ export async function runAppMain(): Promise<void> {
   let appRpcServer: StartedAppRpcServer | null = null;
   let shuttingDown = false;
 
-  const webServer = startWebServer();
+  const webServer = startWebServer({ staticRoot: webRoot });
   const discoveredExtensions = discoverExtensions(workspaceCwd);
   if (discoveredExtensions.length > 0) {
     info(

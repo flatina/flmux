@@ -29,7 +29,7 @@ flget install flatina/flmux --source ghr
 
 ### GitHub Releases
 
-Download the latest zip from [Releases](https://github.com/flatina/flmux/releases), extract, and run `bin/launcher.exe`.
+Download the latest release archive from [Releases](https://github.com/flatina/flmux/releases), extract it, and run `bin/launcher.exe`.
 
 ### From source
 

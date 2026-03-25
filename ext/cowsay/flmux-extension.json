@@ -1,7 +1,7 @@
 {
   "id": "sample.cowsay",
   "name": "Cowsay Lab",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "apiVersion": 2,
   "setupEntry": "./setup.ts",
   "rendererEntry": "./index.ts",

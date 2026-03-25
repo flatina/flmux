@@ -58,15 +58,19 @@ The app opens with a single workspace tab containing a terminal. Use the titleba
 
 ### Inner pane actions
 
-Each workspace tab has header buttons for adding panes within the current split group:
+Each workspace tab has:
 
-| Button | Action |
-|--------|--------|
-| 📁 | Add file explorer (split left) |
-| >_ | Add terminal (same group) |
-| 🌐 | Add browser (split right) |
-| ◫ | Split right |
-| ⊟ | Split down |
+- a `➕` group menu in the inner header for adding panes or terminal splits within the current group
+- a left icon menu on each pane tab for pane-specific commands
+
+The `➕` menu includes:
+
+- `📄 Add Editor`
+- `📁 Add Explorer`
+- `🌐 Add Browser`
+- `>_ Add Terminal`
+- `◫ Split Right`
+- `⊟ Split Down`
 
 
 ## Web Access
@@ -192,18 +196,20 @@ Extensions add custom pane types or new CLI commands.
 ```
 ext/cowsay/
   flmux-extension.json    # manifest
-  index.ts                 # UI (mount function)
+  index.ts                 # mount logic
+  index.html               # UI template asset
   cli.ts                   # CLI command (optional)
 ```
 
 An extension receives a host DOM element and a context with event bus access:
 
 ```typescript
-export const mount: ExtensionMount = (host, context) => {
+export const mount: ExtensionMount = async (host, context) => {
+  const html = await context.loadAssetText("./index.html");
+  host.innerHTML = html;
+
   context.emit("my:event", { data: 123 });
   context.on("other:event", (e) => console.log(e.data));
-
-  host.textContent = "Hello!";
   return { dispose() { /* cleanup */ } };
 };
 ```

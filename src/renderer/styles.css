@@ -347,6 +347,12 @@ input {
   background: var(--hover);
 }
 
+.pane-tab-menu-separator {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--divider);
+}
+
 .group-actions {
   display: flex;
   align-items: center;

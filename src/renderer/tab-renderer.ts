@@ -108,7 +108,7 @@ export class TabRenderer implements IContentRenderer {
         this.paneTabRenderers.set(options.id, tab);
         return tab as unknown as import("dockview-core").ITabRenderer;
       },
-      createRightHeaderActionComponent: (group: DockviewGroupPanel) => {
+      createLeftHeaderActionComponent: (group: DockviewGroupPanel) => {
         const gar = new GroupActionsRenderer(group, (action, panelId) => this.context.onGroupAction(action, panelId), this.context.setupRegistry);
         this.groupActionRenderers.push(gar);
         return gar;

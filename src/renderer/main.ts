@@ -53,6 +53,7 @@ import {
   collectWorkspaceBrowserPaneInfos,
   collectWorkspacePaneSummaries,
   collectWorkspaceTabSummaries,
+  findActiveLayoutableTab,
   findWorkspaceActiveInnerPaneId,
   findWorkspacePane,
   focusWorkspacePane,
@@ -423,19 +424,7 @@ class WorkspaceApp {
   /** Create a new layoutable tab with a fresh terminal inside. */
   private async openNewTerminalTab(): Promise<void> {
     if (!this.dockview) return;
-    const layoutTabId = createTabId("layout");
-    this.dockview.addPanel({
-      id: layoutTabId,
-      component: "flmux-tab",
-      title: "Workspace",
-      params: {
-        tabKind: "tab",
-        layoutMode: "layoutable",
-        innerLayout: null,
-        activePaneId: null
-      } as LayoutableTabParams
-    });
-    const renderer = this.tabRenderers.get(layoutTabId);
+    const { tabId: layoutTabId, renderer } = this.createLayoutableTab("Workspace");
     if (renderer) {
       const paneId = createPaneId("terminal");
       const params = await this.createParamsForLeaf({ kind: "terminal" });
@@ -448,19 +437,7 @@ class WorkspaceApp {
   /** Create a new layoutable tab with a browser inside. */
   private async openNewBrowserTab(): Promise<void> {
     if (!this.dockview) return;
-    const layoutTabId = createTabId("layout");
-    this.dockview.addPanel({
-      id: layoutTabId,
-      component: "flmux-tab",
-      title: "Browser",
-      params: {
-        tabKind: "tab",
-        layoutMode: "layoutable",
-        innerLayout: null,
-        activePaneId: null
-      } as LayoutableTabParams
-    });
-    const renderer = this.tabRenderers.get(layoutTabId);
+    const { tabId: layoutTabId, renderer } = this.createLayoutableTab("Browser");
     if (renderer) {
       const paneId = createPaneId("browser");
       const params = await this.createParamsForLeaf({ kind: "browser" });
@@ -538,19 +515,7 @@ class WorkspaceApp {
     }
 
     // Fresh start: single layoutable tab with one terminal
-    const layoutTabId = createTabId("layout");
-    this.dockview.addPanel({
-      id: layoutTabId,
-      component: "flmux-tab",
-      title: "Workspace",
-      params: {
-        tabKind: "tab",
-        layoutMode: "layoutable",
-        innerLayout: null,
-        activePaneId: null
-      } as LayoutableTabParams
-    });
-    const layoutRenderer = this.tabRenderers.get(layoutTabId);
+    const { renderer: layoutRenderer } = this.createLayoutableTab("Workspace");
     if (layoutRenderer) {
       const terminalPaneId = createPaneId("terminal");
       const terminalParams = await this.createParamsForLeaf({ kind: "terminal" });
@@ -765,58 +730,11 @@ class WorkspaceApp {
       throw new Error("Dockview is not ready");
     }
 
-    // If reference pane is in a layoutable tab, split there
     if (options.referencePaneId) {
-      const found = findWorkspacePane(this.dockview, this.tabRenderers, options.referencePaneId);
-      if (found?.innerApi) {
-        found.innerApi.addPanel({
-          id: paneId,
-          component: "flmux-pane",
-          title,
-          params,
-          position: {
-            referencePanel: options.referencePaneId,
-            direction: options.direction ?? "within"
-          }
-        } as AddPanelOptions<PaneParams>);
-        found.outerPanel.focus();
-        this.queueSave();
-        return this.makePaneResult(paneId);
-      }
+      return this.insertPaneRelativeToReference(paneId, title, params, options.referencePaneId, options.direction);
     }
 
-    // Find first layoutable tab or create one
-    let layoutTabId: string | null = null;
-    let renderer: TabRenderer | null = null;
-
-    for (const [tabId, r] of this.tabRenderers) {
-      if (r.isLayoutable) {
-        layoutTabId = tabId;
-        renderer = r;
-        break;
-      }
-    }
-
-    if (!renderer || !layoutTabId) {
-      layoutTabId = createTabId("layout");
-      this.dockview.addPanel({
-        id: layoutTabId,
-        component: "flmux-tab",
-        title: "Workspace",
-        params: {
-          tabKind: "tab",
-          layoutMode: "layoutable",
-          innerLayout: null,
-          activePaneId: null
-        } as LayoutableTabParams
-      });
-      renderer = this.tabRenderers.get(layoutTabId) ?? null;
-    }
-
-    if (!renderer) {
-      throw new Error("Failed to create layoutable tab");
-    }
-
+    const { tabId: layoutTabId, renderer } = this.getOrCreateTargetLayoutableTab();
     renderer.addPane(paneId, title, params);
     this.dockview.getPanel(layoutTabId)?.focus();
     this.queueSave();
@@ -950,6 +868,79 @@ class WorkspaceApp {
       findWorkspacePane(this.dockview, this.tabRenderers, resolvedReferencePaneId)?.innerPanel?.params ?? undefined
     );
     await this.openLeaf({ kind: "terminal", cwd }, { referencePaneId: resolvedReferencePaneId, direction });
+  }
+
+  private insertPaneRelativeToReference(
+    paneId: PaneId,
+    title: string,
+    params: PaneParams,
+    referencePaneId: PaneId,
+    direction?: "within" | "left" | "right" | "above" | "below"
+  ): PaneResult {
+    if (!this.dockview) {
+      throw new Error("Dockview is not ready");
+    }
+
+    const found = findWorkspacePane(this.dockview, this.tabRenderers, referencePaneId);
+    if (!found) {
+      throw new Error(`pane.open reference pane not found: ${referencePaneId}`);
+    }
+    if (!found.innerApi) {
+      throw new Error(`pane.open reference pane is not in a layoutable tab: ${referencePaneId}`);
+    }
+
+    found.innerApi.addPanel({
+      id: paneId,
+      component: "flmux-pane",
+      title,
+      params,
+      position: {
+        referencePanel: referencePaneId,
+        direction: direction ?? "within"
+      }
+    } as AddPanelOptions<PaneParams>);
+    found.outerPanel.focus();
+    this.queueSave();
+    return this.makePaneResult(paneId);
+  }
+
+  private getOrCreateTargetLayoutableTab(): { tabId: string; renderer: TabRenderer } {
+    if (!this.dockview) {
+      throw new Error("Dockview is not ready");
+    }
+
+    const activeLayoutable = findActiveLayoutableTab(this.dockview, this.tabRenderers);
+    if (activeLayoutable) {
+      return activeLayoutable;
+    }
+
+    return this.createLayoutableTab("Workspace");
+  }
+
+  private createLayoutableTab(title: string): { tabId: string; renderer: TabRenderer } {
+    if (!this.dockview) {
+      throw new Error("Dockview is not ready");
+    }
+
+    const tabId = createTabId("layout");
+    this.dockview.addPanel({
+      id: tabId,
+      component: "flmux-tab",
+      title,
+      params: {
+        tabKind: "tab",
+        layoutMode: "layoutable",
+        innerLayout: null,
+        activePaneId: null
+      } as LayoutableTabParams
+    });
+
+    const renderer = this.tabRenderers.get(tabId);
+    if (!renderer) {
+      throw new Error("Failed to create layoutable tab");
+    }
+
+    return { tabId, renderer };
   }
 
   /** Extract the live cwd from a terminal pane's runtime, falling back to params cwd. */

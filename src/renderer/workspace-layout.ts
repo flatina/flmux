@@ -171,6 +171,23 @@ export function findWorkspaceActiveInnerPaneId(tabRenderers: Map<string, TabRend
   return undefined;
 }
 
+export function findActiveLayoutableTab(
+  dockview: DockviewApi | null,
+  tabRenderers: Map<string, TabRenderer>
+): { tabId: string; renderer: TabRenderer } | null {
+  const activeTabId = dockview?.activePanel?.id;
+  if (!activeTabId) {
+    return null;
+  }
+
+  const renderer = tabRenderers.get(activeTabId);
+  if (!renderer?.isLayoutable) {
+    return null;
+  }
+
+  return { tabId: activeTabId, renderer };
+}
+
 function forEachWorkspacePane(
   dockview: DockviewApi | null,
   tabRenderers: Map<string, TabRenderer>,

@@ -53,15 +53,18 @@ export class AppRpcDispatcher {
 export function createAppRpcHandlers(options: CreateAppRpcHandlersOptions): AppRpcHandlers {
   return {
     "system.ping": () => ({ pong: true }),
-    "system.identify": () => ({
-      app: "flmux",
-      sessionId: options.sessionId,
-      workspaceRoot: options.workspaceRoot,
-      pid: options.pid ?? process.pid,
-      platform: options.platform ?? process.platform,
-      activePaneId: null,
-      paneCount: 0
-    }),
+    "system.identify": async () => {
+      const summary = await options.bridge.getSummary();
+      return {
+        app: "flmux" as const,
+        sessionId: options.sessionId,
+        workspaceRoot: options.workspaceRoot,
+        pid: options.pid ?? process.pid,
+        platform: options.platform ?? process.platform,
+        activePaneId: summary.activePaneId,
+        paneCount: summary.panes.length
+      };
+    },
     "app.summary": () => options.bridge.getSummary(),
     "pane.open": (params) => options.bridge.openPane(params),
     "pane.focus": (params) => options.bridge.focusPane(params),

@@ -7,6 +7,7 @@ import { Compartment } from "@codemirror/state";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { basicSetup, EditorView } from "codemirror";
+import { basename } from "node:path";
 import type {
   GroupPanelPartInitParameters,
   IContentRenderer,
@@ -92,6 +93,7 @@ export class PaneRenderer implements IContentRenderer {
   private browserDisposables: Array<() => void> = [];
 
   private editorPaneId: string | null = null;
+  private editorParams: EditorPaneParams | null = null;
   private editorView: EditorView | null = null;
   private editorDirty = false;
   private editorThemeCompartment = new Compartment();
@@ -234,29 +236,18 @@ export class PaneRenderer implements IContentRenderer {
     this.disposeBrowserView();
 
     if (this.editorPaneId === this.props?.api.id && this.editorView) {
+      this.editorParams = params;
+      this.syncEditorUi();
+      this.refreshEditorHeaderActions();
       return;
     }
 
     this.disposeEditorView();
     this.editorPaneId = this.props?.api.id ?? null;
+    this.editorParams = params;
 
     const shell = document.createElement("div");
     shell.className = "editor-pane";
-
-    const toolbar = document.createElement("div");
-    toolbar.className = "editor-toolbar";
-
-    const pathLabel = document.createElement("span");
-    pathLabel.className = "editor-path";
-    pathLabel.textContent = params.filePath ?? "(no file)";
-
-    const saveBtn = document.createElement("button");
-    saveBtn.type = "button";
-    saveBtn.textContent = "Save";
-    saveBtn.className = "editor-save";
-    saveBtn.addEventListener("click", () => void this.saveEditorFile(params));
-
-    toolbar.append(pathLabel, saveBtn);
 
     const editorHost = document.createElement("div");
     editorHost.className = "editor-host";
@@ -277,7 +268,7 @@ export class PaneRenderer implements IContentRenderer {
 
     statusBar.append(statusLines, statusEol, statusEnc, statusLang);
 
-    shell.append(toolbar, editorHost, statusBar);
+    shell.append(editorHost, statusBar);
     this.element.replaceChildren(shell);
 
     const updateStatus = (doc: { lines: number; toString: () => string }) => {
@@ -294,7 +285,7 @@ export class PaneRenderer implements IContentRenderer {
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             this.editorDirty = true;
-            saveBtn.textContent = "Save *";
+            this.syncEditorUi();
             updateStatus(update.state.doc);
           }
         }),
@@ -302,7 +293,7 @@ export class PaneRenderer implements IContentRenderer {
           keydown: (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key === "s") {
               e.preventDefault();
-              void this.saveEditorFile(params);
+              void this.saveEditorFile();
             }
           }
         }),
@@ -316,6 +307,8 @@ export class PaneRenderer implements IContentRenderer {
     this.editorThemeUnsub = onThemeChange(() => {
       view.dispatch({ effects: this.editorThemeCompartment.reconfigure(getEditorThemeExtension()) });
     });
+    this.syncEditorUi();
+    this.refreshEditorHeaderActions();
 
     if (params.filePath) {
       void this.loadEditorFile(params.filePath, updateStatus);
@@ -323,11 +316,15 @@ export class PaneRenderer implements IContentRenderer {
   }
 
   private disposeEditorView(): void {
+    if (this.editorPaneId) {
+      this.context.onHeaderActionsChanged?.(asPaneId(this.editorPaneId), []);
+    }
     this.editorThemeUnsub?.();
     this.editorThemeUnsub = null;
     this.editorView?.destroy();
     this.editorView = null;
     this.editorPaneId = null;
+    this.editorParams = null;
     this.editorDirty = false;
   }
 
@@ -345,26 +342,94 @@ export class PaneRenderer implements IContentRenderer {
       changes: { from: 0, to: this.editorView.state.doc.length, insert: content }
     });
     this.editorDirty = false;
+    this.syncEditorUi();
     onLoaded?.(this.editorView.state.doc);
   }
 
-  private async saveEditorFile(params: EditorPaneParams): Promise<void> {
-    if (!params.filePath || !this.editorView || !this.editorDirty) {
+  private async saveEditorFile(): Promise<void> {
+    if (!this.editorView || !this.editorParams) {
+      return;
+    }
+
+    if (!this.editorParams.filePath) {
+      await this.saveEditorFileAs();
+      return;
+    }
+
+    if (!this.editorDirty) {
       return;
     }
 
     const result = await hostRpc.request("fs.writeFile", {
-      path: params.filePath,
+      path: this.editorParams.filePath,
       content: this.editorView.state.doc.toString()
     });
 
     if (result.ok) {
       this.editorDirty = false;
-      const saveBtn = this.element.querySelector<HTMLButtonElement>(".editor-save");
-      if (saveBtn) {
-        saveBtn.textContent = "Save";
-      }
+      this.syncEditorUi();
     }
+  }
+
+  private async saveEditorFileAs(): Promise<void> {
+    if (!this.editorView || !this.editorParams || !this.props) {
+      return;
+    }
+
+    const suggestedPath = this.editorParams.filePath ?? `${this.context.workspaceRoot}\\untitled.txt`;
+    const nextPath = prompt("Save As...", suggestedPath)?.trim();
+    if (!nextPath) {
+      return;
+    }
+
+    const result = await hostRpc.request("fs.writeFile", {
+      path: nextPath,
+      content: this.editorView.state.doc.toString()
+    });
+
+    if (!result.ok) {
+      alert(`Save failed: ${result.error}`);
+      return;
+    }
+
+    this.editorDirty = false;
+    this.editorParams = {
+      ...this.editorParams,
+      filePath: nextPath
+    };
+    this.props.api.updateParameters({ filePath: nextPath });
+    this.props.api.setTitle(basename(nextPath));
+    this.syncEditorUi();
+    this.refreshEditorHeaderActions();
+  }
+
+  private syncEditorUi(): void {
+    if (!this.editorParams || !this.props) {
+      return;
+    }
+
+    this.props.api.setTitle(getEditorTabTitle(this.editorParams.filePath, this.editorDirty));
+  }
+
+  private refreshEditorHeaderActions(): void {
+    if (!this.editorPaneId) {
+      return;
+    }
+
+    this.context.onHeaderActionsChanged?.(asPaneId(this.editorPaneId), [
+      {
+        id: "editor-save",
+        icon: "Save",
+        tooltip: "Save",
+        onClick: () => void this.saveEditorFile()
+      },
+      {
+        id: "editor-save-as",
+        icon: "Save As...",
+        tooltip: "Save As...",
+        onClick: () => void this.saveEditorFileAs()
+      }
+    ]);
   }
 
   private renderExplorer(params: ExplorerPaneParams): void {
@@ -1399,6 +1464,11 @@ function resolveLanguageExtension(filePath: string | null, language: string | nu
     default:
       return null;
   }
+}
+
+function getEditorTabTitle(filePath: string | null, dirty: boolean): string {
+  const base = filePath ? basename(filePath) : "Untitled";
+  return dirty ? `${base} *` : base;
 }
 
 function createBrowserWelcome(): HTMLElement {

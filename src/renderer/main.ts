@@ -906,6 +906,9 @@ class WorkspaceApp {
 
     // Builtin actions
     switch (action) {
+      case "editor":
+        void this.openLeaf({ kind: "editor" }, ref ? { referencePaneId: ref, direction: "within" } : {});
+        break;
       case "terminal":
         void this.openLeaf({ kind: "terminal" }, ref ? { referencePaneId: ref, direction: "within" } : {});
         break;

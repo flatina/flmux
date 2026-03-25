@@ -2,6 +2,7 @@ import type { DockviewGroupPanel, IGroupHeaderProps, IHeaderActionsRenderer } fr
 import type { ExtensionSetupRegistry } from "./extension-setup-registry";
 
 export const BUILTIN_ACTIONS: ReadonlyArray<{ id: string; icon: string; tooltip: string }> = [
+  { id: "editor", icon: "📄", tooltip: "Add Editor" },
   { id: "explorer", icon: "📁", tooltip: "Add Explorer" },
   { id: "terminal", icon: ">_", tooltip: "Add Terminal" },
   { id: "browser", icon: "\u{1F310}", tooltip: "Add Browser" },

@@ -41,6 +41,10 @@ export interface HostRpcMethodMap {
     params: { extensionId: string };
     result: { ok: true; source: string } | { ok: false; error: string };
   };
+  "extension.assetTextLoad": {
+    params: { extensionId: string; path: string };
+    result: { ok: true; content: string } | { ok: false; error: string };
+  };
   "extension.listAll": {
     params: undefined;
     result: {

@@ -2,7 +2,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { tmpdir } from "node:os";
-import { buildExtensionRegistry, discoverExtensions, loadExtensionSource } from "./extension-discovery";
+import { buildExtensionRegistry, discoverExtensions, loadExtensionAssetText, loadExtensionSource } from "./extension-discovery";
 
 const testRoot = join(tmpdir(), `flmux-ext-test-${Date.now()}`);
 const extDir = join(testRoot, "ext");
@@ -28,6 +28,7 @@ beforeAll(() => {
     join(extDir, "sample.cowsay", "index.js"),
     'export function mount(host) { host.textContent = "moo"; }'
   );
+  writeFileSync(join(extDir, "sample.cowsay", "index.html"), "<div>moo</div>");
 
   // Create invalid extension (no manifest)
   mkdirSync(join(extDir, "invalid"), { recursive: true });
@@ -94,6 +95,29 @@ describe("loadExtensionSource", () => {
     // Manually tamper with the entry for testing
     const ext = { ...extensions[0], manifest: { ...extensions[0].manifest, rendererEntry: "../../../etc/passwd" } };
     const result = loadExtensionSource([ext], "sample.cowsay");
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("loadExtensionAssetText", () => {
+  test("loads extension text asset", () => {
+    const extensions = discoverExtensions(testRoot);
+    const result = loadExtensionAssetText(extensions, "sample.cowsay", "./index.html");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.content).toContain("moo");
+    }
+  });
+
+  test("returns error for unknown extension", () => {
+    const extensions = discoverExtensions(testRoot);
+    const result = loadExtensionAssetText(extensions, "unknown", "./index.html");
+    expect(result.ok).toBe(false);
+  });
+
+  test("rejects path traversal", () => {
+    const extensions = discoverExtensions(testRoot);
+    const result = loadExtensionAssetText(extensions, "sample.cowsay", "../../../etc/passwd");
     expect(result.ok).toBe(false);
   });
 });

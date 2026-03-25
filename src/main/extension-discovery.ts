@@ -71,20 +71,34 @@ export function buildExtensionRegistry(extensions: DiscoveredExtension[]): Exten
   }));
 }
 
+function readExtensionTextFile(ext: DiscoveredExtension, relativePath: string, label: string): { ok: true; content: string } | { ok: false; error: string } {
+  if (!relativePath.startsWith("./") || relativePath.includes("..")) {
+    return { ok: false, error: `Invalid ${label} path: ${relativePath}` };
+  }
+
+  const resolvedPath = resolve(ext.path, relativePath);
+  if (!resolvedPath.startsWith(resolve(ext.path))) {
+    return { ok: false, error: `${label} escapes extension directory: ${relativePath}` };
+  }
+
+  try {
+    return { ok: true, content: readFileSync(resolvedPath, "utf-8") };
+  } catch (err) {
+    return { ok: false, error: `Failed to read ${label}: ${err}` };
+  }
+}
+
 function loadSetupSource(ext: DiscoveredExtension): string | undefined {
   const entry = ext.manifest.setupEntry;
   if (!entry) return undefined;
 
-  if (!entry.startsWith("./") || entry.includes("..")) return undefined;
-
-  const sourcePath = resolve(ext.path, entry);
-  if (!sourcePath.startsWith(resolve(ext.path))) return undefined;
+  const result = readExtensionTextFile(ext, entry, "setupEntry");
+  if (!result.ok) return undefined;
 
   try {
-    const raw = readFileSync(sourcePath, "utf-8");
-    return sourcePath.endsWith(".ts") || sourcePath.endsWith(".tsx")
-      ? new Bun.Transpiler({ loader: sourcePath.endsWith(".tsx") ? "tsx" : "ts" }).transformSync(raw)
-      : raw;
+    return entry.endsWith(".ts") || entry.endsWith(".tsx")
+      ? new Bun.Transpiler({ loader: entry.endsWith(".tsx") ? "tsx" : "ts" }).transformSync(result.content)
+      : result.content;
   } catch {
     return undefined;
   }
@@ -107,28 +121,31 @@ export function loadExtensionSource(
     return { ok: false, error: `Extension has no rendererEntry: ${extensionId}` };
   }
 
-  // Validate entry path (must start with ./, no ..)
-  if (!entry.startsWith("./") || entry.includes("..")) {
-    return { ok: false, error: `Invalid rendererEntry path: ${entry}` };
-  }
-
-  const sourcePath = resolve(ext.path, entry);
-
-  // Path traversal check
-  if (!sourcePath.startsWith(resolve(ext.path))) {
-    return { ok: false, error: `rendererEntry escapes extension directory: ${entry}` };
-  }
+  const text = readExtensionTextFile(ext, entry, "rendererEntry");
+  if (!text.ok) return text;
 
   try {
-    const raw = readFileSync(sourcePath, "utf-8");
     const source =
-      sourcePath.endsWith(".ts") || sourcePath.endsWith(".tsx")
-        ? new Bun.Transpiler({ loader: sourcePath.endsWith(".tsx") ? "tsx" : "ts" }).transformSync(raw)
-        : raw;
+      entry.endsWith(".ts") || entry.endsWith(".tsx")
+        ? new Bun.Transpiler({ loader: entry.endsWith(".tsx") ? "tsx" : "ts" }).transformSync(text.content)
+        : text.content;
     return { ok: true, source };
   } catch (err) {
     return { ok: false, error: `Failed to read extension source: ${err}` };
   }
+}
+
+export function loadExtensionAssetText(
+  extensions: DiscoveredExtension[],
+  extensionId: string,
+  path: string
+): { ok: true; content: string } | { ok: false; error: string } {
+  const ext = extensions.find((e) => e.manifest.id === extensionId);
+  if (!ext) {
+    return { ok: false, error: `Extension not found: ${extensionId}` };
+  }
+
+  return readExtensionTextFile(ext, path, "asset");
 }
 
 function scanDir(dir: string, embedded: boolean, results: DiscoveredExtension[]): void {

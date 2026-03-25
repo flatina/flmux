@@ -73,6 +73,7 @@ export interface ExtensionContext {
   paneId: PaneId;
   tabId: TabId;
   initialState: unknown;
+  loadAssetText: (path: string) => Promise<string>;
   setState: (nextState: unknown) => void;
   getState: () => unknown;
   emit: (eventType: string, data: unknown) => void;

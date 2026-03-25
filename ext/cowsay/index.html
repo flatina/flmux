@@ -1,0 +1,228 @@
+<style>
+  .cowsay-lab {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+    box-sizing: border-box;
+    background: linear-gradient(180deg, var(--surface), var(--panel));
+    color: var(--text);
+    font-family: "Cascadia Code", Consolas, monospace;
+  }
+
+  .cowsay-lab__header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 10px 12px;
+    border: 1px solid var(--divider);
+    background: var(--subtle);
+    border-radius: 10px;
+  }
+
+  .cowsay-lab__title {
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .cowsay-lab__subtitle {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 12px;
+    max-width: 680px;
+  }
+
+  .cowsay-lab__ids {
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--muted);
+    text-align: right;
+    white-space: pre-wrap;
+  }
+
+  .cowsay-lab__controls {
+    display: grid;
+    grid-template-columns: minmax(220px, 2fr) repeat(4, minmax(100px, 1fr));
+    gap: 8px;
+    align-items: center;
+  }
+
+  .cowsay-lab__input {
+    width: 100%;
+    padding: 9px 11px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--input-bg);
+    color: var(--text);
+    font: inherit;
+    font-size: 13px;
+    box-sizing: border-box;
+  }
+
+  .cowsay-lab__button {
+    padding: 9px 12px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    color: #0b1016;
+  }
+
+  .cowsay-lab__button--say {
+    background: #ffb45e;
+  }
+
+  .cowsay-lab__button--title {
+    background: #7fd1b9;
+  }
+
+  .cowsay-lab__button--reset {
+    background: #8ab4ff;
+  }
+
+  .cowsay-lab__button--clear {
+    background: #d88cff;
+  }
+
+  .cowsay-lab__hint {
+    padding: 10px 12px;
+    border-left: 3px solid var(--accent);
+    background: var(--subtle);
+    color: var(--text);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .cowsay-lab__content {
+    display: grid;
+    grid-template-columns: minmax(280px, 1.2fr) minmax(280px, 1fr);
+    gap: 12px;
+    min-height: 0;
+    flex: 1 1 auto;
+  }
+
+  .cowsay-lab__column {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 0;
+  }
+
+  .cowsay-lab__card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--divider);
+    background: var(--subtle);
+    border-radius: 10px;
+    min-height: 0;
+  }
+
+  .cowsay-lab__card-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  .cowsay-lab__card-body {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .cowsay-lab__preview {
+    margin: 0;
+    white-space: pre-wrap;
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.35;
+    overflow: auto;
+  }
+
+  .cowsay-lab__stats {
+    margin: 0;
+    white-space: pre-wrap;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .cowsay-lab__log-card {
+    height: 100%;
+  }
+
+  .cowsay-lab__log-body {
+    flex: 1 1 auto;
+  }
+
+  .cowsay-lab__log {
+    margin: 0;
+    white-space: pre-wrap;
+    color: var(--text);
+    font-size: 11px;
+    line-height: 1.5;
+    overflow: auto;
+    flex: 1 1 auto;
+  }
+</style>
+
+<div class="cowsay-lab">
+  <div class="cowsay-lab__header">
+    <div>
+      <div class="cowsay-lab__title">Cowsay Lab</div>
+      <div class="cowsay-lab__subtitle">
+        Interactive fixture for extension state, events, header actions, and restore.
+      </div>
+    </div>
+    <pre class="cowsay-lab__ids">pane: <span data-ref="pane-id"></span>
+tab:  <span data-ref="tab-id"></span>
+ext:  <span data-ref="ext-id"></span></pre>
+  </div>
+
+  <div class="cowsay-lab__controls">
+    <input class="cowsay-lab__input" data-ref="input" type="text" placeholder="Type a message" />
+    <button class="cowsay-lab__button cowsay-lab__button--say" data-ref="say-btn" type="button">Say Tab</button>
+    <button class="cowsay-lab__button cowsay-lab__button--title" data-ref="title-btn" type="button">Set Title</button>
+    <button class="cowsay-lab__button cowsay-lab__button--reset" data-ref="reset-btn" type="button">Reset</button>
+    <button class="cowsay-lab__button cowsay-lab__button--clear" data-ref="clear-btn" type="button">Clear Log</button>
+  </div>
+
+  <div class="cowsay-lab__hint">
+    Open two cowsay panes in the same workspace and click Say Tab. Use Set Title to verify app:title propagation.
+    Save and reload the session to verify state restore.
+  </div>
+
+  <div class="cowsay-lab__content">
+    <div class="cowsay-lab__column">
+      <div class="cowsay-lab__card">
+        <div class="cowsay-lab__card-title">Preview</div>
+        <div class="cowsay-lab__card-body">
+          <pre class="cowsay-lab__preview" data-ref="cow-output"></pre>
+        </div>
+      </div>
+
+      <div class="cowsay-lab__card">
+        <div class="cowsay-lab__card-title">State</div>
+        <div class="cowsay-lab__card-body">
+          <pre class="cowsay-lab__stats" data-ref="stats"></pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="cowsay-lab__column">
+      <div class="cowsay-lab__card cowsay-lab__log-card">
+        <div class="cowsay-lab__card-title">Event Log</div>
+        <div class="cowsay-lab__card-body cowsay-lab__log-body">
+          <pre class="cowsay-lab__log" data-ref="event-log"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

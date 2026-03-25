@@ -17,6 +17,7 @@ import {
   type DiscoveredExtension,
   discoverAllExtensions,
   EXTENSION_ID_PATTERN,
+  loadExtensionAssetText,
   loadExtensionSource
 } from "./extension-discovery";
 import type { FlmuxLastStore } from "./flmux-last-store";
@@ -78,6 +79,10 @@ export function createHostRpcHandlers(options: CreateHostRpcHandlersOptions): Ho
     "extension.sourceLoad": async ({ extensionId }) => {
       info("ext", `load ${extensionId}`);
       return loadExtensionSource(options.discoveredExtensions, extensionId);
+    },
+    "extension.assetTextLoad": async ({ extensionId, path }) => {
+      info("ext", `asset ${extensionId}:${path}`);
+      return loadExtensionAssetText(options.discoveredExtensions, extensionId, path);
     },
     "extension.listAll": async () => ({
       extensions: discoverAllExtensions(options.workspaceRoot).map((ext) => ({

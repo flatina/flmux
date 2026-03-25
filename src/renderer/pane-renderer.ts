@@ -552,6 +552,13 @@ export class PaneRenderer implements IContentRenderer {
         paneId,
         tabId,
         initialState: this.extensionState,
+        loadAssetText: async (path: string) => {
+          const result = await hostRpc.request("extension.assetTextLoad", { extensionId: params.extensionId, path });
+          if (!result.ok) {
+            throw new Error(result.error);
+          }
+          return result.content;
+        },
         setState: (nextState: unknown) => {
           this.extensionState = nextState;
           this.props?.api.updateParameters({ state: nextState });

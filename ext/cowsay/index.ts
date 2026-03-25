@@ -21,7 +21,7 @@ interface CowsayState {
 
 const MAX_LOG_ENTRIES = 40;
 
-export const mount: ExtensionMount = (host, context) => {
+export const mount: ExtensionMount = async (host, context) => {
   const state = normalizeState(context.initialState);
   let text = state.text || "hello flmux";
   let visits = state.visits + 1;
@@ -31,152 +31,23 @@ export const mount: ExtensionMount = (host, context) => {
   let lastMountedAt = new Date().toISOString();
   const eventLog = [...state.eventLog];
 
-  const wrapper = document.createElement("div");
-  wrapper.style.cssText = [
-    "height:100%",
-    "display:flex",
-    "flex-direction:column",
-    "gap:12px",
-    "padding:14px",
-    "background:linear-gradient(180deg,var(--surface),var(--panel))",
-    "color:var(--text)",
-    'font-family:"Cascadia Code",Consolas,monospace',
-    "box-sizing:border-box"
-  ].join(";");
+  host.innerHTML = await context.loadAssetText("./index.html");
 
-  const header = document.createElement("div");
-  header.style.cssText = [
-    "display:flex",
-    "justify-content:space-between",
-    "gap:12px",
-    "align-items:flex-start",
-    "padding:10px 12px",
-    "border:1px solid var(--divider)",
-    "background:var(--subtle)",
-    "border-radius:10px"
-  ].join(";");
+  const paneId = mustQuery(host, "[data-ref='pane-id']");
+  const tabId = mustQuery(host, "[data-ref='tab-id']");
+  const extId = mustQuery(host, "[data-ref='ext-id']");
+  const input = mustQuery(host, "[data-ref='input']") as HTMLInputElement;
+  const sayBtn = mustQuery(host, "[data-ref='say-btn']");
+  const titleBtn = mustQuery(host, "[data-ref='title-btn']");
+  const resetBtn = mustQuery(host, "[data-ref='reset-btn']");
+  const clearBtn = mustQuery(host, "[data-ref='clear-btn']");
+  const cowOutput = mustQuery(host, "[data-ref='cow-output']");
+  const stats = mustQuery(host, "[data-ref='stats']");
+  const log = mustQuery(host, "[data-ref='event-log']");
 
-  const titleBlock = document.createElement("div");
-  const title = document.createElement("div");
-  title.textContent = "Cowsay Lab";
-  title.style.cssText = "font-size:18px;font-weight:700;";
-
-  const subtitle = document.createElement("div");
-  subtitle.textContent = "Interactive fixture for extension state, events, header actions, and restore.";
-  subtitle.style.cssText = "margin-top:4px;color:var(--muted);font-size:12px;max-width:680px;";
-
-  titleBlock.append(title, subtitle);
-
-  const ids = document.createElement("pre");
-  ids.style.cssText = [
-    "margin:0",
-    "font-size:11px",
-    "line-height:1.5",
-    "color:var(--muted)",
-    "text-align:right",
-    "white-space:pre-wrap"
-  ].join(";");
-  ids.textContent = [
-    `pane: ${context.paneId}`,
-    `tab:  ${context.tabId}`,
-    `ext:  ${context.extensionId}/${context.contributionId}`
-  ].join("\n");
-
-  header.append(titleBlock, ids);
-
-  const controls = document.createElement("div");
-  controls.style.cssText = [
-    "display:grid",
-    "grid-template-columns:minmax(220px,2fr) repeat(4,minmax(100px,1fr))",
-    "gap:8px",
-    "align-items:center"
-  ].join(";");
-
-  const input = document.createElement("input");
-  input.type = "text";
-  input.value = text;
-  input.placeholder = "Type a message";
-  input.style.cssText = fieldStyle();
-
-  const sayBtn = makeButton("Say Tab", "#ffb45e");
-  const titleBtn = makeButton("Set Title", "#7fd1b9");
-  const resetBtn = makeButton("Reset", "#8ab4ff");
-  const clearBtn = makeButton("Clear Log", "#d88cff");
-
-  controls.append(input, sayBtn, titleBtn, resetBtn, clearBtn);
-
-  const hint = document.createElement("div");
-  hint.style.cssText = [
-    "padding:10px 12px",
-    "border-left:3px solid var(--accent)",
-    "background:var(--subtle)",
-    "color:var(--text)",
-    "font-size:12px",
-    "line-height:1.6"
-  ].join(";");
-  hint.textContent =
-    "Open two cowsay panes in the same workspace and click Say Tab. Use Set Title to verify app:title propagation. Save and reload the session to verify state restore.";
-
-  const content = document.createElement("div");
-  content.style.cssText = [
-    "display:grid",
-    "grid-template-columns:minmax(280px,1.2fr) minmax(280px,1fr)",
-    "gap:12px",
-    "min-height:0",
-    "flex:1 1 auto"
-  ].join(";");
-
-  const left = document.createElement("div");
-  left.style.cssText = "display:flex;flex-direction:column;gap:12px;min-height:0;";
-
-  const cowCard = makeCard("Preview");
-  const cowOutput = document.createElement("pre");
-  cowOutput.style.cssText = [
-    "margin:0",
-    "white-space:pre-wrap",
-    "color:var(--text)",
-    "font-size:13px",
-    "line-height:1.35",
-    "overflow:auto"
-  ].join(";");
-  cowCard.body.append(cowOutput);
-
-  const statsCard = makeCard("State");
-  const stats = document.createElement("pre");
-  stats.style.cssText = [
-    "margin:0",
-    "white-space:pre-wrap",
-    "color:var(--muted)",
-    "font-size:12px",
-    "line-height:1.6"
-  ].join(";");
-  statsCard.body.append(stats);
-
-  left.append(cowCard.root, statsCard.root);
-
-  const right = document.createElement("div");
-  right.style.cssText = "display:flex;flex-direction:column;min-height:0;";
-
-  const logCard = makeCard("Event Log");
-  logCard.root.style.height = "100%";
-  const log = document.createElement("pre");
-  log.setAttribute("data-testid", "event-log");
-  log.style.cssText = [
-    "margin:0",
-    "white-space:pre-wrap",
-    "color:var(--text)",
-    "font-size:11px",
-    "line-height:1.5",
-    "overflow:auto",
-    "flex:1 1 auto"
-  ].join(";");
-  logCard.body.style.flex = "1 1 auto";
-  logCard.body.append(log);
-  right.append(logCard.root);
-
-  content.append(left, right);
-  wrapper.append(header, controls, hint, content);
-  host.replaceChildren(wrapper);
+  paneId.textContent = String(context.paneId);
+  tabId.textContent = String(context.tabId);
+  extId.textContent = `${context.extensionId}/${context.contributionId}`;
 
   const emitSaid = () => {
     sentCount += 1;
@@ -301,7 +172,7 @@ export const mount: ExtensionMount = (host, context) => {
       saidUnsub();
       titleUnsub();
       context.setHeaderActions([]);
-      wrapper.remove();
+      host.replaceChildren();
     }
   };
 
@@ -317,9 +188,7 @@ export const mount: ExtensionMount = (host, context) => {
       `lastTitle: ${JSON.stringify(lastTitle)}`,
       `savedLogEntries: ${eventLog.length}`
     ].join("\n");
-    log.textContent = eventLog.length
-      ? eventLog.map(formatLogEntry).join("\n")
-      : "(no events yet)";
+    log.textContent = eventLog.length ? eventLog.map(formatLogEntry).join("\n") : "(no events yet)";
     context.setState({
       text,
       visits,
@@ -339,6 +208,14 @@ export const mount: ExtensionMount = (host, context) => {
     }
   }
 };
+
+function mustQuery(root: ParentNode, selector: string): HTMLElement {
+  const element = root.querySelector(selector);
+  if (!(element instanceof HTMLElement)) {
+    throw new Error(`Missing cowsay asset node: ${selector}`);
+  }
+  return element;
+}
 
 function normalizeState(value: unknown): CowsayState {
   const fallback: CowsayState = {
@@ -383,75 +260,19 @@ function normalizeState(value: unknown): CowsayState {
 
 function renderCow(text: string): string {
   const safe = text.trim() || "...";
-  const top = " " + "_".repeat(safe.length + 2);
+  const top = ` ${"_".repeat(safe.length + 2)}`;
   const mid = `< ${safe} >`;
-  const bot = " " + "-".repeat(safe.length + 2);
+  const bot = ` ${"-".repeat(safe.length + 2)}`;
   return [
     top,
     mid,
     bot,
-    "        \\   ^__^",
-    "         \\  (oo)\\_______",
-    "            (__)\\       )\\/\\",
+    "        \\\\   ^__^",
+    "         \\\\  (oo)\\\\_______",
+    "            (__)\\\\       )\\\\/\\\\",
     "                ||----w |",
     "                ||     ||"
   ].join("\n");
-}
-
-function makeCard(label: string): { root: HTMLDivElement; body: HTMLDivElement } {
-  const root = document.createElement("div");
-  root.style.cssText = [
-    "display:flex",
-    "flex-direction:column",
-    "gap:10px",
-    "padding:12px",
-    "border:1px solid var(--divider)",
-    "background:var(--subtle)",
-    "border-radius:10px",
-    "min-height:0"
-  ].join(";");
-
-  const title = document.createElement("div");
-  title.textContent = label;
-  title.style.cssText = "font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;";
-
-  const body = document.createElement("div");
-  body.style.cssText = "min-height:0;display:flex;flex-direction:column;";
-
-  root.append(title, body);
-  return { root, body };
-}
-
-function makeButton(label: string, color: string): HTMLButtonElement {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.textContent = label;
-  button.style.cssText = [
-    "padding:9px 12px",
-    "border-radius:8px",
-    "border:none",
-    "cursor:pointer",
-    "font:inherit",
-    "font-size:12px",
-    "font-weight:700",
-    `background:${color}`,
-    "color:#0b1016"
-  ].join(";");
-  return button;
-}
-
-function fieldStyle(): string {
-  return [
-    "width:100%",
-    "padding:9px 11px",
-    "border-radius:8px",
-    "border:1px solid var(--border)",
-    "background:var(--input-bg)",
-    "color:var(--text)",
-    "font:inherit",
-    "font-size:13px",
-    "box-sizing:border-box"
-  ].join(";");
 }
 
 function formatLogEntry(entry: EventLogEntry): string {

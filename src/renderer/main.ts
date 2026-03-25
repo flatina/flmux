@@ -5,6 +5,8 @@ import "./styles.css";
 import { type AddPanelOptions, createDockview, type DockviewApi } from "dockview-core";
 import type {
   AppSummary,
+  BrowserNewParams,
+  BrowserPaneResult,
   BrowserPaneInfo,
   BrowserPaneListResult,
   PaneCloseParams,
@@ -82,7 +84,8 @@ async function bootstrapRenderer(): Promise<void> {
     "workspace.tab.focus": (params) => app.tabFocusFromRpc(params),
     "workspace.tab.close": (params) => app.tabCloseFromRpc(params),
     "workspace.pane.message": (params) => app.paneMessageFromRpc(params),
-    "workspace.browser.list": () => app.browserListFromRpc()
+    "workspace.browser.list": () => app.browserListFromRpc(),
+    "workspace.browser.new": (params) => app.browserNewFromRpc(params)
   });
 }
 
@@ -631,6 +634,18 @@ class WorkspaceApp {
     };
   }
 
+  async browserNewFromRpc(params: BrowserNewParams): Promise<BrowserPaneResult> {
+    const placement = this.resolveBrowserNewPlacement(params);
+    const result = await this.openLeaf(
+      {
+        kind: "browser",
+        url: params.url
+      },
+      placement
+    );
+    return { ok: true, paneId: result.paneId };
+  }
+
   tabOpenFromRpc(params: TabOpenParams): TabResult {
     if (!this.dockview) {
       throw new Error("Dockview is not ready");
@@ -868,6 +883,45 @@ class WorkspaceApp {
       findWorkspacePane(this.dockview, this.tabRenderers, resolvedReferencePaneId)?.innerPanel?.params ?? undefined
     );
     await this.openLeaf({ kind: "terminal", cwd }, { referencePaneId: resolvedReferencePaneId, direction });
+  }
+
+  private resolveBrowserNewPlacement(params: BrowserNewParams): {
+    referencePaneId?: PaneId;
+    direction?: "within" | "left" | "right" | "above" | "below";
+  } {
+    const requested = params.placement ?? "auto";
+    const sourcePaneId = params.sourcePaneId;
+
+    if (!sourcePaneId) {
+      return {};
+    }
+
+    if (requested !== "auto") {
+      return {
+        referencePaneId: sourcePaneId,
+        direction: requested
+      };
+    }
+
+    return {
+      referencePaneId: sourcePaneId,
+      direction: this.resolveAutoBrowserDirection(sourcePaneId)
+    };
+  }
+
+  private resolveAutoBrowserDirection(sourcePaneId: PaneId): "right" | "above" {
+    const found = findWorkspacePane(this.dockview, this.tabRenderers, sourcePaneId);
+    const sourceParams = found?.innerPanel?.params ?? found?.outerPanel?.params;
+    if (!isPaneParams(sourceParams) || sourceParams.kind !== "terminal") {
+      return "right";
+    }
+
+    const runtime = this.terminalRuntimes.get(sourceParams.runtimeId);
+    if (!runtime) {
+      return "right";
+    }
+
+    return runtime.cols >= runtime.rows * 1.2 ? "right" : "above";
   }
 
   private insertPaneRelativeToReference(

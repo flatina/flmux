@@ -18,6 +18,11 @@ export function resolveBrowserPaneId(value?: string): PaneId {
   return asPaneId(raw);
 }
 
+export function resolveSourcePaneId(value?: string): PaneId | undefined {
+  const raw = value?.trim() || process.env.FLMUX_PANE_ID?.trim();
+  return raw ? asPaneId(raw) : undefined;
+}
+
 export function printJson(value: unknown): void {
   console.log(JSON.stringify(value, null, 2));
 }

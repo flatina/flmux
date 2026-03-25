@@ -1,3 +1,4 @@
+import type { PaneId } from "./ids";
 import type {
   AppSummary,
   BrowserPaneListResult,
@@ -59,6 +60,17 @@ export interface RendererRpcMethodMap {
   "workspace.browser.list": {
     params: undefined;
     result: BrowserPaneListResult;
+  };
+  "workspace.browser.new": {
+    params: {
+      url?: string;
+      sourcePaneId?: PaneId;
+      placement?: "auto" | "within" | "left" | "right" | "above" | "below";
+    };
+    result: {
+      ok: true;
+      paneId: PaneId;
+    };
   };
 }
 

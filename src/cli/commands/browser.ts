@@ -1,5 +1,5 @@
 import { defineCommand } from "citty";
-import { resolveBrowserPaneId, printJson, printPaneIds } from "../browser-utils";
+import { resolveBrowserPaneId, resolveSourcePaneId, printJson, printPaneIds } from "../browser-utils";
 import { getClient, sessionArg } from "./_utils";
 
 const BROWSER_RPC_TIMEOUT_MS = 20_000;
@@ -12,11 +12,33 @@ export default defineCommand({
       args: {
         ...sessionArg,
         json: { type: "boolean", description: "Print JSON output" },
-        url: { type: "positional", description: "Initial URL" }
+        url: { type: "positional", description: "Initial URL" },
+        placement: {
+          type: "string",
+          description: "Browser placement: auto, within, left, right, above, below",
+          default: "auto"
+        },
+        sourcePane: { type: "string", description: "Source pane ID (defaults to FLMUX_PANE_ID)" }
       },
       run: async ({ args }) => {
         const client = await getClient(args.session);
-        const result = await client.call("browser.new", { url: args.url }, BROWSER_RPC_TIMEOUT_MS);
+        const placement =
+          args.placement === "within" ||
+          args.placement === "left" ||
+          args.placement === "right" ||
+          args.placement === "above" ||
+          args.placement === "below"
+            ? args.placement
+            : "auto";
+        const result = await client.call(
+          "browser.new",
+          {
+            url: args.url,
+            placement,
+            sourcePaneId: resolveSourcePaneId(args.sourcePane)
+          },
+          BROWSER_RPC_TIMEOUT_MS
+        );
         if (args.json) {
           printJson(result);
           return;

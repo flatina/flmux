@@ -1,5 +1,6 @@
 import type {
   AppSummary,
+  BrowserNewParams,
   BrowserPaneListResult,
   BrowserPaneResult,
   BrowserTarget,
@@ -102,14 +103,8 @@ export class RendererWorkspaceBridge {
     return this.getRequestProxy()["workspace.browser.list"](undefined);
   }
 
-  async browserNew(params: { url?: string }): Promise<BrowserPaneResult> {
-    const result = await this.openPane({
-      leaf: {
-        kind: "browser",
-        url: params.url
-      }
-    });
-    return { ok: true, paneId: result.paneId };
+  async browserNew(params: BrowserNewParams): Promise<BrowserPaneResult> {
+    return this.getRequestProxy()["workspace.browser.new"](params);
   }
 
   private getRequestProxy(): RendererRpcRequestProxy {

@@ -46,7 +46,9 @@ class BrowserAutomationError extends Error {
 
 export async function browserNew(workspace: BrowserWorkspace, params: BrowserNewParams): Promise<BrowserPaneResult> {
   const created = await workspace.browserNew({
-    url: params.url?.trim().length ? normalizeAutomationUrl(params.url) : DEFAULT_AUTOMATION_BLANK_URL
+    url: params.url?.trim().length ? normalizeAutomationUrl(params.url) : DEFAULT_AUTOMATION_BLANK_URL,
+    sourcePaneId: params.sourcePaneId,
+    placement: params.placement
   });
 
   await pollUntil(

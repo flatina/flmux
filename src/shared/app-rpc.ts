@@ -76,6 +76,8 @@ export interface BrowserPaneResult {
 
 export interface BrowserNewParams {
   url?: string;
+  sourcePaneId?: PaneId;
+  placement?: "auto" | "within" | "left" | "right" | "above" | "below";
 }
 
 export interface BrowserConnectParams {

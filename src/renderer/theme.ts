@@ -72,10 +72,26 @@ const DARK_TERMINAL_THEME: ITheme = {
 
 const LIGHT_TERMINAL_THEME: ITheme = {
   background: "#fafbfc",
-  foreground: "#24292e",
+  foreground: "#333333",
   cursor: "#d4820f",
   cursorAccent: "#fafbfc",
-  selectionBackground: "rgba(212, 130, 15, 0.18)"
+  selectionBackground: "rgba(212, 130, 15, 0.18)",
+  black: "#000000",
+  red: "#cd3131",
+  green: "#107c10",
+  yellow: "#949800",
+  blue: "#0451a5",
+  magenta: "#bc05bc",
+  cyan: "#0598bc",
+  white: "#555555",
+  brightBlack: "#666666",
+  brightRed: "#cd3131",
+  brightGreen: "#14ce14",
+  brightYellow: "#b5ba00",
+  brightBlue: "#0451a5",
+  brightMagenta: "#bc05bc",
+  brightCyan: "#0598bc",
+  brightWhite: "#a5a5a5"
 };
 
 export function getTerminalTheme(): ITheme {

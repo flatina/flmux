@@ -28,6 +28,8 @@
   --dv-group-bg: rgba(15, 19, 26, 0.8);
   --dv-tab-divider: #1b2430;
   --dv-pane-header-border: rgba(255, 255, 255, 0.12);
+  --dv-drop-target-bg: rgba(255, 173, 90, 0.22);
+  --dv-drop-target-border: rgba(255, 173, 90, 0.45);
 }
 
 :root[data-theme="light"] {
@@ -58,6 +60,8 @@
   --dv-group-bg: rgba(240, 242, 245, 0.8);
   --dv-tab-divider: #e1e5eb;
   --dv-pane-header-border: rgba(0, 0, 0, 0.12);
+  --dv-drop-target-bg: rgba(212, 130, 15, 0.18);
+  --dv-drop-target-border: rgba(212, 130, 15, 0.4);
 }
 
 html,
@@ -260,6 +264,9 @@ input {
   --dv-inactivegroup-hiddenpanel-tab-color: var(--muted);
   --dv-tab-divider-color: var(--dv-tab-divider);
   --dv-paneview-header-border-color: var(--dv-pane-header-border);
+  --dv-drag-over-background-color: var(--dv-drop-target-bg);
+  --dv-drag-over-border-color: var(--dv-drop-target-border);
+  --dv-drag-over-border: 1px solid var(--dv-drop-target-border);
   width: 100%;
   height: 100%;
   min-width: 0;

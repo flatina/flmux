@@ -43,6 +43,7 @@ const hostRpc = getHostRpc();
 
 export type PaneRendererContext = {
   workspaceRoot: string;
+  webPort: number | null;
   getTerminalRuntime: (runtimeId: TerminalRuntimeId) => TerminalRuntimeSummary | null;
   getExtensionRegistry: () => ExtensionRegistryEntry[];
   getTabId: () => TabId;
@@ -734,7 +735,8 @@ export class PaneRenderer implements IContentRenderer {
         renderer: this.terminalParams.renderer,
         cols,
         rows,
-        workspaceRoot: this.context.workspaceRoot
+        workspaceRoot: this.context.workspaceRoot,
+        webPort: this.context.webPort
       })
       .then((result) => {
         this.refreshTerminalRuntime(result.terminal);

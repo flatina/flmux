@@ -106,6 +106,7 @@ export interface HostRpcMethodMap {
       cols?: number;
       rows?: number;
       workspaceRoot?: string | null;
+      webPort?: number | null;
     };
     result: {
       ok: true;

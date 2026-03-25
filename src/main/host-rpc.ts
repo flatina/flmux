@@ -173,7 +173,7 @@ export function createHostRpcHandlers(options: CreateHostRpcHandlersOptions): Ho
       options.getMainWindow().setFrame(x, y, width, height);
       return { ok: true };
     },
-    "terminal.create": async ({ runtimeId, paneId, cwd, shell, renderer, cols, rows, workspaceRoot }) => {
+    "terminal.create": async ({ runtimeId, paneId, cwd, shell, renderer, cols, rows, workspaceRoot, webPort }) => {
       debug("term", `create runtime=${runtimeId} cwd=${cwd ?? options.workspaceRoot}`);
       const result = await options.ptydClient.createTerminal({
         runtimeId,
@@ -183,7 +183,10 @@ export function createHostRpcHandlers(options: CreateHostRpcHandlersOptions): Ho
         renderer,
         cols,
         rows,
-        workspaceRoot: workspaceRoot ?? options.workspaceRoot
+        workspaceRoot: workspaceRoot ?? options.workspaceRoot,
+        webPort:
+          webPort ??
+          (options.bootstrapState.webServerUrl ? Number(new URL(options.bootstrapState.webServerUrl).port || 0) || null : null)
       });
       options.syncTerminalBootstrapState();
       return result;

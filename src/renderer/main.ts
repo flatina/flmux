@@ -132,6 +132,7 @@ class WorkspaceApp {
 
     const paneContext: PaneRendererContext = {
       workspaceRoot: this.bootstrap.cwd,
+      webPort: this.bootstrap.webServerUrl ? Number(new URL(this.bootstrap.webServerUrl).port || 0) || null : null,
       getTerminalRuntime: (runtimeId) => this.terminalRuntimes.get(runtimeId) ?? null,
       getExtensionRegistry: () => this.bootstrap.extensions,
       getTabId: () => asTabId(""),

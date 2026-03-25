@@ -72,7 +72,7 @@ export class TerminalRuntimeManager {
       cols,
       rows,
       name: resolveTerminalName(),
-      env: createPtyEnv(wsRoot, this.options.sessionId, params.paneId ?? null)
+      env: createPtyEnv(wsRoot, this.options.sessionId, params.paneId ?? null, params.webPort ?? null)
     });
 
     const record: TerminalRuntimeRecord = {
@@ -268,7 +268,12 @@ function resolveTerminalName(): string {
   return process.platform === "win32" ? "xterm-color" : "xterm-256color";
 }
 
-function createPtyEnv(workspaceRoot: string, sessionId: SessionId, paneId: string | null): Record<string, string> {
+function createPtyEnv(
+  workspaceRoot: string,
+  sessionId: SessionId,
+  paneId: string | null,
+  webPort: number | null
+): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (typeof value === "string") {
@@ -281,6 +286,9 @@ function createPtyEnv(workspaceRoot: string, sessionId: SessionId, paneId: strin
   env.FLMUX_APP_IPC = getAppRpcIpcPath(sessionId);
   env.FLMUX_SESSION_ID = sessionId;
   env.FLMUX_ROOT = effectiveRoot;
+  if (typeof webPort === "number" && Number.isFinite(webPort) && webPort > 0) {
+    env.FLMUX_WEB_PORT = String(webPort);
+  }
   if (paneId) {
     env.FLMUX_PANE_ID = paneId;
   }

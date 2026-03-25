@@ -114,6 +114,12 @@ flweb wait load
 flweb get url
 ```
 
+When you need the built-in local test pages from a flmux terminal:
+
+```powershell
+$env:FLMUX_BROWSER = (flmux browser new http://127.0.0.1:$env:FLMUX_WEB_PORT/about)
+```
+
 Current browser pane management commands:
 
 ```powershell

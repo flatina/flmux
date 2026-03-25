@@ -23,7 +23,8 @@ export default defineCommand({
     cwd: { type: "string", description: "Working directory" },
     shell: { type: "string", description: "Shell path" },
     renderer: { type: "string", description: "Terminal renderer: xterm, ghostty" },
-    title: { type: "string", description: "Pane title" }
+    title: { type: "string", description: "Pane title" },
+    cmd: { type: "string", description: "Command to run after terminal init hooks" }
   },
   run: async ({ args }) => {
     const client = await getClient(args.session);
@@ -58,7 +59,8 @@ export default defineCommand({
         title: args.title,
         cwd: args.cwd ?? (process.env.FLMUX_APP_IPC ? process.cwd() : undefined),
         shell: args.shell ?? undefined,
-        renderer: isTerminalRenderer(rendererArg) ? rendererArg : undefined
+        renderer: isTerminalRenderer(rendererArg) ? rendererArg : undefined,
+        startupCommands: args.cmd?.trim() ? [args.cmd] : undefined
       }
     });
 

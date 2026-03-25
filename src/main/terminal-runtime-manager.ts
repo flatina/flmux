@@ -9,12 +9,14 @@ import type { TerminalRuntimeSummary } from "../shared/rpc";
 interface TerminalRuntimeRecord {
   summary: TerminalRuntimeSummary;
   pty: IPty | null;
+  startupQueue: string[] | null;
 }
 
 interface TerminalRuntimeManagerOptions {
   defaultCwd: string;
   sessionId: SessionId;
   defaultShell?: string | null;
+  spawnPty?: typeof spawn;
   push: <Message extends HostPushMessage>(message: Message, payload: HostPushPayload<Message>) => void;
 }
 
@@ -23,10 +25,12 @@ const DEFAULT_ROWS = 32;
 
 export class TerminalRuntimeManager {
   private readonly defaultShell: string;
+  private readonly spawnPty: typeof spawn;
   private readonly runtimes = new Map<TerminalRuntimeId, TerminalRuntimeRecord>();
 
   constructor(private readonly options: TerminalRuntimeManagerOptions) {
     this.defaultShell = options.defaultShell ?? resolveDefaultShell();
+    this.spawnPty = options.spawnPty ?? spawn;
   }
 
   list(): TerminalRuntimeSummary[] {
@@ -39,16 +43,12 @@ export class TerminalRuntimeManager {
 
   createTerminal(params: HostRpcParams<"terminal.create">): HostRpcResult<"terminal.create"> {
     const existing = this.runtimes.get(params.runtimeId);
-    if (existing?.pty) {
+    if (existing) {
       return {
         ok: true,
         created: false,
         terminal: { ...existing.summary }
       };
-    }
-
-    if (existing && !existing.pty) {
-      this.runtimes.delete(params.runtimeId);
     }
 
     const shell = params.shell?.trim() || this.defaultShell;
@@ -67,27 +67,26 @@ export class TerminalRuntimeManager {
       rows
     };
 
-    const pty = spawn(shell, resolveShellArgs(shell), {
+    const pty = this.spawnPty(shell, resolveShellArgs(shell), {
       cwd,
       cols,
       rows,
       name: resolveTerminalName(),
       env: createPtyEnv(wsRoot, this.options.sessionId, params.paneId ?? null, params.webPort ?? null)
     });
+    const startupQueue = buildStartupQueue(wsRoot, params.startupCommands);
 
     const record: TerminalRuntimeRecord = {
       summary,
-      pty
+      pty,
+      startupQueue
     };
 
-    // Run init hooks after shell emits first output (prompt ready)
-    const hooks = loadTerminalHooks(wsRoot);
-    let hooksPending = hooks.init.length > 0;
-
     pty.onData((data) => {
-      if (hooksPending) {
-        hooksPending = false;
-        for (const cmd of hooks.init) {
+      if (record.startupQueue?.length) {
+        const startupCommands = record.startupQueue;
+        record.startupQueue = null;
+        for (const cmd of startupCommands) {
           pty.write(`${cmd}\r`);
         }
       }
@@ -226,6 +225,13 @@ export class TerminalRuntimeManager {
       runtime: { ...summary }
     });
   }
+}
+
+function buildStartupQueue(workspaceRoot: string, startupCommands: string[] | undefined): string[] | null {
+  const hooks = loadTerminalHooks(workspaceRoot).init;
+  const extra = (startupCommands ?? []).map((command) => command.trim()).filter((command) => command.length > 0);
+  const queue = [...hooks, ...extra];
+  return queue.length > 0 ? queue : null;
 }
 
 function resolveDefaultShell(): string {

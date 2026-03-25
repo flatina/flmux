@@ -45,6 +45,7 @@ export interface PtydTerminalCreateParams {
   rows?: number;
   workspaceRoot?: string | null;
   webPort?: number | null;
+  startupCommands?: string[];
 }
 
 export interface PtydTerminalCreateResult {

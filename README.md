@@ -89,6 +89,7 @@ The flmux command controls tabs in the same workspace.
 ```powershell
 flmux summary                          # show workspace state
 flmux split --direction right           # split current terminal
+flmux split --direction right --cmd "flmux summary"
 flmux edit myfile.ts                    # open file in editor
 flmux explorer .                        # open file explorer
 flmux tab list                          # list workspace tabs
@@ -226,6 +227,8 @@ terminal:
   init:
     - echo "Welcome to flmux"
 ```
+
+`flmux split --cmd "..."` appends a one-shot startup command after those init hooks for the newly created terminal.
 
 ## Development
 

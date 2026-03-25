@@ -63,6 +63,7 @@ export type PaneCreateInput =
       cwd?: string | null;
       shell?: string | null;
       renderer?: TerminalRenderer;
+      startupCommands?: string[];
     }
   | {
       kind: "browser";

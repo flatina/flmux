@@ -45,6 +45,8 @@ export type PaneRendererContext = {
   workspaceRoot: string;
   webPort: number | null;
   getTerminalRuntime: (runtimeId: TerminalRuntimeId) => TerminalRuntimeSummary | null;
+  getPendingTerminalStartupCommands: (runtimeId: TerminalRuntimeId) => string[] | null;
+  clearPendingTerminalStartupCommands: (runtimeId: TerminalRuntimeId) => void;
   getExtensionRegistry: () => ExtensionRegistryEntry[];
   getTabId: () => TabId;
   emitEvent: (source: PaneId, tabId: TabId, eventType: string, data: unknown) => void;
@@ -725,10 +727,12 @@ export class PaneRenderer implements IContentRenderer {
 
     const cols = this.terminalLastSize?.cols ?? 120;
     const rows = this.terminalLastSize?.rows ?? 32;
+    const runtimeId = this.terminalParams.runtimeId;
+    const startupCommands = this.context.getPendingTerminalStartupCommands(runtimeId) ?? undefined;
 
     this.terminalCreatePromise = hostRpc
       .request("terminal.create", {
-        runtimeId: this.terminalParams.runtimeId,
+        runtimeId,
         paneId: this.terminalPaneId,
         cwd: this.terminalParams.cwd,
         shell: this.terminalParams.shell,
@@ -736,9 +740,11 @@ export class PaneRenderer implements IContentRenderer {
         cols,
         rows,
         workspaceRoot: this.context.workspaceRoot,
-        webPort: this.context.webPort
+        webPort: this.context.webPort,
+        startupCommands
       })
       .then((result) => {
+        this.context.clearPendingTerminalStartupCommands(runtimeId);
         this.refreshTerminalRuntime(result.terminal);
       })
       .catch((error) => {

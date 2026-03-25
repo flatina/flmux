@@ -94,6 +94,7 @@ class WorkspaceApp {
   private readonly eventBus = new EventBus();
   private readonly browserPaneInfos = new Map<PaneId, BrowserPaneInfo>();
   private readonly terminalRuntimes = new Map<TerminalRuntimeId, TerminalRuntimeSummary>();
+  private readonly pendingTerminalStartupCommands = new Map<TerminalRuntimeId, string[]>();
   private readonly preCloseHooks = new Map<PaneId, () => void>();
   private readonly tabRenderers = new Map<string, TabRenderer>();
 
@@ -134,6 +135,9 @@ class WorkspaceApp {
       workspaceRoot: this.bootstrap.cwd,
       webPort: this.bootstrap.webServerUrl ? Number(new URL(this.bootstrap.webServerUrl).port || 0) || null : null,
       getTerminalRuntime: (runtimeId) => this.terminalRuntimes.get(runtimeId) ?? null,
+      getPendingTerminalStartupCommands: (runtimeId) =>
+        this.pendingTerminalStartupCommands.get(runtimeId)?.slice() ?? null,
+      clearPendingTerminalStartupCommands: (runtimeId) => this.pendingTerminalStartupCommands.delete(runtimeId),
       getExtensionRegistry: () => this.bootstrap.extensions,
       getTabId: () => asTabId(""),
       emitEvent: (source, tabId, eventType, data) => this.eventBus.emit(source, tabId, eventType, data),
@@ -207,6 +211,10 @@ class WorkspaceApp {
       const paneId = asPaneId(panel.id);
       this.preCloseHooks.get(paneId)?.();
       this.preCloseHooks.delete(paneId);
+      const params = panel.params;
+      if (isPaneParams(params) && params.kind === "terminal") {
+        this.pendingTerminalStartupCommands.delete(params.runtimeId);
+      }
     });
     this.attachResizeObserver();
     this.setupResizeHandles();
@@ -572,6 +580,7 @@ class WorkspaceApp {
     const panel = found.innerPanel ?? found.outerPanel;
     const paneParams = panel.params;
     if (isPaneParams(paneParams) && paneParams.kind === "terminal") {
+      this.pendingTerminalStartupCommands.delete(paneParams.runtimeId);
       await this.hostRpc.request("terminal.kill", {
         runtimeId: paneParams.runtimeId
       });
@@ -760,6 +769,10 @@ class WorkspaceApp {
   private async createParamsForLeaf(leaf: PaneCreateInput): Promise<PaneParams> {
     if (leaf.kind === "terminal") {
       const runtimeId = createTerminalRuntimeId();
+      const startupCommands = leaf.startupCommands?.map((command) => command.trim()).filter((command) => command.length > 0);
+      if (startupCommands?.length) {
+        this.pendingTerminalStartupCommands.set(runtimeId, startupCommands);
+      }
       return createPaneParams("terminal", {
         runtimeId,
         cwd: leaf.cwd ?? this.bootstrap.cwd,

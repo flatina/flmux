@@ -7,7 +7,6 @@ import { Compartment } from "@codemirror/state";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { basicSetup, EditorView } from "codemirror";
-import { basename } from "node:path";
 import type {
   GroupPanelPartInitParameters,
   IContentRenderer,
@@ -398,7 +397,7 @@ export class PaneRenderer implements IContentRenderer {
       filePath: nextPath
     };
     this.props.api.updateParameters({ filePath: nextPath });
-    this.props.api.setTitle(basename(nextPath));
+    this.props.api.setTitle(fileNameFromPath(nextPath));
     this.syncEditorUi();
     this.refreshEditorHeaderActions();
   }
@@ -605,7 +604,7 @@ export class PaneRenderer implements IContentRenderer {
 
     this.terminalPaneId = this.props.api.id;
     this.terminalParams = params;
-    this.props.api.setTitle("Terminal");
+    this.props.api.setTitle(getTerminalBaseTitle(params.shell));
 
     const host = document.createElement("div");
     host.className = "terminal-host";
@@ -663,12 +662,7 @@ export class PaneRenderer implements IContentRenderer {
     this.terminalFitAddon = fitAddon;
     this.terminalLastRuntime = this.context.getTerminalRuntime(params.runtimeId);
     this.terminalLastSize = null;
-
-    const titleDisposable = terminal.onTitleChange((title) => {
-      if (this.props && title) {
-        this.props.api.setTitle(title.length > 32 ? `${title.slice(0, 30)}\u2026` : title);
-      }
-    });
+    this.props.api.setTitle(getTerminalBaseTitle(this.terminalLastRuntime?.shell ?? params.shell));
 
     const bellDisposable = terminal.onBell(() => {
       const isFocused = this.props?.api.isActive && this.outerVisible;
@@ -695,7 +689,6 @@ export class PaneRenderer implements IContentRenderer {
       () => visibilityDisposable.dispose(),
       () => dimensionsDisposable.dispose(),
       () => parametersDisposable.dispose(),
-      () => titleDisposable.dispose(),
       () => bellDisposable.dispose(),
       () => activeDisposable.dispose(),
       () => unsubscribeTerminal?.(),
@@ -825,6 +818,7 @@ export class PaneRenderer implements IContentRenderer {
       .then((result) => {
         this.context.clearPendingTerminalStartupCommands(runtimeId);
         this.refreshTerminalRuntime(result.terminal);
+        this.props?.api.setTitle(getTerminalBaseTitle(result.terminal.shell));
       })
       .catch((error) => {
         this.terminalInstance?.writeln(
@@ -1474,8 +1468,35 @@ function resolveLanguageExtension(filePath: string | null, language: string | nu
 }
 
 function getEditorTabTitle(filePath: string | null, dirty: boolean): string {
-  const base = filePath ? basename(filePath) : "Untitled";
+  const base = filePath ? fileNameFromPath(filePath) : "Untitled";
   return dirty ? `${base} *` : base;
+}
+
+function getTerminalBaseTitle(shell: string | null): string {
+  const shellName = shell ? fileNameFromPath(shell).toLowerCase() : "";
+  switch (shellName) {
+    case "pwsh":
+    case "pwsh.exe":
+      return "PowerShell 7";
+    case "powershell":
+    case "powershell.exe":
+      return "Windows PowerShell";
+    case "cmd":
+    case "cmd.exe":
+      return "Command Prompt";
+    default:
+      return shell ? fileNameFromPath(shell) : "Terminal";
+  }
+}
+
+function fileNameFromPath(filePath: string): string {
+  const normalized = filePath.trim().replace(/[\\/]+$/, "");
+  if (!normalized) {
+    return "Untitled";
+  }
+
+  const parts = normalized.split(/[\\/]/);
+  return parts[parts.length - 1] || normalized;
 }
 
 function createBrowserWelcome(): HTMLElement {

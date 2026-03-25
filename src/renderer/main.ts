@@ -42,6 +42,7 @@ import type { ThemePreference } from "../shared/ui-settings";
 import { AppOwner, EventBus } from "./event-bus";
 import { EXT_MANAGER_COMPONENT, EXT_MANAGER_TAB_ID, ExtManagerRenderer } from "./ext-manager";
 import { ExtensionSetupRegistry } from "./extension-setup-registry";
+import { FlmuxTabRenderer } from "./flmux-tab-renderer";
 import { isV1Layout, migrateV1Layout, sanitizeSerializedLayout, titleFromLeaf } from "./helpers";
 import { getHostRpc, setRendererRpcHandlers } from "./lib/host-rpc";
 import type { PaneRendererContext } from "./pane-renderer";
@@ -162,6 +163,7 @@ class WorkspaceApp {
 
     this.dockview = createDockview(this.workspaceHost, {
       theme: { name: "flmux", className: "dockview-theme-flmux" },
+      defaultTabComponent: "flmux-workspace-tab",
       defaultRenderer: "always",
       createComponent: (options) => {
         // Built-in singleton: Extension Manager
@@ -197,7 +199,8 @@ class WorkspaceApp {
           getTabIndex: (panelId) => this.dockview?.panels.findIndex((p) => p.id === panelId) ?? 0,
           setupRegistry: this.setupRegistry
         });
-      }
+      },
+      createTabComponent: () => new FlmuxTabRenderer()
     });
 
     this.dockview.onDidLayoutChange(() => {

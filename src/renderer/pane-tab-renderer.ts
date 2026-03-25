@@ -1,18 +1,19 @@
 import { addDisposableListener } from "dockview-core/dist/esm/events";
-import { DefaultTab } from "dockview-core/dist/esm/dockview/components/tab/defaultTab";
 import type { HeaderAction } from "../shared/extension-spi";
+import { FlmuxTabRenderer } from "./flmux-tab-renderer";
 
 type DisposableLike = { dispose(): void };
 
 export type PaneTabMenuModel = {
   icon: string;
   label: string;
+  tooltip: string;
   actions: HeaderAction[];
 };
 
 export type PaneTabMenuProvider = (panelId: string) => PaneTabMenuModel;
 
-export class PaneTabRenderer extends DefaultTab {
+export class PaneTabRenderer extends FlmuxTabRenderer {
   private panelId = "";
   private readonly menuWrapper = document.createElement("div");
   private readonly menuButton = document.createElement("div");
@@ -58,6 +59,12 @@ export class PaneTabRenderer extends DefaultTab {
     this.panelDisposables.push({
       dispose: () => document.removeEventListener("pointerdown", handleDocumentPointerDown)
     });
+    if (typeof parameters.api.onDidParametersChange === "function") {
+      this.panelDisposables.push(parameters.api.onDidParametersChange(() => this.refreshActions()));
+    }
+    if (typeof parameters.api.onDidTitleChange === "function") {
+      this.panelDisposables.push(parameters.api.onDidTitleChange(() => this.refreshActions()));
+    }
 
     this.refreshActions();
   }
@@ -66,6 +73,7 @@ export class PaneTabRenderer extends DefaultTab {
     const model = this.getMenuModel(this.panelId);
     this.menuButton.textContent = model.icon;
     this.menuButton.title = model.label;
+    this.setTabTooltip(model.tooltip);
     if (this.popupMenu) {
       this.renderPopupContents();
     }

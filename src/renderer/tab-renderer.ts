@@ -17,6 +17,7 @@ import type { ExtensionSetupRegistry } from "./extension-setup-registry";
 import type { GroupActionHandler } from "./group-actions";
 import { GroupActionsRenderer } from "./group-actions";
 import { PaneRenderer, type PaneRendererContext } from "./pane-renderer";
+import type { PaneTabMenuModel } from "./pane-tab-renderer";
 import { PaneTabRenderer } from "./pane-tab-renderer";
 
 export type TabRendererContext = {
@@ -213,13 +214,14 @@ export class TabRenderer implements IContentRenderer {
     }
   }
 
-  private getPaneTabMenuModel(panelId: string): { icon: string; label: string; actions: HeaderAction[] } {
+  private getPaneTabMenuModel(panelId: string): PaneTabMenuModel {
     const panel = this._innerDockview?.panels.find((candidate) => candidate.id === panelId) ?? null;
     const params = isPaneParams(panel?.params) ? panel.params : null;
     const kind = params?.kind ?? "extension";
     return {
       icon: paneKindIcon(kind),
       label: `${paneKindLabel(kind)} Menu`,
+      tooltip: paneKindTooltip(params, panel?.title ?? ""),
       actions: this.paneHeaderActions.get(panelId) ?? []
     };
   }
@@ -290,5 +292,24 @@ function paneKindLabel(kind: PaneKind): string {
       return "Explorer";
     case "extension":
       return "Extension";
+  }
+}
+
+function paneKindTooltip(params: PaneParams | null, currentTitle: string): string {
+  if (!params) {
+    return currentTitle;
+  }
+
+  switch (params.kind) {
+    case "terminal":
+      return params.cwd ?? currentTitle;
+    case "browser":
+      return params.url;
+    case "editor":
+      return params.filePath ?? currentTitle;
+    case "explorer":
+      return params.rootPath;
+    case "extension":
+      return `${params.extensionId}/${params.contributionId}`;
   }
 }

@@ -7,13 +7,18 @@
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "resolveJsonModule": true,
+    "paths": {
+      "flmux-sdk": ["./src/sdk/index.ts"],
+      "flmux-sdk/*": ["./src/sdk/*"]
+    },
     "noEmit": true,
     "strict": true,
     "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true,
     "noUnusedLocals": true,
-    "noUnusedParameters": true
+    "noUnusedParameters": true,
+    "noUncheckedIndexedAccess": true,
+    "noUncheckedSideEffectImports": true
   },
   "exclude": ["node_modules", "dist", "build"]
 }
-

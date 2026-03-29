@@ -4,10 +4,20 @@
     "composite": true,
     "lib": ["ESNext", "DOM", "DOM.Iterable"]
   },
-  "include": ["src/renderer/**/*.ts", "src/shared/**/*.ts", "env.d.ts"],
+  "include": [
+    "src/flmux/renderer/**/*.ts",
+    "src/flmux/ui/**/*.ts",
+    "src/flmux/props/**/*.ts",
+    "src/flmux/browser/**/*.ts",
+    "src/flmux/config/**/*.ts",
+    "src/flmux/model/**/*.ts",
+    "src/flmux/rpc/**/*.ts",
+    "src/types/**/*.ts",
+    "src/sdk/**/*.ts",
+    "src/lib/*.ts",
+    "env.d.ts"
+  ],
   "exclude": [
-    "src/shared/ipc-*.ts",
-    "src/shared/json-lines.ts",
-    "src/shared/json-rpc-ipc.ts"
+    "src/lib/ipc/**/*.ts"
   ]
 }

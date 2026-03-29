@@ -11,26 +11,8 @@
  *
  * Usage: bun tests/smoke/browser-automation-form.ts
  */
-import { resolve } from "node:path";
-import { assert, sleep, waitForApp } from "./helpers";
-import { resolveSession } from "../../src/cli/session-discovery";
-
-const projectRoot = resolve(import.meta.dir, "../..");
-
-function runCli(args: string[], env: Record<string, string | undefined>) {
-  const result = Bun.spawnSync(["bun", ...args], {
-    cwd: projectRoot,
-    env,
-    stdout: "pipe",
-    stderr: "pipe"
-  });
-
-  return {
-    code: result.exitCode,
-    stdout: Buffer.from(result.stdout).toString().trim(),
-    stderr: Buffer.from(result.stderr).toString().trim()
-  };
-}
+import { resolveSession } from "../../src/flmux/client/session-discovery";
+import { assert, runCli, sleep, waitForApp } from "./helpers";
 
 async function main() {
   const client = await waitForApp();
@@ -44,7 +26,7 @@ async function main() {
   };
 
   const fixtureUrl = `${summary.webServerUrl}/automation`;
-  const created = runCli(["src/cli/index.ts", "browser", "new", fixtureUrl], env);
+  const created = runCli(["src/flmux/cli/index.ts", "browser", "new", fixtureUrl], env);
   assert(created.code === 0, `browser new exits 0 (${created.stderr || "ok"})`);
   assert(created.stdout.startsWith("browser."), `browser new returns pane id (${created.stdout})`);
 
@@ -123,7 +105,7 @@ async function main() {
   assert(reloaded.code === 0, `flweb reload exits 0 (${reloaded.stderr || "ok"})`);
   assert(reloaded.stdout.endsWith("/automation"), `reload stays on fixture page (got ${reloaded.stdout})`);
 
-  const closed = runCli(["src/cli/index.ts", "browser", "close"], envWithPane);
+  const closed = runCli(["src/flmux/cli/index.ts", "browser", "close"], envWithPane);
   assert(closed.code === 0, `browser close exits 0 (${closed.stderr || "ok"})`);
 
   console.log("\nBrowser automation form checks passed.");
@@ -133,3 +115,4 @@ main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 });
+

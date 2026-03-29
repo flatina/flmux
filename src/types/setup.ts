@@ -1,0 +1,62 @@
+import type { PaneCreateDirection, PaneCreateInput } from "./pane";
+import type { PaneId, TabId } from "./ids";
+
+export interface PaneOpenOptions {
+  singleton?: boolean;
+}
+
+export interface GroupActionDescriptor {
+  id: string;
+  icon: string;
+  tooltip?: string;
+  order?: number;
+  run: (ctx: GroupActionContext) => void;
+}
+
+export interface PaneSourceDescriptor {
+  id: string;
+  icon: string;
+  label: string;
+  order?: number;
+  defaultPlacement?: PaneCreateDirection | "auto";
+  createLeaf: () => PaneCreateInput;
+  options?: PaneOpenOptions;
+}
+
+export interface GroupActionContext {
+  activePaneId: PaneId | null;
+  tabId: TabId;
+  openPane: (
+    leaf: PaneCreateInput,
+    placement?: { referencePaneId?: PaneId; direction?: PaneCreateDirection },
+    options?: PaneOpenOptions
+  ) => void;
+  openWorkspaceTab: (id: string) => void;
+}
+
+export interface GroupActionsModifier {
+  hide(...ids: string[]): void;
+}
+
+export interface WorkspaceTabDescriptor {
+  id: string;
+  title: string;
+  singleton?: boolean;
+  titlebar?: {
+    icon: string;
+    tooltip?: string;
+    order?: number;
+  };
+}
+
+export interface ExtensionSetupContext {
+  extensionId: string;
+  registerPaneSource(source: PaneSourceDescriptor): Disposable;
+  registerGroupAction(action: GroupActionDescriptor): Disposable;
+  onCreateGroupActions(handler: (actions: GroupActionsModifier) => void): Disposable;
+  registerWorkspaceTab(descriptor: WorkspaceTabDescriptor): Disposable;
+}
+
+export interface ExtensionSetup {
+  onInit?(ctx: ExtensionSetupContext): Disposable | undefined;
+}

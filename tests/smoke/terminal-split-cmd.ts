@@ -1,25 +1,7 @@
-import { resolve } from "node:path";
-import { callJsonRpc } from "../../src/cli/rpc-client";
-import { resolveSession } from "../../src/cli/session-discovery";
-import { getPtydControlIpcPath } from "../../src/shared/ipc-paths";
-import { assert, sleep, waitForApp } from "./helpers";
-
-const projectRoot = resolve(import.meta.dir, "../..");
-
-function runCli(args: string[], env: Record<string, string | undefined>) {
-  const result = Bun.spawnSync(["bun", ...args], {
-    cwd: projectRoot,
-    env,
-    stdout: "pipe",
-    stderr: "pipe"
-  });
-
-  return {
-    code: result.exitCode,
-    stdout: Buffer.from(result.stdout).toString().trim(),
-    stderr: Buffer.from(result.stderr).toString().trim()
-  };
-}
+import { callJsonRpc } from "../../src/flmux/client/rpc-client";
+import { resolveSession } from "../../src/flmux/client/session-discovery";
+import { getPtydControlIpcPath } from "../../src/lib/ipc/ipc-paths";
+import { assert, runCli, sleep, waitForApp } from "./helpers";
 
 async function main() {
   const client = await waitForApp();
@@ -42,7 +24,7 @@ async function main() {
   };
 
   const split = runCli(
-    ["src/cli/index.ts", "split", "--direction", "right", "--cmd", "flmux summary"],
+    ["src/flmux/cli/index.ts", "split", "--direction", "right", "--cmd", "flmux summary"],
     env
   );
 
@@ -87,3 +69,4 @@ main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 });
+

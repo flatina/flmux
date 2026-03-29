@@ -6,15 +6,7 @@
   "setupEntry": "./setup.ts",
   "rendererEntry": "./index.ts",
   "cliEntry": "./cli.ts",
-  "contributions": {
-    "panels": [
-      { "id": "cowsay", "kind": "panel", "title": "Cowsay Lab" }
-    ],
-    "events": [
-      { "id": "said", "description": "Emitted when the user sends a cowsay message inside the active tab" }
-    ],
-    "commands": [
-      { "id": "cowsay", "description": "Open or message a cowsay pane" }
-    ]
-  }
+  "commands": [
+    { "id": "cowsay", "description": "Open or message a cowsay pane" }
+  ]
 }

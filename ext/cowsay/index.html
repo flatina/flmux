@@ -45,7 +45,7 @@
 
   .cowsay-lab__controls {
     display: grid;
-    grid-template-columns: minmax(220px, 2fr) repeat(4, minmax(100px, 1fr));
+    grid-template-columns: minmax(220px, 2fr) repeat(5, minmax(88px, 1fr));
     gap: 8px;
     align-items: center;
   }
@@ -77,8 +77,16 @@
     background: #ffb45e;
   }
 
-  .cowsay-lab__button--title {
+  .cowsay-lab__button--app {
     background: #7fd1b9;
+  }
+
+  .cowsay-lab__button--workspace {
+    background: #93d2ff;
+  }
+
+  .cowsay-lab__button--pane {
+    background: #ffc96b;
   }
 
   .cowsay-lab__button--reset {
@@ -189,14 +197,16 @@ ext:  <span data-ref="ext-id"></span></pre>
   <div class="cowsay-lab__controls">
     <input class="cowsay-lab__input" data-ref="input" type="text" placeholder="Type a message" />
     <button class="cowsay-lab__button cowsay-lab__button--say" data-ref="say-btn" type="button">Say Tab</button>
-    <button class="cowsay-lab__button cowsay-lab__button--title" data-ref="title-btn" type="button">Set Title</button>
+    <button class="cowsay-lab__button cowsay-lab__button--app" data-ref="app-title-btn" type="button">Set App</button>
+    <button class="cowsay-lab__button cowsay-lab__button--workspace" data-ref="workspace-title-btn" type="button">Set Work</button>
+    <button class="cowsay-lab__button cowsay-lab__button--pane" data-ref="pane-title-btn" type="button">Set Pane</button>
     <button class="cowsay-lab__button cowsay-lab__button--reset" data-ref="reset-btn" type="button">Reset</button>
     <button class="cowsay-lab__button cowsay-lab__button--clear" data-ref="clear-btn" type="button">Clear Log</button>
   </div>
 
   <div class="cowsay-lab__hint">
-    Open two cowsay panes in the same workspace and click Say Tab. Use Set Title to verify app:title propagation.
-    Save and reload the session to verify state restore.
+    Open cowsay in a simple tab or inside a layoutable workspace and use Set App, Set Work, Set Pane to exercise
+    scoped property SPI. Use Say Tab to exercise workspace-scoped events. Save and reload the session to verify state restore.
   </div>
 
   <div class="cowsay-lab__content">

@@ -1,0 +1,12 @@
+{
+  "id": "browser",
+  "name": "Browser",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "setupEntry": "./setup.ts",
+  "rendererEntry": "./index.ts",
+  "cliEntry": "./cli.ts",
+  "commands": [
+    { "id": "browser", "description": "Manage browser panes" }
+  ]
+}

@@ -3,7 +3,23 @@
   "compilerOptions": {
     "composite": true,
     "lib": ["ESNext", "DOM"],
-    "types": ["bun-types"]
+    "types": ["@types/bun"]
   },
-  "include": ["src/main/**/*.ts", "src/cli/**/*.ts", "src/shared/**/*.ts"]
+  "include": [
+    "src/flmux/main/**/*.ts",
+    "src/flmux/cli/**/*.ts",
+    "src/flmux/client/**/*.ts",
+    "src/flmux/browser/**/*.ts",
+    "src/flmux/config/**/*.ts",
+    "src/flmux/model/**/*.ts",
+    "src/flmux/props/**/*.ts",
+    "src/flmux/rpc/**/*.ts",
+    "ext/**/*.ts",
+    "src/types/**/*.ts",
+    "src/sdk/**/*.ts",
+    "src/flweb/**/*.ts",
+    "src/ptyd/**/*.ts",
+    "src/lib/**/*.ts",
+    "env.d.ts"
+  ]
 }

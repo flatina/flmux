@@ -1,0 +1,8 @@
+{
+  "id": "code-editor",
+  "name": "Code Editor",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "setupEntry": "./setup.ts",
+  "rendererEntry": "./index.ts"
+}

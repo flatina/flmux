@@ -1,25 +1,7 @@
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
-import { getFlmuxLastPath } from "../../src/shared/paths";
-import { assert, sleep, waitForApp } from "./helpers";
-import { resolveSession } from "../../src/cli/session-discovery";
-
-const projectRoot = resolve(import.meta.dir, "../..");
-
-function runCli(args: string[], env: Record<string, string | undefined>) {
-  const result = Bun.spawnSync(["bun", ...args], {
-    cwd: projectRoot,
-    env,
-    stdout: "pipe",
-    stderr: "pipe"
-  });
-
-  return {
-    code: result.exitCode,
-    stdout: Buffer.from(result.stdout).toString().trim(),
-    stderr: Buffer.from(result.stderr).toString().trim()
-  };
-}
+import { getFlmuxLastPath } from "../../src/lib/paths";
+import { resolveSession } from "../../src/flmux/client/session-discovery";
+import { assert, runCli, sleep, waitForApp } from "./helpers";
 
 async function main() {
   const client = await waitForApp();
@@ -37,7 +19,7 @@ async function main() {
   };
 
   const created = runCli(
-    ["src/cli/index.ts", "browser", "new", "--placement", "above", "https://example.com"],
+    ["src/flmux/cli/index.ts", "browser", "new", "--placement", "above", "https://example.com"],
     env
   );
   assert(created.code === 0, `browser new above exits 0 (${created.stderr || "ok"})`);
@@ -56,7 +38,7 @@ async function main() {
   assert(firstNode?.type === "branch", `explicit above creates nested branch (${firstNode?.type ?? "missing"})`);
   assert((firstNode?.data?.length ?? 0) === 2, `explicit above nested branch contains two leaves (${firstNode?.data?.length ?? 0})`);
 
-  await client.call("browser.close", { paneId: created.stdout as any });
+  await client.call("pane.close", { paneId: created.stdout as any });
 
   console.log("\nBrowser above placement checks passed.");
 }
@@ -86,3 +68,4 @@ main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 });
+

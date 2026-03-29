@@ -8,7 +8,6 @@
  * Output: build/flmux-{version}-{platform}-{arch}.tar.gz
  */
 import { resolve } from "node:path";
-import { cp, rm } from "node:fs/promises";
 
 const root = resolve(import.meta.dir, "..");
 const pkg = await Bun.file(resolve(root, "package.json")).json();
@@ -19,6 +18,15 @@ const archiveName = `flmux-${version}-${platform}-${arch}.tar.gz`;
 
 // Step 1: Build
 console.log(`Building flmux v${version} (${platform}-${arch})...`);
+const clean = Bun.spawnSync(["bun", "scripts/clean-build.ts"], {
+  cwd: root,
+  stdout: "inherit",
+  stderr: "inherit"
+});
+if (clean.exitCode !== 0) {
+  console.error("build cleanup failed");
+  process.exit(1);
+}
 const electrobun = resolve(root, "node_modules/.bin/electrobun");
 const build = Bun.spawnSync([electrobun, "build"], {
   cwd: root,

@@ -1,25 +1,7 @@
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
-import { getFlmuxLastPath } from "../../src/shared/paths";
-import { assert, sleep, waitForApp } from "./helpers";
-import { resolveSession } from "../../src/cli/session-discovery";
-
-const projectRoot = resolve(import.meta.dir, "../..");
-
-function runCli(args: string[], env: Record<string, string | undefined>) {
-  const result = Bun.spawnSync(["bun", ...args], {
-    cwd: projectRoot,
-    env,
-    stdout: "pipe",
-    stderr: "pipe"
-  });
-
-  return {
-    code: result.exitCode,
-    stdout: Buffer.from(result.stdout).toString().trim(),
-    stderr: Buffer.from(result.stderr).toString().trim()
-  };
-}
+import { getFlmuxLastPath } from "../../src/lib/paths";
+import { resolveSession } from "../../src/flmux/client/session-discovery";
+import { assert, runCli, sleep, waitForApp } from "./helpers";
 
 async function main() {
   const client = await waitForApp();
@@ -36,7 +18,7 @@ async function main() {
     FLMUX_PANE_ID: String(terminal.paneId)
   };
 
-  const autoCreated = runCli(["src/cli/index.ts", "browser", "new", "https://example.com"], env);
+  const autoCreated = runCli(["src/flmux/cli/index.ts", "browser", "new", "https://example.com"], env);
   assert(autoCreated.code === 0, `browser new auto exits 0 (${autoCreated.stderr || "ok"})`);
   await sleep(1000);
 
@@ -49,7 +31,7 @@ async function main() {
   assert(autoInner?.grid?.orientation === "HORIZONTAL", `auto placement uses horizontal split (${autoInner?.grid?.orientation ?? "missing"})`);
   assert((autoInner?.grid?.root?.data?.length ?? 0) === 2, `auto placement creates two split leaves (${autoInner?.grid?.root?.data?.length ?? 0})`);
 
-  await client.call("browser.close", { paneId: autoCreated.stdout as any });
+  await client.call("pane.close", { paneId: autoCreated.stdout as any });
 
   console.log("\nBrowser auto placement checks passed.");
 }
@@ -80,3 +62,4 @@ main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 });
+

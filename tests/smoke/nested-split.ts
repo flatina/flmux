@@ -16,7 +16,7 @@ async function main() {
   const before = await client.call("app.summary", undefined);
   const tabs0 = await client.call("tab.list", undefined);
   const initialPanes = before.panes.length;
-  const initialTabs = tabs0.tabs.length;
+  const initialTabs = tabs0.workspaces.length;
   console.log(`Initial: ${initialPanes} panes, ${initialTabs} tabs`);
 
   // --- open terminal → should go to layoutable tab ---
@@ -29,7 +29,7 @@ async function main() {
 
   // t1 should be in a layoutable tab
   const tabsAfterT1 = await client.call("tab.list", undefined);
-  const t1Tab = tabsAfterT1.tabs.find((t) => (t.tabId as string) === (t1Summary?.tabId as string));
+  const t1Tab = tabsAfterT1.workspaces.find((t) => (t.tabId as string) === (t1Summary?.tabId as string));
   assert(t1Tab?.layoutMode === "layoutable", `t1 is in layoutable tab (got ${t1Tab?.layoutMode})`);
   console.log(`Terminal t1 in tab ${t1Summary?.tabId}`);
 
@@ -51,10 +51,10 @@ async function main() {
 
   // tab count should not increase from split within layoutable
   const tabsAfterT2 = await client.call("tab.list", undefined);
-  assert(tabsAfterT2.tabs.length === tabsAfterT1.tabs.length, "split within layoutable does not add tab");
+  assert(tabsAfterT2.workspaces.length === tabsAfterT1.workspaces.length, "split within layoutable does not add tab");
 
   // the layoutable tab now has more panes
-  const layoutTab = tabsAfterT2.tabs.find((t) => (t.tabId as string) === (t1Summary?.tabId as string));
+  const layoutTab = tabsAfterT2.workspaces.find((t) => (t.tabId as string) === (t1Summary?.tabId as string));
   assert((layoutTab?.paneCount ?? 0) >= 2, `layoutable tab has ${layoutTab?.paneCount} panes`);
 
   // --- open browser → should go to same layoutable tab ---

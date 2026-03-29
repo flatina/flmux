@@ -1,4 +1,4 @@
-import type { ExtensionCliCommand } from "../../src/shared/extension-spi";
+import type { ExtensionCliCommand } from "flmux-sdk";
 
 export const command: ExtensionCliCommand = {
   meta: { name: "cowsay", description: "Open or message a cowsay pane" },
@@ -22,9 +22,8 @@ export const command: ExtensionCliCommand = {
       output(
         await client.call("pane.open", {
           leaf: {
-            kind: "extension",
-            extensionId: "sample.cowsay",
-            contributionId: "cowsay"
+            kind: "view",
+            viewKey: "sample.cowsay:cowsay"
           }
         })
       );

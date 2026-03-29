@@ -14,10 +14,10 @@ async function main() {
   const before = await client.call("app.summary", undefined);
   const tabs0 = await client.call("tab.list", undefined);
   const initialPanes = before.panes.length;
-  console.log(`Initial: ${initialPanes} panes, ${tabs0.tabs.length} tabs`);
+  console.log(`Initial: ${initialPanes} panes, ${tabs0.workspaces.length} tabs`);
 
   // Find the layoutable tab
-  const layoutTab = tabs0.tabs.find((t) => t.layoutMode === "layoutable");
+  const layoutTab = tabs0.workspaces.find((t) => t.layoutMode === "layoutable");
   assert(!!layoutTab, "layoutable tab exists");
   const layoutTabId = layoutTab!.tabId as string;
 
@@ -35,7 +35,7 @@ async function main() {
 
   // tab count should not increase (reuses existing layoutable tab)
   const tabs1 = await client.call("tab.list", undefined);
-  assert(tabs1.tabs.length === tabs0.tabs.length, "explorer reuses existing layoutable tab");
+  assert(tabs1.workspaces.length === tabs0.workspaces.length, "explorer reuses existing layoutable tab");
 
   // --- open editor → should go to layoutable tab ---
   const ed = await client.call("pane.open", {
@@ -51,7 +51,7 @@ async function main() {
 
   // layoutable tab now has more panes
   const tabs2 = await client.call("tab.list", undefined);
-  const lTab = tabs2.tabs.find((t) => (t.tabId as string) === layoutTabId);
+  const lTab = tabs2.workspaces.find((t) => (t.tabId as string) === layoutTabId);
   assert((lTab?.paneCount ?? 0) >= 3, `layoutable tab has ${lTab?.paneCount} panes (explorer+editor+terminal)`);
 
   // --- browser also goes to layoutable tab ---

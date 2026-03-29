@@ -1,6 +1,10 @@
-import type { AppRpcClient } from "../../src/cli/app-rpc-client";
-import { createAppRpcClient } from "../../src/cli/app-rpc-client";
-import { resolveSession } from "../../src/cli/session-discovery";
+import { resolve } from "node:path";
+import type { AppRpcClient } from "../../src/flmux/client/rpc-client";
+import { createAppRpcClient } from "../../src/flmux/client/rpc-client";
+import { resolveSession } from "../../src/flmux/client/session-discovery";
+import type { PropertyChangeEvent } from "../../src/types/property";
+
+export const projectRoot = resolve(import.meta.dir, "../..");
 
 /** Poll until the app is reachable, max waitMs. */
 export async function waitForApp(waitMs = 5000, intervalMs = 100): Promise<AppRpcClient> {
@@ -12,6 +16,7 @@ export async function waitForApp(waitMs = 5000, intervalMs = 100): Promise<AppRp
       const session = await resolveSession();
       const client = createAppRpcClient({ ipcPath: session.ipcPath });
       await client.call("system.ping", undefined);
+      await client.call("app.summary", undefined);
       return client;
     } catch (e) {
       lastError = e;
@@ -33,4 +38,37 @@ export function assert(condition: boolean, label: string): void {
     console.error(`  FAIL — ${label}`);
     process.exitCode = 1;
   }
+}
+
+/** Spawn `bun <args>` synchronously from project root and capture output. */
+export function runCli(args: string[], env: Record<string, string | undefined>) {
+  const result = Bun.spawnSync(["bun", ...args], {
+    cwd: projectRoot,
+    env,
+    stdout: "pipe",
+    stderr: "pipe"
+  });
+
+  return {
+    code: result.exitCode,
+    stdout: Buffer.from(result.stdout).toString().trim(),
+    stderr: Buffer.from(result.stderr).toString().trim()
+  };
+}
+
+/** Poll an event array until a matching PropertyChangeEvent appears. */
+export async function waitForPropertyEvent(
+  events: PropertyChangeEvent[],
+  predicate: (event: PropertyChangeEvent) => boolean,
+  timeoutMs = 5000
+): Promise<PropertyChangeEvent> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const match = events.find(predicate);
+    if (match) {
+      return match;
+    }
+    await sleep(50);
+  }
+  throw new Error("Timed out waiting for property change event");
 }

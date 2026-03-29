@@ -8,16 +8,18 @@ export default {
   },
   build: {
     bun: {
-      entrypoint: "src/main/index.ts"
+      entrypoint: "src/flmux/main/index.ts"
     },
     views: {
       mainview: {
-        entrypoint: "src/renderer/main.ts"
+        entrypoint: "src/flmux/renderer/index.ts"
       }
     },
     copy: {
-      "src/renderer/index.html": "views/mainview/index.html",
-      "node_modules/bun-pty/rust-pty/target/release": "bun/rust-pty/target/release"
+      "src/flmux/renderer/index.html": "views/mainview/index.html",
+      "node_modules/bun-pty/rust-pty/target/release": "bun/rust-pty/target/release",
+      "src/sdk": "node_modules/flmux-sdk",
+      "ext": "ext"
     },
     mac: {
       bundleCEF: false

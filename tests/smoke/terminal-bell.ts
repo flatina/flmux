@@ -6,9 +6,9 @@
  *
  * Usage: bun tests/smoke/terminal-bell.ts
  */
-import { callJsonRpc } from "../../src/cli/rpc-client";
-import { getPtydControlIpcPath } from "../../src/shared/ipc-paths";
-import { resolveSession } from "../../src/cli/session-discovery";
+import { callJsonRpc } from "../../src/flmux/client/rpc-client";
+import { getPtydControlIpcPath } from "../../src/lib/ipc/ipc-paths";
+import { resolveSession } from "../../src/flmux/client/session-discovery";
 import { assert, sleep, waitForApp } from "./helpers";
 
 async function main() {

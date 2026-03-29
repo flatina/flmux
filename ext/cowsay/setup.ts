@@ -1,4 +1,4 @@
-import type { ExtensionSetup } from "../../src/shared/extension-spi";
+import type { ExtensionSetup } from "flmux-sdk";
 
 export default {
   onInit(ctx) {
@@ -13,18 +13,16 @@ export default {
       }
     });
 
-    const paneAction = ctx.registerGroupAction({
+    const paneAction = ctx.registerPaneSource({
       id: "moo",
       icon: "\u{1F42E}",
-      tooltip: "Open Cowsay Pane",
+      label: "Cowsay",
       order: 50,
-      run(actionCtx) {
-        actionCtx.openPane(
-          { kind: "extension", extensionId: "sample.cowsay", contributionId: "cowsay" },
-          undefined,
-          { singleton: true }
-        );
-      }
+      defaultPlacement: "within",
+      createLeaf() {
+        return { kind: "view", viewKey: "sample.cowsay:cowsay", title: "Cowsay Lab" };
+      },
+      options: { singleton: true }
     });
 
     const hide = ctx.onCreateGroupActions(() => {

@@ -1,23 +1,5 @@
-import { resolve } from "node:path";
-import { assert, sleep, waitForApp } from "./helpers";
-import { resolveSession } from "../../src/cli/session-discovery";
-
-const projectRoot = resolve(import.meta.dir, "../..");
-
-function runCli(args: string[], env: Record<string, string | undefined>) {
-  const result = Bun.spawnSync(["bun", ...args], {
-    cwd: projectRoot,
-    env,
-    stdout: "pipe",
-    stderr: "pipe"
-  });
-
-  return {
-    code: result.exitCode,
-    stdout: Buffer.from(result.stdout).toString().trim(),
-    stderr: Buffer.from(result.stderr).toString().trim()
-  };
-}
+import { resolveSession } from "../../src/flmux/client/session-discovery";
+import { assert, runCli, sleep, waitForApp } from "./helpers";
 
 async function main() {
   await waitForApp();
@@ -32,7 +14,7 @@ async function main() {
 
   const result = runCli(
     [
-      "src/cli/index.ts",
+      "src/flmux/cli/index.ts",
       "browser",
       "new",
       "https://example.com",
@@ -55,3 +37,4 @@ main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 });
+

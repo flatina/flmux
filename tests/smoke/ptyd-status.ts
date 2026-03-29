@@ -1,7 +1,7 @@
-import { callJsonRpcIpc } from "../../src/shared/json-rpc-ipc";
-import { getPtydControlIpcPath } from "../../src/shared/ipc-paths";
-import type { PtydDaemonStatusResult } from "../../src/shared/ptyd-control-plane";
-import { resolveSession } from "../../src/cli/session-discovery";
+import { callJsonRpcIpc } from "../../src/lib/ipc/json-rpc-ipc";
+import { getPtydControlIpcPath } from "../../src/lib/ipc/ipc-paths";
+import type { PtydDaemonStatusResult } from "../../src/ptyd/control-plane";
+import { resolveSession } from "../../src/flmux/client/session-discovery";
 import { assert, sleep, waitForApp } from "./helpers";
 
 async function main() {

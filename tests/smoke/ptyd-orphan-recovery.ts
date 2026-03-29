@@ -1,8 +1,8 @@
 import { resolve } from "node:path";
-import { callJsonRpcIpc } from "../../src/shared/json-rpc-ipc";
-import { getPtydControlIpcPath } from "../../src/shared/ipc-paths";
-import { createAppRpcClient } from "../../src/cli/app-rpc-client";
-import { cleanupStaleSessions, listRecoverablePtydSessions, resolveSession } from "../../src/cli/session-discovery";
+import { callJsonRpcIpc } from "../../src/lib/ipc/json-rpc-ipc";
+import { getPtydControlIpcPath } from "../../src/lib/ipc/ipc-paths";
+import { createAppRpcClient } from "../../src/flmux/client/rpc-client";
+import { cleanupStaleSessions, listRecoverablePtydSessions, resolveSession } from "../../src/flmux/client/session-discovery";
 import { assert, sleep, waitForApp } from "./helpers";
 
 const projectRoot = resolve(import.meta.dir, "../..");
@@ -49,9 +49,9 @@ async function main() {
   assert(orphanStatus.sessionId === originalSession.sessionId, "orphan ptyd keeps the original session id");
   assert(orphanStatus.terminalCount >= 1, "orphan ptyd still has terminals");
 
-  const replacement = Bun.spawn([electrobunBin, "dev"], {
+  const replacement = Bun.spawn([electrobunBin, "dev", "--", "--orphan-ptyd=recover"], {
     cwd: projectRoot,
-    env: { ...process.env, FLMUX_FRESH: "1" },
+    env: { ...process.env, FLMUX_FRESH: "1", FLMUX_ORPHAN_PTYD: "recover" },
     detached: true,
     stdout: "ignore",
     stderr: "ignore"

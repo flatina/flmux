@@ -1,11 +1,22 @@
 #!/usr/bin/env bun
 
 import { defineCommand, runMain } from "citty";
-import type { AppRpcMethod, AppRpcParams, AppRpcResult } from "../shared/app-rpc";
-import { printJson, resolveBrowserPaneId } from "../cli/browser-utils";
-import { getClient, sessionArg } from "../cli/commands/_utils";
-
-const FLWEB_RPC_TIMEOUT_MS = 20_000;
+import {
+  backBrowserPane,
+  type BrowserWaitCommand,
+  clickBrowserPane,
+  evalBrowserPane,
+  fillBrowserPane,
+  forwardBrowserPane,
+  getBrowserPaneBox,
+  getBrowserPaneValue,
+  navigateBrowserPane,
+  pressBrowserPane,
+  reloadBrowserPane,
+  snapshotBrowserPane,
+  waitForBrowserPane
+} from "./automation";
+import { getClient, printJson, resolveBrowserPaneId, sessionArg } from "./support";
 
 const commonArgs = {
   ...sessionArg,
@@ -19,18 +30,13 @@ type CommonArgs = {
   pane?: string;
 };
 
-type PaneScopedBrowserMethod = {
-  [Method in Extract<AppRpcMethod, `browser.${string}`>]: AppRpcParams<Method> extends { paneId: string } ? Method : never;
-}[Extract<AppRpcMethod, `browser.${string}`>];
-
 type GetterSpec = {
   field: "url" | "title" | "text" | "html" | "value" | "attr";
   name: string;
   description: string;
   target?: boolean;
   attrName?: boolean;
-  printer?: (result: AppRpcResult<"browser.get"> | AppRpcResult<"browser.box">) => void;
-  method?: "browser.get" | "browser.box";
+  box?: boolean;
 };
 
 const getterSpecs: GetterSpec[] = [
@@ -40,14 +46,7 @@ const getterSpecs: GetterSpec[] = [
   { name: "html", field: "html", description: "Get innerHTML from a ref or selector", target: true },
   { name: "value", field: "value", description: "Get input value from a ref or selector", target: true },
   { name: "attr", field: "attr", description: "Get an attribute from a ref or selector", target: true, attrName: true },
-  {
-    name: "box",
-    field: "text",
-    description: "Get bounding box from a ref or selector",
-    target: true,
-    method: "browser.box",
-    printer: (result) => console.log(JSON.stringify((result as AppRpcResult<"browser.box">).box, null, 2))
-  }
+  { name: "box", field: "text", description: "Get bounding box from a ref or selector", target: true, box: true }
 ];
 
 const main = defineCommand({
@@ -63,11 +62,11 @@ const main = defineCommand({
         compact: { type: "boolean", description: "Compact snapshot output" }
       },
       run: async ({ args }) => {
-        const result = await callPaneBrowser(args, "browser.snapshot", {
-          compact: !!args.compact
-        });
+        const { client, paneId } = await resolvePaneClient(args);
+        const snapshot = await snapshotBrowserPane(client, paneId, !!args.compact);
+        const result = { ok: true, paneId, snapshot };
         if (printMaybeJson(args.json, result)) return;
-        console.log(result.snapshot);
+        console.log(snapshot);
       }
     }),
     navigate: defineCommand({
@@ -83,18 +82,16 @@ const main = defineCommand({
         idleMs: { type: "string", description: "Idle wait window in milliseconds" }
       },
       run: async ({ args }) => {
-        const result = await callPaneBrowser(args, "browser.navigate", {
-          url: args.url,
-          waitUntil: normalizeWaitUntil(args.waitUntil),
-          idleMs: parseIdleMs(args.idleMs)
-        });
+        const { client, paneId } = await resolvePaneClient(args);
+        const url = await navigateBrowserPane(client, paneId, args.url, normalizeWaitUntil(args.waitUntil), parseIdleMs(args.idleMs));
+        const result = { ok: true, paneId, url };
         if (printMaybeJson(args.json, result)) return;
-        console.log(result.url);
+        console.log(url);
       }
     }),
-    back: createHistoryCommand("back", "Navigate back in history", "browser.back"),
-    forward: createHistoryCommand("forward", "Navigate forward in history", "browser.forward"),
-    reload: createHistoryCommand("reload", "Reload the current page", "browser.reload"),
+    back: createHistoryCommand("back", "Navigate back in history", backBrowserPane),
+    forward: createHistoryCommand("forward", "Navigate forward in history", forwardBrowserPane),
+    reload: createHistoryCommand("reload", "Reload the current page", reloadBrowserPane),
     click: defineCommand({
       meta: { name: "click", description: "Click a ref or selector" },
       args: {
@@ -102,11 +99,10 @@ const main = defineCommand({
         target: { type: "positional", required: true, description: "Ref or selector" }
       },
       run: async ({ args }) => {
-        const result = await callPaneBrowser(args, "browser.click", {
-          target: args.target
-        });
+        const { client, paneId } = await resolvePaneClient(args);
+        await clickBrowserPane(client, paneId, args.target);
         if (args.json) {
-          printJson(result);
+          printJson({ ok: true, paneId });
         }
       }
     }),
@@ -118,12 +114,10 @@ const main = defineCommand({
         text: { type: "positional", required: true, description: "Text value" }
       },
       run: async ({ args }) => {
-        const result = await callPaneBrowser(args, "browser.fill", {
-          target: args.target,
-          text: args.text
-        });
+        const { client, paneId } = await resolvePaneClient(args);
+        await fillBrowserPane(client, paneId, args.target, args.text);
         if (args.json) {
-          printJson(result);
+          printJson({ ok: true, paneId });
         }
       }
     }),
@@ -134,11 +128,10 @@ const main = defineCommand({
         key: { type: "positional", required: true, description: "Key name" }
       },
       run: async ({ args }) => {
-        const result = await callPaneBrowser(args, "browser.press", {
-          key: args.key
-        });
+        const { client, paneId } = await resolvePaneClient(args);
+        await pressBrowserPane(client, paneId, args.key);
         if (args.json) {
-          printJson(result);
+          printJson({ ok: true, paneId });
         }
       }
     }),
@@ -153,9 +146,10 @@ const main = defineCommand({
         fn: { type: "string", description: "Wait until this JavaScript expression becomes truthy" }
       },
       run: async ({ args }) => {
-        const result = await callPaneBrowser(args, "browser.wait", normalizeWaitParams(args));
+        const { client, paneId } = await resolvePaneClient(args);
+        await waitForBrowserPane(client, paneId, normalizeWaitParams(args));
         if (args.json) {
-          printJson(result);
+          printJson({ ok: true, paneId });
         }
       }
     }),
@@ -170,15 +164,15 @@ const main = defineCommand({
         script: { type: "positional", required: true, description: "JavaScript expression or return statement" }
       },
       run: async ({ args }) => {
-        const result = await callPaneBrowser(args, "browser.eval", {
-          script: args.script
-        });
+        const { client, paneId } = await resolvePaneClient(args);
+        const value = await evalBrowserPane(client, paneId, args.script);
+        const result = { ok: true, paneId, value };
         if (printMaybeJson(args.json, result)) return;
-        if (typeof result.value === "string") {
-          console.log(result.value);
+        if (typeof value === "string") {
+          console.log(value);
           return;
         }
-        console.log(JSON.stringify(result.value, null, 2));
+        console.log(JSON.stringify(value, null, 2));
       }
     })
   }
@@ -191,7 +185,12 @@ export function runFlweb(): Promise<void> {
 function createHistoryCommand(
   name: string,
   description: string,
-  method: Extract<PaneScopedBrowserMethod, "browser.back" | "browser.forward" | "browser.reload">
+  runAction: (
+    client: Awaited<ReturnType<typeof getClient>>,
+    paneId: ReturnType<typeof resolveBrowserPaneId>,
+    waitUntil: "none" | "load" | "idle",
+    idleMs: number
+  ) => Promise<string>
 ) {
   return defineCommand({
     meta: { name, description },
@@ -205,12 +204,11 @@ function createHistoryCommand(
       idleMs: { type: "string", description: "Idle wait window in milliseconds" }
     },
     run: async ({ args }) => {
-      const result = await callPaneBrowser(args, method, {
-        waitUntil: normalizeWaitUntil(args.waitUntil),
-        idleMs: parseIdleMs(args.idleMs)
-      });
+      const { client, paneId } = await resolvePaneClient(args);
+      const url = await runAction(client, paneId, normalizeWaitUntil(args.waitUntil), parseIdleMs(args.idleMs));
+      const result = { ok: true, paneId, url };
       if (printMaybeJson(args.json, result)) return;
-      console.log(result.url);
+      console.log(url);
     }
   });
 }
@@ -224,40 +222,32 @@ function createGetterCommand(spec: GetterSpec) {
       ...(spec.attrName ? { name: { type: "positional" as const, required: true, description: "Attribute name" } } : {})
     },
     run: async ({ args }) => {
-      if (spec.method === "browser.box") {
-        const result = await callPaneBrowser(args, "browser.box", {
-          target: args.target
-        });
+      const { client, paneId } = await resolvePaneClient(args);
+
+      if (spec.box) {
+        const box = await getBrowserPaneBox(client, paneId, args.target ?? "");
+        const result = { ok: true, paneId, box };
         if (printMaybeJson(args.json, result)) return;
-        spec.printer?.(result);
+        console.log(JSON.stringify(box, null, 2));
         return;
       }
 
-      const result = await callPaneBrowser(args, "browser.get", {
-        field: spec.field,
-        target: spec.target ? args.target : undefined,
-        name: spec.attrName ? args.name : undefined
-      });
+      const value = await getBrowserPaneValue(client, paneId, spec.field, args.target, args.name);
+      const result = { ok: true, paneId, field: spec.field, value };
       if (printMaybeJson(args.json, result)) return;
-      console.log(result.value);
+      console.log(value);
     }
   });
 }
 
-async function callPaneBrowser<Method extends PaneScopedBrowserMethod>(
-  args: CommonArgs,
-  method: Method,
-  params: Omit<AppRpcParams<Method>, "paneId">
-): Promise<AppRpcResult<Method>> {
-  const client = await getClient(args.session);
-  return client.call(
-    method,
-    {
-      paneId: resolveBrowserPaneId(args.pane),
-      ...params
-    } as AppRpcParams<Method>,
-    FLWEB_RPC_TIMEOUT_MS
-  );
+async function resolvePaneClient(args: CommonArgs): Promise<{
+  client: Awaited<ReturnType<typeof getClient>>;
+  paneId: ReturnType<typeof resolveBrowserPaneId>;
+}> {
+  return {
+    client: await getClient(args.session),
+    paneId: resolveBrowserPaneId(args.pane)
+  };
 }
 
 function printMaybeJson(json: boolean | undefined, result: unknown): boolean {
@@ -273,8 +263,9 @@ function normalizeWaitUntil(value?: string): "none" | "load" | "idle" {
   return value === "none" || value === "idle" ? value : "load";
 }
 
-function parseIdleMs(value?: string): number | undefined {
-  return value ? Number(value) : undefined;
+function parseIdleMs(value?: string): number {
+  const parsed = value ? Number(value) : 500;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 500;
 }
 
 function normalizeWaitParams(args: {
@@ -283,7 +274,7 @@ function normalizeWaitParams(args: {
   text?: string;
   url?: string;
   fn?: string;
-}): Omit<AppRpcParams<"browser.wait">, "paneId"> {
+}): BrowserWaitCommand {
   const raw = args.value;
   const asNumber = Number(raw);
 
@@ -300,7 +291,7 @@ function normalizeWaitParams(args: {
     return { kind: "load" };
   }
   if (raw === "idle") {
-    return { kind: "idle", ms: args.ms ? Number(args.ms) : 500 };
+    return { kind: "idle", ms: parseIdleMs(args.ms) };
   }
   if (Number.isFinite(asNumber) && asNumber >= 0) {
     return { kind: "duration", ms: asNumber };

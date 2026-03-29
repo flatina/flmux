@@ -60,17 +60,24 @@ The app opens with a single workspace tab containing a terminal. Use the titleba
 
 Each workspace tab has:
 
-- a `➕` group menu in the inner header for adding panes or terminal splits within the current group
+- a `➕` group menu in the inner header for adding panes within the current group
 - a left icon menu on each pane tab for pane-specific commands
 
-The `➕` menu includes:
+The `➕` menu shows a placement grid:
 
-- `📄 Add Editor`
-- `📁 Add Explorer`
-- `🌐 Add Browser`
-- `>_ Add Terminal`
-- `◫ Split Right`
-- `⊟ Split Down`
+- rows are pane sources (`Editor`, `Explorer`, `Browser`, `Terminal`, plus extension pane sources like `Cowsay`)
+- columns are placement targets:
+  - `←` split left
+  - `→` split right
+  - `●` add within the current tab group
+  - `↓` split down
+  - `↑` split up
+- clicking the row source button uses that source's default placement
+  - `Explorer` defaults to left
+  - `Editor` and `Terminal` default to within
+  - `Browser` defaults to auto placement
+
+Extension pane sources use the same grid as built-in pane sources. Arbitrary extension group actions, if any, appear in a separate section below the grid.
 
 
 ## Web Access
@@ -196,22 +203,38 @@ Extensions add custom pane types or new CLI commands.
 ```
 ext/cowsay/
   flmux-extension.json    # manifest
-  index.ts                 # mount logic
+  index.ts                 # renderer view lifecycle
   index.html               # UI template asset
   cli.ts                   # CLI command (optional)
 ```
 
-An extension receives a host DOM element and a context with event bus access:
+Renderer extensions export an explicit view object. Each pane gets its own instance via `createInstance(context)`:
 
 ```typescript
-export const mount: ExtensionMount = async (host, context) => {
-  const html = await context.loadAssetText("./index.html");
-  host.innerHTML = html;
+import { defineView } from "flmux-sdk";
 
-  context.emit("my:event", { data: 123 });
-  context.on("other:event", (e) => console.log(e.data));
-  return { dispose() { /* cleanup */ } };
-};
+export default defineView({
+  createInstance(context) {
+    let stop = () => {};
+
+    return {
+      async beforeMount(host) {
+        host.innerHTML = await context.loadAssetText("./index.html");
+      },
+      mount(host) {
+        context.emit("my:event", { data: 123 });
+        stop = context.on("other:event", (e) => console.log(e.data));
+        host.dataset.ready = "1";
+      },
+      update() {
+        // optional param update handling
+      },
+      dispose() {
+        stop();
+      }
+    };
+  }
+});
 ```
 
 Manage extensions:

@@ -17,8 +17,8 @@ export default {
       id: "moo",
       icon: "\u{1F42E}",
       label: "Cowsay",
-      order: 50,
-      defaultPlacement: "within",
+      order: 60,
+      defaultPlacement: "auto",
       createLeaf() {
         return { kind: "view", viewKey: "sample.cowsay:cowsay", title: "Cowsay Lab" };
       },

@@ -60,6 +60,21 @@ export interface HostRpcMethodMap {
     params: { extensionId: string };
     result: { ok: true } | { ok: false; error: string };
   };
+  "fs.readFile": {
+    params: { path: string };
+    result: { ok: true; content: string } | { ok: false; error: string };
+  };
+  "fs.writeFile": {
+    params: { path: string; content: string };
+    result: { ok: true } | { ok: false; error: string };
+  };
+  "fs.readDir": {
+    params: { path: string };
+    result: {
+      ok: true;
+      entries: Array<{ name: string; path: string; isDir: boolean; size?: number }>;
+    } | { ok: false; error: string };
+  };
   "uiSettings.setTheme": {
     params: { theme: ThemePreference };
     result: { ok: true };

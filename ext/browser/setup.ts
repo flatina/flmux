@@ -6,7 +6,7 @@ export default {
       id: "browser",
       icon: "\u{1F310}",
       label: "Browser",
-      order: 30,
+      order: 10,
       defaultPlacement: "auto",
       createLeaf() {
         return { kind: "browser" };

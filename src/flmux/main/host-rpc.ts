@@ -1,5 +1,5 @@
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import type { BrowserWindow } from "electrobun/bun";
 import type { BootstrapState } from "../model/bootstrap-state";
 import type { FlmuxLastFile } from "../model/flmux-last";
@@ -36,12 +36,52 @@ export function createHostRpcDispatcher(options: CreateHostRpcHandlersOptions): 
 function createHostRpcHandlers(options: CreateHostRpcHandlersOptions): HostRpcHandlers {
   return {
     "bootstrap.get": async () => options.bootstrapState,
+    ...createFsHandlers(),
     ...createFlmuxLastHandlers(options),
     ...createSessionHandlers(),
     ...createExtensionHandlers(options),
     ...createUiHandlers(options),
     ...createWindowHandlers(options),
     ...createTerminalHandlers(options)
+  };
+}
+
+function createFsHandlers(): Pick<HostRpcHandlers, "fs.readFile" | "fs.writeFile" | "fs.readDir"> {
+  return {
+    "fs.readFile": async ({ path }) => {
+      try {
+        const content = await readFile(resolve(path), "utf-8");
+        return { ok: true as const, content };
+      } catch (error) {
+        return { ok: false as const, error: String(error) };
+      }
+    },
+    "fs.writeFile": async ({ path, content }) => {
+      try {
+        await writeFile(resolve(path), content, "utf-8");
+        return { ok: true as const };
+      } catch (error) {
+        return { ok: false as const, error: String(error) };
+      }
+    },
+    "fs.readDir": async ({ path: dirPath }) => {
+      try {
+        const items = await readdir(resolve(dirPath), { withFileTypes: true });
+        const entries = await Promise.all(
+          items.map(async (item) => {
+            const itemPath = join(dirPath, item.name);
+            const isDir = item.isDirectory();
+            if (isDir) return { name: item.name, path: itemPath, isDir: true };
+            const itemStat = await stat(itemPath).catch(() => null);
+            return { name: item.name, path: itemPath, isDir: false, size: itemStat?.size };
+          })
+        );
+        entries.sort((a, b) => (a.isDir !== b.isDir ? (a.isDir ? -1 : 1) : a.name.localeCompare(b.name)));
+        return { ok: true as const, entries };
+      } catch (error) {
+        return { ok: false as const, error: String(error) };
+      }
+    }
   };
 }
 

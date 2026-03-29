@@ -6,8 +6,8 @@ export default {
       id: "editor",
       icon: "\u{1F4C4}",
       label: "Editor",
-      order: 0,
-      defaultPlacement: "within",
+      order: 40,
+      defaultPlacement: "auto",
       createLeaf() {
         return { kind: "editor" };
       }

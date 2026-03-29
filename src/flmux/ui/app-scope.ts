@@ -42,7 +42,7 @@ import type { AppSummary } from "../model/workspace-types";
 import { EXT_MANAGER_COMPONENT, EXT_MANAGER_TAB_ID, ExtManagerRenderer } from "./ext/ext-manager";
 import { ExtensionSetupRegistry } from "./ext/extension-setup-registry";
 import { titleFromLeaf } from "./helpers";
-import { focusExistingSingletonView, handleInnerGroupAction, type GroupActionContext } from "./group-action-router";
+import { focusExistingSingletonView, handleAddPaneAction, type AddPaneContext } from "./add-pane-router";
 import type { PaneRendererContext } from "./panes/pane-renderer";
 import { PlaceholderRenderer } from "./panes/placeholder-renderer";
 import { normalizeNullableString, PaneScope, type PaneScopeHost } from "./pane-scope";
@@ -171,7 +171,7 @@ class AppScope extends PropertyOwnerBase {
               markDirty: () => this.queueSave(),
               register: (panelId, renderer) => this.registerTabRenderer(panelId, renderer),
               unregister: (panelId) => this.unregisterTabRenderer(panelId),
-              onGroupAction: (action, panelId) => handleInnerGroupAction(this.groupActionContext(), action, panelId),
+              onGroupAction: (action, panelId) => handleAddPaneAction(this.addPaneContext(), action, panelId),
               getTabIndex: (panelId) => this.dockview?.panels.findIndex((p) => p.id === panelId) ?? 0,
               setupRegistry: this.setupRegistry
             });
@@ -186,7 +186,7 @@ class AppScope extends PropertyOwnerBase {
           markDirty: () => this.queueSave(),
           register: (panelId, renderer) => this.registerTabRenderer(panelId, renderer),
           unregister: (panelId) => this.unregisterTabRenderer(panelId),
-          onGroupAction: (action, panelId) => handleInnerGroupAction(this.groupActionContext(), action, panelId),
+          onGroupAction: (action, panelId) => handleAddPaneAction(this.addPaneContext(), action, panelId),
           getTabIndex: (panelId) => this.dockview?.panels.findIndex((p) => p.id === panelId) ?? 0,
           setupRegistry: this.setupRegistry
         });
@@ -708,7 +708,7 @@ class AppScope extends PropertyOwnerBase {
   ): Promise<PaneResult> {
     const referencePaneId = placement?.referencePaneId;
     if (options?.singleton && leaf.kind === "view") {
-      const focused = focusExistingSingletonView(this.groupActionContext(), referencePaneId, leaf.viewKey);
+      const focused = focusExistingSingletonView(this.addPaneContext(), referencePaneId, leaf.viewKey);
       if (focused) {
         const activePaneId = getWorkspaceActivePaneId(this.dockview, this.tabRenderers);
         if (!activePaneId) {
@@ -791,7 +791,7 @@ class AppScope extends PropertyOwnerBase {
     return createPaneParams("view", { viewKey: leaf.viewKey });
   }
 
-  private groupActionContext(): GroupActionContext {
+  private addPaneContext(): AddPaneContext {
     return {
       dockview: this.dockview,
       tabRenderers: this.tabRenderers,

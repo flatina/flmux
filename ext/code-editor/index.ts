@@ -7,7 +7,6 @@ import { Compartment } from "@codemirror/state";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { basicSetup, EditorView } from "codemirror";
 import { defineView, type HeaderAction } from "flmux-sdk";
-import { readTextFile, writeTextFile } from "./file-access";
 
 type EditorParams = {
   filePath: string | null;
@@ -108,7 +107,7 @@ export default defineView<EditorParams, EditorState>({
           }
           let content = "";
           try {
-            content = await readTextFile(filePath);
+            content = await context.fs.readFile(filePath);
           } catch (error) {
             content = `[error loading file: ${error instanceof Error ? error.message : String(error)}]`;
           }
@@ -134,7 +133,7 @@ export default defineView<EditorParams, EditorState>({
           }
 
           try {
-            await writeTextFile(currentFilePath, view.state.doc.toString());
+            await context.fs.writeFile(currentFilePath, view.state.doc.toString());
             dirty = false;
             syncUi();
           } catch {
@@ -153,7 +152,7 @@ export default defineView<EditorParams, EditorState>({
           }
 
           try {
-            await writeTextFile(nextPath, view.state.doc.toString());
+            await context.fs.writeFile(nextPath, view.state.doc.toString());
           } catch (error) {
             alert(`Save failed: ${error instanceof Error ? error.message : String(error)}`);
             return;

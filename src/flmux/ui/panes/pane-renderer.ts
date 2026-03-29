@@ -510,6 +510,22 @@ export class PaneRenderer implements IContentRenderer {
         }
         return result.content;
       },
+      fs: {
+        readFile: async (path: string) => {
+          const result = await hostRpc.request("fs.readFile", { path });
+          if (!result.ok) throw new Error(result.error);
+          return result.content;
+        },
+        writeFile: async (path: string, content: string) => {
+          const result = await hostRpc.request("fs.writeFile", { path, content });
+          if (!result.ok) throw new Error(result.error);
+        },
+        readDir: async (path: string) => {
+          const result = await hostRpc.request("fs.readDir", { path });
+          if (!result.ok) throw new Error(result.error);
+          return result.entries;
+        }
+      },
       setState: (nextState: Record<string, unknown>) => {
         const mergedState = mergeState(this.viewState, nextState);
         this.viewState = mergedState;

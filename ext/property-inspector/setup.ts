@@ -17,8 +17,8 @@ export default {
       id: "properties",
       icon: "{}",
       label: "Properties",
-      order: 45,
-      defaultPlacement: "within",
+      order: 50,
+      defaultPlacement: "auto",
       createLeaf() {
         return {
           kind: "view",

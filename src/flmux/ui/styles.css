@@ -68,12 +68,14 @@ html,
 body,
 #app {
   margin: 0;
+  box-sizing: border-box;
   width: 100%;
   height: 100%;
   overflow: hidden;
   background: radial-gradient(circle at top, var(--gradient-start), var(--gradient-end) 55%);
   color: var(--text);
   font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+  border: 2px solid var(--bg);
 }
 
 button,
@@ -842,12 +844,42 @@ input {
 .explorer-toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: 4px;
+  padding: 6px 8px;
   border-bottom: 1px solid var(--divider);
   background: var(--subtle);
   font-size: 12px;
   min-width: 0;
+}
+
+.explorer-nav-btn {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.explorer-nav-btn:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.explorer-nav-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.explorer-nav-btn:disabled:hover {
+  background: transparent;
+  color: var(--muted);
 }
 
 .explorer-path {
@@ -856,6 +888,7 @@ input {
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+  margin-left: 4px;
 }
 
 .explorer-list {

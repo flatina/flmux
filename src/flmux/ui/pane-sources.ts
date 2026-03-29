@@ -6,7 +6,7 @@ export const BUILTIN_PANE_SOURCES = [
     icon: ">_",
     label: "Terminal",
     order: 20,
-    defaultPlacement: "within",
+    defaultPlacement: "auto",
     options: undefined,
     createLeaf() {
       return { kind: "terminal" } as const;

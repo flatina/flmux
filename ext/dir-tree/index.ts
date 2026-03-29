@@ -1,5 +1,4 @@
 import { defineView } from "flmux-sdk";
-import { readDirEntries, type CoreFsEntry } from "./file-access";
 
 type ExplorerParams = {
   rootPath: string;
@@ -17,6 +16,29 @@ export default defineView<ExplorerParams, ExplorerState>({
     let host: HTMLElement | null = null;
     let pathLabel: HTMLSpanElement | null = null;
     let list: HTMLDivElement | null = null;
+    const backStack: string[] = [];
+    const forwardStack: string[] = [];
+    let backBtn: HTMLButtonElement | null = null;
+    let forwardBtn: HTMLButtonElement | null = null;
+
+    function goBack() {
+      if (backStack.length > 0) {
+        forwardStack.push(currentPath);
+        void loadDir(backStack.pop()!);
+      }
+    }
+
+    function goForward() {
+      if (forwardStack.length > 0) {
+        backStack.push(currentPath);
+        void loadDir(forwardStack.pop()!);
+      }
+    }
+
+    function syncNavButtons() {
+      if (backBtn) backBtn.disabled = backStack.length === 0;
+      if (forwardBtn) forwardBtn.disabled = forwardStack.length === 0;
+    }
 
     return {
       async mount(nextHost) {
@@ -28,15 +50,33 @@ export default defineView<ExplorerParams, ExplorerState>({
         const toolbar = document.createElement("div");
         toolbar.className = "explorer-toolbar";
 
+        backBtn = createNavBtn("\u2190", "Back", goBack);
+        forwardBtn = createNavBtn("\u2192", "Forward", goForward);
+
+        const upBtn = createNavBtn("\u2191", "Parent", () => {
+          const parent = parentDir(currentPath);
+          if (parent && parent !== currentPath) void navigate(parent);
+        });
+
+        const refreshBtn = createNavBtn("\u21BB", "Refresh", () => {
+          void loadDir(currentPath);
+        });
+
         pathLabel = document.createElement("span");
         pathLabel.className = "explorer-path";
-        toolbar.append(pathLabel);
+
+        toolbar.append(backBtn, forwardBtn, upBtn, refreshBtn, pathLabel);
 
         list = document.createElement("div");
         list.className = "explorer-list";
 
         shell.append(toolbar, list);
         host.replaceChildren(shell);
+
+        shell.addEventListener("mouseup", (event) => {
+          if (event.button === 3) { event.preventDefault(); goBack(); }
+          if (event.button === 4) { event.preventDefault(); goForward(); }
+        });
 
         await loadDir(currentPath);
       },
@@ -50,8 +90,18 @@ export default defineView<ExplorerParams, ExplorerState>({
         host = null;
         pathLabel = null;
         list = null;
+        backBtn = null;
+        forwardBtn = null;
       }
     };
+
+    async function navigate(dirPath: string): Promise<void> {
+      if (dirPath !== currentPath) {
+        backStack.push(currentPath);
+        forwardStack.length = 0;
+      }
+      await loadDir(dirPath, false);
+    }
 
     async function loadDir(dirPath: string): Promise<void> {
       if (!pathLabel || !list) {
@@ -59,11 +109,12 @@ export default defineView<ExplorerParams, ExplorerState>({
       }
       currentPath = dirPath;
       pathLabel.textContent = dirPath;
+      syncNavButtons();
       context.setState({ currentPath: dirPath });
       list.replaceChildren();
 
       try {
-        const entries = await readDirEntries(dirPath);
+        const entries = await context.fs.readDir(dirPath);
         for (const entry of entries) {
           list.append(buildEntry(entry));
         }
@@ -76,7 +127,7 @@ export default defineView<ExplorerParams, ExplorerState>({
       }
     }
 
-    function buildEntry(entry: CoreFsEntry): HTMLElement {
+    function buildEntry(entry: { name: string; path: string; isDir: boolean }): HTMLElement {
       const row = document.createElement("div");
       row.className = `explorer-entry ${entry.isDir ? "explorer-dir" : "explorer-file"}`;
 
@@ -92,7 +143,7 @@ export default defineView<ExplorerParams, ExplorerState>({
 
       if (entry.isDir) {
         row.addEventListener("click", () => {
-          void loadDir(entry.path);
+          void navigate(entry.path);
         });
       } else {
         row.addEventListener("dblclick", () => {
@@ -107,6 +158,23 @@ export default defineView<ExplorerParams, ExplorerState>({
     }
   }
 });
+
+function createNavBtn(text: string, title: string, onClick: () => void): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "explorer-nav-btn";
+  btn.textContent = text;
+  btn.title = title;
+  btn.addEventListener("click", onClick);
+  return btn;
+}
+
+function parentDir(path: string): string | null {
+  const normalized = path.replace(/[\\/]+$/, "");
+  const idx = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
+  if (idx <= 0) return null;
+  return normalized.slice(0, idx);
+}
 
 function normalizeParams(value: unknown): ExplorerParams {
   const raw = value as Partial<ExplorerParams> | null | undefined;

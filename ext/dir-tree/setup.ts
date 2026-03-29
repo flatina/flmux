@@ -6,8 +6,8 @@ export default {
       id: "explorer",
       icon: "\u{1F4C1}",
       label: "Explorer",
-      order: 10,
-      defaultPlacement: "left",
+      order: 30,
+      defaultPlacement: "auto",
       createLeaf() {
         return { kind: "explorer" };
       }

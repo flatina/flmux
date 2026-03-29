@@ -214,7 +214,7 @@ export default defineView<EditorParams, EditorState>({
         if (fileChanged && currentFilePath) {
           let content = "";
           try {
-            content = await readTextFile(currentFilePath);
+            content = await context.fs.readFile(currentFilePath);
           } catch (error) {
             content = `[error loading file: ${error instanceof Error ? error.message : String(error)}]`;
           }

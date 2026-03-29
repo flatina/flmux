@@ -1,6 +1,6 @@
 {
   "name": "flmux",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "workspaces": ["src/sdk"],
@@ -50,7 +50,7 @@
     "codemirror": "^6.0.2",
     "dockview-core": "5.2.0",
     "electrobun": "1.16.0",
-    "flmux-sdk": "workspace:*",
+    "flmux-sdk": "workspace:*"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.9",

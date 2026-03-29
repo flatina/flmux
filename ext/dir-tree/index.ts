@@ -100,7 +100,7 @@ export default defineView<ExplorerParams, ExplorerState>({
         backStack.push(currentPath);
         forwardStack.length = 0;
       }
-      await loadDir(dirPath, false);
+      await loadDir(dirPath);
     }
 
     async function loadDir(dirPath: string): Promise<void> {

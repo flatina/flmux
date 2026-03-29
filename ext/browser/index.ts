@@ -391,7 +391,7 @@ export default defineView<BrowserParams, BrowserState>({
       if (browserWebview) {
         browserWebview.toggleHidden?.(true);
         browserWebview.togglePassthrough?.(true);
-        browserWebview.remove();
+        // Let DOM teardown trigger disconnectedCallback once for native cleanup.
         browserWebview = null;
       }
 

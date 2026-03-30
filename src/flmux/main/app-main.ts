@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { BrowserView, BrowserWindow, Utils } from "electrobun/bun";
 import { createSessionId } from "../../lib/ids";
+import { sleep } from "../../lib/timers";
 import { getAppRpcIpcPath, getPropertyEventsIpcPath } from "../../lib/ipc/ipc-paths";
 import { info, setLogLevel } from "../../lib/logger";
 import { resolveAppWorkingDirectory, resolveWebRoot, resolveWorkspaceRoot } from "../../lib/runtime-paths";
@@ -279,9 +280,6 @@ export async function runAppMain(): Promise<void> {
   }
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 async function promptForOrphanPtydPolicy(orphanCount: number): Promise<"recover" | "reset" | "exit"> {
   const recoverLabel = orphanCount === 1 ? "Recover Session" : "Recover Latest Session";

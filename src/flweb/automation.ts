@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { Browser, CDPClient, sleep } from "@flatina/browser-ctl";
+import { Browser, CDPClient } from "@flatina/browser-ctl";
+import { sleep } from "../lib/timers";
 import type { AppRpcClient } from "../flmux/client/rpc-client";
 import type { PaneId } from "../lib/ids";
 import { getFlmuxStateDir } from "../lib/paths";

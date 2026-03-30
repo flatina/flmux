@@ -234,7 +234,7 @@ export default defineView<BrowserParams, BrowserState>({
       if (!isBlank) {
         welcome.style.display = "none";
         ensureWebview(normalizeBrowserUrlValue(currentUrl));
-        syncBrowserParams();
+        navigateBrowser(normalizeBrowserUrlValue(currentUrl));
         requestAnimationFrame(() => syncVisibility());
       }
     }

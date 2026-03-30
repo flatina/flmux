@@ -2,6 +2,8 @@ import type { ExtensionSetup } from "flmux-sdk";
 
 export default {
   onInit(ctx) {
+    ctx.app.title = "app title by cowsay";
+
     const tab = ctx.registerWorkspaceTab({
       id: "cowsay",
       title: "Cowsay Lab",

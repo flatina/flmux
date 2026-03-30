@@ -153,8 +153,14 @@ export interface WorkspaceTabDescriptor {
   };
 }
 
+export interface ExtAppScope {
+  get title(): string;
+  set title(value: string);
+}
+
 export interface ExtensionSetupContext {
   extensionId: string;
+  readonly app: ExtAppScope;
   registerGroupAction(action: GroupActionDescriptor): Disposable;
   onCreateGroupActions(handler: (actions: GroupActionsModifier) => void): Disposable;
   registerWorkspaceTab(descriptor: WorkspaceTabDescriptor): Disposable;

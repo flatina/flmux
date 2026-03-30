@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { ExtAppScope } from "../../../types/setup";
 import type { ExtensionSetupModule } from "../../model/bootstrap-state";
 import { ExtensionSetupRegistry } from "./extension-setup-registry";
 
@@ -6,6 +7,14 @@ function makeExtension(id: string, source: string): ExtensionSetupModule {
   return {
     id,
     source
+  };
+}
+
+function makeStubApp(): ExtAppScope {
+  let title = "flmux";
+  return {
+    get title() { return title; },
+    set title(value: string) { title = value; }
   };
 }
 
@@ -46,7 +55,7 @@ describe("ExtensionSetupRegistry titlebar workspace tabs", () => {
           };
         `
         )
-      ]);
+      ], makeStubApp());
 
       const launchers = registry.listTitlebarWorkspaceTabs();
       expect(launchers.map((launcher) => launcher.qualifiedId)).toEqual(["sample.two:alpha", "sample.three:beta"]);
@@ -76,7 +85,7 @@ describe("ExtensionSetupRegistry titlebar workspace tabs", () => {
           };
         `
         )
-      ]);
+      ], makeStubApp());
 
       const launchers = registry.resolveTitlebarLaunchers([
         {
@@ -120,7 +129,7 @@ describe("ExtensionSetupRegistry pane sources", () => {
           };
         `
         )
-      ]);
+      ], makeStubApp());
 
       const sources = registry.resolvePaneSources([
         {
@@ -136,6 +145,32 @@ describe("ExtensionSetupRegistry pane sources", () => {
 
       expect(sources.map((source) => source.qualifiedId)).toEqual(["editor", "sample.cowsay:cowsay"]);
       expect(sources[1]?.options?.singleton).toBe(true);
+    } finally {
+      registry[Symbol.dispose]();
+    }
+  });
+});
+
+describe("ExtensionSetupRegistry app handle", () => {
+  test("extensions can set app title via setup context", async () => {
+    const registry = new ExtensionSetupRegistry();
+    const app = makeStubApp();
+    try {
+      await registry.loadAll([
+        makeExtension(
+          "sample.title",
+          `
+          export default {
+            onInit(ctx) {
+              ctx.app.title = "Custom Title";
+              return { [Symbol.dispose]() {} };
+            }
+          };
+        `
+        )
+      ], app);
+
+      expect(app.title).toBe("Custom Title");
     } finally {
       registry[Symbol.dispose]();
     }

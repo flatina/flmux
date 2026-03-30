@@ -124,10 +124,15 @@ class AppScope extends PropertyOwnerBase {
     this.titlebar.className = "titlebar electrobun-webkit-app-region-drag";
     this.workspaceHost.className = "workspace-host dockview-theme-flmux";
 
-    // Eager-load all extension setup modules before creating dockview
-    await this.setupRegistry.loadAll(this.bootstrap.extensionSetups);
-
     this.buildTitlebar();
+
+    // Eager-load all extension setup modules before creating dockview
+    // Runs after buildTitlebar so extensions can override the default title
+    const self = this;
+    await this.setupRegistry.loadAll(this.bootstrap.extensionSetups, {
+      get title() { return self.getTitle(); },
+      set title(value: string) { self.setTitle(value); }
+    });
 
     this.shell.append(this.titlebar, this.workspaceHost);
     this.root.replaceChildren(this.shell);

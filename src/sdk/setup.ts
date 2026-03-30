@@ -1,5 +1,5 @@
 export type {
   GroupActionDescriptor, PaneSourceDescriptor, PaneOpenOptions,
   GroupActionContext, GroupActionsModifier, WorkspaceTabDescriptor,
-  ExtensionSetupContext, ExtensionSetup
+  ExtAppScope, ExtensionSetupContext, ExtensionSetup
 } from "../types/setup";

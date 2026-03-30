@@ -123,10 +123,15 @@ class WorkspaceApp {
     this.titlebar.className = "titlebar electrobun-webkit-app-region-drag";
     this.workspaceHost.className = "workspace-host dockview-theme-flmux";
 
-    // Eager-load all extension setup modules before creating dockview
-    await this.setupRegistry.loadAll(this.bootstrap.extensions);
-
     this.buildTitlebar();
+
+    // Eager-load all extension setup modules before creating dockview
+    // Runs after buildTitlebar so extensions can override the default title
+    const titleEl = this.titlebarTitle;
+    await this.setupRegistry.loadAll(this.bootstrap.extensions, {
+      get title() { return titleEl.textContent?.trim() || "flmux"; },
+      set title(value: string) { titleEl.textContent = value; }
+    });
 
     this.shell.append(this.titlebar, this.workspaceHost);
     this.root.replaceChildren(this.shell);

@@ -6,6 +6,7 @@ import type {
   GroupActionDescriptor,
   GroupActionsModifier,
   PaneSourceDescriptor,
+  ExtAppScope,
   WorkspaceTabDescriptor
 } from "../../../types/setup";
 import { warn } from "../../../lib/logger";
@@ -205,7 +206,7 @@ export class ExtensionSetupRegistry {
   }
 
   /** Load all extension setup modules and initialize them. */
-  async loadAll(extensions: ReadonlyArray<ExtensionSetupModule>): Promise<void> {
+  async loadAll(extensions: ReadonlyArray<ExtensionSetupModule>, app: ExtAppScope): Promise<void> {
     // Phase 1: import all setup modules
     const setups: Array<{ extId: string; setup: ExtensionSetup }> = [];
 
@@ -230,7 +231,7 @@ export class ExtensionSetupRegistry {
       if (typeof setup.onInit !== "function") continue;
 
       try {
-        const ctx = this.buildContext(extId);
+        const ctx = this.buildContext(extId, app);
         const disposable = setup.onInit(ctx);
         if (disposable) {
           this.disposableStack.use(disposable);
@@ -241,9 +242,10 @@ export class ExtensionSetupRegistry {
     }
   }
 
-  private buildContext(extensionId: string): ExtensionSetupContext {
+  private buildContext(extensionId: string, app: ExtAppScope): ExtensionSetupContext {
     return {
       extensionId,
+      app,
 
       registerPaneSource: (source: PaneSourceDescriptor): Disposable => {
         const registered: RegisteredPaneSource = {

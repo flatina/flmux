@@ -98,7 +98,7 @@ class AppScope extends PropertyOwnerBase {
   private readonly setupRegistry = new ExtensionSetupRegistry();
   private resizeObserver: ResizeObserver | null = null;
   private cleanupWindowResizeHandles: (() => void) | null = null;
-  private cleanupTitlebar: (() => void) | null = null;
+  private titlebarHandle: import("./workspace-titlebar").WorkspaceTitlebarHandle | null = null;
   private saveTimer = 0;
   private terminalEventUnsubscribe: (() => void) | null = null;
 
@@ -199,6 +199,8 @@ class AppScope extends PropertyOwnerBase {
       createTabComponent: () => new FlmuxTabRenderer()
     });
 
+    this.dockview.onDidAddPanel(() => this.reparentOuterTabStrip());
+
     this.dockview.onDidLayoutChange(() => {
       this.queueSave();
     });
@@ -223,13 +225,14 @@ class AppScope extends PropertyOwnerBase {
     window.addEventListener("beforeunload", this.handleBeforeUnload);
 
     await this.restoreOrSeedLayout();
+    this.reparentOuterTabStrip();
   }
 
   private buildTitlebar(): void {
     this.setTitle("flmux");
-    this.cleanupTitlebar?.();
+    this.titlebarHandle?.dispose();
     const launchers = this.setupRegistry.resolveTitlebarLaunchers([]);
-    this.cleanupTitlebar = mountWorkspaceTitlebar({
+    this.titlebarHandle = mountWorkspaceTitlebar({
       host: this.titlebar,
       titleElement: this.titlebarTitle,
       launchers: launchers.map((launcher) => ({
@@ -254,6 +257,20 @@ class AppScope extends PropertyOwnerBase {
       onWindowMaximize: () => void this.hostRpc.request("window.maximize", undefined),
       onWindowClose: () => void this.hostRpc.request("window.close", undefined)
     });
+  }
+
+  private reparentOuterTabStrip(): void {
+    const host = this.titlebarHandle?.tabsHost;
+    if (!host) return;
+
+    const groupview = this.workspaceHost.querySelector(".dv-groupview");
+    const tabStrip = groupview?.querySelector(":scope > .dv-tabs-and-actions-container");
+
+    if (!tabStrip) return; // Already reparented or no group yet
+
+    // Remove stale tab strip from previous group (e.g., after fromJSON)
+    host.querySelector(".dv-tabs-and-actions-container")?.remove();
+    host.appendChild(tabStrip);
   }
 
   private async openPaneInNewWorkspace(leaf: PaneCreateInput): Promise<void> {
@@ -923,8 +940,8 @@ class AppScope extends PropertyOwnerBase {
     this.resizeObserver = null;
     this.cleanupWindowResizeHandles?.();
     this.cleanupWindowResizeHandles = null;
-    this.cleanupTitlebar?.();
-    this.cleanupTitlebar = null;
+    this.titlebarHandle?.dispose();
+    this.titlebarHandle = null;
     this.terminalEventUnsubscribe?.();
     this.terminalEventUnsubscribe = null;
     this.preCloseHooks.clear();

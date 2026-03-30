@@ -96,7 +96,7 @@ input {
 /* Custom titlebar */
 .titlebar {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: auto 1fr auto auto;
   align-items: center;
   height: 36px;
   min-width: 0;
@@ -104,6 +104,7 @@ input {
   background: var(--titlebar-bg);
   user-select: none;
 }
+
 
 .titlebar-left {
   display: flex;
@@ -118,6 +119,40 @@ input {
   font-weight: 600;
   color: var(--muted);
   letter-spacing: 0.04em;
+  margin-right: 12px;
+}
+
+/* Reparented outer dockview tab strip in titlebar */
+.titlebar-tabs {
+  display: flex;
+  align-items: end;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+.titlebar-tabs .dv-tabs-and-actions-container,
+.titlebar-tabs .dv-tabs-and-actions-container * {
+  -webkit-app-region: no-drag;
+}
+.titlebar-tabs .dv-tabs-and-actions-container {
+  height: 28px;
+  border-bottom: none;
+  background: transparent;
+}
+.titlebar-tabs .dv-tab {
+  border-right: 1px solid var(--dv-tab-divider);
+  color: var(--muted);
+  background: transparent;
+}
+.titlebar-tabs .dv-tab.dv-active-tab {
+  background: var(--dv-active-tab-bg);
+  color: var(--text);
+}
+.titlebar-tabs .dv-tab.dv-inactive-tab {
+  color: var(--muted);
+}
+.titlebar-tabs .dv-tab.dv-inactive-tab:hover {
+  background: var(--hover);
 }
 
 .titlebar-center {

@@ -20,7 +20,12 @@ export interface WorkspaceTitlebarOptions {
   onWindowClose: () => void;
 }
 
-export function mountWorkspaceTitlebar(options: WorkspaceTitlebarOptions): () => void {
+export interface WorkspaceTitlebarHandle {
+  tabsHost: HTMLElement;
+  dispose: () => void;
+}
+
+export function mountWorkspaceTitlebar(options: WorkspaceTitlebarOptions): WorkspaceTitlebarHandle {
   const cleanupCallbacks: Array<() => void> = [];
 
   const left = document.createElement("div");
@@ -47,13 +52,19 @@ export function mountWorkspaceTitlebar(options: WorkspaceTitlebarOptions): () =>
     createWindowButton("\u2715", "Close", options.onWindowClose, "window-btn-close")
   );
 
-  options.host.replaceChildren(left, center, right);
+  const tabs = document.createElement("div");
+  tabs.className = "titlebar-tabs";
 
-  return () => {
-    for (const cleanup of cleanupCallbacks) {
-      cleanup();
+  options.host.replaceChildren(left, tabs, center, right);
+
+  return {
+    tabsHost: tabs,
+    dispose() {
+      for (const cleanup of cleanupCallbacks) {
+        cleanup();
+      }
+      options.host.replaceChildren();
     }
-    options.host.replaceChildren();
   };
 }
 

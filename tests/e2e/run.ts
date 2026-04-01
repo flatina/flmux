@@ -24,6 +24,7 @@ type TestExecutionMode = "shared-app" | "isolated-app";
 const TEST_EXECUTION_MODES: Record<string, TestExecutionMode> = {
   "browser-early-close": "isolated-app",
   "browser-cdp-readiness": "isolated-app",
+  "browser-reopen-after-all-close": "isolated-app",
   "web-property-system": "isolated-app"
 };
 

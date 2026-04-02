@@ -2,10 +2,11 @@ import { resolveSession } from "../../src/flmux/client/session-discovery";
 import { assert, runCli, sleep, waitForApp } from "./helpers";
 
 async function main() {
-  await waitForApp();
+  const client = await waitForApp();
   await sleep(2000);
 
   const session = await resolveSession();
+  const summary = await client.call("app.summary", undefined);
   const env = {
     ...process.env,
     FLMUX_APP_IPC: session.ipcPath,
@@ -17,7 +18,7 @@ async function main() {
       "src/flmux/cli/index.ts",
       "browser",
       "new",
-      "https://example.com",
+      `${summary.webServerUrl}/health`,
       "--placement",
       "right"
     ],

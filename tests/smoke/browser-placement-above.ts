@@ -19,7 +19,7 @@ async function main() {
   };
 
   const created = runCli(
-    ["src/flmux/cli/index.ts", "browser", "new", "--placement", "above", "https://example.com"],
+    ["src/flmux/cli/index.ts", "browser", "new", "--placement", "above", `${summary.webServerUrl}/health`],
     env
   );
   assert(created.code === 0, `browser new above exits 0 (${created.stderr || "ok"})`);

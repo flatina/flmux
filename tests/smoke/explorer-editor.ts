@@ -55,7 +55,8 @@ async function main() {
   assert((lTab?.paneCount ?? 0) >= 3, `layoutable tab has ${lTab?.paneCount} panes (explorer+editor+terminal)`);
 
   // --- browser also goes to layoutable tab ---
-  const br = await client.call("pane.open", { leaf: { kind: "browser", url: "https://example.com" } });
+  const beforeBr = await client.call("app.summary", undefined);
+  const br = await client.call("pane.open", { leaf: { kind: "browser", url: `${beforeBr.webServerUrl}/health` } });
   assert(br.ok, "browser created");
   const afterBr = await client.call("app.summary", undefined);
   const brSummary = afterBr.panes.find((p) => (p.paneId as string) === (br.paneId as string));

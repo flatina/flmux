@@ -14,7 +14,7 @@ async function main() {
   assert(terminal.ok, "terminal created");
 
   const browser = await client.call("pane.open", {
-    leaf: { kind: "browser", url: before.webServerUrl ?? "https://example.com" }
+    leaf: { kind: "browser", url: `${before.webServerUrl}/health` }
   });
   assert(browser.ok, "browser created");
 

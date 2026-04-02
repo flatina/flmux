@@ -18,7 +18,7 @@ async function main() {
     FLMUX_PANE_ID: String(terminal.paneId)
   };
 
-  const autoCreated = runCli(["src/flmux/cli/index.ts", "browser", "new", "https://example.com"], env);
+  const autoCreated = runCli(["src/flmux/cli/index.ts", "browser", "new", `${summary.webServerUrl}/health`], env);
   assert(autoCreated.code === 0, `browser new auto exits 0 (${autoCreated.stderr || "ok"})`);
   await sleep(1000);
 

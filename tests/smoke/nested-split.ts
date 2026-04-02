@@ -58,7 +58,8 @@ async function main() {
   assert((layoutTab?.paneCount ?? 0) >= 2, `layoutable tab has ${layoutTab?.paneCount} panes`);
 
   // --- open browser → should go to same layoutable tab ---
-  const b1 = await client.call("pane.open", { leaf: { kind: "browser", url: "https://example.com" } });
+  const summary = await client.call("app.summary", undefined);
+  const b1 = await client.call("pane.open", { leaf: { kind: "browser", url: `${summary.webServerUrl}/health` } });
   assert(b1.ok, "browser b1 created");
 
   const afterB1 = await client.call("app.summary", undefined);

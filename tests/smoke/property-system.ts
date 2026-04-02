@@ -97,7 +97,7 @@ async function main() {
     });
     await sleep(1200);
 
-    const browserUrl = "https://example.com";
+    const browserUrl = `${beforeSummary.webServerUrl}/health`;
     const browserSet = await client.call("props.set", {
       scope: "pane",
       targetId: browserOpen.paneId,

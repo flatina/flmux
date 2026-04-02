@@ -3,10 +3,10 @@
  * E2E test runner — starts the app, runs tests, stops the app.
  *
  * Usage:
- *   bun tests/e2e/run.ts                          → run all e2e tests
+ *   bun tests/e2e/run.ts                          → run all smoke tests
  *   bun tests/e2e/run.ts terminal-flmux-cli       → run specific test
  */
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createAppRpcClient } from "../../src/flmux/client/rpc-client";
@@ -65,7 +65,7 @@ async function main() {
   try {
     const tests = testNames.length > 0
       ? testNames
-      : ["terminal-flmux-cli"];
+      : discoverSmokeTests();
 
     let failed = 0;
 
@@ -222,6 +222,14 @@ async function stopTestApp(started: StartedTestApp): Promise<void> {
   }
   await new Promise((r) => setTimeout(r, 1000));
   rmSync(started.xdgRoot, { recursive: true, force: true });
+}
+
+function discoverSmokeTests(): string[] {
+  const smokeDir = resolve(projectRoot, "tests", "smoke");
+  return readdirSync(smokeDir)
+    .filter((f) => f.endsWith(".ts") && f !== "helpers.ts")
+    .map((f) => f.replace(/\.ts$/, ""))
+    .sort();
 }
 
 function getTestExecutionMode(name: string): TestExecutionMode {

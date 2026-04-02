@@ -52,7 +52,7 @@ async function main() {
 
     const nextTitle = `web-props-${Date.now()}`;
     const fillTitle = runCli(
-      ["src/flweb/index.ts", "fill", ".property-inspector-grid article:nth-of-type(1) input[type='text']", nextTitle],
+      ["src/flweb/index.ts", "fill", "[data-ref='app-card'] [data-key='title'] input[type='text']", nextTitle],
       envWithPane
     );
     assert(fillTitle.code === 0, `flweb fill app title exits 0 (${fillTitle.stderr || "ok"})`);

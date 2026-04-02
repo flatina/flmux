@@ -106,7 +106,9 @@ function buildPropertyRow(
     property.readonly ? buildReadonlyValue(property.value) : buildEditor(handle, property, commit)
   );
 
-  return h("section", { className: "property-inspector-row" }, key, valueContainer);
+  const row = h("section", { className: "property-inspector-row" }, key, valueContainer);
+  row.dataset.key = property.key;
+  return row;
 }
 
 function buildEditor(

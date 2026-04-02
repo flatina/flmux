@@ -122,8 +122,8 @@ export class GroupActionsRenderer implements IHeaderActionsRenderer {
     }
 
     const rect = this.menuButton.getBoundingClientRect();
-    popup.style.top = `${rect.bottom + 4}px`;
-    popup.style.left = `${Math.max(8, rect.left)}px`;
+    popup.style.top = `${rect.top}px`;
+    popup.style.left = `${rect.right + 4}px`;
   }
 
   private buildEmptyState(): HTMLElement {

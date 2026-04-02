@@ -391,12 +391,12 @@ input {
 }
 
 .group-actions-popup {
-  --group-action-cell-size: 28px;
-  --group-action-gap: 6px;
+  --group-action-cell-size: 20px;
+  --group-action-gap: 1px;
   position: fixed;
   z-index: 2000;
   width: fit-content;
-  padding: 8px;
+  padding: 4px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--panel);
@@ -450,7 +450,7 @@ input {
   color: var(--text);
   cursor: pointer;
   padding: 0 4px;
-  height: var(--group-action-cell-size);
+  height: 28px;
   display: flex;
   align-items: center;
   gap: 6px;

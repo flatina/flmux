@@ -3,21 +3,21 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 [![Runtime: Bun](https://img.shields.io/badge/runtime-Bun-black)](https://bun.sh)
 
-Terminal/Browser on Dockview on Electrobun with some additional features.
+Desktop workspace multiplexer built on [Electrobun](https://electrobun.dev/) + [Dockview](https://dockview.dev/) + [Bun](https://bun.sh). Combines terminal, browser, editor, file explorer, and extension panes in a tiled layout — accessible as native desktop app and via web browser.
 
 ## Features
 
-- Electrobun(https://electrobun.dev/) based native or embedded (CEF) browser tab
-- DockView(https://dockview.dev/) based layout
+- [Electrobun](https://electrobun.dev/) based native browser panes (WebView2 on Windows, WebKit on macOS)
+- [Dockview](https://dockview.dev/) based layout
   - Outer tabs for separate workspaces, inner splits for arranging panes side by side
-- xterm.js(https://xtermjs.org/) based terminal tab
-  - libghostty-vt(https://ghostty.org/) support planned
-- CodeMirror(https://codemirror.net/) based text editor tab
-- File explorer tab
-- Extensions tab for additional content
-- external ptyd process: terminal sessions survive flmux crashes
-- Web access: Open the same workspace in a browser via WebSocket
-- CLI Script: create panes, switch tabs, send events
+- [xterm.js](https://xtermjs.org/) based terminal panes
+- [CodeMirror](https://codemirror.net/) based text editor panes (JS/TS/JSON/HTML/CSS/Markdown)
+- File explorer panes
+- Extension system for custom pane types and CLI commands
+- External ptyd process: terminal sessions survive app crashes
+- Web access: open the same workspace in a browser via WebSocket
+- Browser automation: `flmux browser` + `flweb` CLI for scripted browser interaction
+- CLI: create panes, switch tabs, manage sessions, inspect/set properties
 
 ## Install
 
@@ -38,17 +38,13 @@ bun install
 bun run start
 ```
 
-The app opens with a single workspace tab containing a terminal. Use the titlebar buttons to add more terminals (`>_`) or browsers (`🌐`).
+The app opens with a single workspace tab containing a terminal. Use the titlebar buttons or the `➕` menu in pane headers to add more panes.
 
 ## GUI Actions
 
-### Workspace actions
+### Titlebar
 
-| Button | Action |
-|--------|--------|
-| >_ | Create new workspace and add a terminal tab |
-| 🌐 | Create new workspace and add a browser tab |
-| 📑 | Show session menu |
+Titlebar buttons launch workspace actions. Built-in launchers include terminal (`>_`), browser (`🌐`), and session menu (`📑`).
 
 #### Session menu (📑)
 
@@ -263,8 +259,8 @@ terminal:
 
 ```powershell
 bun run dev                # start with file watching
-bun test                   # unit tests (90 tests)
-bun run e2e                # end-to-end tests
+bun test                   # unit tests (260+ tests)
+bun run e2e                # build + end-to-end smoke tests (26 tests)
 bun run typecheck          # TypeScript check
 bun run lint               # Biome lint
 ```

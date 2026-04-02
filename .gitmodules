@@ -1,0 +1,3 @@
+[submodule "vendor/electrobun"]
+	path = vendor/electrobun
+	url = https://github.com/flatina/electrobun.git

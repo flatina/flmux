@@ -1,4 +1,6 @@
 .secrets/
+.tmp/
+.env
 node_modules/
 dist/
 build/

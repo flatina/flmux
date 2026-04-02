@@ -6,7 +6,7 @@
  *   bun tests/e2e/run.ts                          → run all smoke tests
  *   bun tests/e2e/run.ts terminal-flmux-cli       → run specific test
  */
-import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createAppRpcClient } from "../../src/flmux/client/rpc-client";
@@ -32,6 +32,8 @@ type StartedTestApp = {
   app: ReturnType<typeof Bun.spawn>;
   env: Record<string, string | undefined>;
   xdgRoot: string;
+  appLogPath: string;
+  appLogFd: number;
 };
 
 async function main() {
@@ -175,21 +177,28 @@ async function startTestApp(projectRoot: string, testWebRoot: string): Promise<S
     testEnv.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222";
   }
 
+  const tmpDir = resolve(projectRoot, ".tmp");
+  mkdirSync(tmpDir, { recursive: true });
+  const appLogPath = resolve(tmpDir, "app.log");
+  const appLogFd = openSync(appLogPath, "w");
   const app = Bun.spawn([launch.command, ...launch.args, "--orphan-ptyd=exit"], {
     cwd: launch.cwd,
     env: testEnv,
-    stdout: "ignore",
-    stderr: "ignore"
+    stdout: appLogFd,
+    stderr: appLogFd
   });
 
   console.log(`App PID: ${app.pid}`);
+  testEnv.FLMUX_TEST_APP_PID = String(app.pid);
   await waitForAppOrExit(app, 15000, 500);
   console.log("App is ready.\n");
 
   return {
     app,
     env: testEnv,
-    xdgRoot
+    xdgRoot,
+    appLogPath,
+    appLogFd
   };
 }
 
@@ -206,6 +215,10 @@ async function stopTestApp(started: StartedTestApp): Promise<void> {
   }
   started.app.kill();
   await started.app.exited;
+  try {
+    closeSync(started.appLogFd);
+  } catch { /* best effort */ }
+  dumpAppErrors(started.appLogPath);
   if (sessionId) {
     try {
       await callJsonRpcIpc(
@@ -222,6 +235,17 @@ async function stopTestApp(started: StartedTestApp): Promise<void> {
   }
   await new Promise((r) => setTimeout(r, 1000));
   rmSync(started.xdgRoot, { recursive: true, force: true });
+}
+
+function dumpAppErrors(logPath: string): void {
+  try {
+    const log = readFileSync(logPath, "utf-8");
+    const errors = log.split("\n").filter((line) => /\bERROR\b/i.test(line));
+    if (errors.length > 0) {
+      console.log(`  ⚠ App errors (${logPath}):`);
+      for (const line of errors) console.log(`    ${line}`);
+    }
+  } catch { /* file may not exist */ }
 }
 
 function discoverSmokeTests(): string[] {

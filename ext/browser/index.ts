@@ -60,10 +60,13 @@ export default defineView<BrowserParams, BrowserState>({
         });
       },
       update(nextParams) {
+        const prev = params;
         const next = normalizeParams(nextParams);
         params = next;
         currentUrl = next.url;
-        if (next.adapter !== browserAdapter) {
+        const wasBlank = !prev.url || prev.url === "about:blank";
+        const isBlank = !next.url || next.url === "about:blank";
+        if (next.adapter !== browserAdapter || (wasBlank && !isBlank)) {
           renderCurrentMode();
           return;
         }

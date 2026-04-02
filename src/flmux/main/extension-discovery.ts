@@ -12,11 +12,13 @@ import type { DiscoveredExtension } from "../config/extension-discovery";
 
 const rendererSourceCache = new Map<string, string>();
 
-export function buildExtensionSetups(extensions: DiscoveredExtension[]): ExtensionSetupModule[] {
-  return extensions.map((ext) => ({
-    id: ext.manifest.id,
-    source: loadSetupSource(ext)
-  }));
+export async function buildExtensionSetups(extensions: DiscoveredExtension[]): Promise<ExtensionSetupModule[]> {
+  return Promise.all(
+    extensions.map(async (ext) => ({
+      id: ext.manifest.id,
+      source: await loadSetupSource(ext)
+    }))
+  );
 }
 
 function readExtensionTextFile(ext: DiscoveredExtension, relativePath: string, label: string): { ok: true; content: string } | { ok: false; error: string } {
@@ -36,17 +38,35 @@ function readExtensionTextFile(ext: DiscoveredExtension, relativePath: string, l
   }
 }
 
-function loadSetupSource(ext: DiscoveredExtension): string | undefined {
-  const entry = ext.manifest.setupEntry;
+async function loadSetupSource(ext: DiscoveredExtension): Promise<string | undefined> {
+  const entry = ext.manifest.rendererSetupEntry;
   if (!entry) return undefined;
 
-  const result = readExtensionTextFile(ext, entry, "setupEntry");
-  if (!result.ok) return undefined;
+  if (!entry.startsWith("./") || entry.includes("..")) return undefined;
+  const resolvedEntry = resolve(ext.path, entry);
+  if (!resolvedEntry.startsWith(resolve(ext.path))) return undefined;
+
+  // Plain JS — read directly, no bundling needed
+  if (!entry.endsWith(".ts") && !entry.endsWith(".tsx")) {
+    const result = readExtensionTextFile(ext, entry, "rendererSetupEntry");
+    return result.ok ? result.content : undefined;
+  }
 
   try {
-    return entry.endsWith(".ts") || entry.endsWith(".tsx")
-      ? new Bun.Transpiler({ loader: entry.endsWith(".tsx") ? "tsx" : "ts" }).transformSync(result.content)
-      : result.content;
+    const outdir = join(tmpdir(), "flmux-ext-setup-bundles", ext.manifest.id.replace(/[^a-zA-Z0-9._-]/g, "_"));
+    const sdkEntry = resolveFlmuxSdkEntry(resolveEmbeddedExtensionRoot() ?? process.cwd());
+    const result = await Bun.build({
+      entrypoints: [resolvedEntry],
+      outdir,
+      target: "browser",
+      format: "esm",
+      splitting: false,
+      minify: false,
+      sourcemap: "inline",
+      plugins: [createFlmuxSdkAliasPlugin(sdkEntry)]
+    });
+    if (!result.success || result.outputs.length === 0) return undefined;
+    return readFileSync(result.outputs[0]!.path, "utf-8");
   } catch {
     return undefined;
   }

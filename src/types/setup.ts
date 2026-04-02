@@ -1,16 +1,17 @@
 import type { PaneCreateDirection, PaneCreateInput } from "./pane";
 import type { PaneId, TabId } from "./ids";
+import type { PropertyHandle } from "./property";
 
 export interface PaneOpenOptions {
   singleton?: boolean;
 }
 
-export interface GroupActionDescriptor {
+export interface WorkspaceActionDescriptor {
   id: string;
   icon: string;
   tooltip?: string;
   order?: number;
-  run: (ctx: GroupActionContext) => void;
+  run: (ctx: WorkspaceActionContext) => void;
 }
 
 export interface PaneSourceDescriptor {
@@ -23,7 +24,7 @@ export interface PaneSourceDescriptor {
   options?: PaneOpenOptions;
 }
 
-export interface GroupActionContext {
+export interface WorkspaceActionContext {
   activePaneId: PaneId | null;
   tabId: TabId;
   openPane: (
@@ -34,7 +35,7 @@ export interface GroupActionContext {
   openWorkspaceTab: (id: string) => void;
 }
 
-export interface GroupActionsModifier {
+export interface WorkspaceActionsModifier {
   hide(...ids: string[]): void;
 }
 
@@ -49,17 +50,13 @@ export interface WorkspaceTabDescriptor {
   };
 }
 
-export interface ExtAppScope {
-  get title(): string;
-  set title(value: string);
-}
-
 export interface ExtensionSetupContext {
   extensionId: string;
-  readonly app: ExtAppScope;
+  readonly app: PropertyHandle;
+  readonly config: Readonly<Record<string, unknown>>;
   registerPaneSource(source: PaneSourceDescriptor): Disposable;
-  registerGroupAction(action: GroupActionDescriptor): Disposable;
-  onCreateGroupActions(handler: (actions: GroupActionsModifier) => void): Disposable;
+  registerWorkspaceAction(action: WorkspaceActionDescriptor): Disposable;
+  onResolveWorkspaceActions(handler: (actions: WorkspaceActionsModifier) => void): Disposable;
   registerWorkspaceTab(descriptor: WorkspaceTabDescriptor): Disposable;
 }
 

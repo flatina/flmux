@@ -54,7 +54,7 @@ export class GroupActionsRenderer implements IHeaderActionsRenderer {
 
   private getResolvedActions() {
     return this.setupRegistry
-      ? this.setupRegistry.resolveGroupActions([])
+      ? this.setupRegistry.resolveWorkspaceActions([])
       : [];
   }
 

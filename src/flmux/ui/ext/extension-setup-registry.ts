@@ -2,26 +2,26 @@ import type { PaneCreateInput } from "../../../types/pane";
 import type {
   ExtensionSetup,
   ExtensionSetupContext,
-  GroupActionContext,
-  GroupActionDescriptor,
-  GroupActionsModifier,
+  WorkspaceActionContext,
+  WorkspaceActionDescriptor,
+  WorkspaceActionsModifier,
   PaneSourceDescriptor,
-  ExtAppScope,
   WorkspaceTabDescriptor
 } from "../../../types/setup";
+import type { PropertyHandle } from "../../../types/property";
 import { warn } from "../../../lib/logger";
 import type { ExtensionSetupModule } from "../../model/bootstrap-state";
 import { loadExtensionModule } from "./module-loader";
 
 // ── Registered state ──
 
-export interface RegisteredGroupAction {
+export interface RegisteredWorkspaceAction {
   /** Namespaced ID: `{extensionId}:{actionId}` */
   qualifiedId: string;
   icon: string;
   tooltip?: string;
   order: number;
-  run: (ctx: GroupActionContext) => void;
+  run: (ctx: WorkspaceActionContext) => void;
 }
 
 export interface RegisteredWorkspaceTab {
@@ -59,24 +59,24 @@ export interface ResolvedTitlebarLauncher {
   run: (ctx: TitlebarLauncherContext) => void | Promise<void>;
 }
 
-type CreateGroupActionsHandler = (modifier: GroupActionsModifier) => void;
+type ResolveWorkspaceActionsHandler = (modifier: WorkspaceActionsModifier) => void;
 
 // ── Registry ──
 
 export class ExtensionSetupRegistry {
-  private readonly groupActions: RegisteredGroupAction[] = [];
+  private readonly workspaceActions: RegisteredWorkspaceAction[] = [];
   private readonly paneSources: RegisteredPaneSource[] = [];
-  private readonly createGroupActionsHandlers: CreateGroupActionsHandler[] = [];
+  private readonly resolveWorkspaceActionsHandlers: ResolveWorkspaceActionsHandler[] = [];
   private readonly workspaceTabs = new Map<string, RegisteredWorkspaceTab>();
   private readonly disposableStack = new DisposableStack();
 
-  /** Sorted group actions after applying modifier hooks. */
-  resolveGroupActions(builtinActions: ReadonlyArray<{ id: string; icon: string; tooltip: string }>): Array<{
+  /** Sorted workspace actions after applying modifier hooks. */
+  resolveWorkspaceActions(builtinActions: ReadonlyArray<{ id: string; icon: string; tooltip: string }>): Array<{
     id: string;
     icon: string;
     tooltip?: string;
     isBuiltin: boolean;
-    run?: (ctx: GroupActionContext) => void;
+    run?: (ctx: WorkspaceActionContext) => void;
   }> {
     // Start with builtins
     const actions: Array<{
@@ -85,11 +85,11 @@ export class ExtensionSetupRegistry {
       tooltip?: string;
       order: number;
       isBuiltin: boolean;
-      run?: (ctx: GroupActionContext) => void;
+      run?: (ctx: WorkspaceActionContext) => void;
     }> = builtinActions.map((a, i) => ({ ...a, order: i * 10, isBuiltin: true }));
 
     // Add extension actions
-    for (const ext of this.groupActions) {
+    for (const ext of this.workspaceActions) {
       actions.push({
         id: ext.qualifiedId,
         icon: ext.icon,
@@ -102,25 +102,25 @@ export class ExtensionSetupRegistry {
 
     // Apply modifier hooks (hide etc.)
     const hidden = new Set<string>();
-    const modifier: GroupActionsModifier = {
+    const modifier: WorkspaceActionsModifier = {
       hide(...ids: string[]) {
         for (const id of ids) hidden.add(id);
       }
     };
-    for (const handler of this.createGroupActionsHandlers) {
+    for (const handler of this.resolveWorkspaceActionsHandlers) {
       try {
         handler(modifier);
       } catch (err) {
-        warn("ext-setup", `onCreateGroupActions handler error: ${err}`);
+        warn("ext-setup", `onResolveWorkspaceActions handler error: ${err}`);
       }
     }
 
     return actions.filter((a) => !hidden.has(a.id)).sort((a, b) => a.order - b.order);
   }
 
-  /** Find a registered group action by qualifiedId. */
-  findGroupAction(qualifiedId: string): RegisteredGroupAction | undefined {
-    return this.groupActions.find((a) => a.qualifiedId === qualifiedId);
+  /** Find a registered workspace action by qualifiedId. */
+  findWorkspaceAction(qualifiedId: string): RegisteredWorkspaceAction | undefined {
+    return this.workspaceActions.find((a) => a.qualifiedId === qualifiedId);
   }
 
   resolvePaneSources(
@@ -206,7 +206,11 @@ export class ExtensionSetupRegistry {
   }
 
   /** Load all extension setup modules and initialize them. */
-  async loadAll(extensions: ReadonlyArray<ExtensionSetupModule>, app: ExtAppScope): Promise<void> {
+  async loadAll(
+    extensions: ReadonlyArray<ExtensionSetupModule>,
+    app: PropertyHandle,
+    extensionConfig: Record<string, Record<string, unknown>> = {}
+  ): Promise<void> {
     // Phase 1: import all setup modules
     const setups: Array<{ extId: string; setup: ExtensionSetup }> = [];
 
@@ -231,7 +235,7 @@ export class ExtensionSetupRegistry {
       if (typeof setup.onInit !== "function") continue;
 
       try {
-        const ctx = this.buildContext(extId, app);
+        const ctx = this.buildContext(extId, app, extensionConfig[extId] ?? {});
         const disposable = setup.onInit(ctx);
         if (disposable) {
           this.disposableStack.use(disposable);
@@ -242,10 +246,15 @@ export class ExtensionSetupRegistry {
     }
   }
 
-  private buildContext(extensionId: string, app: ExtAppScope): ExtensionSetupContext {
+  private buildContext(
+    extensionId: string,
+    app: PropertyHandle,
+    config: Readonly<Record<string, unknown>>
+  ): ExtensionSetupContext {
     return {
       extensionId,
       app,
+      config,
 
       registerPaneSource: (source: PaneSourceDescriptor): Disposable => {
         const registered: RegisteredPaneSource = {
@@ -266,29 +275,29 @@ export class ExtensionSetupRegistry {
         };
       },
 
-      registerGroupAction: (action: GroupActionDescriptor): Disposable => {
-        const registered: RegisteredGroupAction = {
+      registerWorkspaceAction: (action: WorkspaceActionDescriptor): Disposable => {
+        const registered: RegisteredWorkspaceAction = {
           qualifiedId: `${extensionId}:${action.id}`,
           icon: action.icon,
           tooltip: action.tooltip,
           order: action.order ?? 100,
           run: action.run
         };
-        this.groupActions.push(registered);
+        this.workspaceActions.push(registered);
         return {
           [Symbol.dispose]: () => {
-            const idx = this.groupActions.indexOf(registered);
-            if (idx >= 0) this.groupActions.splice(idx, 1);
+            const idx = this.workspaceActions.indexOf(registered);
+            if (idx >= 0) this.workspaceActions.splice(idx, 1);
           }
         };
       },
 
-      onCreateGroupActions: (handler: (actions: GroupActionsModifier) => void): Disposable => {
-        this.createGroupActionsHandlers.push(handler);
+      onResolveWorkspaceActions: (handler: (actions: WorkspaceActionsModifier) => void): Disposable => {
+        this.resolveWorkspaceActionsHandlers.push(handler);
         return {
           [Symbol.dispose]: () => {
-            const idx = this.createGroupActionsHandlers.indexOf(handler);
-            if (idx >= 0) this.createGroupActionsHandlers.splice(idx, 1);
+            const idx = this.resolveWorkspaceActionsHandlers.indexOf(handler);
+            if (idx >= 0) this.resolveWorkspaceActionsHandlers.splice(idx, 1);
           }
         };
       },
@@ -320,9 +329,9 @@ export class ExtensionSetupRegistry {
 
   [Symbol.dispose](): void {
     this.disposableStack.dispose();
-    this.groupActions.length = 0;
+    this.workspaceActions.length = 0;
     this.paneSources.length = 0;
-    this.createGroupActionsHandlers.length = 0;
+    this.resolveWorkspaceActionsHandlers.length = 0;
     this.workspaceTabs.clear();
   }
 }

@@ -3,7 +3,7 @@
   "name": "Browser",
   "version": "0.1.0",
   "apiVersion": 2,
-  "setupEntry": "./setup.ts",
+  "rendererSetupEntry": "./setup.ts",
   "rendererEntry": "./index.ts",
   "cliEntry": "./cli.ts",
   "commands": [

@@ -80,9 +80,9 @@ describe("discoverExtensions", () => {
 });
 
 describe("buildExtensionSetups", () => {
-  test("builds setup modules from discovered extensions", () => {
+  test("builds setup modules from discovered extensions", async () => {
     const extensions = discoverExtensions(testRoot);
-    const setups = buildExtensionSetups(extensions);
+    const setups = await buildExtensionSetups(extensions);
     expect(setups).toHaveLength(1);
     const cowsay = setups.find((entry) => entry.id === "sample.cowsay");
     expect(cowsay).toEqual({

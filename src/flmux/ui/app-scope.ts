@@ -3,7 +3,7 @@ import "dockview-core/dist/styles/dockview.css";
 import "./styles.css";
 
 import { createDockview, type DockviewApi } from "dockview-core";
-import type { PropScope } from "../../types/view";
+import type { PropScope, ThemePreference } from "../../types/view";
 import {
   asPaneId,
   asTabId,
@@ -49,7 +49,7 @@ import { normalizeNullableString, PaneScope, type PaneScopeHost } from "./pane-s
 import { WorkspaceScope, type WorkspaceScopeHost } from "./workspace-scope";
 import { FlmuxTabRenderer } from "./tabs/flmux-tab-renderer";
 import { TabRenderer } from "./tabs/tab-renderer";
-import { initTheme, setTheme } from "./theme";
+import { getTheme, initTheme, setTheme } from "./theme";
 import { attachWorkspaceResizeObserver, installWindowResizeHandles } from "./window-resize";
 import {
   collectWorkspacePaneSummaries,
@@ -128,11 +128,16 @@ class AppScope extends PropertyOwnerBase {
 
     // Eager-load all extension setup modules before creating dockview
     // Runs after buildTitlebar so extensions can override the default title
-    const self = this;
-    await this.setupRegistry.loadAll(this.bootstrap.extensionSetups, {
-      get title() { return self.getTitle(); },
-      set title(value: string) { self.setTitle(value); }
-    });
+    await this.setupRegistry.loadAll(
+      this.bootstrap.extensionSetups,
+      {
+        get: (key: string) => this.get(key),
+        set: (key: string, value: unknown) => this.set(key, value),
+        list: () => this.values(),
+        schema: () => this.schema()
+      },
+      this.bootstrap.extensionConfig
+    );
 
     this.shell.append(this.titlebar, this.workspaceHost);
     this.root.replaceChildren(this.shell);
@@ -299,6 +304,19 @@ class AppScope extends PropertyOwnerBase {
       return;
     }
     this.titlebarTitle.textContent = nextTitle;
+  }
+
+  @prop({ type: "string", description: "Color theme preference", options: ["system", "dark", "light"] })
+  getColorTheme(): string {
+    return getTheme();
+  }
+
+  @prop()
+  setColorTheme(value: unknown): void {
+    const theme = String(value ?? "dark") as ThemePreference;
+    if (theme !== "system" && theme !== "dark" && theme !== "light") return;
+    setTheme(theme);
+    void this.hostRpc.request("uiSettings.setTheme", { theme });
   }
 
   @prop("browser.cdpBaseUrl", {

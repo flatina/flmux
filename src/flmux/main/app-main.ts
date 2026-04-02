@@ -7,6 +7,7 @@ import { info, setLogLevel } from "../../lib/logger";
 import { resolveAppWorkingDirectory, resolveWebRoot, resolveWorkspaceRoot } from "../../lib/runtime-paths";
 import { PtydClient } from "../../ptyd/client";
 import { loadConfig } from "../config/config";
+import { loadExtensionConfig } from "../config/extension-config";
 import { loadUiSettings } from "../config/ui-settings";
 import type { BootstrapState } from "../model/bootstrap-state";
 import { createFlmuxLastFile } from "../model/flmux-last";
@@ -79,7 +80,8 @@ export async function runAppMain(): Promise<void> {
     terminalRendererDefault: "xterm",
     liveTerminalRuntimes: [],
     terminalRuntimeOwner: "none",
-    extensionSetups: buildExtensionSetups(discoveredExtensions),
+    extensionSetups: await buildExtensionSetups(discoveredExtensions),
+    extensionConfig: loadExtensionConfig(),
     restoreLayout: shouldRestore,
     webServerUrl: webServer.url,
     uiTheme: loadUiSettings().theme,

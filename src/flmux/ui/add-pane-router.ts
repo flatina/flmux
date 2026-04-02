@@ -22,7 +22,7 @@ export type AddPaneContext = {
 export function handleAddPaneAction(ctx: AddPaneContext, action: string, activePanelId: string | null): void {
   const ref = activePanelId ? asPaneId(activePanelId) : undefined;
 
-  const extAction = ctx.setupRegistry.findGroupAction(action);
+  const extAction = ctx.setupRegistry.findWorkspaceAction(action);
   if (extAction) {
     const found = ref ? findWorkspacePane(ctx.dockview, ctx.tabRenderers, ref) : null;
     const tabId = found ? asTabId(found.outerPanel.id) : asTabId("");

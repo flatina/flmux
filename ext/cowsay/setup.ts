@@ -2,7 +2,7 @@ import type { ExtensionSetup } from "flmux-sdk";
 
 export default {
   onInit(ctx) {
-    ctx.app.title = "app title by cowsay";
+    ctx.app.set("title", "app title by cowsay");
 
     const tab = ctx.registerWorkspaceTab({
       id: "cowsay",
@@ -27,7 +27,7 @@ export default {
       options: { singleton: true }
     });
 
-    const hide = ctx.onCreateGroupActions(() => {
+    const hide = ctx.onResolveWorkspaceActions(() => {
       // actions.hide("browser", "explorer"); // example
     });
 

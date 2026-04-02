@@ -1,4 +1,5 @@
 import type { SessionId } from "../../lib/ids";
+import type { ExtensionConfigMap } from "../config/extension-config";
 import type { BrowserPaneAdapter, TerminalRenderer } from "./pane-params";
 import type { TerminalRuntimeSummary } from "../../types/terminal";
 import type { ThemePreference } from "../../types/view";
@@ -19,6 +20,7 @@ export interface BootstrapState {
   liveTerminalRuntimes: TerminalRuntimeSummary[];
   terminalRuntimeOwner: TerminalRuntimeOwner;
   extensionSetups: ExtensionSetupModule[];
+  extensionConfig: ExtensionConfigMap;
   restoreLayout: boolean;
   webServerUrl: string | null;
   uiTheme: ThemePreference;

@@ -1,3 +1,4 @@
+export * from "./app-scope";
 export * from "./cli";
 export * from "./ids";
 export * from "./manifest";

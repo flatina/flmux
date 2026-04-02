@@ -77,7 +77,7 @@ The `➕` menu shows a placement grid:
   - `Editor` and `Terminal` default to within
   - `Browser` defaults to auto placement
 
-Extension pane sources use the same grid as built-in pane sources. Arbitrary extension group actions, if any, appear in a separate section below the grid.
+Extension pane sources use the same grid as built-in pane sources. Arbitrary extension workspace actions, if any, appear in a separate section below the grid.
 
 
 ## Web Access

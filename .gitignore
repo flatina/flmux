@@ -4,3 +4,4 @@ dist/
 build/
 .generated/
 *.tsbuildinfo
+flmux-ext*.toml

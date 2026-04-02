@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ExtAppScope } from "../../../types/setup";
+import type { PropertyHandle } from "../../../types/property";
 import type { ExtensionSetupModule } from "../../model/bootstrap-state";
 import { ExtensionSetupRegistry } from "./extension-setup-registry";
 
@@ -10,11 +10,13 @@ function makeExtension(id: string, source: string): ExtensionSetupModule {
   };
 }
 
-function makeStubApp(): ExtAppScope {
-  let title = "flmux";
+function makeStubApp(): PropertyHandle {
+  const store: Record<string, unknown> = { title: "flmux" };
   return {
-    get title() { return title; },
-    set title(value: string) { title = value; }
+    get: (key: string) => store[key],
+    set: (key: string, value: unknown) => { store[key] = value; },
+    list: () => ({ ...store }),
+    schema: () => ({})
   };
 }
 
@@ -152,7 +154,7 @@ describe("ExtensionSetupRegistry pane sources", () => {
 });
 
 describe("ExtensionSetupRegistry app handle", () => {
-  test("extensions can set app title via setup context", async () => {
+  test("extensions can set app properties via setup context", async () => {
     const registry = new ExtensionSetupRegistry();
     const app = makeStubApp();
     try {
@@ -162,7 +164,7 @@ describe("ExtensionSetupRegistry app handle", () => {
           `
           export default {
             onInit(ctx) {
-              ctx.app.title = "Custom Title";
+              ctx.app.set("title", "Custom Title");
               return { [Symbol.dispose]() {} };
             }
           };
@@ -170,7 +172,7 @@ describe("ExtensionSetupRegistry app handle", () => {
         )
       ], app);
 
-      expect(app.title).toBe("Custom Title");
+      expect(app.get("title")).toBe("Custom Title");
     } finally {
       registry[Symbol.dispose]();
     }

@@ -1,4 +1,5 @@
-import { basename } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
+import { existsSync } from "node:fs";
 import { type IPty, spawn } from "bun-pty";
 import { getAppRpcIpcPath } from "../lib/ipc/ipc-paths";
 import type { SessionId, TerminalRuntimeId } from "../lib/ids";
@@ -16,6 +17,7 @@ interface TerminalRuntimeManagerOptions {
   defaultCwd: string;
   sessionId: SessionId;
   defaultShell?: string | null;
+  extraPath?: string[];
   spawnPty?: typeof spawn;
   pushTerminalEvent: (event: TerminalRuntimeEvent) => void;
 }
@@ -72,7 +74,7 @@ export class TerminalRuntimeManager {
       cols,
       rows,
       name: resolveTerminalName(),
-      env: createPtyEnv(wsRoot, this.options.sessionId, params.paneId ?? null, params.webPort ?? null)
+      env: createPtyEnv(wsRoot, this.options.sessionId, params.paneId ?? null, params.webPort ?? null, this.options.extraPath ?? [])
     });
     const startupQueue = buildStartupQueue(wsRoot, params.startupCommands);
 
@@ -278,7 +280,8 @@ function createPtyEnv(
   workspaceRoot: string,
   sessionId: SessionId,
   paneId: string | null,
-  webPort: number | null
+  webPort: number | null,
+  extraPath: string[]
 ): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
@@ -297,6 +300,19 @@ function createPtyEnv(
   }
   if (paneId) {
     env.FLMUX_PANE_ID = paneId;
+  }
+
+  // Prepend extra paths (from [terminal].path config) to PATH.
+  // Windows env keys are case-insensitive but JS objects are not — find the actual key.
+  if (extraPath.length > 0) {
+    const sep = process.platform === "win32" ? ";" : ":";
+    const resolved = extraPath
+      .map((p) => (isAbsolute(p) ? p : join(effectiveRoot, p)))
+      .filter((p) => existsSync(p));
+    if (resolved.length > 0) {
+      const pathKey = Object.keys(env).find((k) => k.toLowerCase() === "path") ?? "PATH";
+      env[pathKey] = resolved.join(sep) + sep + (env[pathKey] ?? "");
+    }
   }
 
   return env;

@@ -19,7 +19,7 @@ export interface PaneSourceDescriptor {
   icon: string;
   label: string;
   order?: number;
-  defaultPlacement?: PaneCreateDirection | "auto";
+  defaultPlacement?: PaneCreateDirection;
   createLeaf: () => PaneCreateInput;
   options?: PaneOpenOptions;
 }

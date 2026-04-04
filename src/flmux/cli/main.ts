@@ -74,6 +74,7 @@ const main = defineCommand({
   subCommands: {
     session: () => import("./commands/session").then((m) => m.default),
     summary: () => import("./commands/summary").then((m) => m.default),
+    open: () => import("./commands/open").then((m) => m.default),
     split: () => import("./commands/split").then((m) => m.default),
     tab: () => import("./commands/tab").then((m) => m.default),
     edit: () => import("./commands/edit").then((m) => m.default),

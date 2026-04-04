@@ -6,7 +6,7 @@ export const BUILTIN_PANE_SOURCES = [
     icon: ">_",
     label: "Terminal",
     order: 20,
-    defaultPlacement: "auto",
+    defaultPlacement: undefined,
     options: undefined,
     createLeaf() {
       return { kind: "terminal" } as const;
@@ -17,7 +17,7 @@ export const BUILTIN_PANE_SOURCES = [
   icon: string;
   label: string;
   order: number;
-  defaultPlacement: PaneSourceDescriptor["defaultPlacement"];
+  defaultPlacement?: PaneSourceDescriptor["defaultPlacement"];
   createLeaf: PaneSourceDescriptor["createLeaf"];
   options?: PaneSourceDescriptor["options"];
 }>;

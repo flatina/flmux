@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Link Test</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: radial-gradient(circle at top, #1f2a38, #0f141b 60%);
+      color: #e8edf2;
+      display: grid;
+      place-items: center;
+      padding: 2rem;
+    }
+    .card {
+      width: min(560px, 100%);
+      padding: 24px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(11, 16, 22, 0.92);
+      box-shadow: 0 24px 80px rgba(0,0,0,0.35);
+    }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    p { margin: 0 0 20px; color: #9db0c3; font-size: 14px; }
+    .links { display: flex; flex-direction: column; gap: 10px; }
+    .link-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 14px; border-radius: 10px;
+      background: rgba(255,255,255,0.04);
+    }
+    .link-row a {
+      color: #ffad5a; text-decoration: none; font-weight: 600;
+    }
+    .link-row a:hover { text-decoration: underline; }
+    .link-row .tag {
+      font-size: 11px; padding: 2px 8px; border-radius: 6px;
+      background: rgba(255,255,255,0.08); color: #9db0c3;
+      white-space: nowrap;
+    }
+    .link-row .desc { color: #9db0c3; font-size: 13px; }
+    button {
+      padding: 10px 14px; border: none; border-radius: 10px;
+      background: #ffb45e; color: #0f141b; font: inherit;
+      font-weight: 700; cursor: pointer; margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>Link Test</h1>
+    <p>Test how different link types are handled by the browser pane.</p>
+    <div class="links">
+      <div class="link-row">
+        <a href="/about">About</a>
+        <span class="tag">same tab</span>
+        <span class="desc">Normal link, navigates current tab</span>
+      </div>
+      <div class="link-row">
+        <a href="/about" target="_blank">About (blank)</a>
+        <span class="tag">target=_blank</span>
+        <span class="desc">Should open in new tab</span>
+      </div>
+      <div class="link-row">
+        <a href="/automation" target="_blank">Automation (blank)</a>
+        <span class="tag">target=_blank</span>
+        <span class="desc">Should open in new tab</span>
+      </div>
+      <div class="link-row">
+        <a href="/links" target="_blank">Self (blank)</a>
+        <span class="tag">target=_blank</span>
+        <span class="desc">Should open in new tab</span>
+      </div>
+      <div class="link-row">
+        <a href="https://www.google.com" target="_blank">Google (blank)</a>
+        <span class="tag">target=_blank external</span>
+        <span class="desc">Should open in new tab</span>
+      </div>
+      <div class="link-row">
+        <button id="window-open-btn" type="button">window.open("/about")</button>
+        <span class="tag">JS</span>
+        <span class="desc">Should open in new tab</span>
+      </div>
+    </div>
+  </main>
+  <script>
+    document.getElementById("window-open-btn").addEventListener("click", () => {
+      window.open("/about");
+    });
+  </script>
+</body>
+</html>

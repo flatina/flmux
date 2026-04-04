@@ -7,6 +7,7 @@ import type {
   PaneMessageResult,
   PaneOpenParams,
   PaneResult,
+  PaneSourcesResult,
   PaneSplitParams,
   TabCloseParams,
   TabFocusParams,
@@ -58,6 +59,10 @@ export interface AppRpcMethodMap {
   "props.set": {
     params: { scope: PropertyScope; targetId?: PaneId | TabId; key: string; value: unknown };
     result: { ok: true; value: unknown };
+  };
+  "pane.sources": {
+    params: undefined;
+    result: PaneSourcesResult;
   };
   "pane.open": {
     params: PaneOpenParams;

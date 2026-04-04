@@ -10,6 +10,7 @@ import {
   type PanelUpdateEvent,
   type SerializedDockview
 } from "dockview-core";
+import type { PaneCreateDirection } from "../../../types/pane";
 import type { HeaderAction } from "../../../types/view";
 import { asPaneId, asTabId, type PaneId } from "../../../lib/ids";
 import { getDefaultPaneTitle, isPaneParams, type PaneKind, type PaneParams } from "../../model/pane-params";
@@ -196,7 +197,7 @@ export class TabRenderer implements IContentRenderer {
     if (options.position) {
       panelOptions.position = {
         referencePanel: options.position.referencePanel,
-        direction: options.position.direction as "within" | "left" | "right" | "above" | "below"
+        direction: options.position.direction as PaneCreateDirection
       };
     }
 

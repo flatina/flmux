@@ -1,0 +1,5 @@
+# flmux dev-mode overrides (merged on top of flmux.toml when NODE_ENV != "production")
+
+[terminal]
+# Paths to prepend to terminal PATH (relative to workspace root)
+path = [".dev"]

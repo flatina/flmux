@@ -55,8 +55,8 @@ async function main() {
   if (cleanResult.exitCode !== 0) {
     throw new Error(`build cleanup failed with exit code ${cleanResult.exitCode}`);
   }
-  const electrobunBin = resolve(projectRoot, "node_modules/.bin/electrobun");
-  const buildResult = Bun.spawnSync([electrobunBin, "build"], {
+  const electrobunCjs = resolve(projectRoot, "node_modules/electrobun/bin/electrobun.cjs");
+  const buildResult = Bun.spawnSync(["bun", electrobunCjs, "build"], {
     cwd: projectRoot,
     stdout: "inherit",
     stderr: "inherit"
@@ -68,7 +68,7 @@ async function main() {
   try {
     const tests = testNames.length > 0
       ? testNames
-      : discoverSmokeTests();
+      : [...discoverSmokeTests(), ...discoverWorkflowTests()];
 
     let failed = 0;
 
@@ -96,7 +96,7 @@ async function main() {
 
       try {
         console.log(`── ${name} ──`);
-        const testPath = resolve(import.meta.dir, `../smoke/${name}.ts`);
+        const testPath = resolveTestPath(name);
         const result = Bun.spawnSync(["bun", testPath], {
           cwd: projectRoot,
           env: appForTest.env,
@@ -255,6 +255,23 @@ function discoverSmokeTests(): string[] {
     .filter((f) => f.endsWith(".ts") && f !== "helpers.ts")
     .map((f) => f.replace(/\.ts$/, ""))
     .sort();
+}
+
+function discoverWorkflowTests(): string[] {
+  const workflowDir = resolve(projectRoot, "tests", "workflow");
+  try {
+    return readdirSync(workflowDir)
+      .filter((f) => f.endsWith(".ts") && f !== "helpers.ts")
+      .map((f) => `workflow/${f.replace(/\.ts$/, "")}`)
+      .sort();
+  } catch { return []; }
+}
+
+function resolveTestPath(name: string): string {
+  if (name.startsWith("workflow/")) {
+    return resolve(import.meta.dir, `../${name}.ts`);
+  }
+  return resolve(import.meta.dir, `../smoke/${name}.ts`);
 }
 
 function getTestExecutionMode(name: string): TestExecutionMode {

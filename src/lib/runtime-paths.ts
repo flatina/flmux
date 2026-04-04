@@ -51,15 +51,16 @@ export function resolveAppWorkingDirectory(): string {
   return process.env.FLMUX_ROOT?.trim() || resolveWorkspaceRoot() || process.cwd();
 }
 
-export function resolveWebRoot(argv = process.argv): string | null {
+export function resolveWebRoot(baseDir?: string, argv = process.argv): string | null {
   const index = argv.findIndex((value) => value === "--web-root");
   const value = index >= 0 ? argv[index + 1]?.trim() : "";
   if (value) {
-    return resolve(value);
+    return baseDir ? resolve(baseDir, value) : resolve(value);
   }
 
   const envValue = process.env.FLMUX_WEB_ROOT?.trim();
-  return envValue ? resolve(envValue) : null;
+  if (!envValue) return null;
+  return baseDir ? resolve(baseDir, envValue) : resolve(envValue);
 }
 
 export function resolvePtydLaunchCommand(): LaunchCommand {

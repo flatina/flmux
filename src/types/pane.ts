@@ -2,7 +2,6 @@ import type { PaneId } from "./ids";
 import type { TerminalRenderer } from "./terminal";
 
 export type PaneCreateDirection = "within" | "left" | "right" | "above" | "below";
-export type PaneSplitDirection = Exclude<PaneCreateDirection, "within">;
 
 export type BrowserPaneAdapter = "electrobun-native" | "web-iframe";
 export type ExplorerMode = "filetree" | "dirtree" | "filelist";

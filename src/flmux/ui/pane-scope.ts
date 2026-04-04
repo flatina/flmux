@@ -23,6 +23,8 @@ export interface PaneScopeHost {
 }
 
 export class PaneScope extends PropertyOwnerBase {
+  private _activatedAt: number = performance.now();
+  private _openerPaneId: PaneId | null = null;
   private browserWebviewId: number | null = null;
   private browserCdpReady = false;
   private browserCdpTargetId: string | null = null;
@@ -68,6 +70,14 @@ export class PaneScope extends PropertyOwnerBase {
   @prop({ description: "Pane kind" })
   getKind(): string {
     return this.requirePaneParams().kind;
+  }
+
+  markActivated(): void {
+    this._activatedAt = performance.now();
+  }
+
+  get ageMs(): number {
+    return performance.now() - this._activatedAt;
   }
 
   // --- terminal ---
@@ -119,6 +129,18 @@ export class PaneScope extends PropertyOwnerBase {
     this.host.updatePaneParams({ url: nextUrl }, { statePatch: { url: nextUrl } });
     this.renderer.setPaneTitle(String(this.paneId), browserTitleFromUrl(nextUrl));
     this.publishMirroredTitleChanges(previousTitle);
+  }
+
+  @prop("browser.openerPaneId", { type: "string", nullable: true, readonly: true, description: "Pane that opened this browser" })
+  getBrowserOpenerPaneId(): string | null {
+    this.requireBrowserPane();
+    return this._openerPaneId;
+  }
+
+  @prop("browser.openerPaneId", { readonly: true })
+  setBrowserOpenerPaneId(value: unknown): void {
+    this.requireBrowserPane();
+    this._openerPaneId = typeof value === "string" && value ? (value as PaneId) : null;
   }
 
   @prop("browser.adapter", { type: "string", readonly: true, options: ["electrobun-native", "web-iframe"], description: "Browser adapter" })

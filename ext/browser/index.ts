@@ -146,7 +146,7 @@ export default defineView<BrowserParams, BrowserState>({
 
       toolbar.append(backBtn, refreshBtn, address);
 
-      const welcome = createBrowserWelcome();
+      const welcome = createBrowserWelcome(context.webPort);
       const isBlank = !currentUrl || currentUrl === "about:blank";
 
       const syncDimensions = () => {
@@ -195,9 +195,34 @@ export default defineView<BrowserParams, BrowserState>({
         webview.on("did-navigate", handleDidNavigate);
         webview.on("did-commit-navigation", handleDidNavigate);
 
+        let lastNewWindowUrl = "";
+        let lastNewWindowTime = 0;
+        const handleNewWindow = (event: CustomEvent) => {
+          const url = extractNewWindowUrl(event.detail);
+          if (!url) return;
+          const now = Date.now();
+          if (url === lastNewWindowUrl && now - lastNewWindowTime < 500) return;
+          lastNewWindowUrl = url;
+          lastNewWindowTime = now;
+          void context.openPane(
+            { kind: "browser", url, adapter: "electrobun-native" },
+            { referencePaneId: context.paneId, direction: "within" }
+          ).then((result) => {
+            if (result?.paneId) {
+              context.getPane(result.paneId).props.set("browser.openerPaneId", String(context.paneId));
+            }
+          });
+        };
+        webview.on("new-window-open", handleNewWindow);
+
+        const handleWindowClose = () => context.closePane();
+        webview.on("window-close-requested", handleWindowClose);
+
         browserDisposables.push(
           () => webview.off("did-navigate", handleDidNavigate),
-          () => webview.off("did-commit-navigation", handleDidNavigate)
+          () => webview.off("did-commit-navigation", handleDidNavigate),
+          () => webview.off("new-window-open", handleNewWindow),
+          () => webview.off("window-close-requested", handleWindowClose)
         );
 
         shell.appendChild(webview);
@@ -304,7 +329,7 @@ export default defineView<BrowserParams, BrowserState>({
 
       toolbar.append(backBtn, refreshBtn, address);
 
-      const welcome = createBrowserWelcome();
+      const welcome = createBrowserWelcome(context.webPort);
       const isBlank = !currentUrl || currentUrl === "about:blank";
       welcome.style.display = isBlank ? "" : "none";
       if (isBlank) {
@@ -604,18 +629,19 @@ function browserTitleFromUrl(url: string): string {
   }
 }
 
-function createBrowserWelcome(): HTMLElement {
+function createBrowserWelcome(webPort: number | null): HTMLElement {
   const element = document.createElement("div");
   element.className = "browser-welcome";
+  const base = webPort ? `http://127.0.0.1:${webPort}` : "";
+  const internalLink = base
+    ? `<button type="button" class="browser-welcome-link" data-url="${base}">flmux</button>`
+    : "";
+  const links = `<button type="button" class="browser-welcome-link" data-url="https://www.google.com">Google</button>${internalLink}`;
   element.innerHTML = `<div class="browser-welcome-card">
   <div class="browser-welcome-title">flmux</div>
   <div class="browser-welcome-subtitle">Search or enter a URL to get started</div>
   <input class="browser-welcome-input" type="text" placeholder="Search or enter URL" spellcheck="false" autocomplete="off" />
-  <div class="browser-welcome-links">
-    <button type="button" class="browser-welcome-link" data-url="https://www.google.com">Google</button>
-    <button type="button" class="browser-welcome-link" data-url="https://github.com">GitHub</button>
-    <button type="button" class="browser-welcome-link" data-url="https://developer.mozilla.org">MDN</button>
-  </div>
+  <div class="browser-welcome-links">${links}</div>
 </div>`;
   return element;
 }
@@ -636,6 +662,23 @@ async function fetchBrowserTargets(baseUrl: string): Promise<BrowserTarget[]> {
   } catch {
     return [];
   }
+}
+
+function extractNewWindowUrl(detail: unknown): string | null {
+  if (typeof detail === "string") {
+    try {
+      const parsed = JSON.parse(detail) as { url?: unknown };
+      if (typeof parsed.url === "string" && parsed.url) return parsed.url;
+    } catch {
+      if (detail.startsWith("http")) return detail;
+    }
+    return null;
+  }
+  if (detail && typeof detail === "object") {
+    const candidate = (detail as { url?: unknown }).url;
+    if (typeof candidate === "string" && candidate) return candidate;
+  }
+  return null;
 }
 
 function sleep(ms: number): Promise<void> {

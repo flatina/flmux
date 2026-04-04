@@ -50,6 +50,7 @@ type PropertyScopeOwner = {
 
 type PaneScopeOwner = PropertyScopeOwner & {
   setState: (nextState: Record<string, unknown>) => void;
+  markActivated?: () => void;
 };
 
 export type PaneRendererContext = {
@@ -98,6 +99,11 @@ export class PaneRenderer implements IContentRenderer {
     const tabId = this.context.getTabId();
     this.context.registerPreCloseHook(paneId, () => this.prepareForClose());
     this.context.onPaneReady?.(paneId, tabId);
+    this.props.api.onDidActiveChange((event) => {
+      if (event.isActive) {
+        (this.context.getPaneScope(paneId) as PaneScopeOwner | null)?.markActivated?.();
+      }
+    });
     this.render();
   }
 
@@ -540,6 +546,9 @@ export class PaneRenderer implements IContentRenderer {
       getPane: (targetPaneId: PaneId) => buildPaneHandle(targetPaneId),
       setHeaderActions: (actions: HeaderAction[]) => {
         this.context.onHeaderActionsChanged?.(paneId, actions);
+      },
+      closePane: () => {
+        this.props?.api.close();
       },
       openPane: (
         leaf: PaneCreateInput,

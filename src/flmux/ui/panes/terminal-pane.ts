@@ -117,14 +117,14 @@ async function mountTerminalPaneLegacy(host: HTMLElement, context: any): Promise
 
   safeSetPaneTitle(getTerminalBaseTitle(params.shell));
 
-  // Terminal creation must not be inside requestAnimationFrame — rAF may be
-  // deferred until the window paints.  Terminal creation only needs RPC.
-  void ensureTerminalRuntime();
+  // Fit first so the pty gets the real container dimensions, not 120x32 defaults.
+  // terminal.open() has already attached to DOM, so fitAddon can measure cell metrics.
   requestAnimationFrame(() => {
     if (disposed) {
       return;
     }
     fitTerminal();
+    void ensureTerminalRuntime();
     terminal.focus();
   });
 

@@ -7,6 +7,7 @@ import type {
   PaneMessageResult,
   PaneOpenParams,
   PaneResult,
+  PaneSourcesResult,
   PaneSplitParams,
   TabCloseParams,
   TabFocusParams,
@@ -36,6 +37,10 @@ export interface RendererRpcMethodMap {
   "workspace.props.set": {
     params: { scope: PropertyScope; targetId?: PaneId | TabId; key: string; value: unknown };
     result: { ok: true; value: unknown };
+  };
+  "workspace.sources": {
+    params: undefined;
+    result: PaneSourcesResult;
   };
   "workspace.open": {
     params: PaneOpenParams;

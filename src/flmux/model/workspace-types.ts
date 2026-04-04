@@ -1,19 +1,22 @@
 import type { PaneId, TabId, TerminalRuntimeId } from "../../lib/ids";
 import type { BrowserPaneAdapter, PaneKind } from "./pane-params";
-import type { PaneCreateDirection, PaneCreateInput, PaneSplitDirection } from "../../types/pane";
+import type { PaneCreateDirection, PaneCreateInput } from "../../types/pane";
 import type { LayoutMode, PaneSummaryBase, WorkspaceSummaryBase, AppSummaryBase } from "../../types/view";
-export type { PaneCreateDirection, PaneCreateInput, PaneResult, PaneSplitDirection } from "../../types/pane";
+export type { PaneCreateDirection, PaneCreateInput, PaneResult } from "../../types/pane";
 
 export interface WorkspaceSummary extends WorkspaceSummaryBase {}
 
 export interface PaneSummary extends PaneSummaryBase {
   kind: PaneKind;
+  ageMs?: number;
+  isActive?: boolean;
   runtimeId?: TerminalRuntimeId;
   cwd?: string | null;
   shell?: string | null;
   renderer?: string;
   url?: string;
   adapter?: BrowserPaneAdapter;
+  openerPaneId?: PaneId;
   filePath?: string | null;
   language?: string | null;
   rootPath?: string;
@@ -52,6 +55,18 @@ export interface AppSummary extends AppSummaryBase {
   };
 }
 
+export interface PaneSourceInfo {
+  qualifiedId: string;
+  label: string;
+  icon: string;
+  kind: string;
+  viewKey?: string;
+  defaultPlacement?: PaneCreateDirection;
+  singleton?: boolean;
+}
+
+export type PaneSourcesResult = { sources: PaneSourceInfo[] };
+
 export interface PaneOpenParams {
   leaf: PaneCreateInput;
   referencePaneId?: PaneId;
@@ -68,7 +83,7 @@ export interface PaneCloseParams {
 
 export interface PaneSplitParams {
   paneId: PaneId;
-  direction: PaneSplitDirection;
+  direction: PaneCreateDirection;
   leaf: PaneCreateInput;
 }
 

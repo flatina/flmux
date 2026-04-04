@@ -1,1 +1,1 @@
-export type { PaneCreateDirection, PaneSplitDirection, BrowserPaneAdapter, ExplorerMode, PaneCreateInput, PaneResult } from "../types/pane";
+export type { PaneCreateDirection, BrowserPaneAdapter, ExplorerMode, PaneCreateInput, PaneResult } from "../types/pane";

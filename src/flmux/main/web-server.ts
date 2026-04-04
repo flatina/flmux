@@ -20,7 +20,7 @@ export function startWebServer(options: StartWebServerOptions = {}): FlmuxWebSer
       const url = new URL(req.url);
 
       if (url.pathname === "/" || url.pathname === "/about") {
-        return new Response(aboutPage(), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+        return new Response(aboutPage(!!staticRoot), { headers: { "Content-Type": "text/html; charset=utf-8" } });
       }
 
       if (url.pathname === "/health") {
@@ -82,7 +82,7 @@ function serveStaticFile(pathname: string, staticRoot: string | null): Response 
   return null;
 }
 
-function aboutPage(): string {
+function aboutPage(hasStaticRoot: boolean): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -127,6 +127,9 @@ function aboutPage(): string {
       <div class="row"><span class="label">Bun</span><span>${Bun.version}</span></div>
       <div class="row"><span class="label">Health</span><a href="/health">/health</a></div>
       <div class="row"><span class="label">Status API</span><a href="/api/status">/api/status</a></div>
+      ${hasStaticRoot ? `<div class="row"><span class="label">Automation</span><a href="/automation">/automation</a></div>
+      <div class="row"><span class="label">Link Test</span><a href="/links">/links</a></div>
+      <div class="row"><span class="label">Login Test</span><a href="/login-main">/login-main</a></div>` : ""}
     </div>
   </div>
 </body>

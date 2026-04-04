@@ -108,6 +108,7 @@ export interface Context<Params = Record<string, never>, State extends object = 
     placement?: { referencePaneId?: PaneId; direction?: PaneCreateDirection },
     options?: PaneOpenOptions
   ) => Promise<PaneResult>;
+  closePane: () => void;
   onActiveChange: (handler: (isActive: boolean) => void) => () => void;
   onVisibilityChange: (handler: (visible: boolean) => void) => () => void;
   onDimensionsChange: (handler: () => void) => () => void;

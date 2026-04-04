@@ -1,5 +1,6 @@
 import { join } from "node:path";
-import { BrowserView, BrowserWindow, Utils } from "electrobun/bun";
+import Electrobun, { BrowserView, BrowserWindow, Utils } from "electrobun/bun";
+import { completePermissionRequest } from "electrobun/bun";
 import { createSessionId } from "../../lib/ids";
 import { sleep } from "../../lib/timers";
 import { getAppRpcIpcPath, getPropertyEventsIpcPath } from "../../lib/ipc/ipc-paths";
@@ -26,8 +27,26 @@ import { RendererWorkspaceBridge } from "./renderer-workspace-bridge";
 import { startWebServer } from "./web-server";
 import { startWebUiServer, type WebUiServer } from "./web-ui-server";
 
+// Auto-allow non-sensitive permissions (sensors, clipboard, etc.)
+// Camera(1,2), Geolocation(3), Notifications(4) are denied by default.
+function setupPermissionHandler(): void {
+  const ALLOW_KINDS = new Set([5, 6]); // OTHER_SENSORS, CLIPBOARD_READ
+  Electrobun.events.on("permission-requested", (event: any) => {
+    const { requestId, kind } = event.data ?? {};
+    if (typeof requestId !== "number") return;
+    // Auto-allow known safe kinds; deny sensitive ones; allow unknown future kinds
+    const allow = ALLOW_KINDS.has(kind) || (kind > 6);
+    completePermissionRequest(requestId, allow ? 0 : 1);
+  });
+}
+
 export async function runAppMain(): Promise<void> {
+  setupPermissionHandler();
   const config = loadConfig();
+  // Pass terminal.path to ptyd via env (ptyd can't import config directly)
+  if (config.terminal.path.length > 0) {
+    process.env.FLMUX_TERMINAL_PATH = config.terminal.path.join(process.platform === "win32" ? ";" : ":");
+  }
   const shouldRestore =
     config.app.restoreLayout && !process.argv.includes("--fresh") && process.env.FLMUX_FRESH !== "1";
   const startupResolution = await resolveStartupSession(async (orphans) => {
@@ -45,7 +64,7 @@ export async function runAppMain(): Promise<void> {
   const flmuxLastStore = new FlmuxLastStore();
   const initialRestoreFile = shouldRestore ? await flmuxLastStore.load() : null;
   const workspaceCwd = resolveAppWorkingDirectory();
-  const webRoot = resolveWebRoot();
+  const webRoot = resolveWebRoot(workspaceCwd);
   const appRpcIpcPath = getAppRpcIpcPath(sessionId);
   const propertyEventsIpcPath = getPropertyEventsIpcPath(sessionId);
   process.env.FLMUX_ROOT = workspaceCwd;

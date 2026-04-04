@@ -99,11 +99,14 @@ const main = defineCommand({
         target: { type: "positional", required: true, description: "Ref or selector" }
       },
       run: async ({ args }) => {
-        const { client, paneId } = await resolvePaneClient(args);
+        const { client, paneId, detectNewPanes } = await resolvePaneClient(args);
         await clickBrowserPane(client, paneId, args.target);
+        const newPanes = await detectNewPanes();
         if (args.json) {
-          printJson({ ok: true, paneId });
+          printJson({ ok: true, paneId, ...(newPanes.length > 0 ? { newPanes } : {}) });
+          return;
         }
+        await reportNewPanes(() => Promise.resolve(newPanes));
       }
     }),
     fill: defineCommand({
@@ -164,15 +167,17 @@ const main = defineCommand({
         script: { type: "positional", required: true, description: "JavaScript expression or return statement" }
       },
       run: async ({ args }) => {
-        const { client, paneId } = await resolvePaneClient(args);
+        const { client, paneId, detectNewPanes } = await resolvePaneClient(args);
         const value = await evalBrowserPane(client, paneId, args.script);
-        const result = { ok: true, paneId, value };
+        const newPanes = await detectNewPanes();
+        const result = { ok: true, paneId, value, ...(newPanes.length > 0 ? { newPanes } : {}) };
         if (printMaybeJson(args.json, result)) return;
         if (typeof value === "string") {
           console.log(value);
-          return;
+        } else {
+          console.log(JSON.stringify(value, null, 2));
         }
-        console.log(JSON.stringify(value, null, 2));
+        await reportNewPanes(() => Promise.resolve(newPanes));
       }
     })
   }
@@ -187,7 +192,7 @@ function createHistoryCommand(
   description: string,
   runAction: (
     client: Awaited<ReturnType<typeof getClient>>,
-    paneId: ReturnType<typeof resolveBrowserPaneId>,
+    paneId: Awaited<ReturnType<typeof resolveBrowserPaneId>>,
     waitUntil: "none" | "load" | "idle",
     idleMs: number
   ) => Promise<string>
@@ -204,11 +209,13 @@ function createHistoryCommand(
       idleMs: { type: "string", description: "Idle wait window in milliseconds" }
     },
     run: async ({ args }) => {
-      const { client, paneId } = await resolvePaneClient(args);
+      const { client, paneId, detectNewPanes } = await resolvePaneClient(args);
       const url = await runAction(client, paneId, normalizeWaitUntil(args.waitUntil), parseIdleMs(args.idleMs));
-      const result = { ok: true, paneId, url };
+      const newPanes = await detectNewPanes();
+      const result = { ok: true, paneId, url, ...(newPanes.length > 0 ? { newPanes } : {}) };
       if (printMaybeJson(args.json, result)) return;
       console.log(url);
+      await reportNewPanes(() => Promise.resolve(newPanes));
     }
   });
 }
@@ -222,32 +229,67 @@ function createGetterCommand(spec: GetterSpec) {
       ...(spec.attrName ? { name: { type: "positional" as const, required: true, description: "Attribute name" } } : {})
     },
     run: async ({ args }) => {
-      const { client, paneId } = await resolvePaneClient(args);
+      const { client, paneId, detectNewPanes } = await resolvePaneClient(args);
 
       if (spec.box) {
         const box = await getBrowserPaneBox(client, paneId, args.target ?? "");
-        const result = { ok: true, paneId, box };
+        const newPanes = await detectNewPanes();
+        const result = { ok: true, paneId, box, ...(newPanes.length > 0 ? { newPanes } : {}) };
         if (printMaybeJson(args.json, result)) return;
         console.log(JSON.stringify(box, null, 2));
+        await reportNewPanes(() => Promise.resolve(newPanes));
         return;
       }
 
       const value = await getBrowserPaneValue(client, paneId, spec.field, args.target, args.name);
-      const result = { ok: true, paneId, field: spec.field, value };
+      const newPanes = await detectNewPanes();
+      const result = { ok: true, paneId, field: spec.field, value, ...(newPanes.length > 0 ? { newPanes } : {}) };
       if (printMaybeJson(args.json, result)) return;
       console.log(value);
+      await reportNewPanes(() => Promise.resolve(newPanes));
     }
   });
 }
 
+type NewPaneInfo = { paneId: string; url: string | null; openerPaneId: string | null };
+
 async function resolvePaneClient(args: CommonArgs): Promise<{
   client: Awaited<ReturnType<typeof getClient>>;
-  paneId: ReturnType<typeof resolveBrowserPaneId>;
+  paneId: Awaited<ReturnType<typeof resolveBrowserPaneId>>;
+  detectNewPanes: () => Promise<NewPaneInfo[]>;
 }> {
-  return {
-    client: await getClient(args.session),
-    paneId: resolveBrowserPaneId(args.pane)
+  const client = await getClient(args.session);
+  const paneId = await resolveBrowserPaneId(client, args.pane);
+  const beforePaneIds = new Set(await getBrowserPaneIds(client));
+  const detectNewPanes = async (): Promise<NewPaneInfo[]> => {
+    const deadline = Date.now() + 1500;
+    let newPanes: NewPaneInfo[] = [];
+    while (Date.now() < deadline) {
+      const summary = await client.call("app.summary", undefined);
+      newPanes = summary.panes
+        .filter((p) => p.kind === "browser" && !beforePaneIds.has(p.paneId))
+        .map((p) => ({ paneId: p.paneId, url: (p as { url?: string }).url ?? null, openerPaneId: (p as { openerPaneId?: string }).openerPaneId ?? null }));
+      if (newPanes.length > 0) break;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    return newPanes;
   };
+  return { client, paneId, detectNewPanes };
+}
+
+async function getBrowserPaneIds(client: Awaited<ReturnType<typeof getClient>>): Promise<string[]> {
+  const summary = await client.call("app.summary", undefined);
+  return summary.panes.filter((p) => p.kind === "browser").map((p) => p.paneId);
+}
+
+async function reportNewPanes(detectNewPanes: () => Promise<NewPaneInfo[]>, json?: boolean): Promise<void> {
+  const newPanes = await detectNewPanes();
+  if (newPanes.length === 0) return;
+  if (json) return; // newPanes already included in JSON result by caller
+  for (const pane of newPanes) {
+    const opener = pane.openerPaneId ? ` (from ${pane.openerPaneId})` : "";
+    console.error(`[new-tab] ${pane.paneId} ${pane.url ?? "about:blank"}${opener}`);
+  }
 }
 
 function printMaybeJson(json: boolean | undefined, result: unknown): boolean {

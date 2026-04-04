@@ -7,7 +7,7 @@ export default {
       icon: "\u{1F4C4}",
       label: "Editor",
       order: 40,
-      defaultPlacement: "auto",
+      defaultPlacement: undefined,
       createLeaf() {
         return { kind: "editor" };
       }

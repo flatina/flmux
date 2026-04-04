@@ -26,6 +26,8 @@ import type {
   PaneMessageResult,
   PaneOpenParams,
   PaneResult,
+  PaneSourceInfo,
+  PaneSourcesResult,
   PaneSplitParams,
   TabCloseParams,
   TabFocusParams,
@@ -37,12 +39,14 @@ import { prop } from "../props/decorators";
 import { PropertyOwnerBase } from "../props/property";
 import { getHostRpc, sendRendererRpcMessage, setRendererRpcHandlers } from "../renderer/transport/host-rpc";
 import type { PropertyChangeEvent } from "../../types/property";
-import type { PaneCreateInput } from "../../types/pane";
+import type { PaneCreateDirection, PaneCreateInput } from "../../types/pane";
 import type { AppSummary } from "../model/workspace-types";
 import { EXT_MANAGER_COMPONENT, EXT_MANAGER_TAB_ID, ExtManagerRenderer } from "./ext/ext-manager";
 import { ExtensionSetupRegistry } from "./ext/extension-setup-registry";
 import { titleFromLeaf } from "./helpers";
 import { focusExistingSingletonView, handleAddPaneAction, type AddPaneContext } from "./add-pane-router";
+import { BUILTIN_PANE_SOURCES } from "./pane-sources";
+import { resolveAutoPlacement } from "./add-pane-router";
 import type { PaneRendererContext } from "./panes/pane-renderer";
 import { PlaceholderRenderer } from "./panes/placeholder-renderer";
 import { normalizeNullableString, PaneScope, type PaneScopeHost } from "./pane-scope";
@@ -409,6 +413,7 @@ class AppScope extends PropertyOwnerBase {
   createRendererRpcHandlers(): RendererRpcRequestHandlers {
     return {
       "workspace.summary": () => this.getSummary(),
+      "workspace.sources": () => this.listPaneSources(),
       "workspace.open": (params) => this.openPane(params),
       "workspace.focus": (params) => this.focusPane(params),
       "workspace.close": (params) => this.closePane(params),
@@ -565,11 +570,36 @@ class AppScope extends PropertyOwnerBase {
     }
   }
 
+  private listPaneSources(): PaneSourcesResult {
+    const resolved = this.setupRegistry.resolvePaneSources(BUILTIN_PANE_SOURCES.map((s) => ({
+      id: s.qualifiedId, icon: s.icon, label: s.label, order: s.order,
+      defaultPlacement: s.defaultPlacement, createLeaf: s.createLeaf, options: s.options
+    })));
+    return {
+      sources: resolved.map((s) => {
+        const leaf = s.createLeaf();
+        const info: PaneSourceInfo = {
+          qualifiedId: s.qualifiedId,
+          label: s.label,
+          icon: s.icon,
+          kind: leaf.kind,
+          defaultPlacement: s.defaultPlacement,
+          singleton: s.options?.singleton,
+        };
+        if (leaf.kind === "view") info.viewKey = leaf.viewKey;
+        return info;
+      }),
+    };
+  }
+
   async openPane(params: PaneOpenParams): Promise<PaneResult> {
-    return this.openLeaf(params.leaf, {
-      referencePaneId: params.referencePaneId,
-      direction: params.direction
-    });
+    // undefined direction → auto-resolve based on window aspect ratio
+    const direction = params.direction ?? resolveAutoPlacement();
+    const referencePaneId = params.referencePaneId
+      ?? getWorkspaceActivePaneId(this.dockview, this.tabRenderers)
+      ?? undefined;
+
+    return this.openLeaf(params.leaf, { referencePaneId, direction });
   }
 
   focusPane(params: PaneFocusParams): PaneResult {
@@ -641,10 +671,11 @@ class AppScope extends PropertyOwnerBase {
       throw new Error("Dockview is not ready");
     }
 
+    const activePaneId = getWorkspaceActivePaneId(this.dockview, this.tabRenderers);
     return {
       title: this.getTitle(),
-      activePaneId: getWorkspaceActivePaneId(this.dockview, this.tabRenderers),
-      panes: collectWorkspacePaneSummaries(this.dockview, this.tabRenderers),
+      activePaneId,
+      panes: collectWorkspacePaneSummaries(this.dockview, this.tabRenderers, this.paneScopes, activePaneId),
       webServerUrl: this.bootstrap.webServerUrl,
       browserAutomation: {
         cdpBaseUrl: this.bootstrap.browserAutomation.cdpBaseUrl
@@ -726,7 +757,7 @@ class AppScope extends PropertyOwnerBase {
     leaf: PaneCreateInput,
     options: {
       referencePaneId?: PaneId;
-      direction?: "within" | "left" | "right" | "above" | "below";
+      direction?: PaneCreateDirection;
     } = {}
   ): Promise<PaneResult> {
     if (!this.dockview) {
@@ -743,7 +774,7 @@ class AppScope extends PropertyOwnerBase {
 
   private async openPaneFromContext(
     leaf: PaneCreateInput,
-    placement?: { referencePaneId?: PaneId; direction?: "within" | "left" | "right" | "above" | "below" },
+    placement?: { referencePaneId?: PaneId; direction?: PaneCreateDirection },
     options?: { singleton?: boolean }
   ): Promise<PaneResult> {
     const referencePaneId = placement?.referencePaneId;
@@ -774,7 +805,7 @@ class AppScope extends PropertyOwnerBase {
     params: PaneParams,
     options: {
       referencePaneId?: PaneId;
-      direction?: "within" | "left" | "right" | "above" | "below";
+      direction?: PaneCreateDirection;
     }
   ): PaneResult {
     if (!this.dockview) {
@@ -847,7 +878,7 @@ class AppScope extends PropertyOwnerBase {
     title: string,
     params: PaneParams,
     referencePaneId: PaneId,
-    direction?: "within" | "left" | "right" | "above" | "below"
+    direction?: PaneCreateDirection
   ): PaneResult {
     if (!this.dockview) {
       throw new Error("Dockview is not ready");

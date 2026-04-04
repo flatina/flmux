@@ -1,6 +1,6 @@
 import type { DockviewApi } from "dockview-core";
 import { asPaneId, asTabId, type PaneId } from "../../lib/ids";
-import type { PaneCreateInput } from "../../types/pane";
+import type { PaneCreateDirection, PaneCreateInput } from "../../types/pane";
 import type { ExtensionSetupRegistry } from "./ext/extension-setup-registry";
 import { findBuiltinPaneSource } from "./pane-sources";
 import { findWorkspacePane } from "./workspace-layout";
@@ -10,10 +10,10 @@ export type AddPaneContext = {
   dockview: DockviewApi | null;
   tabRenderers: Map<string, TabRenderer>;
   setupRegistry: ExtensionSetupRegistry;
-  openLeaf: (leaf: PaneCreateInput, options: { referencePaneId?: PaneId; direction?: "within" | "left" | "right" | "above" | "below" }) => Promise<unknown>;
+  openLeaf: (leaf: PaneCreateInput, options: { referencePaneId?: PaneId; direction?: PaneCreateDirection }) => Promise<unknown>;
   openPaneFromContext: (
     leaf: PaneCreateInput,
-    placement: { referencePaneId?: PaneId; direction?: "within" | "left" | "right" | "above" | "below" },
+    placement: { referencePaneId?: PaneId; direction?: PaneCreateDirection },
     options?: { singleton?: boolean }
   ) => Promise<unknown>;
   openRegisteredWorkspaceTab: (qualifiedId: string) => void;
@@ -52,7 +52,7 @@ export function handleAddPaneAction(ctx: AddPaneContext, action: string, activeP
 async function openFromPaneSource(
   ctx: AddPaneContext,
   sourceId: string,
-  placement: "within" | "left" | "right" | "above" | "below" | "default",
+  placement: PaneCreateDirection | "default",
   referencePaneId?: PaneId
 ): Promise<void> {
   const paneSource = findBuiltinPaneSource(sourceId) ?? ctx.setupRegistry.findPaneSource(sourceId);
@@ -60,14 +60,16 @@ async function openFromPaneSource(
 
   const leaf = paneSource.createLeaf();
   const singleton = paneSource.options?.singleton ?? false;
-  const resolvedPlacement = placement === "default" ? (paneSource.defaultPlacement ?? "auto") : placement;
+  const direction = placement === "default"
+    ? ("defaultPlacement" in paneSource ? paneSource.defaultPlacement : undefined)
+    : placement;
 
   if (singleton && leaf.kind === "view") {
     if (focusExistingSingletonView(ctx, referencePaneId, leaf.viewKey)) return;
   }
 
-  const direction = resolvedPlacement === "auto" ? resolveAutoPlacement() : resolvedPlacement;
-  await ctx.openLeaf(leaf, referencePaneId ? { referencePaneId, direction } : {});
+  const resolved = direction ?? resolveAutoPlacement();
+  await ctx.openLeaf(leaf, referencePaneId ? { referencePaneId, direction: resolved } : {});
 }
 
 export function focusExistingSingletonView(ctx: AddPaneContext, referencePaneId: PaneId | undefined, viewKey: string): boolean {
@@ -85,13 +87,13 @@ export function focusExistingSingletonView(ctx: AddPaneContext, referencePaneId:
   return false;
 }
 
-function resolveAutoPlacement(): "right" | "below" {
+export function resolveAutoPlacement(): "right" | "below" {
   return window.innerWidth < window.innerHeight ? "below" : "right";
 }
 
 export function parsePaneSourcePlacementAction(
   action: string
-): { sourceId: string; placement: "within" | "left" | "right" | "above" | "below" | "default" } | null {
+): { sourceId: string; placement: PaneCreateDirection | "default" } | null {
   const prefix = "pane-source:";
   if (!action.startsWith(prefix)) return null;
 
@@ -103,5 +105,5 @@ export function parsePaneSourcePlacementAction(
   const placement = rest.slice(idx + 1);
   if (!["within", "left", "right", "above", "below", "default"].includes(placement)) return null;
 
-  return { sourceId, placement: placement as "within" | "left" | "right" | "above" | "below" | "default" };
+  return { sourceId, placement: placement as PaneCreateDirection | "default" };
 }

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My App</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: radial-gradient(circle at top, #1f2a38, #0f141b 60%);
+      color: #e8edf2; display: grid; place-items: center; padding: 2rem;
+    }
+    .card {
+      width: min(480px, 100%); padding: 24px; border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(11, 16, 22, 0.92);
+      box-shadow: 0 24px 80px rgba(0,0,0,0.35);
+    }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    p { margin: 0 0 20px; color: #9db0c3; font-size: 14px; }
+    a.login-btn {
+      display: inline-block; padding: 10px 20px; border-radius: 10px;
+      background: #ffb45e; color: #0f141b; font-weight: 700;
+      text-decoration: none; cursor: pointer;
+    }
+    /* Logged-in state */
+    .user-bar {
+      display: none; align-items: center; gap: 12px;
+      padding: 14px; border-radius: 10px;
+      background: rgba(127,209,185,0.10); margin-bottom: 16px;
+    }
+    .user-bar .avatar {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: #ffb45e; color: #0f141b; font-weight: 700;
+      display: grid; place-items: center; font-size: 16px; flex-shrink: 0;
+    }
+    .user-bar .email { font-size: 14px; color: #e8edf2; }
+    .user-bar .sign-out {
+      margin-left: auto; font-size: 13px; color: #9db0c3;
+      text-decoration: underline; cursor: pointer; background: none; border: none; font: inherit;
+    }
+    .dashboard { display: none; }
+    .dashboard h2 { margin: 0 0 12px; font-size: 18px; }
+    .dashboard ul { margin: 0; padding: 0 0 0 20px; color: #cfd8e3; font-size: 14px; line-height: 1.8; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>My App</h1>
+    <!-- Guest state -->
+    <div id="guest-view">
+      <p>Sign in to access your dashboard.</p>
+      <a href="/login-popup" target="_blank" id="login-btn" class="login-btn">Sign In</a>
+    </div>
+    <!-- Logged-in state -->
+    <div class="user-bar" id="user-bar">
+      <div class="avatar" id="user-avatar"></div>
+      <span class="email" id="user-email"></span>
+      <button class="sign-out" id="sign-out-btn">Sign out</button>
+    </div>
+    <div class="dashboard" id="dashboard">
+      <h2>Dashboard</h2>
+      <ul>
+        <li>3 unread notifications</li>
+        <li>2 pending tasks</li>
+        <li>Last login: just now</li>
+      </ul>
+    </div>
+  </main>
+  <script>
+    const guestView = document.getElementById("guest-view");
+    const userBar = document.getElementById("user-bar");
+    const dashboard = document.getElementById("dashboard");
+
+    function showLoggedIn(email) {
+      guestView.style.display = "none";
+      userBar.style.display = "flex";
+      dashboard.style.display = "block";
+      document.getElementById("user-avatar").textContent = email[0].toUpperCase();
+      document.getElementById("user-email").textContent = email;
+      document.title = "My App — " + email;
+    }
+
+    // Poll localStorage for login from popup
+    const poll = setInterval(() => {
+      const user = localStorage.getItem("login-user");
+      if (user) {
+        localStorage.removeItem("login-user");
+        clearInterval(poll);
+        showLoggedIn(user);
+      }
+    }, 300);
+
+    document.getElementById("sign-out-btn").addEventListener("click", () => {
+      guestView.style.display = "block";
+      userBar.style.display = "none";
+      dashboard.style.display = "none";
+      document.title = "My App";
+    });
+  </script>
+</body>
+</html>

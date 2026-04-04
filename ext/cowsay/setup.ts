@@ -20,7 +20,7 @@ export default {
       icon: "\u{1F42E}",
       label: "Cowsay",
       order: 60,
-      defaultPlacement: "auto",
+      defaultPlacement: undefined,
       createLeaf() {
         return { kind: "view", viewKey: "sample.cowsay:cowsay", title: "Cowsay Lab" };
       },

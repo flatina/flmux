@@ -53,6 +53,7 @@ export function createAppRpcHandlers(options: CreateAppRpcHandlersOptions): AppR
       if (info?.readonly) throw new Error(`Property is readonly: ${params.scope}.${params.key}`);
       return bridge.request("workspace.props.set", { scope: params.scope, targetId: params.targetId, key: params.key, value: params.value });
     },
+    "pane.sources": () => bridge.request("workspace.sources", undefined),
     "pane.open": (params) => bridge.request("workspace.open", params),
     "pane.focus": (params) => bridge.request("workspace.focus", params),
     "pane.close": (params) => bridge.request("workspace.close", params),

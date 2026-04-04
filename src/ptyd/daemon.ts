@@ -32,9 +32,11 @@ export async function runPtydDaemonProcess(): Promise<void> {
   const outputHistory = new Map<TerminalRuntimeId, string>();
   let shuttingDown = false;
 
+  const extraPath = process.env.FLMUX_TERMINAL_PATH?.split(process.platform === "win32" ? ";" : ":").filter(Boolean) ?? [];
   const terminalRuntimeManager = new TerminalRuntimeManager({
     defaultCwd,
     sessionId,
+    extraPath,
     pushTerminalEvent: (event) => {
       handleTerminalEvent(event);
     }

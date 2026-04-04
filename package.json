@@ -7,8 +7,8 @@
   "description": "Desktop workspace built on Electrobun and Dockview.",
   "scripts": {
     "clean:build": "bun scripts/clean-build.ts",
-    "dev": "cross-env WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222 electrobun dev --watch",
-    "start": "cross-env WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222 electrobun dev",
+    "dev": "cross-env WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222 FLMUX_WEB_ROOT=tests/web electrobun dev --watch",
+    "start": "cross-env WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222 FLMUX_WEB_ROOT=tests/web electrobun dev",
     "build": "bun run clean:build && electrobun build",
     "build:production": "bun run clean:build && NODE_ENV=production electrobun build --env=stable",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",

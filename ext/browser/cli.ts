@@ -62,23 +62,34 @@ export const command: ExtensionCliCommand = {
       run: async ({ args, getClient, output }) => {
         const client = await getClient(args.session as string | undefined);
         const summary = (await client.call("app.summary", undefined, BROWSER_RPC_TIMEOUT_MS)) as {
-          panes: Array<{ paneId: string; tabId: string; title: string; kind: string; url?: string; adapter?: string }>;
+          activePaneId: string | null;
+          panes: Array<{ paneId: string; tabId: string; title: string; kind: string; url?: string; adapter?: string; ageMs?: number; openerPaneId?: string }>;
         };
         const panes = summary.panes
           .filter((pane) => pane.kind === "browser")
           .map((pane) => ({
             paneId: pane.paneId,
-            tabId: pane.tabId,
-            title: pane.title,
+            isActive: pane.paneId === summary.activePaneId,
             url: pane.url ?? null,
-            adapter: pane.adapter ?? "electrobun-native"
-          }));
-        const result = { ok: true, panes };
+            age: formatAge(pane.ageMs),
+            openerPaneId: pane.openerPaneId ?? null
+          }))
+          .sort((a, b) => {
+            if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+            return 0;
+          });
         if (args.json) {
-          output(result);
+          output({ ok: true, panes });
           return;
         }
-        printPaneIds(panes.map((pane) => pane.paneId));
+        if (panes.length === 0) {
+          console.log("No browser panes.");
+          return;
+        }
+        console.log(["PANE_ID", "ACTIVE", "AGE", "OPENER", "URL"].join("\t"));
+        for (const pane of panes) {
+          console.log([pane.paneId, pane.isActive ? "*" : "", pane.age, pane.openerPaneId ?? "", pane.url ?? ""].join("\t"));
+        }
       }
     },
     focus: {
@@ -92,7 +103,7 @@ export const command: ExtensionCliCommand = {
         const client = await getClient(args.session as string | undefined);
         const result = (await client.call(
           "pane.focus",
-          { paneId: resolveBrowserPaneId(args.pane as string | undefined) },
+          { paneId: await resolveBrowserPaneId(client, args.pane as string | undefined) },
           BROWSER_RPC_TIMEOUT_MS
         )) as { ok: true; paneId: string; activePaneId?: string | null };
         if (args.json) {
@@ -113,7 +124,7 @@ export const command: ExtensionCliCommand = {
         const client = await getClient(args.session as string | undefined);
         const result = (await client.call(
           "pane.close",
-          { paneId: resolveBrowserPaneId(args.pane as string | undefined) },
+          { paneId: await resolveBrowserPaneId(client, args.pane as string | undefined) },
           BROWSER_RPC_TIMEOUT_MS
         )) as { ok: true; paneId: string; activePaneId?: string | null };
         if (args.json) {
@@ -132,7 +143,7 @@ export const command: ExtensionCliCommand = {
       },
       run: async ({ args, getClient, output }) => {
         const client = await getClient(args.session as string | undefined);
-        const paneId = resolveBrowserPaneId(args.pane as string | undefined);
+        const paneId = await resolveBrowserPaneId(client, args.pane as string | undefined);
         const connection = await waitForBrowserConnection(client, paneId);
         const result = {
           ok: true,
@@ -279,6 +290,17 @@ function propertyAsBoolean(properties: Map<string, unknown>, key: string): boole
   return properties.get(key) === true;
 }
 
+function formatAge(ageMs?: number): string {
+  if (typeof ageMs !== "number") return "";
+  const seconds = Math.floor(ageMs / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
 function normalizePlacement(
   value: unknown
 ): "auto" | "within" | "left" | "right" | "above" | "below" {
@@ -304,33 +326,31 @@ function normalizeBrowserInput(value: string): string {
   return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
 }
 
-function resolveBrowserPaneId(value?: string): string {
+async function resolveBrowserPaneId(client: { call: (method: string, params: unknown, timeout?: number) => Promise<unknown> }, value?: string): Promise<string> {
   const raw = value?.trim() || process.env.FLMUX_BROWSER?.trim();
-  if (!raw) {
-    throw new Error(
-      [
-        "No browser pane selected.",
-        "Set FLMUX_BROWSER first:",
-        "  export FLMUX_BROWSER=$(flmux browser new https://example.com)",
-        "",
-        "Or pass a pane explicitly:",
-        "  flweb snapshot --pane browser.1a2b3c4d"
-      ].join("\n")
-    );
-  }
+  if (raw) return raw;
 
-  return raw;
+  const summary = (await client.call("app.summary", undefined)) as {
+    activePaneId: string | null;
+    panes: Array<{ paneId: string; kind: string; ageMs?: number }>;
+  };
+  const browserPanes = summary.panes.filter((p) => p.kind === "browser");
+  if (browserPanes.length === 0) {
+    throw new Error("No browser pane found. Create one first:\n  flmux browser new https://example.com");
+  }
+  if (summary.activePaneId) {
+    const active = browserPanes.find((p) => p.paneId === summary.activePaneId);
+    if (active) return active.paneId;
+  }
+  const sorted = browserPanes.filter((p) => typeof p.ageMs === "number").sort((a, b) => (a.ageMs ?? 0) - (b.ageMs ?? 0));
+  if (sorted.length > 0) return sorted[0]!.paneId;
+  if (browserPanes.length === 1) return browserPanes[0]!.paneId;
+  throw new Error(`${browserPanes.length} browser panes found, none active. Pass --pane <paneId>.`);
 }
 
 function resolveSenderPaneId(value?: string): string | undefined {
   const raw = value?.trim() || process.env.FLMUX_PANE_ID?.trim();
   return raw || undefined;
-}
-
-function printPaneIds(paneIds: string[]): void {
-  for (const paneId of paneIds) {
-    console.log(paneId);
-  }
 }
 
 function sleep(ms: number): Promise<void> {

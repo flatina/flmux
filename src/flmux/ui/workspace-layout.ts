@@ -3,6 +3,7 @@ import type { PaneSummary, WorkspaceSummary } from "../model/workspace-types";
 import { asPaneId, asTabId, type PaneId, type TabId } from "../../lib/ids";
 import { getDefaultPaneTitle, isPaneParams, type PaneParams } from "../model/pane-params";
 import { browserTitleFromUrl, panelToSummary } from "./helpers";
+import type { PaneScope } from "./pane-scope";
 import type { TabRenderer } from "./tabs/tab-renderer";
 
 export type PaneLookup = {
@@ -26,11 +27,25 @@ type WorkspacePaneVisit = {
 
 export function collectWorkspacePaneSummaries(
   dockview: DockviewApi | null,
-  tabRenderers: Map<string, TabRenderer>
+  tabRenderers: Map<string, TabRenderer>,
+  paneScopes?: Map<PaneId, PaneScope>,
+  activePaneId?: PaneId | null
 ): PaneSummary[] {
   const panes: PaneSummary[] = [];
   forEachWorkspacePane(dockview, tabRenderers, ({ paneId, tabId, title, params }) => {
-    panes.push(panelToSummary(paneId, tabId, title, params));
+    const summary = panelToSummary(paneId, tabId, title, params);
+    const scope = paneScopes?.get(asPaneId(paneId));
+    if (scope) {
+      summary.ageMs = Math.round(scope.ageMs);
+      const opener = scope.get("browser.openerPaneId");
+      if (typeof opener === "string" && opener) {
+        summary.openerPaneId = asPaneId(opener);
+      }
+    }
+    if (activePaneId) {
+      summary.isActive = asPaneId(paneId) === activePaneId;
+    }
+    panes.push(summary);
   });
   return panes;
 }

@@ -1,5 +1,6 @@
 import type { DockviewGroupPanel, IGroupHeaderProps, IHeaderActionsRenderer } from "dockview-core";
 import { addDisposableListener } from "dockview-core/dist/esm/events";
+import type { PaneCreateDirection } from "../../../types/pane";
 import type { ExtensionSetupRegistry } from "../ext/extension-setup-registry";
 import { BUILTIN_PANE_SOURCES } from "../pane-sources";
 
@@ -135,14 +136,14 @@ export class GroupActionsRenderer implements IHeaderActionsRenderer {
 
   private buildPaneSourceGrid(
     activePanelId: string | null,
-    sources: Array<{ qualifiedId: string; icon: string; label: string; defaultPlacement?: "within" | "left" | "right" | "above" | "below" | "auto" }>
+    sources: Array<{ qualifiedId: string; icon: string; label: string; defaultPlacement?: PaneCreateDirection }>
   ): HTMLElement {
     const section = document.createElement("div");
     section.className = "group-action-grid";
     const maxLabelLength = Math.max(...sources.map((source) => source.label.length), 0);
     section.style.setProperty("--group-action-source-width", `${Math.max(maxLabelLength + 3, 12)}ch`);
 
-    const placements: Array<{ key: "within" | "left" | "right" | "above" | "below"; icon: string; label: string }> = [
+    const placements: Array<{ key: PaneCreateDirection; icon: string; label: string }> = [
       { key: "left", icon: "\u2190", label: "Split Left" },
       { key: "right", icon: "\u2192", label: "Split Right" },
       { key: "within", icon: "\u25CF", label: "Add In Tab" },

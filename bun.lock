@@ -4,6 +4,9 @@
   "workspaces": {
     "": {
       "name": "flmux",
+    },
+    "packages/app": {
+      "name": "@flmux/app",
       "dependencies": {
         "bun-pty": "^0.4.8",
         "bunite-core": "^0.0.3",
@@ -15,6 +18,18 @@
         "bunite-dev": "^0.0.2",
         "vite": "^6",
       },
+    },
+    "packages/core": {
+      "name": "@flmux/core",
+      "version": "0.0.0",
+    },
+    "packages/extension-api": {
+      "name": "@flmux/extension-api",
+      "version": "0.0.0",
+    },
+    "packages/extension-devkit": {
+      "name": "@flmux/extension-devkit",
+      "version": "0.0.0",
     },
   },
   "packages": {
@@ -71,6 +86,14 @@
     "@esbuild/win32-ia32": ["@esbuild/win32-ia32@0.25.12", "", { "os": "win32", "cpu": "ia32" }, "sha512-HkqnmmBoCbCwxUKKNPBixiWDGCpQGVsrQfJoVGYLPT41XWF8lHuE5N6WhVia2n4o5QK5M4tYr21827fNhi4byQ=="],
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.25.12", "", { "os": "win32", "cpu": "x64" }, "sha512-alJC0uCZpTFrSL0CCDjcgleBXPnCrEAhTBILpeAp7M/OFgoqtAetfBzX0xM00MUsVVPpVjlPuMbREqnZCXaTnA=="],
+
+    "@flmux/app": ["@flmux/app@workspace:packages/app"],
+
+    "@flmux/core": ["@flmux/core@workspace:packages/core"],
+
+    "@flmux/extension-api": ["@flmux/extension-api@workspace:packages/extension-api"],
+
+    "@flmux/extension-devkit": ["@flmux/extension-devkit@workspace:packages/extension-devkit"],
 
     "@msgpackr-extract/msgpackr-extract-darwin-arm64": ["@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.3", "", { "os": "darwin", "cpu": "arm64" }, "sha512-QZHtlVgbAdy2zAqNA9Gu1UpIuI8Xvsd1v8ic6B2pZmeFnFcMWiPLfWXh7TVw4eGEZ/C9TH281KwhVoeQUKbyjw=="],
 

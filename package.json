@@ -2,26 +2,15 @@
   "name": "flmux",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "build:ptyd": "bun build src/main/ptyd/daemonMain.ts --outfile dist/ptyd.js --target bun",
-    "cli": "bun src/cli.ts",
-    "dev": "bunx vite build && bun src/main.ts --dev",
-    "build": "bunite-build && bun run build:ptyd && bunx vite build",
-    "typecheck": "bun x tsc -p tsconfig.json --noEmit && bun x tsc -p src/renderer/tsconfig.json --noEmit",
-    "test:direct": "bun test test/externalRuntime.test.ts test/paneRegistry.test.ts test/shellModel.test.ts test/terminalPath.test.ts test/workspaceBus.test.ts test/ptydBackend.test.ts",
-    "test:shell-model": "bun test test/shellModel.test.ts",
-    "test:smoke": "bun test test/appSmoke.test.ts",
-    "test:harness-smoke": "bun test test/harnessSmoke.test.ts"
-  },
-  "dependencies": {
-    "bun-pty": "^0.4.8",
-    "bunite-core": "^0.0.3",
-    "bunite-native-win-x64": "^0.0.2",
-    "dockview-core": "^5.1.0",
-    "elysia": "^1.4.28"
-  },
-  "devDependencies": {
-    "bunite-dev": "^0.0.2",
-    "vite": "^6"
+    "build": "bun run --filter @flmux/app build",
+    "dev": "bun run --filter @flmux/app dev",
+    "test:direct": "bun run --filter @flmux/app test:direct",
+    "test:smoke": "bun run --filter @flmux/app test:smoke",
+    "test:harness-smoke": "bun run --filter @flmux/app test:harness-smoke",
+    "typecheck": "bun run --filter @flmux/app typecheck"
   }
 }

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>flmux</title>
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="topbar__titles">
+        <strong id="app-title">flmux</strong>
+        <span class="workspace-title" id="workspace-title">booting</span>
+      </div>
+      <span class="runtime-badge" id="runtime-badge">booting</span>
+      <div class="workspace-switcher" id="workspace-switcher" aria-label="Workspace Switcher"></div>
+      <button data-action="new-cowsay">+ Cowsay</button>
+      <button data-action="new-inspector">+ Inspector</button>
+      <button data-action="new-scratchpad">+ Scratchpad</button>
+      <button data-action="new-terminal">+ Terminal</button>
+      <button data-fixture="counter">+ Counter</button>
+      <button data-fixture="form">+ Form</button>
+      <button data-fixture="list">+ List</button>
+      <button data-action="reset">Reset</button>
+    </header>
+    <div class="dockview-shell"></div>
+  </div>
+
+  <template id="browser-panel-tpl">
+    <div class="browser-nav">
+      <button class="browser-nav__btn" data-action="back" title="Back">&#x25C0;</button>
+      <button class="browser-nav__btn" data-action="reload" title="Reload">&#x21BB;</button>
+      <input class="browser-nav__url" type="text" spellcheck="false" />
+    </div>
+    <bunite-webview class="browser-panel__surface"></bunite-webview>
+  </template>
+
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

@@ -74,6 +74,27 @@ const rendererRpc = BrowserView.defineRPC<FlmuxRendererBridgeSchema>({
   }
 });
 
+type WebClient = NonNullable<Parameters<NonNullable<typeof rendererRpc.webHandler.onWebClientConnected>>[0]>;
+
+let nextWebViewId = 1_000_000;
+const webViewIds = new WeakMap<WebClient, number>();
+
+rendererRpc.webHandler.onWebClientConnected = (client) => {
+  const viewId = nextWebViewId++;
+  webViewIds.set(client, viewId);
+  clientRegistry.attachRenderer(viewId, client.rpc);
+  shellModelRouter.registerClient(viewId);
+};
+
+rendererRpc.webHandler.onWebClientDisconnected = (client) => {
+  const viewId = webViewIds.get(client);
+  if (viewId == null) return;
+  for (const [paneId, owner] of paneOwners.entries()) {
+    if (owner === viewId) paneOwners.delete(paneId);
+  }
+  clientRegistry.detachRenderer(viewId);
+};
+
 const server = startFlmuxServer({
   rendererDir,
   shellModelRouter,

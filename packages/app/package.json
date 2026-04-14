@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "bun-pty": "^0.4.8",
-    "bunite-core": "^0.0.12",
+    "bunite-core": "^0.0.14",
     "bunite-native-win-x64": "^0.0.3",
     "dockview-core": "^5.1.0",
     "elysia": "^1.4.28"

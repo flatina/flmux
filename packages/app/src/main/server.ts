@@ -30,7 +30,11 @@ export function startFlmuxServer(options: {
   rendererDir: string;
   shellModelRouter: FlmuxShellModelRouter;
   saveSession?(snapshot: FlmuxSessionSnapshot): Promise<void>;
-  rpcWebHandler?: { message(ws: { send(data: Uint8Array): void | number }, raw: string | Buffer): void };
+  rpcWebHandler?: {
+    open(ws: { send(data: Uint8Array | ArrayBuffer): void | number }): void;
+    message(ws: { send(data: Uint8Array | ArrayBuffer): void | number }, raw: string | Buffer | ArrayBuffer | Uint8Array): void;
+    close(ws: { send(data: Uint8Array | ArrayBuffer): void | number }): void;
+  };
 }): FlmuxServerHandle {
   const hostname = "127.0.0.1";
   const app = new Elysia()
@@ -133,9 +137,9 @@ export function startFlmuxServer(options: {
   if (options.rpcWebHandler) {
     const rpcHandler = options.rpcWebHandler;
     app.ws("/rpc", {
-      message(ws, message) {
-        rpcHandler.message(ws.raw, message as string | Buffer);
-      }
+      open(ws) { rpcHandler.open(ws.raw); },
+      message(ws, message) { rpcHandler.message(ws.raw, message as string | Buffer); },
+      close(ws) { rpcHandler.close(ws.raw); }
     });
   }
 

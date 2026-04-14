@@ -9,7 +9,7 @@
       "name": "@flmux/app",
       "dependencies": {
         "bun-pty": "^0.4.8",
-        "bunite-core": "^0.0.12",
+        "bunite-core": "^0.0.14",
         "bunite-native-win-x64": "^0.0.3",
         "dockview-core": "^5.1.0",
         "elysia": "^1.4.28",
@@ -174,7 +174,7 @@
 
     "bun-types": ["bun-types@1.3.12", "", { "dependencies": { "@types/node": "*" } }, "sha512-HqOLj5PoFajAQciOMRiIZGNoKxDJSr6qigAttOX40vJuSp6DN/CxWp9s3C1Xwm4oH7ybueITwiaOcWXoYVoRkA=="],
 
-    "bunite-core": ["bunite-core@0.0.12", "", { "dependencies": { "msgpackr": "^1.11.9" } }, "sha512-FiZI39x3GDFREaof3xuK5+BKkJ8xWZWV1DMYoC7WOvlA/w+OyU8omWN6+FKyTIPhipqmhbdC1pYNm1uiKJf8UQ=="],
+    "bunite-core": ["bunite-core@0.0.14", "", { "dependencies": { "msgpackr": "^1.11.9" } }, "sha512-FTMRPI6M91Yj2a8+hw9xlb6MmW0zJgwrI3Vc+q80wrwf9HDrKJOoQg9WO0II9/pG+IqxjwkoIJ8SFJslrz/t3w=="],
 
     "bunite-dev": ["bunite-dev@0.0.6", "", { "peerDependencies": { "bunite-core": "*" }, "bin": { "bunite-build": "scripts/build.ts", "bunite-setup-cef": "scripts/setup-cef.ts" } }, "sha512-n1IY861UXO5zGR8jWHuNUr3If/TN3+kQCZCdW3IAUOR5nK7qwuwGujZNTyvuqlt9AKuiTOTVnyy2DeaS2s9Kog=="],
 

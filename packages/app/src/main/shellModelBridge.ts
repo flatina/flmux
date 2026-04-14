@@ -1,4 +1,3 @@
-import { app } from "bunite-core";
 import type { FlmuxClientRegistry } from "./clientRegistry";
 import type {
   ClientRegistrationResult,
@@ -81,24 +80,3 @@ export function createShellModelRouter(registry: FlmuxClientRegistry): FlmuxShel
   };
 }
 
-export function installShellModelBridge(router: FlmuxShellModelRouter) {
-  app.handle("flmux.client.register", (_params, ctx) => {
-    return router.registerClient(ctx.viewId);
-  });
-
-  app.handle("flmux.model.path.get", async (params) => {
-    return router.pathGet(params as ClientScopedPathGetInput);
-  });
-
-  app.handle("flmux.model.path.list", async (params) => {
-    return router.pathList(params as ClientScopedPathListInput);
-  });
-
-  app.handle("flmux.model.path.set", async (params) => {
-    return router.pathSet(params as ClientScopedPathSetInput);
-  });
-
-  app.handle("flmux.model.path.call", async (params) => {
-    return router.pathCall(params as ClientScopedPathCallInput);
-  });
-}

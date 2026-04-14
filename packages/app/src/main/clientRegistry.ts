@@ -1,22 +1,22 @@
-import type { RendererShellModelBridge } from "../shared/rendererBridge";
+import type { FlmuxRendererBridge } from "../shared/rendererBridge";
 
 interface FlmuxClientRecord {
   clientId: string | null;
   viewId: number;
-  bridge: RendererShellModelBridge;
+  bridge: FlmuxRendererBridge;
 }
 
 export interface RegisteredFlmuxClient {
   clientId: string;
   viewId: number;
-  bridge: RendererShellModelBridge;
+  bridge: FlmuxRendererBridge;
 }
 
 export class FlmuxClientRegistry {
   private readonly byClientId = new Map<string, FlmuxClientRecord>();
   private readonly byViewId = new Map<number, FlmuxClientRecord>();
 
-  attachRenderer(viewId: number, bridge: RendererShellModelBridge) {
+  attachRenderer(viewId: number, bridge: FlmuxRendererBridge) {
     const existing = this.byViewId.get(viewId);
     if (existing) {
       existing.bridge = bridge;

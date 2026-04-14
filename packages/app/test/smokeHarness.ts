@@ -7,7 +7,7 @@ import { createShellModelRouter } from "../src/main/shellModelBridge";
 import { forwardTerminalEventToOwnedClient } from "../src/main/terminalEventForwarding";
 import { createTerminalService } from "../src/main/terminal-service";
 import type { ShellModelAPI } from "../src/renderer/shell/types";
-import type { RendererShellModelBridge } from "../src/shared/rendererBridge";
+import type { FlmuxRendererBridge } from "../src/shared/rendererBridge";
 import type { TerminalRuntimeEvent } from "../src/shared/terminal";
 import { stopOwnedPtydDaemonsForRootDir } from "./support/ptydCleanup";
 import { TestShellModelHost } from "./support/testShellModelHost";
@@ -100,25 +100,18 @@ export async function createSmokeHarness(): Promise<SmokeHarness> {
 function createLocalRendererBridge(
   shellModel: ShellModelAPI,
   onTerminalEvent: (event: TerminalRuntimeEvent) => void
-): RendererShellModelBridge {
-  const requestProxy = {
-    "shellModel.path.get": (params: unknown) => shellModel.pathGet((params as { path: string }).path),
-    "shellModel.path.list": (params: unknown) => shellModel.pathList((params as { path: string }).path),
-    "shellModel.path.set": (params: unknown) => {
-      const input = params as { path: string; value: unknown };
-      return shellModel.pathSet(input.path, input.value);
-    },
-    "shellModel.path.call": (params: unknown) => {
-      const input = params as { path: string; args?: Record<string, unknown> };
-      return shellModel.pathCall(input.path, input.args);
-    }
-  } as RendererShellModelBridge["requestProxy"];
-
+): FlmuxRendererBridge {
   return {
-    setTransport(_transport: Parameters<RendererShellModelBridge["setTransport"]>[0]) {},
-    requestProxy,
+    requestProxy: {
+      "shellModel.path.get": (params: { path: string }) => shellModel.pathGet(params.path),
+      "shellModel.path.list": (params: { path: string }) => shellModel.pathList(params.path),
+      "shellModel.path.set": (params: { path: string; value: unknown }) =>
+        shellModel.pathSet(params.path, params.value),
+      "shellModel.path.call": (params: { path: string; args?: Record<string, unknown> }) =>
+        shellModel.pathCall(params.path, params.args)
+    },
     sendProxy: {
-      "terminal.event": (payload) => {
+      "terminal.event": (payload: TerminalRuntimeEvent) => {
         onTerminalEvent(payload);
       }
     }

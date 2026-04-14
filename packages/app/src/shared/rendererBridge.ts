@@ -1,13 +1,76 @@
-import type { RPCTransport } from "bunite-core/shared/rpc";
+import type { RPCSchema } from "bunite-core";
 import type {
   PathCallResult,
   PathGetResult,
   PathListResult,
   PathSetResult
 } from "../renderer/shell/types";
-import type { TerminalRuntimeEvent } from "./terminal";
+import type { FlmuxSessionSnapshot } from "./session";
+import type {
+  TerminalAdoptResult,
+  TerminalCreateInput,
+  TerminalCreateResult,
+  TerminalHistoryResult,
+  TerminalKillResult,
+  TerminalRootStatus,
+  TerminalRuntimeEvent,
+  TerminalWriteResult
+} from "./terminal";
 
-export type RendererShellModelRequestMap = Record<string, { params: unknown; response: unknown }> & {
+// ── Host requests (renderer calls main) ──
+
+export type FlmuxHostRequests = {
+  "flmux.getConfig": {
+    params: undefined;
+    response: { appOrigin: string; fixtureBaseUrl: string; projectDir: string };
+  };
+  "flmux.client.register": {
+    params: undefined;
+    response: ClientRegistrationResult;
+  };
+  "flmux.session.load": {
+    params: undefined;
+    response: FlmuxSessionSnapshot | null;
+  };
+  "flmux.session.save": {
+    params: FlmuxSessionSnapshot;
+    response: { ok: true };
+  };
+  "flmux.terminal.create": {
+    params: TerminalCreateInput;
+    response: TerminalCreateResult;
+  };
+  "flmux.terminal.adopt": {
+    params: { rootDir: string; paneId: string };
+    response: TerminalAdoptResult;
+  };
+  "flmux.terminal.write": {
+    params: { rootKey: string; runtimeId: string; data: string };
+    response: TerminalWriteResult;
+  };
+  "flmux.terminal.history": {
+    params: { rootKey: string; runtimeId: string; maxBytes?: number };
+    response: TerminalHistoryResult;
+  };
+  "flmux.terminal.kill": {
+    params: { rootKey: string; runtimeId: string };
+    response: TerminalKillResult;
+  };
+  "flmux.terminal.listRoots": {
+    params: undefined;
+    response: TerminalRootStatus[];
+  };
+};
+
+// ── Host messages (main pushes to renderer) ──
+
+export type FlmuxHostMessages = {
+  "terminal.event": TerminalRuntimeEvent;
+};
+
+// ── Shell model requests (main calls renderer) ──
+
+export type FlmuxRendererRequests = {
   "shellModel.path.get": {
     params: { path: string };
     response: PathGetResult;
@@ -26,30 +89,42 @@ export type RendererShellModelRequestMap = Record<string, { params: unknown; res
   };
 };
 
+// ── RPC schema ──
+
 export type FlmuxRendererBridgeSchema = {
-  bun: {
-    requests: {};
-    messages: {
-      "terminal.event": TerminalRuntimeEvent;
-    };
-  };
-  webview: {
-    requests: RendererShellModelRequestMap;
-    messages: {};
-  };
+  bun: RPCSchema<{
+    requests: FlmuxHostRequests;
+    messages: FlmuxHostMessages;
+  }>;
+  webview: RPCSchema<{
+    requests: FlmuxRendererRequests;
+  }>;
 };
 
-export interface RendererShellModelBridge {
-  setTransport(transport: RPCTransport): void;
+// ── Host request proxy (used by renderer to call main) ──
+
+export type FlmuxHostRequestProxy = {
+  [K in keyof FlmuxHostRequests]: (
+    ...args: undefined extends FlmuxHostRequests[K]["params"]
+      ? [params?: FlmuxHostRequests[K]["params"]]
+      : [params: FlmuxHostRequests[K]["params"]]
+  ) => Promise<FlmuxHostRequests[K]["response"]>;
+};
+
+// ── Bridge interface (used by main to interact with renderer) ──
+
+export interface FlmuxRendererBridge {
   sendProxy: {
     "terminal.event": (payload: TerminalRuntimeEvent) => void;
   };
   requestProxy: {
-    [K in keyof RendererShellModelRequestMap]: (
-      params: RendererShellModelRequestMap[K]["params"]
-    ) => Promise<RendererShellModelRequestMap[K]["response"]>;
+    [K in keyof FlmuxRendererRequests]: (
+      params: FlmuxRendererRequests[K]["params"]
+    ) => Promise<FlmuxRendererRequests[K]["response"]>;
   };
 }
+
+// ── Shared types ──
 
 export interface ClientRegistrationResult {
   clientId: string;

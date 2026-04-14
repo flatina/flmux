@@ -39,6 +39,7 @@ import type {
   WorkspaceBusEvent
 } from "./types";
 import type { FlmuxSessionSnapshot, FlmuxWorkspaceSessionSnapshot } from "../../shared/session";
+import type { FlmuxHostRequestProxy } from "../../shared/rendererBridge";
 import type { TerminalRuntimeSummary } from "../../shared/terminal";
 import { resolveTerminalCwdFromRoot } from "../../shared/terminalPath";
 import { createWorkspaceBus } from "./workspaceBus";
@@ -82,8 +83,8 @@ export class FlmuxWorkbench implements ShellModelHost {
   private readonly workspaceSwitcherEl = document.getElementById("workspace-switcher")!;
   private readonly shellEl = document.querySelector<HTMLElement>(".dockview-shell")!;
   private readonly browserPanelTemplate = document.getElementById("browser-panel-tpl") as HTMLTemplateElement;
-  private readonly sessionHost = createSessionHost();
-  private readonly terminalHost = createTerminalHost();
+  private readonly sessionHost: ReturnType<typeof createSessionHost>;
+  private readonly terminalHost: ReturnType<typeof createTerminalHost>;
   private readonly paneRegistry = new PaneRegistry();
 
   private readonly workspaces = new Map<string, WorkspaceRecord>();
@@ -95,7 +96,9 @@ export class FlmuxWorkbench implements ShellModelHost {
   private sessionPersistenceEnabled = false;
   private sessionPersistenceSuppressed = false;
 
-  constructor(private readonly config: FlmuxRendererConfig) {
+  constructor(private readonly config: FlmuxRendererConfig, hostProxy: FlmuxHostRequestProxy) {
+    this.sessionHost = createSessionHost(hostProxy);
+    this.terminalHost = createTerminalHost(hostProxy);
     registerBuiltinPaneDescriptors(this.paneRegistry, {
       fixtureUrl: (fixture) => this.fixtureUrl(fixture),
       requireBrowserUrl: (value) => this.requireBrowserUrl(value),

@@ -1,5 +1,9 @@
 type WebviewElement = HTMLElement & { _surfaceId?: number | null };
 
+declare const window: Window & typeof globalThis & {
+  bunite?: { invoke: (method: string, params?: unknown) => Promise<unknown> };
+};
+
 export function setupDropIndicatorMasks() {
   if (!window.bunite?.invoke) return;
   const invoke = window.bunite.invoke;

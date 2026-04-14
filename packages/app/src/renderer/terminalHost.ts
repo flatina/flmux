@@ -8,12 +8,7 @@ import type {
   TerminalRootStatus,
   TerminalWriteResult
 } from "../shared/terminal";
-
-declare global {
-  interface Window {
-    bunite?: { invoke: (method: string, params?: unknown) => Promise<unknown> };
-  }
-}
+import type { FlmuxHostRequestProxy } from "../shared/rendererBridge";
 
 export interface TerminalHostAPI {
   adoptByPaneId(input: { rootDir: string; paneId: string }): Promise<TerminalAdoptResult>;
@@ -27,30 +22,25 @@ export interface TerminalHostAPI {
 
 const terminalEventSubscribers = new Set<(event: TerminalRuntimeEvent) => void>();
 
-export function createTerminalHost(): TerminalHostAPI {
-  const invoke = window.bunite?.invoke;
-  if (!invoke) {
-    throw new Error("bunite runtime not available for terminal host");
-  }
-
+export function createTerminalHost(proxy: FlmuxHostRequestProxy): TerminalHostAPI {
   return {
     adoptByPaneId(input) {
-      return invoke("flmux.terminal.adopt", input) as Promise<TerminalAdoptResult>;
+      return proxy["flmux.terminal.adopt"](input);
     },
     create(input) {
-      return invoke("flmux.terminal.create", input) as Promise<TerminalCreateResult>;
+      return proxy["flmux.terminal.create"](input);
     },
     write(input) {
-      return invoke("flmux.terminal.write", input) as Promise<TerminalWriteResult>;
+      return proxy["flmux.terminal.write"](input);
     },
     history(input) {
-      return invoke("flmux.terminal.history", input) as Promise<TerminalHistoryResult>;
+      return proxy["flmux.terminal.history"](input);
     },
     kill(input) {
-      return invoke("flmux.terminal.kill", input) as Promise<TerminalKillResult>;
+      return proxy["flmux.terminal.kill"](input);
     },
     listRoots() {
-      return invoke("flmux.terminal.listRoots") as Promise<TerminalRootStatus[]>;
+      return proxy["flmux.terminal.listRoots"]();
     },
     onEvent(handler) {
       terminalEventSubscribers.add(handler);

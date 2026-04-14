@@ -30,6 +30,7 @@ export function startFlmuxServer(options: {
   rendererDir: string;
   shellModelRouter: FlmuxShellModelRouter;
   saveSession?(snapshot: FlmuxSessionSnapshot): Promise<void>;
+  rpcWebHandler?: { message(ws: { send(data: Uint8Array): void | number }, raw: string | Buffer): void };
 }): FlmuxServerHandle {
   const hostname = "127.0.0.1";
   const app = new Elysia()
@@ -129,10 +130,16 @@ export function startFlmuxServer(options: {
       });
     });
 
-  app.listen({
-    hostname,
-    port: 0
-  });
+  if (options.rpcWebHandler) {
+    const rpcHandler = options.rpcWebHandler;
+    app.ws("/rpc", {
+      message(ws, message) {
+        rpcHandler.message(ws.raw, message as string | Buffer);
+      }
+    });
+  }
+
+  app.listen({ hostname, port: 0 });
   const server = app.server;
   if (!server) {
     throw new Error("Elysia server failed to start");

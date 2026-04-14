@@ -1,32 +1,27 @@
 import { describe, expect, it } from "bun:test";
 import { FlmuxClientRegistry } from "../src/main/clientRegistry";
 import { createShellModelRouter } from "../src/main/shellModelBridge";
-import { startFlmuxServer, type FlmuxServerHandle } from "../src/main/server";
+import { startFlmuxServer } from "../src/main/server";
 import type { ShellModelAPI } from "../src/renderer/shell/types";
-import type { RendererShellModelBridge } from "../src/shared/rendererBridge";
+import type { FlmuxRendererBridge } from "../src/shared/rendererBridge";
 import type { TerminalRuntimeEvent } from "../src/shared/terminal";
 import { TestShellModelHost } from "./support/testShellModelHost";
 
 function createLocalBridge(
   shellModel: ShellModelAPI,
   onTerminalEvent?: (event: TerminalRuntimeEvent) => void
-): RendererShellModelBridge {
+): FlmuxRendererBridge {
   return {
-    setTransport() {},
     requestProxy: {
-      "shellModel.path.get": (params: unknown) => shellModel.pathGet((params as { path: string }).path),
-      "shellModel.path.list": (params: unknown) => shellModel.pathList((params as { path: string }).path),
-      "shellModel.path.set": (params: unknown) => {
-        const input = params as { path: string; value: unknown };
-        return shellModel.pathSet(input.path, input.value);
-      },
-      "shellModel.path.call": (params: unknown) => {
-        const input = params as { path: string; args?: Record<string, unknown> };
-        return shellModel.pathCall(input.path, input.args);
-      }
-    } as RendererShellModelBridge["requestProxy"],
+      "shellModel.path.get": (params: { path: string }) => shellModel.pathGet(params.path),
+      "shellModel.path.list": (params: { path: string }) => shellModel.pathList(params.path),
+      "shellModel.path.set": (params: { path: string; value: unknown }) =>
+        shellModel.pathSet(params.path, params.value),
+      "shellModel.path.call": (params: { path: string; args?: Record<string, unknown> }) =>
+        shellModel.pathCall(params.path, params.args)
+    },
     sendProxy: {
-      "terminal.event": (payload) => onTerminalEvent?.(payload)
+      "terminal.event": (payload: TerminalRuntimeEvent) => onTerminalEvent?.(payload)
     }
   };
 }

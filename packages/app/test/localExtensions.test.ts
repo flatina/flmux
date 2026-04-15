@@ -39,7 +39,13 @@ describe("local extension loading", () => {
       id: "sample.cowsay",
       name: "Cowsay",
       version: "0.1.0",
-      manifest: {
+      sourceManifest: {
+        apiVersion: 1,
+        entrypoints: {
+          renderer: "./index.ts"
+        }
+      },
+      runtimeManifest: {
         apiVersion: 1,
         entrypoints: {
           renderer: "./index.ts"
@@ -108,6 +114,50 @@ describe("local extension loading", () => {
     expect(discovered).toHaveLength(1);
     expect(discovered[0]?.rendererEntryPath).not.toBeNull();
     expect(discovered[0]!.rendererEntryPath!.replace(/\\/g, "/")).toEndWith("/src/renderer-entry.ts");
+  });
+
+  it("prefers dist runtime manifests and built entry files when they exist", async () => {
+    const extensionsRootDir = await createTempExtensionRoot("dist-runtime");
+    const fixture = await writeExtensionFixture(extensionsRootDir, {
+      id: "sample.cowsay",
+      name: "Cowsay",
+      version: "0.1.0",
+      rendererEntry: "./src/index.ts"
+    });
+
+    await mkdir(join(fixture.extensionDir, "dist", "src"), { recursive: true });
+    await writeFile(
+      join(fixture.extensionDir, "dist", "manifest.json"),
+      JSON.stringify({
+        id: "sample.cowsay",
+        name: "Cowsay",
+        version: "0.1.0",
+        apiVersion: 1,
+        entrypoints: {
+          renderer: "src/index.js"
+        }
+      }, null, 2),
+      "utf8"
+    );
+    await writeFile(join(fixture.extensionDir, "dist", "src", "index.js"), "export default {};\n", "utf8");
+
+    const discovered = await discoverLocalExtensions(extensionsRootDir);
+    expect(discovered).toHaveLength(1);
+    expect(discovered[0]).toMatchObject({
+      runtimeRootDir: join(fixture.extensionDir, "dist"),
+      runtimeManifestPath: join(fixture.extensionDir, "dist", "manifest.json"),
+      runtimeManifest: {
+        entrypoints: {
+          renderer: "src/index.js"
+        }
+      }
+    });
+    expect(discovered[0]!.rendererEntryPath!.replace(/\\/g, "/")).toEndWith("/dist/src/index.js");
+
+    const loadEntries = createLocalExtensionLoadEntries(discovered, "http://127.0.0.1:4321");
+    expect(loadEntries[0]?.rendererEntryUrl).toBe(
+      "http://127.0.0.1:4321/__flmux/ext/sample.cowsay/0.1.0/src/index.js"
+    );
   });
 
   it("serves local extension manifest, runtime module tree, and transpiled renderer entry from same-origin routes", async () => {

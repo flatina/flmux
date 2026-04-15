@@ -66,7 +66,7 @@ export async function discoverLocalCliCommands(extensionsRootDir: string): Promi
       continue;
     }
 
-    for (const command of extension.manifest.commands ?? []) {
+    for (const command of extension.runtimeManifest.commands ?? []) {
       if (seen.has(command.id)) {
         console.warn(`[flmux] duplicate local extension command ignored: ${command.id}`);
         continue;

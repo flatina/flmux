@@ -8,6 +8,7 @@
     "flmux-ext": "./src/cli.ts"
   },
   "scripts": {
+    "build": "bun src/cli.ts build",
     "validate": "bun src/cli.ts validate",
     "test": "bun test"
   }

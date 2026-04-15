@@ -223,7 +223,7 @@ function handleLocalExtensionManifestRequest(
     return "Not Found";
   }
 
-  return new Response(Bun.file(extension.manifestPath), {
+  return new Response(Bun.file(extension.runtimeManifestPath), {
     headers: { "content-type": "application/json; charset=utf-8" }
   });
 }
@@ -301,7 +301,7 @@ function resolveLocalExtensionRuntimeFile(
   }
 
   const relativePath = relativeParts.join("/");
-  const filePath = resolveExtensionRuntimePath(extension.rootDir, relativePath);
+  const filePath = resolveExtensionRuntimePath(extension.runtimeRootDir, relativePath);
   if (!filePath || !existsSync(filePath)) {
     return null;
   }

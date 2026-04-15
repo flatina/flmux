@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { buildExtensionDirectory } from "../src/build";
 import {
   formatExtensionValidationResult,
   resolveValidateTargets,
@@ -122,6 +123,57 @@ describe("extension-devkit validate", () => {
     expect(resolveValidateTargets([])).toEqual([process.cwd()]);
     expect(resolveValidateTargets(["a", "b"])).toEqual(["a", "b"]);
   });
+
+  it("builds dist runtime artifacts and rewrites manifest entrypoints to js", async () => {
+    const extensionDir = await createExtensionFixture({
+      id: "sample.cowsay",
+      name: "Cowsay",
+      version: "0.1.0",
+      apiVersion: FLMUX_EXTENSION_API_VERSION,
+      rendererEntry: "./src/index.ts",
+      extraFiles: [
+        {
+          path: "./src/lib/helper.ts",
+          contents: 'export const label = "helper";\n'
+        },
+        {
+          path: "./src/template.html",
+          contents: "<section>template</section>"
+        }
+      ],
+      rendererContents: [
+        'import { label } from "./lib/helper.ts";',
+        'export const assetUrl = new URL("./template.html", import.meta.url).href;',
+        "export default label;",
+        ""
+      ].join("\n")
+    });
+
+    const result = await buildExtensionDirectory(extensionDir);
+    expect(result.ok).toBe(true);
+
+    const manifest = JSON.parse(await Bun.file(join(extensionDir, "dist", "manifest.json")).text());
+    expect(manifest).toEqual({
+      id: "sample.cowsay",
+      name: "Cowsay",
+      version: "0.1.0",
+      apiVersion: 1,
+      entrypoints: {
+        renderer: "src/index.js"
+      }
+    });
+
+    const builtRenderer = await Bun.file(join(extensionDir, "dist", "src", "index.js")).text();
+    expect(builtRenderer).toContain('from "./lib/helper.js"');
+    expect(builtRenderer).toContain('new URL("./template.html", import.meta.url)');
+
+    expect(await Bun.file(join(extensionDir, "dist", "src", "lib", "helper.js")).text()).toContain(
+      'export const label = "helper";'
+    );
+    expect(await Bun.file(join(extensionDir, "dist", "src", "template.html")).text()).toBe(
+      "<section>template</section>"
+    );
+  });
 });
 
 async function createExtensionFixture(input: {
@@ -131,6 +183,8 @@ async function createExtensionFixture(input: {
   apiVersion: number;
   rendererEntry: string;
   writeRendererFile?: boolean;
+  rendererContents?: string;
+  extraFiles?: Array<{ path: string; contents: string }>;
 }) {
   const extensionDir = await mkdtemp(join(tmpdir(), "flmux-devkit-"));
   tempDirs.push(extensionDir);
@@ -152,7 +206,13 @@ async function createExtensionFixture(input: {
   if (input.writeRendererFile !== false) {
     const rendererEntryPath = join(extensionDir, input.rendererEntry);
     await mkdir(dirname(rendererEntryPath), { recursive: true });
-    await writeFile(rendererEntryPath, "export default {};\n", "utf8");
+    await writeFile(rendererEntryPath, input.rendererContents ?? "export default {};\n", "utf8");
+  }
+
+  for (const file of input.extraFiles ?? []) {
+    const filePath = join(extensionDir, file.path);
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, file.contents, "utf8");
   }
 
   return extensionDir;

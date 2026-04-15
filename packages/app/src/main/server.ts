@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { Elysia } from "elysia";
 import type { FlmuxSessionSnapshot } from "../shared/session";
@@ -8,6 +9,7 @@ import type {
   ClientScopedPathListInput,
   ClientScopedPathSetInput
 } from "../shared/rendererBridge";
+import type { DiscoveredLocalExtension } from "./localExtensions";
 import { isSessionSnapshot } from "./sessionStore";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
 
@@ -26,9 +28,22 @@ export interface FlmuxServerHandle {
   stop(): void;
 }
 
+const EXTENSION_API_RUNTIME_URL = "/__flmux/runtime/extension-api.js";
+const EXTENSION_API_RUNTIME_MODULE = [
+  "export function defineExtension(definition) {",
+  "  return definition;",
+  "}",
+  "",
+  "export function definePane(definition) {",
+  "  return definition;",
+  "}"
+].join("\n");
+const extensionModuleTranspiler = new Bun.Transpiler({ loader: "ts" });
+
 export function startFlmuxServer(options: {
   rendererDir: string;
   shellModelRouter: FlmuxShellModelRouter;
+  localExtensions?: DiscoveredLocalExtension[];
   saveSession?(snapshot: FlmuxSessionSnapshot): Promise<void>;
   rpcWebHandler?: {
     open(ws: { send(data: Uint8Array | ArrayBuffer): void | number }): void;
@@ -43,6 +58,15 @@ export function startFlmuxServer(options: {
       ok: true,
       clients: await options.shellModelRouter.listClients()
     }))
+    .get("/__flmux/runtime/extension-api.js", () => new Response(EXTENSION_API_RUNTIME_MODULE, {
+      headers: { "content-type": "application/javascript; charset=utf-8" }
+    }))
+    .get("/__flmux/ext/:extensionId/:version/manifest.json", ({ params, set }) =>
+      handleLocalExtensionManifestRequest(params, set, options.localExtensions ?? [])
+    )
+    .get("/__flmux/ext/:extensionId/:version/renderer.js", async ({ params, set }) =>
+      await handleLocalExtensionRendererEntryRequest(params, set, options.localExtensions ?? [])
+    )
     .post("/api/model/path/get", async ({ request, set }) =>
       handleJsonRequest<ClientScopedPathGetInput>(request, set, (input) => options.shellModelRouter.pathGet(input))
     )
@@ -186,6 +210,69 @@ function resolveRendererPath(rendererDir: string, pathname: string): string | nu
 
   const fullPath = join(rendererDir, normalized);
   return existsSync(fullPath) ? fullPath : null;
+}
+
+function handleLocalExtensionManifestRequest(
+  params: { extensionId: string; version: string },
+  set: { status?: number | string },
+  localExtensions: DiscoveredLocalExtension[]
+) {
+  const extension = resolveLocalExtension(params, localExtensions);
+  if (!extension) {
+    set.status = 404;
+    return "Not Found";
+  }
+
+  return new Response(Bun.file(extension.manifestPath), {
+    headers: { "content-type": "application/json; charset=utf-8" }
+  });
+}
+
+async function handleLocalExtensionRendererEntryRequest(
+  params: { extensionId: string; version: string },
+  set: { status?: number | string },
+  localExtensions: DiscoveredLocalExtension[]
+) {
+  const extension = resolveLocalExtension(params, localExtensions);
+  if (!extension) {
+    set.status = 404;
+    return "Not Found";
+  }
+
+  try {
+    const source = await readFile(extension.rendererEntryPath, "utf8");
+    const rewritten = rewriteExtensionModuleImports(source);
+    const code = extensionModuleTranspiler.transformSync(rewritten);
+    return new Response(code, {
+      headers: { "content-type": "application/javascript; charset=utf-8" }
+    });
+  } catch (error) {
+    console.warn(`[flmux] failed to serve local extension renderer entry: ${extension.id}`, error);
+    set.status = 500;
+    return "Failed to load local extension renderer entry";
+  }
+}
+
+function resolveLocalExtension(
+  params: { extensionId: string; version: string },
+  localExtensions: DiscoveredLocalExtension[]
+) {
+  const extensionId = params.extensionId;
+  const version = params.version;
+  return localExtensions.find((entry) => entry.id === extensionId && entry.version === version) ?? null;
+}
+
+function rewriteExtensionModuleImports(source: string) {
+  return source
+    .replace(
+      /(import\s+(?!type\b)[\s\S]*?\sfrom\s+)["']@flmux\/extension-api["']/g,
+      `$1"${EXTENSION_API_RUNTIME_URL}"`
+    )
+    .replace(
+      /(export[\s\S]*?\sfrom\s+)["']@flmux\/extension-api["']/g,
+      `$1"${EXTENSION_API_RUNTIME_URL}"`
+    )
+    .replace(/import\(\s*["']@flmux\/extension-api["']\s*\)/g, `import("${EXTENSION_API_RUNTIME_URL}")`);
 }
 
 function fixtureHtml(title: string, body: string): Response {

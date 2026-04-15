@@ -20,17 +20,19 @@ import type {
 
 // ── Host requests (renderer calls main) ──
 
-export interface FlmuxLocalExtensionSummary {
+export interface FlmuxLocalExtensionLoadEntry {
   id: string;
   name: string;
   version: string;
+  manifestUrl: string;
+  rendererEntryUrl: string;
 }
 
 export interface FlmuxRendererBootstrapConfig {
   appOrigin: string;
   fixtureBaseUrl: string;
   projectDir: string;
-  localExtensions: FlmuxLocalExtensionSummary[];
+  localExtensions: FlmuxLocalExtensionLoadEntry[];
 }
 
 export type FlmuxHostRequests = {

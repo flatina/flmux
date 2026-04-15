@@ -7,7 +7,7 @@ import { createShellModelRouter } from "./shellModelBridge";
 import { startFlmuxServer } from "./server";
 import { forwardTerminalEventToOwnedClient } from "./terminalEventForwarding";
 import { createTerminalService } from "./terminal-service";
-import { discoverLocalExtensionCatalog } from "./localExtensions";
+import { createLocalExtensionLoadEntries, discoverLocalExtensions } from "./localExtensions";
 
 process.env.BUNITE_REMOTE_DEBUGGING_PORT ??= "9227";
 process.env.FLMUX_DEV_MODE ??= Bun.argv.includes("--dev") ? "1" : "";
@@ -24,7 +24,7 @@ const shellModelRouter = createShellModelRouter(clientRegistry);
 const terminalService = createTerminalService();
 const sessionStore = createSessionStore();
 const paneOwners = new Map<string, number>();
-const localExtensions = await discoverLocalExtensionCatalog(localExtensionsRootDir);
+const localExtensions = await discoverLocalExtensions(localExtensionsRootDir);
 
 let desktopViewId = -1;
 
@@ -35,7 +35,7 @@ const rendererRpc = BrowserView.defineRPC<FlmuxRendererBridgeSchema>({
         fixtureBaseUrl: `${server.origin}/fixtures`,
         appOrigin: server.origin,
         projectDir,
-        localExtensions
+        localExtensions: createLocalExtensionLoadEntries(localExtensions, server.origin)
       }),
       "flmux.client.register": () => {
         return shellModelRouter.registerClient(desktopViewId);
@@ -106,6 +106,7 @@ rendererRpc.webHandler.onWebClientDisconnected = (client) => {
 const server = startFlmuxServer({
   rendererDir,
   shellModelRouter,
+  localExtensions,
   saveSession: (snapshot) => sessionStore.save(snapshot),
   rpcWebHandler: rendererRpc.webHandler
 });

@@ -1,5 +1,5 @@
-import type { ExtensionDefinition, ExtensionManifest } from "@flmux/extension-api";
-import type { FlmuxLocalExtensionSummary } from "../../shared/rendererBridge";
+import type { ExtensionDefinition } from "@flmux/extension-api";
+import type { FlmuxLocalExtensionLoadEntry } from "../../shared/rendererBridge";
 import type { PaneDescriptor } from "../shell/paneRegistry";
 import { createExternalPaneDescriptor } from "./runtime";
 
@@ -8,32 +8,17 @@ export interface LocalExternalPaneRegistrationHost {
 }
 
 type ExtensionModule = {
-  default: ExtensionDefinition;
+  default?: ExtensionDefinition;
 };
 
-const LOCAL_EXTENSION_MANIFESTS = import.meta.glob<ExtensionManifest>(
-  "../../../../../extensions/*/manifest.json",
-  { eager: true, import: "default" }
-);
+type ExtensionModuleImporter = (entryUrl: string) => Promise<ExtensionModule>;
 
-const LOCAL_EXTENSION_MODULES = import.meta.glob<ExtensionModule>(
-  "../../../../../extensions/*/index.ts",
-  { eager: true }
-);
-
-export function registerLocalExternalPaneDescriptors(
+export async function registerLocalExternalPaneDescriptors(
   host: LocalExternalPaneRegistrationHost,
-  enabledExtensions: FlmuxLocalExtensionSummary[]
+  enabledExtensions: FlmuxLocalExtensionLoadEntry[],
+  importer: ExtensionModuleImporter = importExtensionModule
 ) {
-  const discovered = discoverLocalExtensions(enabledExtensions);
-  const discoveredIds = new Set(discovered.map((extension) => extension.manifest.id));
-
-  for (const extension of enabledExtensions) {
-    if (!discoveredIds.has(extension.id)) {
-      console.warn(`[flmux] local extension is in bootstrap catalog but not bundled in renderer: ${extension.id}`);
-    }
-  }
-
+  const discovered = await loadLocalExtensionDefinitions(enabledExtensions, importer);
   for (const extension of discovered) {
     for (const pane of extension.definition.panes ?? []) {
       host.registerExternalPane(createExternalPaneDescriptor(pane));
@@ -41,39 +26,35 @@ export function registerLocalExternalPaneDescriptors(
   }
 }
 
-function discoverLocalExtensions(enabledExtensions: FlmuxLocalExtensionSummary[]) {
-  const enabledIds = new Set(enabledExtensions.map((extension) => extension.id));
-  const extensionDirs = new Set<string>();
-  for (const path of Object.keys(LOCAL_EXTENSION_MANIFESTS)) {
-    extensionDirs.add(dirname(path));
-  }
-  for (const path of Object.keys(LOCAL_EXTENSION_MODULES)) {
-    extensionDirs.add(dirname(path));
-  }
-
-  return [...extensionDirs]
-    .map((dir) => {
-      const manifest = LOCAL_EXTENSION_MANIFESTS[`${dir}/manifest.json`];
-      const module = LOCAL_EXTENSION_MODULES[`${dir}/index.ts`];
-      if (!manifest || !module?.default) {
-        if (manifest?.id && enabledIds.has(manifest.id)) {
-          console.warn(`[flmux] local extension bundle is incomplete for: ${manifest.id}`);
+export async function loadLocalExtensionDefinitions(
+  enabledExtensions: FlmuxLocalExtensionLoadEntry[],
+  importer: ExtensionModuleImporter = importExtensionModule
+) {
+  const discovered = await Promise.all(
+    enabledExtensions.map(async (extension) => {
+      try {
+        const module = await importer(extension.rendererEntryUrl);
+        if (!module.default) {
+          console.warn(`[flmux] local extension module has no default export: ${extension.id}`);
+          return null;
         }
-        return null;
-      }
-      if (!enabledIds.has(manifest.id)) {
-        return null;
-      }
 
-      return {
-        manifest,
-        definition: module.default
-      };
+        return {
+          loadEntry: extension,
+          definition: module.default
+        };
+      } catch (error) {
+        console.warn(`[flmux] failed to load local extension module: ${extension.id}`, error);
+        return null;
+      }
     })
-    .filter((entry): entry is { manifest: ExtensionManifest; definition: ExtensionDefinition } => entry !== null)
-    .sort((left, right) => left.manifest.id.localeCompare(right.manifest.id));
+  );
+
+  return discovered
+    .filter((entry): entry is { loadEntry: FlmuxLocalExtensionLoadEntry; definition: ExtensionDefinition } => entry !== null)
+    .sort((left, right) => left.loadEntry.id.localeCompare(right.loadEntry.id));
 }
 
-function dirname(path: string) {
-  return path.replace(/\/[^/]+$/, "");
+async function importExtensionModule(entryUrl: string): Promise<ExtensionModule> {
+  return await import(/* @vite-ignore */ entryUrl);
 }

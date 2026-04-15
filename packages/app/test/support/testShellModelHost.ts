@@ -65,8 +65,9 @@ export interface TestShellModelHostOptions {
 }
 
 export class TestShellModelHost implements ShellModelHost {
-  readonly workspaceId: string;
+  workspaceId: string;
   readonly calls = {
+    createWorkspace: [] as Array<{ title?: string }>,
     createPane: [] as NewPaneInput[],
     setAppTitle: [] as string[],
     setWorkspaceTitle: [] as string[],
@@ -89,6 +90,9 @@ export class TestShellModelHost implements ShellModelHost {
   private readonly workspaceRootDir: string;
   private readonly terminalService: TerminalServiceLike;
   private activePaneId: string | null;
+  private readonly workspaceOrder: string[] = [];
+  private readonly workspaceTitles = new Map<string, string>();
+  private readonly workspacePaneCounts = new Map<string, number>();
   private readonly panes = new Map<string, StoredPane>();
   private readonly paneParams = new Map<string, Record<string, unknown> | undefined>();
   private readonly onTerminalCreate?: (paneId: string) => void;
@@ -105,6 +109,9 @@ export class TestShellModelHost implements ShellModelHost {
     });
     this.onTerminalCreate = options.onTerminalCreate;
     this.activePaneId = options.activePaneId ?? null;
+    this.workspaceOrder.push(this.workspaceId);
+    this.workspaceTitles.set(this.workspaceId, this.workspaceTitle);
+    this.workspacePaneCounts.set(this.workspaceId, (options.panes ?? []).length);
 
     for (const pane of options.panes ?? []) {
       this.panes.set(pane.id, pane);
@@ -179,6 +186,36 @@ export class TestShellModelHost implements ShellModelHost {
     };
   }
 
+  listWorkspaces() {
+    this.syncCurrentWorkspaceSnapshot();
+    return this.workspaceOrder.map((workspaceId) => ({
+      id: workspaceId,
+      title: this.workspaceTitles.get(workspaceId) ?? workspaceId,
+      activePaneId: workspaceId === this.workspaceId ? this.activePaneId : null,
+      paneCount: this.workspacePaneCounts.get(workspaceId) ?? 0
+    }));
+  }
+
+  createWorkspace(input: { title?: string } = {}) {
+    this.syncCurrentWorkspaceSnapshot();
+    this.calls.createWorkspace.push(input);
+
+    let index = this.workspaceOrder.length + 1;
+    while (this.workspaceTitles.has(`workspace.${index}`)) {
+      index += 1;
+    }
+
+    this.workspaceId = `workspace.${index}`;
+    this.workspaceTitle = input.title?.trim() || `Workspace ${index}`;
+    this.activePaneId = null;
+    this.panes.clear();
+    this.paneParams.clear();
+    this.workspaceOrder.push(this.workspaceId);
+    this.workspaceTitles.set(this.workspaceId, this.workspaceTitle);
+    this.seedDefaultWorkspaceLayout();
+    return this.getWorkspaceStatus();
+  }
+
   setAppTitle(title: string) {
     this.appTitle = title;
     this.calls.setAppTitle.push(title);
@@ -186,6 +223,7 @@ export class TestShellModelHost implements ShellModelHost {
   }
 
   getWorkspaceStatus(): WorkspaceStatusSnapshot {
+    this.syncCurrentWorkspaceSnapshot();
     return {
       id: this.workspaceId,
       title: this.workspaceTitle,
@@ -200,6 +238,7 @@ export class TestShellModelHost implements ShellModelHost {
 
   setWorkspaceTitle(title: string): WorkspaceStatusSnapshot {
     this.workspaceTitle = title;
+    this.workspaceTitles.set(this.workspaceId, title);
     this.calls.setWorkspaceTitle.push(title);
     return this.getWorkspaceStatus();
   }
@@ -223,6 +262,7 @@ export class TestShellModelHost implements ShellModelHost {
     this.panes.set(paneId, pane);
     this.paneParams.set(paneId, this.createPaneParamsFromInput(pane, input));
     this.activePaneId = paneId;
+    this.syncCurrentWorkspaceSnapshot();
     return this.toPaneSnapshot(paneId);
   }
 
@@ -240,6 +280,7 @@ export class TestShellModelHost implements ShellModelHost {
     if (this.activePaneId === paneId) {
       this.activePaneId = [...this.panes.keys()].at(-1) ?? null;
     }
+    this.syncCurrentWorkspaceSnapshot();
 
     return { paneId, closed };
   }
@@ -601,6 +642,39 @@ export class TestShellModelHost implements ShellModelHost {
 
   private defaultBrowserPath() {
     return `/__flmux/internal/start?workspace=${this.workspaceId}`;
+  }
+
+  private syncCurrentWorkspaceSnapshot() {
+    this.workspaceTitles.set(this.workspaceId, this.workspaceTitle);
+    this.workspacePaneCounts.set(this.workspaceId, this.panes.size);
+  }
+
+  private seedDefaultWorkspaceLayout() {
+    const cowsayId = `pane_${crypto.randomUUID()}`;
+    const browserId = `pane_${crypto.randomUUID()}`;
+    const cowsay = this.createStoredPane(cowsayId, {
+      kind: "cowsay",
+      title: "Cowsay"
+    });
+    const browser = this.createStoredPane(browserId, {
+      kind: "browser",
+      title: "Start",
+      url: `${this.appOrigin}${this.defaultBrowserPath()}`
+    });
+
+    this.panes.set(cowsayId, cowsay);
+    this.paneParams.set(cowsayId, this.createPaneParamsFromInput(cowsay, { kind: "cowsay", title: "Cowsay" }));
+    this.panes.set(browserId, browser);
+    if (browser.kind !== "browser") {
+      throw new Error("expected seeded browser pane");
+    }
+    this.paneParams.set(browserId, this.createPaneParamsFromInput(browser, {
+      kind: "browser",
+      title: "Start",
+      url: browser.url
+    }));
+    this.activePaneId = browserId;
+    this.syncCurrentWorkspaceSnapshot();
   }
 
   private toPaneSnapshot(paneId: string): ShellPaneRecordSnapshot {

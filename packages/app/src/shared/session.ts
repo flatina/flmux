@@ -1,4 +1,5 @@
 export interface FlmuxWorkspaceSessionSnapshot {
+  defaultTitle?: string;
   title: string;
   layout: unknown | null;
 }

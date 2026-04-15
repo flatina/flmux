@@ -89,6 +89,10 @@ class ShellModel implements ShellModelAPI {
         : notFoundGet();
     }
 
+    if (segments[0] === "workspaces") {
+      return await this.getWorkspaces(segments.slice(1));
+    }
+
     if (segments[0] === "bus") {
       return await this.getBus(segments.slice(1));
     }
@@ -111,6 +115,7 @@ class ShellModel implements ShellModelAPI {
         found: true,
         entries: [
           leafEntry("title", "/title", true),
+          objectEntry("workspaces", "/workspaces"),
           objectEntry("bus", "/bus"),
           objectEntry("panes", "/panes"),
           objectEntry("status", "/status")
@@ -124,6 +129,10 @@ class ShellModel implements ShellModelAPI {
 
     if (segments[0] === "title") {
       return throwPathError("INVALID_PATH", "Leaf path cannot be listed");
+    }
+
+    if (segments[0] === "workspaces") {
+      return await this.listWorkspacesPath(segments.slice(1));
     }
 
     if (segments[0] === "bus") {
@@ -240,6 +249,24 @@ class ShellModel implements ShellModelAPI {
           value: {
             ok: true,
             published: event
+          }
+        };
+      }
+
+      return throwPathError("NOT_CALLABLE", "Path is not callable");
+    }
+
+    if (segments[0] === "workspaces") {
+      if (segments.length === 2 && segments[1] === "new") {
+        const createdWorkspace = await this.host.createWorkspace({
+          title: optionalString(args.title)
+        });
+        return {
+          ok: true,
+          value: {
+            workspaceId: createdWorkspace.id,
+            path: `/workspaces/${createdWorkspace.id}`,
+            workspace: createdWorkspace
           }
         };
       }
@@ -369,6 +396,43 @@ class ShellModel implements ShellModelAPI {
     return notFoundGet();
   }
 
+  private async getWorkspaces(segments: string[]): Promise<PathGetResult> {
+    const workspaces = await this.host.listWorkspaces();
+
+    if (segments.length === 0) {
+      return {
+        ok: true,
+        found: true,
+        value: Object.fromEntries(
+          workspaces.map((workspace) => [workspace.id, workspace])
+        )
+      };
+    }
+
+    const workspace = workspaces.find((candidate) => candidate.id === segments[0]);
+    if (!workspace) {
+      return notFoundGet();
+    }
+
+    if (segments.length === 1) {
+      return {
+        ok: true,
+        found: true,
+        value: workspace
+      };
+    }
+
+    if (segments.length === 2 && isWorkspaceStatusKey(segments[1])) {
+      return {
+        ok: true,
+        found: true,
+        value: workspace[segments[1]]
+      };
+    }
+
+    return notFoundGet();
+  }
+
   private async listApp(segments: string[]): Promise<PathListResult> {
     if (segments.length === 0) {
       return {
@@ -379,6 +443,49 @@ class ShellModel implements ShellModelAPI {
     }
 
     if (segments.length === 1 && segments[0] === "title") {
+      return throwPathError("INVALID_PATH", "Leaf path cannot be listed");
+    }
+
+    return notFoundList();
+  }
+
+  private async listWorkspacesPath(segments: string[]): Promise<PathListResult> {
+    const workspaces = await this.host.listWorkspaces();
+
+    if (segments.length === 0) {
+      return {
+        ok: true,
+        found: true,
+        entries: [
+          ...workspaces.map((workspace) => objectEntry(workspace.id, `/workspaces/${workspace.id}`)),
+          actionEntry("new", "/workspaces/new")
+        ]
+      };
+    }
+
+    if (segments.length === 1 && segments[0] === "new") {
+      return throwPathError("INVALID_PATH", "Action path cannot be listed");
+    }
+
+    const workspace = workspaces.find((candidate) => candidate.id === segments[0]);
+    if (!workspace) {
+      return notFoundList();
+    }
+
+    if (segments.length === 1) {
+      return {
+        ok: true,
+        found: true,
+        entries: [
+          leafEntry("id", `/workspaces/${workspace.id}/id`),
+          leafEntry("title", `/workspaces/${workspace.id}/title`),
+          leafEntry("activePaneId", `/workspaces/${workspace.id}/activePaneId`),
+          leafEntry("paneCount", `/workspaces/${workspace.id}/paneCount`)
+        ]
+      };
+    }
+
+    if (segments.length === 2 && isWorkspaceStatusKey(segments[1])) {
       return throwPathError("INVALID_PATH", "Leaf path cannot be listed");
     }
 
@@ -891,10 +998,14 @@ class ShellModel implements ShellModelAPI {
 
   private async getWorkspaceRootSnapshot() {
     const workspace = await this.host.getWorkspaceStatus();
+    const workspaces = await this.host.listWorkspaces();
     const panes = await this.host.listPanes();
     const app = await this.host.getAppStatus();
     return {
       title: workspace.title,
+      workspaces: Object.fromEntries(
+        workspaces.map((entry) => [entry.id, entry])
+      ),
       bus: {},
       panes: Object.fromEntries(
         panes.map((pane) => [pane.id, toPaneStateSnapshot(pane)])

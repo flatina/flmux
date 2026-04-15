@@ -48,8 +48,6 @@ import { createWorkspaceBus } from "./workspaceBus";
 type WorkspaceSeed = {
   id: string;
   title: string;
-  defaultBrowserPath: string;
-  rootDirName: string;
 };
 
 type WorkspaceRecord = {
@@ -67,15 +65,11 @@ type WorkspaceRecord = {
 const WORKSPACE_SEEDS: WorkspaceSeed[] = [
   {
     id: "workspace.alpha",
-    title: "Workspace Alpha",
-    defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.alpha",
-    rootDirName: "workspace-alpha"
+    title: "Workspace Alpha"
   },
   {
     id: "workspace.beta",
-    title: "Workspace Beta",
-    defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.beta",
-    rootDirName: "workspace-beta"
+    title: "Workspace Beta"
   }
 ];
 
@@ -173,6 +167,19 @@ export class FlmuxWorkbench implements ShellModelHost {
     };
   }
 
+  listWorkspaces() {
+    return [...this.workspaces.values()].map((workspace) => this.toWorkspaceStatus(workspace));
+  }
+
+  createWorkspace(input: { title?: string } = {}) {
+    const seed = this.allocateDynamicWorkspaceSeed(input.title);
+    const workspace = this.createWorkspaceRecord(seed);
+    this.ensureWorkspaceInitialized(workspace);
+    this.resetWorkspace(workspace);
+    this.activateWorkspace(workspace.id);
+    return this.toWorkspaceStatus(workspace);
+  }
+
   setAppTitle(title: string): AppStatusSnapshot {
     this.appTitle = title;
     this.renderChrome();
@@ -181,13 +188,7 @@ export class FlmuxWorkbench implements ShellModelHost {
   }
 
   getWorkspaceStatus() {
-    const workspace = this.getCurrentWorkspace();
-    return {
-      id: workspace.id,
-      title: workspace.title,
-      activePaneId: workspace.api?.activePanel?.id ?? null,
-      paneCount: workspace.paneRecords.size
-    };
+    return this.toWorkspaceStatus(this.getCurrentWorkspace());
   }
 
   hasPaneKind(kind: string) {
@@ -346,30 +347,20 @@ export class FlmuxWorkbench implements ShellModelHost {
 
   private buildWorkspaces() {
     this.shellEl.replaceChildren();
+    this.workspaces.clear();
 
     for (const seed of WORKSPACE_SEEDS) {
-      const surface = document.createElement("div");
-      surface.className = "workspace-surface";
-      surface.dataset.workspaceId = seed.id;
-      this.shellEl.append(surface);
-
-      this.workspaces.set(seed.id, {
-        id: seed.id,
-        title: seed.title,
-        defaultTitle: seed.title,
-        defaultBrowserPath: seed.defaultBrowserPath,
-        rootDir: joinPath(this.config.projectDir, seed.rootDirName),
-        surface,
-        bus: createWorkspaceBus(seed.id),
-        paneRecords: new Map(),
-        api: null
-      });
+      this.createWorkspaceRecord(seed);
     }
 
     this.renderWorkspaceSwitcher();
   }
 
   private bindTopbar() {
+    document.querySelector<HTMLButtonElement>('[data-action="new-workspace"]')!.addEventListener("click", () => {
+      void this.shellModel.pathCall("/workspaces/new");
+    });
+
     document.querySelector<HTMLButtonElement>('[data-action="new-browser"]')!.addEventListener("click", () => {
       void this.shellModel.pathCall("/panes/new", {
         kind: "browser",
@@ -584,6 +575,15 @@ export class FlmuxWorkbench implements ShellModelHost {
     return this.requireWorkspace(this.activeWorkspaceId);
   }
 
+  private toWorkspaceStatus(workspace: WorkspaceRecord) {
+    return {
+      id: workspace.id,
+      title: workspace.title,
+      activePaneId: workspace.api?.activePanel?.id ?? null,
+      paneCount: workspace.paneRecords.size
+    };
+  }
+
   private requireWorkspace(workspaceId: string) {
     const workspace = this.workspaces.get(workspaceId);
     if (!workspace) {
@@ -679,15 +679,26 @@ export class FlmuxWorkbench implements ShellModelHost {
   }
 
   private async restoreSessionOrDefaults() {
+    const snapshot = await this.sessionHost.load();
+    this.appTitle = snapshot?.appTitle ?? this.appTitle;
+
+    for (const [workspaceId, workspaceSnapshot] of Object.entries(snapshot?.workspaces ?? {})) {
+      if (this.workspaces.has(workspaceId)) {
+        continue;
+      }
+
+      this.createWorkspaceRecord({
+        id: workspaceId,
+        title: workspaceSnapshot.defaultTitle?.trim() || defaultWorkspaceTitle(workspaceId)
+      });
+    }
+
     for (const workspace of this.workspaces.values()) {
       this.ensureWorkspaceInitialized(workspace);
     }
 
     this.sessionPersistenceSuppressed = true;
     try {
-      const snapshot = await this.sessionHost.load();
-      this.appTitle = snapshot?.appTitle ?? this.appTitle;
-
       for (const workspace of this.workspaces.values()) {
         const workspaceSnapshot = snapshot?.workspaces[workspace.id];
         if (workspaceSnapshot) {
@@ -701,7 +712,7 @@ export class FlmuxWorkbench implements ShellModelHost {
       const activeWorkspaceId =
         snapshot?.activeWorkspaceId && this.workspaces.has(snapshot.activeWorkspaceId)
           ? snapshot.activeWorkspaceId
-          : WORKSPACE_SEEDS[0].id;
+          : [...this.workspaces.keys()][0] ?? WORKSPACE_SEEDS[0].id;
       this.activateWorkspace(activeWorkspaceId, { persist: false });
     } finally {
       this.sessionPersistenceSuppressed = false;
@@ -715,6 +726,7 @@ export class FlmuxWorkbench implements ShellModelHost {
 
     workspace.api.clear();
     workspace.paneRecords.clear();
+    workspace.defaultTitle = snapshot.defaultTitle?.trim() || workspace.defaultTitle;
     workspace.title = snapshot.title.trim() || workspace.defaultTitle;
 
     if (!snapshot.layout) {
@@ -782,6 +794,7 @@ export class FlmuxWorkbench implements ShellModelHost {
         [...this.workspaces.values()].map((workspace) => [
           workspace.id,
           {
+            defaultTitle: workspace.defaultTitle,
             title: workspace.title,
             layout: workspace.api ? this.serializeWorkspaceLayout(workspace) : null
           } satisfies FlmuxWorkspaceSessionSnapshot
@@ -907,6 +920,45 @@ export class FlmuxWorkbench implements ShellModelHost {
 
     return url;
   }
+
+  private createWorkspaceRecord(seed: WorkspaceSeed) {
+    const existing = this.workspaces.get(seed.id);
+    if (existing) {
+      return existing;
+    }
+
+    const surface = document.createElement("div");
+    surface.className = "workspace-surface";
+    surface.dataset.workspaceId = seed.id;
+    this.shellEl.append(surface);
+
+    const workspace: WorkspaceRecord = {
+      id: seed.id,
+      title: seed.title,
+      defaultTitle: seed.title,
+      defaultBrowserPath: defaultBrowserPath(seed.id),
+      rootDir: joinPath(this.config.projectDir, workspaceRootDirName(seed.id)),
+      surface,
+      bus: createWorkspaceBus(seed.id),
+      paneRecords: new Map(),
+      api: null
+    };
+    this.workspaces.set(seed.id, workspace);
+    return workspace;
+  }
+
+  private allocateDynamicWorkspaceSeed(inputTitle: string | undefined): WorkspaceSeed {
+    let index = this.workspaces.size + 1;
+    while (this.workspaces.has(`workspace.${index}`)) {
+      index += 1;
+    }
+
+    const title = inputTitle?.trim() || `Workspace ${index}`;
+    return {
+      id: `workspace.${index}`,
+      title
+    };
+  }
 }
 
 function createPaneId() {
@@ -915,6 +967,32 @@ function createPaneId() {
 
 function normalizeDirection(place: PanePlacement | undefined) {
   return place ?? "within";
+}
+
+function defaultBrowserPath(workspaceId: string) {
+  return `/__flmux/internal/start?workspace=${encodeURIComponent(workspaceId)}`;
+}
+
+function workspaceRootDirName(workspaceId: string) {
+  return workspaceId.replace(/[^A-Za-z0-9_-]+/g, "-");
+}
+
+function defaultWorkspaceTitle(workspaceId: string) {
+  const seeded = WORKSPACE_SEEDS.find((seed) => seed.id === workspaceId);
+  if (seeded) {
+    return seeded.title;
+  }
+
+  const numbered = /^workspace\.(\d+)$/.exec(workspaceId);
+  if (numbered) {
+    return `Workspace ${numbered[1]}`;
+  }
+
+  return workspaceId
+    .split(/[./_-]/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ") || "Workspace";
 }
 
 function joinPath(basePath: string, childPath: string) {

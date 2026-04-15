@@ -19,6 +19,7 @@ describe("session store", () => {
       activeWorkspaceId: "workspace.alpha",
       workspaces: {
         "workspace.alpha": {
+          defaultTitle: "Workspace Alpha",
           title: "Workspace Alpha",
           layout: null
         }

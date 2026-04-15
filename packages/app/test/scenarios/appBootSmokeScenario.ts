@@ -301,6 +301,59 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
         ? true
         : null;
     }, { timeoutMs: 20_000, intervalMs: 500, label: "new workspace beta browser target" });
+
+    const clickedWorkspaceCreate = await session.evaluate<boolean>(`(() => {
+      const button = document.querySelector('[data-action="new-workspace"]');
+      if (!(button instanceof HTMLButtonElement)) {
+        return false;
+      }
+      button.click();
+      return true;
+    })()`);
+    expect(clickedWorkspaceCreate).toBe(true);
+
+    const createdWorkspaceState = await waitFor(async () => {
+      const state = await session.evaluate<{
+        workspaceTitle: string;
+        chipCount: number;
+        cowsayCount: number;
+      }>(`(() => {
+        const surface = document.querySelector('.workspace-surface--active');
+        return {
+          workspaceTitle: document.querySelector('#workspace-title')?.textContent ?? '',
+          chipCount: document.querySelectorAll('.workspace-chip').length,
+          cowsayCount: surface?.querySelectorAll('.cowsay-panel').length ?? 0
+        };
+      })()`);
+      return state.chipCount >= 3 && state.workspaceTitle.includes("Workspace 3") && state.cowsayCount >= 1
+        ? state
+        : null;
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "created workspace state" });
+    expect(createdWorkspaceState.workspaceTitle).toContain("Workspace 3");
+
+    const createdWorkspace = await waitFor(async () => {
+      const clients = await fetchJson<{
+        ok: true;
+        clients: Array<{ workspace: { id: string; title: string } | null }>;
+      }>(`${appOrigin}/api/clients`);
+      const workspace = clients.clients[0]?.workspace;
+      return workspace && workspace.id !== "workspace.alpha" && workspace.id !== "workspace.beta"
+        ? workspace
+        : null;
+    }, { timeoutMs: 20_000, intervalMs: 500, label: "created workspace client status" });
+    expect(createdWorkspace).toMatchObject({
+      id: "workspace.3",
+      title: "Workspace 3"
+    });
+
+    await waitFor(async () => {
+      const targets = await fetchTargets(port);
+      return targets.some(
+        (target) => target.url === `${appOrigin}/__flmux/internal/start?workspace=${createdWorkspace.id}`
+      )
+        ? true
+        : null;
+    }, { timeoutMs: 20_000, intervalMs: 500, label: "created workspace start browser target" });
     await session.close();
   } finally {
     await rm(sessionDir, { recursive: true, force: true });

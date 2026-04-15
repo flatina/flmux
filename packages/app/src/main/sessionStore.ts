@@ -50,6 +50,7 @@ export function isSessionSnapshot(value: unknown): value is FlmuxSessionSnapshot
 
     const candidate = workspace as Record<string, unknown>;
     return (
+      (candidate.defaultTitle === undefined || typeof candidate.defaultTitle === "string") &&
       typeof candidate.title === "string" &&
       "layout" in candidate &&
       (candidate.layout === null || typeof candidate.layout === "object")

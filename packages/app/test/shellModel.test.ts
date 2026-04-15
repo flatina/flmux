@@ -67,6 +67,83 @@ describe("shell model direct", () => {
     });
   });
 
+  it("creates and lists workspaces through /workspaces/new", async () => {
+    const host = new TestShellModelHost({
+      workspaceId: "workspace.test",
+      workspaceTitle: "Workspace Test",
+      activePaneId: null,
+      panes: []
+    });
+    const model = host.createModel();
+
+    expect(await model.pathList("/workspaces")).toEqual({
+      ok: true,
+      found: true,
+      entries: [
+        { name: "workspace.test", path: "/workspaces/workspace.test", kind: "object", writable: false },
+        { name: "new", path: "/workspaces/new", kind: "action", writable: false }
+      ]
+    });
+
+    const created = await model.pathCall("/workspaces/new", { title: "Workspace Gamma" });
+    if (!created.ok) {
+      throw new Error("expected workspace creation to succeed");
+    }
+
+    const createdValue = JSON.parse(JSON.stringify(created.value)) as {
+      workspaceId: string;
+      path: string;
+      workspace: {
+        id: string;
+        title: string;
+        activePaneId: string | null;
+        paneCount: number;
+      };
+    };
+
+    expect(created).toMatchObject({
+      ok: true,
+      value: {
+        workspaceId: expect.stringMatching(/^workspace\.\d+$/),
+        path: expect.stringMatching(/^\/workspaces\/workspace\.\d+$/),
+        workspace: {
+          title: "Workspace Gamma",
+          activePaneId: expect.any(String),
+          paneCount: 2
+        }
+      }
+    });
+    expect(host.calls.createWorkspace).toEqual([{ title: "Workspace Gamma" }]);
+
+    expect(await model.pathGet(createdValue.path)).toEqual({
+      ok: true,
+      found: true,
+      value: createdValue.workspace
+    });
+    expect(await model.pathGet("/status/workspace")).toEqual({
+      ok: true,
+      found: true,
+      value: createdValue.workspace
+    });
+    expect(await model.pathGet(`/workspaces/${createdValue.workspaceId}/title`)).toEqual({
+      ok: true,
+      found: true,
+      value: "Workspace Gamma"
+    });
+    expect(await model.pathGet(`/workspaces/${createdValue.workspaceId}/paneCount`)).toEqual({
+      ok: true,
+      found: true,
+      value: 2
+    });
+
+    const listed = await model.pathList("/workspaces");
+    expect(listed).toMatchObject({ ok: true, found: true });
+    if (listed.ok && listed.found) {
+      expect(listed.entries.map((entry) => entry.name)).toContain(createdValue.workspaceId);
+      expect(listed.entries.map((entry) => entry.name)).toContain("new");
+    }
+  });
+
   it("supports writable app, workspace, and browser subtree state paths", async () => {
     const host = new TestShellModelHost({
       workspaceId: "workspace.test",

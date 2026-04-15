@@ -128,6 +128,8 @@ export interface NewPaneInput {
 export interface ShellModelHost {
   getAppStatus(): Awaitable<AppStatusSnapshot>;
   setAppTitle(title: string): Awaitable<AppStatusSnapshot>;
+  listWorkspaces(): Awaitable<WorkspaceStatusSnapshot[]>;
+  createWorkspace(input?: { title?: string }): Awaitable<WorkspaceStatusSnapshot>;
   getWorkspaceStatus(): Awaitable<WorkspaceStatusSnapshot>;
   setWorkspaceTitle(title: string): Awaitable<WorkspaceStatusSnapshot>;
   hasPaneKind(kind: string): Awaitable<boolean>;

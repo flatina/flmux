@@ -19,6 +19,14 @@ export async function registerLocalExternalPaneDescriptors(
   importer: ExtensionModuleImporter = importExtensionModule
 ) {
   const discovered = await loadLocalExtensionDefinitions(enabledExtensions, importer);
+  const discoveredIds = new Set(discovered.map((extension) => extension.loadEntry.id));
+
+  for (const extension of enabledExtensions) {
+    if (!discoveredIds.has(extension.id)) {
+      console.warn(`[flmux] local extension is in bootstrap catalog but failed to load in renderer: ${extension.id}`);
+    }
+  }
+
   for (const extension of discovered) {
     for (const pane of extension.definition.panes ?? []) {
       host.registerExternalPane(createExternalPaneDescriptor(pane));

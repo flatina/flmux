@@ -1,10 +1,9 @@
-import type { GroupPanelPartInitParameters, IContentRenderer } from "dockview-core";
 import type {
-  ExternalPaneContext,
-  ExternalPathGetResult,
-  ExternalPathListResult,
-  ExternalWorkspaceBusEvent
-} from "./runtime";
+  ExtensionPaneContext,
+  ExtensionPaneInstance,
+  ShellPathGetResult,
+  ShellPathListResult
+} from "@flmux/extension-api";
 
 interface SnapshotState {
   appTitle: string;
@@ -22,9 +21,7 @@ interface EventLogEntry {
   timestamp: number;
 }
 
-export class InspectorPaneRenderer implements IContentRenderer {
-  readonly element = document.createElement("div");
-
+export class InspectorPaneRenderer implements ExtensionPaneInstance {
   private unsubscribeBus?: () => void;
   private snapshot: SnapshotState = {
     appTitle: "loading",
@@ -50,12 +47,20 @@ export class InspectorPaneRenderer implements IContentRenderer {
   private refreshButton?: HTMLButtonElement;
   private pingButton?: HTMLButtonElement;
 
-  constructor(private readonly context: ExternalPaneContext) {
-    this.element.className = "inspector-panel";
+  constructor(
+    private readonly host: HTMLElement,
+    private readonly context: ExtensionPaneContext
+  ) {
+    this.host.className = "inspector-panel";
+    this.mount();
   }
 
-  init(_params: GroupPanelPartInitParameters) {
-    this.element.innerHTML = `
+  dispose() {
+    this.unsubscribeBus?.();
+  }
+
+  private mount() {
+    this.host.innerHTML = `
       <section class="inspector-hero">
         <div>
           <strong>external inspector</strong>
@@ -110,18 +115,18 @@ export class InspectorPaneRenderer implements IContentRenderer {
       </div>
     `;
 
-    this.appTitleEl = this.element.querySelector<HTMLElement>('[data-role="app-title"]')!;
-    this.workspaceTitleEl = this.element.querySelector<HTMLElement>('[data-role="workspace-title"]')!;
-    this.workspaceIdEl = this.element.querySelector<HTMLElement>('[data-role="workspace-id"]')!;
-    this.paneIdEl = this.element.querySelector<HTMLElement>('[data-role="pane-id"]')!;
-    this.activePaneEl = this.element.querySelector<HTMLElement>('[data-role="active-pane"]')!;
-    this.paneCountEl = this.element.querySelector<HTMLElement>('[data-role="pane-count"]')!;
-    this.paneListEl = this.element.querySelector<HTMLElement>('[data-role="pane-list"]')!;
-    this.lastEventEl = this.element.querySelector<HTMLElement>('[data-role="last-event"]')!;
-    this.eventListEl = this.element.querySelector<HTMLElement>('[data-role="event-list"]')!;
-    this.subscriptionEl = this.element.querySelector<HTMLElement>('[data-role="subscription"]')!;
-    this.refreshButton = this.element.querySelector<HTMLButtonElement>('[data-action="refresh"]')!;
-    this.pingButton = this.element.querySelector<HTMLButtonElement>('[data-action="ping"]')!;
+    this.appTitleEl = this.host.querySelector<HTMLElement>('[data-role="app-title"]')!;
+    this.workspaceTitleEl = this.host.querySelector<HTMLElement>('[data-role="workspace-title"]')!;
+    this.workspaceIdEl = this.host.querySelector<HTMLElement>('[data-role="workspace-id"]')!;
+    this.paneIdEl = this.host.querySelector<HTMLElement>('[data-role="pane-id"]')!;
+    this.activePaneEl = this.host.querySelector<HTMLElement>('[data-role="active-pane"]')!;
+    this.paneCountEl = this.host.querySelector<HTMLElement>('[data-role="pane-count"]')!;
+    this.paneListEl = this.host.querySelector<HTMLElement>('[data-role="pane-list"]')!;
+    this.lastEventEl = this.host.querySelector<HTMLElement>('[data-role="last-event"]')!;
+    this.eventListEl = this.host.querySelector<HTMLElement>('[data-role="event-list"]')!;
+    this.subscriptionEl = this.host.querySelector<HTMLElement>('[data-role="subscription"]')!;
+    this.refreshButton = this.host.querySelector<HTMLButtonElement>('[data-action="refresh"]')!;
+    this.pingButton = this.host.querySelector<HTMLButtonElement>('[data-action="ping"]')!;
 
     this.paneIdEl.textContent = this.context.paneId;
     this.workspaceIdEl.textContent = this.context.workspaceId;
@@ -146,10 +151,6 @@ export class InspectorPaneRenderer implements IContentRenderer {
     void this.refreshSnapshot();
   }
 
-  dispose() {
-    this.unsubscribeBus?.();
-  }
-
   private async refreshSnapshot() {
     const [appResult, workspaceResult, panesResult] = await Promise.all([
       this.context.shell.get("/status/app"),
@@ -170,20 +171,10 @@ export class InspectorPaneRenderer implements IContentRenderer {
   }
 
   private async publishPing() {
-    const result = await this.context.bus.publish("inspector.ping", {
+    await this.context.bus.publish("inspector.ping", {
       paneId: this.context.paneId,
       workspaceId: this.context.workspaceId
     });
-    if (!result.ok) {
-      this.eventLog.unshift({
-        topic: "inspector.error",
-        payload: result,
-        timestamp: Date.now()
-      });
-      this.eventLog = this.eventLog.slice(0, 12);
-      this.lastEventEl!.textContent = "inspector.error";
-      this.renderEventLog();
-    }
   }
 
   private renderSnapshot() {
@@ -229,35 +220,35 @@ export class InspectorPaneRenderer implements IContentRenderer {
   }
 }
 
-function readAppTitle(result: ExternalPathGetResult) {
+function readAppTitle(result: ShellPathGetResult) {
   return result.ok && result.found && isRecord(result.value) && typeof result.value.title === "string"
     ? result.value.title
     : null;
 }
 
-function readWorkspaceTitle(result: ExternalPathGetResult) {
+function readWorkspaceTitle(result: ShellPathGetResult) {
   return result.ok && result.found && isRecord(result.value) && typeof result.value.title === "string"
     ? result.value.title
     : null;
 }
 
-function readWorkspaceId(result: ExternalPathGetResult) {
+function readWorkspaceId(result: ShellPathGetResult) {
   return result.ok && result.found && isRecord(result.value) && typeof result.value.id === "string"
     ? result.value.id
     : null;
 }
 
-function readActivePaneId(result: ExternalPathGetResult) {
+function readActivePaneId(result: ShellPathGetResult) {
   return result.ok && result.found && isRecord(result.value) && typeof result.value.activePaneId === "string"
     ? result.value.activePaneId
     : null;
 }
 
-function readPaneCount(result: ExternalPathListResult) {
+function readPaneCount(result: ShellPathListResult) {
   return result.ok && result.found ? result.entries.length : 0;
 }
 
-function readPaneNames(result: ExternalPathListResult) {
+function readPaneNames(result: ShellPathListResult) {
   return result.ok && result.found ? result.entries.map((entry) => entry.name) : [];
 }
 

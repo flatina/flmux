@@ -1,5 +1,4 @@
-import type { GroupPanelPartInitParameters, IContentRenderer } from "dockview-core";
-import type { ExternalPaneContext, ExternalPathGetResult } from "./runtime";
+import type { ExtensionPaneContext, ExtensionPaneInstance, ShellPathGetResult } from "@flmux/extension-api";
 
 type OutputMode = "pretty" | "compact";
 type LogKind = "input" | "result" | "error" | "event" | "system";
@@ -11,9 +10,7 @@ interface LogEntry {
   timestamp: number;
 }
 
-export class CowsayPaneRenderer implements IContentRenderer {
-  readonly element = document.createElement("div");
-
+export class CowsayPaneRenderer implements ExtensionPaneInstance {
   private outputMode: OutputMode = "pretty";
   private subscription = "*";
   private unsubscribeBus?: () => void;
@@ -26,12 +23,20 @@ export class CowsayPaneRenderer implements IContentRenderer {
   private outputSelect?: HTMLSelectElement;
   private logList?: HTMLElement;
 
-  constructor(private readonly context: ExternalPaneContext) {
-    this.element.className = "cowsay-panel";
+  constructor(
+    private readonly host: HTMLElement,
+    private readonly context: ExtensionPaneContext
+  ) {
+    this.host.className = "cowsay-panel";
+    this.mount();
   }
 
-  init(_params: GroupPanelPartInitParameters) {
-    this.element.innerHTML = `
+  dispose() {
+    this.unsubscribeBus?.();
+  }
+
+  private mount() {
+    this.host.innerHTML = `
       <div class="cowsay-panel__intro">
         <div>
           <strong>cowsay probe</strong>
@@ -89,12 +94,12 @@ export class CowsayPaneRenderer implements IContentRenderer {
       </section>
     `;
 
-    this.commandForm = this.element.querySelector<HTMLFormElement>('[data-role="command-form"]')!;
-    this.commandInput = this.element.querySelector<HTMLInputElement>(".cowsay-repl__input")!;
-    this.subscriptionForm = this.element.querySelector<HTMLFormElement>('[data-role="subscription-form"]')!;
-    this.subscriptionInput = this.element.querySelector<HTMLInputElement>(".cowsay-subscription__input")!;
-    this.outputSelect = this.element.querySelector<HTMLSelectElement>('select[name="output-mode"]')!;
-    this.logList = this.element.querySelector<HTMLElement>('[data-role="log-list"]')!;
+    this.commandForm = this.host.querySelector<HTMLFormElement>('[data-role="command-form"]')!;
+    this.commandInput = this.host.querySelector<HTMLInputElement>(".cowsay-repl__input")!;
+    this.subscriptionForm = this.host.querySelector<HTMLFormElement>('[data-role="subscription-form"]')!;
+    this.subscriptionInput = this.host.querySelector<HTMLInputElement>(".cowsay-subscription__input")!;
+    this.outputSelect = this.host.querySelector<HTMLSelectElement>('select[name="output-mode"]')!;
+    this.logList = this.host.querySelector<HTMLElement>('[data-role="log-list"]')!;
 
     this.commandForm.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -119,7 +124,7 @@ export class CowsayPaneRenderer implements IContentRenderer {
       this.renderLogs();
     });
 
-    this.element.querySelectorAll<HTMLButtonElement>(".cowsay-examples button").forEach((button) => {
+    this.host.querySelectorAll<HTMLButtonElement>(".cowsay-examples button").forEach((button) => {
       button.addEventListener("click", () => {
         this.commandInput!.value = button.dataset.example ?? "";
         this.commandInput!.focus();
@@ -140,10 +145,6 @@ export class CowsayPaneRenderer implements IContentRenderer {
         "ls-each-get /status/panes"
       ]
     });
-  }
-
-  dispose() {
-    this.unsubscribeBus?.();
   }
 
   private async runCommand(command: string) {
@@ -311,7 +312,7 @@ function requiredToken(token: string | undefined, message: string): string {
   return token;
 }
 
-function unwrapValue(result: ExternalPathGetResult) {
+function unwrapValue(result: ShellPathGetResult) {
   if (!result.ok) {
     return result;
   }

@@ -1,23 +1,33 @@
-import type { GroupPanelPartInitParameters, IContentRenderer, PanelUpdateEvent } from "dockview-core";
-import type { ExternalPaneContext } from "./runtime";
+import type { ExtensionPaneContext, ExtensionPaneInstance } from "@flmux/extension-api";
 
 interface ScratchpadParams extends Record<string, unknown> {
   note?: string;
 }
 
-export class ScratchpadPaneRenderer implements IContentRenderer {
-  readonly element = document.createElement("div");
-
+export class ScratchpadPaneRenderer implements ExtensionPaneInstance {
   private note = "";
   private textarea?: HTMLTextAreaElement;
   private counterEl?: HTMLElement;
 
-  constructor(private readonly context: ExternalPaneContext) {
-    this.element.className = "scratchpad-panel";
+  constructor(
+    private readonly host: HTMLElement,
+    private readonly context: ExtensionPaneContext
+  ) {
+    this.host.className = "scratchpad-panel";
+    this.mount();
   }
 
-  init(_params: GroupPanelPartInitParameters) {
-    this.element.innerHTML = `
+  update(params?: Record<string, unknown>) {
+    const nextParams = (params ?? this.context.state.getParams<ScratchpadParams>()) as ScratchpadParams;
+    this.note = normalizeScratchpadText(nextParams.note);
+    if (this.textarea) {
+      this.textarea.value = this.note;
+    }
+    this.renderCounter();
+  }
+
+  private mount() {
+    this.host.innerHTML = `
       <section class="scratchpad-hero">
         <div>
           <strong>scratchpad</strong>
@@ -41,8 +51,8 @@ export class ScratchpadPaneRenderer implements IContentRenderer {
       </section>
     `;
 
-    this.textarea = this.element.querySelector<HTMLTextAreaElement>('[data-role="textarea"]')!;
-    this.counterEl = this.element.querySelector<HTMLElement>('[data-role="counter"]')!;
+    this.textarea = this.host.querySelector<HTMLTextAreaElement>('[data-role="textarea"]')!;
+    this.counterEl = this.host.querySelector<HTMLElement>('[data-role="counter"]')!;
     this.note = normalizeScratchpadText(this.context.state.getParams<ScratchpadParams>().note);
     this.textarea.value = this.note;
     this.renderCounter();
@@ -55,7 +65,7 @@ export class ScratchpadPaneRenderer implements IContentRenderer {
       this.renderCounter();
     });
 
-    this.element.querySelector<HTMLButtonElement>('[data-action="clear"]')!.addEventListener("click", () => {
+    this.host.querySelector<HTMLButtonElement>('[data-action="clear"]')!.addEventListener("click", () => {
       this.note = "";
       this.textarea!.value = "";
       this.context.state.setParams({
@@ -63,14 +73,6 @@ export class ScratchpadPaneRenderer implements IContentRenderer {
       });
       this.renderCounter();
     });
-  }
-
-  update(_event: PanelUpdateEvent<Record<string, unknown>>) {
-    this.note = normalizeScratchpadText(this.context.state.getParams<ScratchpadParams>().note);
-    if (this.textarea) {
-      this.textarea.value = this.note;
-    }
-    this.renderCounter();
   }
 
   private renderCounter() {

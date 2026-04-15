@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { createExternalPaneDescriptor, type ExternalPaneContext } from "../src/renderer/external/runtime";
+import type { ExtensionPaneContext } from "@flmux/extension-api";
+import { createExternalPaneDescriptor } from "../src/renderer/external/runtime";
 import { PaneRegistry, type PaneRendererRuntimeContext, type PaneWorkspaceContext } from "../src/renderer/shell/paneRegistry";
 import type { PathCallerContext, ShellModelAPI, WorkspaceBus, WorkspaceBusEvent } from "../src/renderer/shell/types";
 
@@ -13,7 +14,7 @@ describe("external pane runtime", () => {
     };
     const subscriptions: string[] = [];
     const busPublished: WorkspaceBusEvent[] = [];
-    let capturedContext!: ExternalPaneContext;
+    let capturedContext!: ExtensionPaneContext;
     let didCaptureContext = false;
 
     const shellModel: ShellModelAPI = {
@@ -47,14 +48,13 @@ describe("external pane runtime", () => {
 
     const descriptor = createExternalPaneDescriptor({
       kind: "sample.external",
-      createRenderer(context) {
+      mount(_host, context) {
         capturedContext = context;
         didCaptureContext = true;
-        return {} as never;
       }
     });
 
-    descriptor.createRenderer({
+    const renderer = descriptor.createRenderer({
       workspace: {
         id: "workspace.external",
         rootDir: "C:\\workspace",
@@ -73,6 +73,17 @@ describe("external pane runtime", () => {
         onBrowserUrlChange() {},
         onTerminalRuntimeStateChange() {}
       } satisfies PaneRendererRuntimeContext
+    });
+    renderer.init?.({
+      api: {
+        id: "pane.external",
+        title: "External",
+        updateParameters() {},
+        setTitle() {}
+      } as never,
+      containerApi: null as never,
+      title: "External",
+      params: {}
     });
 
     if (!didCaptureContext) {
@@ -113,7 +124,7 @@ describe("external pane runtime", () => {
   it("maps a minimal external getTitle hook onto the internal descriptor lifecycle", () => {
     const descriptor = createExternalPaneDescriptor({
       kind: "sample.titled",
-      createRenderer: () => ({}) as never,
+      mount() {},
       getTitle: ({ input, workspaceId }) => `${workspaceId}:${input.title ?? "Untitled"}`
     });
 
@@ -140,18 +151,14 @@ describe("external pane runtime", () => {
   });
 
   it("maps external params hooks and state updates onto the internal renderer contract", () => {
-    let capturedContext!: ExternalPaneContext;
+    let capturedContext!: ExtensionPaneContext;
     let updatedParameters: Record<string, unknown> | undefined;
     let updatedTitle: string | undefined;
 
     const descriptor = createExternalPaneDescriptor({
       kind: "sample.stateful",
-      createRenderer(context) {
+      mount(_host, context) {
         capturedContext = context;
-        return {
-          element: {} as HTMLElement,
-          init() {}
-        };
       },
       createParams: ({ input }) => ({
         note: input.params?.note ?? ""
@@ -316,11 +323,9 @@ describe("external pane runtime", () => {
 
     const descriptor = createExternalPaneDescriptor({
       kind: "sample.bus-cleanup",
-      createRenderer(context) {
+      mount(_host, context) {
         context.bus.subscribe("sample.*", () => {});
         return {
-          element: {} as HTMLElement,
-          init() {},
           dispose() {
             rendererDisposed = true;
           }
@@ -360,6 +365,17 @@ describe("external pane runtime", () => {
         onTerminalRuntimeStateChange() {}
       }
     });
+    renderer.init?.({
+      api: {
+        id: "pane.cleanup",
+        title: "Cleanup",
+        updateParameters() {},
+        setTitle() {}
+      } as never,
+      containerApi: null as never,
+      title: "Cleanup",
+      params: {}
+    });
 
     renderer.dispose?.();
     expect(rendererDisposed).toBe(true);
@@ -369,7 +385,7 @@ describe("external pane runtime", () => {
   it("maps external path mounts onto the internal descriptor contract", async () => {
     const descriptor = createExternalPaneDescriptor({
       kind: "sample.mount",
-      createRenderer: () => ({}) as never,
+      mount() {},
       pathMount: {
         mountKey: "sample-mount",
         getStateSnapshot: ({ paneId, currentParams }) => ({
@@ -485,7 +501,7 @@ describe("external pane runtime", () => {
     const registry = new PaneRegistry();
     const descriptor = createExternalPaneDescriptor({
       kind: "sample.invalid-mount",
-      createRenderer: () => ({}) as never,
+      mount() {},
       pathMount: {
         mountKey: "browser",
         getStateSnapshot: () => ({})

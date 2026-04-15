@@ -1,4 +1,12 @@
 import type {
+  ExtensionPaneContext,
+  ExtensionPaneDefinition,
+  ExtensionPaneInstance,
+  ExtensionPanePathMount,
+  PaneStateStore,
+  WorkspaceBusEvent
+} from "@flmux/extension-api";
+import type {
   CreateComponentOptions,
   GroupPanelPartInitParameters,
   IContentRenderer,
@@ -10,115 +18,14 @@ import type {
   PaneRendererRuntimeContext,
   PaneWorkspaceContext
 } from "../shell/paneRegistry";
-import type {
-  NewPaneInput,
-  PathCallResult,
-  PathGetResult,
-  PathListResult,
-  PathSetResult,
-  WorkspaceBusEvent
-} from "../shell/types";
 
-export type ExternalPathGetResult = PathGetResult;
-export type ExternalPathListResult = PathListResult;
-export type ExternalPathSetResult = PathSetResult;
-export type ExternalPathCallResult = PathCallResult;
-export type ExternalWorkspaceBusEvent<T = unknown> = WorkspaceBusEvent<T>;
-
-export interface ExternalPaneShell {
-  get(path: string): Promise<ExternalPathGetResult>;
-  list(path: string): Promise<ExternalPathListResult>;
-  set(path: string, value: unknown): Promise<ExternalPathSetResult>;
-  call(path: string, args?: Record<string, unknown>): Promise<ExternalPathCallResult>;
-}
-
-export interface ExternalPaneBus {
-  publish(topic: string, payload?: unknown): Promise<ExternalPathCallResult>;
-  subscribe<T = unknown>(topic: string, handler: (event: ExternalWorkspaceBusEvent<T>) => void): () => void;
-}
-
-export interface ExternalPaneContext {
-  paneId: string;
-  workspaceId: string;
-  shell: ExternalPaneShell;
-  bus: ExternalPaneBus;
-  state: ExternalPaneState;
-}
-
-export interface ExternalPaneState {
-  getParams<T extends Record<string, unknown> = Record<string, unknown>>(): T;
-  setParams(nextParams: Record<string, unknown>): void;
-  patchParams(nextParams: Record<string, unknown>): void;
-  getTitle(): string | undefined;
-  setTitle(title: string): void;
-}
-
-export interface ExternalPaneDescriptorOptions {
-  kind: string;
-  createRenderer(context: ExternalPaneContext): IContentRenderer;
-  createParams?(args: {
-    workspaceId: string;
-    rootDir: string;
-    defaultFixture: string;
-    input: NewPaneInput;
-  }): Record<string, unknown> | undefined;
-  getTitle?(args: {
-    workspaceId: string;
-    rootDir: string;
-    defaultFixture: string;
-    input: NewPaneInput;
-    params: Record<string, unknown> | undefined;
-  }): string;
-  normalizeRestoredParams?(args: {
-    workspaceId: string;
-    rootDir: string;
-    defaultFixture: string;
-    params: Record<string, unknown> | undefined;
-  }): Record<string, unknown> | undefined;
-  serializeParams?(args: {
-    workspaceId: string;
-    rootDir: string;
-    defaultFixture: string;
-    currentParams: Record<string, unknown> | undefined;
-  }): Record<string, unknown> | undefined;
-  pathMount?: ExternalPanePathMountOptions;
-}
-
-export interface ExternalPanePathMountSnapshotArgs {
-  paneId: string;
-  workspaceId: string;
-  rootDir: string;
-  defaultFixture: string;
-  currentParams: Record<string, unknown> | undefined;
-}
-
-export interface ExternalPanePathMountSetArgs extends ExternalPanePathMountSnapshotArgs {
-  relativePath: string[];
-  value: unknown;
-  setParams(nextParams: Record<string, unknown>): Promise<Record<string, unknown>>;
-  patchParams(patch: Record<string, unknown>): Promise<Record<string, unknown>>;
-}
-
-export interface ExternalPanePathMountWritableArgs extends ExternalPanePathMountSnapshotArgs {
-  relativePath: string[];
-}
-
-export interface ExternalPanePathMountOptions {
-  mountKey: string;
-  getStateSnapshot?(args: ExternalPanePathMountSnapshotArgs): Record<string, unknown> | undefined;
-  canSetStatePath?(args: ExternalPanePathMountWritableArgs): boolean;
-  setState?(args: ExternalPanePathMountSetArgs): Promise<{ value: unknown }> | { value: unknown };
-  getStatusSnapshot?(args: ExternalPanePathMountSnapshotArgs): Record<string, unknown> | undefined;
-}
-
-export function createExternalPaneDescriptor(options: ExternalPaneDescriptorOptions): PaneDescriptor {
+export function createExternalPaneDescriptor(options: ExtensionPaneDefinition): PaneDescriptor {
   const pathMount = options.pathMount ? createExternalPanePathMount(options.pathMount) : undefined;
   return {
     kind: options.kind,
     createRenderer(args) {
       const state = createExternalPaneState();
-      const renderer = options.createRenderer(createExternalPaneContext(args, state));
-      return wrapExternalPaneRenderer(renderer, state);
+      return wrapExternalPaneRenderer(options, args, state);
     },
     lifecycle:
       options.createParams || options.getTitle
@@ -171,7 +78,7 @@ export function createExternalPaneDescriptor(options: ExternalPaneDescriptorOpti
   };
 }
 
-function createExternalPanePathMount(options: ExternalPanePathMountOptions): PanePathMount {
+function createExternalPanePathMount(options: ExtensionPanePathMount): PanePathMount {
   return {
     mountKey: options.mountKey,
     getStateSnapshot: options.getStateSnapshot
@@ -226,7 +133,7 @@ function createExternalPaneContext(args: {
   workspace: PaneWorkspaceContext;
   options: CreateComponentOptions;
   runtime: PaneRendererRuntimeContext;
-}, state: ExternalPaneState): ExternalPaneContext {
+}, state: PaneStateStore): ExtensionPaneContext {
   const paneId = args.options.id;
 
   return {
@@ -240,7 +147,7 @@ function createExternalPaneContext(args: {
     },
     bus: {
       publish: (topic, payload) => {
-        const event: ExternalWorkspaceBusEvent = {
+        const event: WorkspaceBusEvent = {
           topic,
           sourcePaneId: paneId,
           payload: payload ?? null,
@@ -263,33 +170,44 @@ function createExternalPaneContext(args: {
   };
 }
 
-function createExternalPaneState(): ExternalPaneState {
+function createExternalPaneState(): PaneStateStore {
   return new ExternalPaneStateController();
 }
 
-function wrapExternalPaneRenderer(renderer: IContentRenderer, state: ExternalPaneState): IContentRenderer {
+function wrapExternalPaneRenderer(
+  definition: ExtensionPaneDefinition,
+  args: {
+    workspace: PaneWorkspaceContext;
+    options: CreateComponentOptions;
+    runtime: PaneRendererRuntimeContext;
+  },
+  state: PaneStateStore
+): IContentRenderer {
+  const host = createPaneHostElement();
+  let instance: void | ExtensionPaneInstance;
+
   return {
-    element: renderer.element,
+    element: host,
     init(params: GroupPanelPartInitParameters) {
       synchronizeExternalPaneState(state, params.api, params.params);
-      renderer.init?.(params);
+      instance = definition.mount(host, createExternalPaneContext(args, state));
     },
     update(event: PanelUpdateEvent<Record<string, unknown>>) {
       synchronizeExternalPaneState(state, null, event.params);
-      renderer.update?.(event);
+      instance?.update?.(event.params);
     },
     layout(width, height) {
-      renderer.layout?.(width, height);
+      instance?.layout?.(width, height);
     },
     toJSON() {
-      return renderer.toJSON?.() ?? {};
+      return instance?.toJSON?.() ?? {};
     },
     focus() {
-      renderer.focus?.();
+      instance?.focus?.();
     },
     dispose() {
       try {
-        renderer.dispose?.();
+        instance?.dispose?.();
       } finally {
         disposeExternalPaneState(state);
       }
@@ -297,8 +215,26 @@ function wrapExternalPaneRenderer(renderer: IContentRenderer, state: ExternalPan
   };
 }
 
+function createPaneHostElement(): HTMLElement {
+  if (typeof document !== "undefined") {
+    return document.createElement("div");
+  }
+
+  return {
+    className: "",
+    innerHTML: "",
+    querySelector() {
+      return null;
+    },
+    querySelectorAll() {
+      return [];
+    },
+    replaceChildren() {}
+  } as unknown as HTMLElement;
+}
+
 function synchronizeExternalPaneState(
-  state: ExternalPaneState,
+  state: PaneStateStore,
   panelApi: GroupPanelPartInitParameters["api"] | null,
   nextParams: Record<string, unknown>
 ) {
@@ -309,7 +245,7 @@ function synchronizeExternalPaneState(
   state.synchronize(panelApi, nextParams);
 }
 
-function disposeExternalPaneState(state: ExternalPaneState) {
+function disposeExternalPaneState(state: PaneStateStore) {
   if (!(state instanceof ExternalPaneStateController)) {
     throw new Error("Unsupported external pane state implementation");
   }
@@ -321,7 +257,7 @@ function cloneParams(value: Record<string, unknown> | undefined) {
   return value ? JSON.parse(JSON.stringify(value)) as Record<string, unknown> : {};
 }
 
-class ExternalPaneStateController implements ExternalPaneState {
+class ExternalPaneStateController implements PaneStateStore {
   private params: Record<string, unknown> = {};
   private panelApi: GroupPanelPartInitParameters["api"] | null = null;
   private readonly cleanups = new Set<() => void>();

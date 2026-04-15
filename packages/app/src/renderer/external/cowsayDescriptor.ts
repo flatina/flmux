@@ -1,8 +1,11 @@
+import { definePane } from "@flmux/extension-api";
 import { CowsayPaneRenderer } from "./cowsayPane";
 import { createExternalPaneDescriptor } from "./runtime";
 
 export const cowsayPaneDescriptor = createExternalPaneDescriptor({
-  kind: "cowsay",
-  createRenderer: (context) => new CowsayPaneRenderer(context),
-  getTitle: ({ input }) => input.title?.trim() || "Cowsay"
+  ...definePane({
+    kind: "cowsay",
+    mount: (host, context) => new CowsayPaneRenderer(host, context),
+    getTitle: ({ input }) => input.title?.trim() || "Cowsay"
+  })
 });

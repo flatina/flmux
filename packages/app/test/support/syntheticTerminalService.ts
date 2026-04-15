@@ -2,6 +2,7 @@ import type {
   TerminalCreateResult,
   TerminalHistoryResult,
   TerminalKillResult,
+  TerminalResizeResult,
   TerminalRuntimeSummary,
   TerminalWriteResult
 } from "../../src/shared/terminal";
@@ -11,6 +12,7 @@ import { normalizeTerminalRootDir, resolveTerminalCwdFromRoot } from "../../src/
 export interface SyntheticTerminalService {
   create(input: { paneId?: string; rootDir: string; cwd?: string }): Promise<TerminalCreateResult>;
   write(input: { rootKey: string; runtimeId: string; data: string }): Promise<TerminalWriteResult>;
+  resize(input: { rootKey: string; runtimeId: string; cols: number; rows: number }): Promise<TerminalResizeResult>;
   history(input: { rootKey: string; runtimeId: string; maxBytes?: number }): Promise<TerminalHistoryResult>;
   kill(input: { rootKey: string; runtimeId: string }): Promise<TerminalKillResult>;
 }
@@ -70,6 +72,32 @@ export function createSyntheticTerminalService(options: SyntheticTerminalService
               commandCount: runtime.commandCount
             })
           : null
+      };
+    },
+
+    async resize(input) {
+      const runtime = runtimes.get(input.runtimeId);
+      if (!runtime || runtime.rootKey !== input.rootKey || !runtime.alive) {
+        return {
+          ok: true,
+          accepted: false,
+          runtimeId: input.runtimeId,
+          terminal: null
+        };
+      }
+
+      return {
+        ok: true,
+        accepted: true,
+        runtimeId: input.runtimeId,
+        terminal: makeSummary({
+          rootKey: input.rootKey,
+          rootDir: runtime.rootDir,
+          runtimeId: input.runtimeId,
+          cwd: runtime.cwd,
+          alive: true,
+          commandCount: runtime.commandCount
+        })
       };
     },
 

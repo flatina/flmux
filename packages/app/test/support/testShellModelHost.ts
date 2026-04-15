@@ -14,8 +14,8 @@ import type {
   TerminalCreateResult,
   TerminalHistoryResult,
   TerminalKillResult,
+  TerminalResizeResult,
   TerminalRuntimeEvent,
-  TerminalRuntimeSummary,
   TerminalWriteResult
 } from "../../src/shared/terminal";
 import { resolveTerminalCwdFromRoot } from "../../src/shared/terminalPath";
@@ -45,6 +45,7 @@ export type StoredPane =
 export interface TerminalServiceLike {
   create(input: { paneId?: string; rootDir: string; cwd?: string }): Promise<TerminalCreateResult>;
   write(input: { rootKey: string; runtimeId: string; data: string }): Promise<TerminalWriteResult>;
+  resize(input: { rootKey: string; runtimeId: string; cols: number; rows: number }): Promise<TerminalResizeResult>;
   history(input: { rootKey: string; runtimeId: string; maxBytes?: number }): Promise<TerminalHistoryResult>;
   kill(input: { rootKey: string; runtimeId: string }): Promise<TerminalKillResult>;
 }
@@ -75,6 +76,7 @@ export class TestShellModelHost implements ShellModelHost {
     patchPaneParams: [] as Array<{ paneId: string; patch: Record<string, unknown> }>,
     createTerminalRuntime: [] as Array<{ paneId: string; input: { cwd?: string } }>,
     writeTerminalRuntime: [] as Array<{ paneId: string; input: { data: string } }>,
+    resizeTerminalRuntime: [] as Array<{ paneId: string; input: { cols: number; rows: number } }>,
     readTerminalHistory: [] as Array<{ paneId: string; input: { maxBytes?: number } }>,
     killTerminalRuntime: [] as string[],
     publishWorkspaceEvent: [] as Array<{ topic: string; sourcePaneId: string; payload: unknown }>
@@ -122,6 +124,7 @@ export class TestShellModelHost implements ShellModelHost {
     return {
       createRuntime: (paneId, input) => this.createTerminalRuntime(paneId, input),
       writeRuntime: (paneId, input) => this.writeTerminalRuntime(paneId, input),
+      resizeRuntime: (paneId, input) => this.resizeTerminalRuntime(paneId, input),
       readHistory: (paneId, input) => this.readTerminalHistory(paneId, input),
       killRuntime: (paneId) => this.killTerminalRuntime(paneId)
     };
@@ -398,6 +401,35 @@ export class TestShellModelHost implements ShellModelHost {
       runtimeId,
       maxBytes: input.maxBytes
     });
+  }
+
+  async resizeTerminalRuntime(paneId: string, input: { cols: number; rows: number }): Promise<TerminalResizeResult> {
+    const pane = this.requireTerminalPane(paneId);
+    const runtimeId = pane.runtimeId;
+    const rootKey = pane.rootKey;
+    this.calls.resizeTerminalRuntime.push({ paneId, input });
+
+    if (!rootKey || !runtimeId) {
+      throw new Error(`Terminal pane '${paneId}' is not attached to a runtime`);
+    }
+
+    const result = await this.terminalService.resize({
+      rootKey,
+      runtimeId,
+      cols: input.cols,
+      rows: input.rows
+    });
+
+    if (result.terminal) {
+      pane.summary = {
+        alive: result.terminal.alive,
+        commandCount: result.terminal.commandCount,
+        createdAt: result.terminal.createdAt,
+        updatedAt: result.terminal.updatedAt
+      };
+    }
+
+    return result;
   }
 
   async killTerminalRuntime(paneId: string): Promise<TerminalKillResult> {

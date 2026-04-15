@@ -155,6 +155,22 @@ describe("flmux harness smoke", () => {
       alive: true
     });
 
+    const resizeResult = await harness.runCliJson<
+      ModelEnvelope<{
+        ok: true;
+        value: {
+          ok: true;
+          accepted: boolean;
+          runtimeId: string;
+        };
+      }>
+    >(["call", `/panes/${paneId}/terminal/resize`, "cols=120", "rows=32"]);
+    expect(resizeResult.result.value).toMatchObject({
+      ok: true,
+      accepted: true,
+      runtimeId
+    });
+
     const marker = `flmux-smoke-${crypto.randomUUID()}`;
     const writeResult = await harness.runCliJson<
       ModelEnvelope<{

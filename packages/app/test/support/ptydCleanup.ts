@@ -3,7 +3,7 @@ import { PtydLockFile } from "../../src/main/ptyd/lockFile";
 import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { normalizeTerminalRootDir } from "../../src/main/terminal-service/rootKey";
+import { normalizeTerminalRootDir } from "../../src/shared/terminalPath";
 import { waitFor } from "./waitFor";
 
 export interface OwnedPtydLock {

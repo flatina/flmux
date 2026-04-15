@@ -180,6 +180,7 @@ describe("shell model direct", () => {
         "cwd",
         "create",
         "write",
+        "resize",
         "history",
         "kill"
       ]);
@@ -316,6 +317,17 @@ describe("shell model direct", () => {
     });
     expect(host.calls.writeTerminalRuntime).toEqual([{ paneId: "pane.term", input: { data: "echo hi\r" } }]);
 
+    const resized = await model.pathCall("/panes/current/terminal/resize", { cols: 132, rows: 40 });
+    expect(resized).toMatchObject({
+      ok: true,
+      value: {
+        ok: true,
+        accepted: true,
+        runtimeId: "term_created"
+      }
+    });
+    expect(host.calls.resizeTerminalRuntime).toEqual([{ paneId: "pane.term", input: { cols: 132, rows: 40 } }]);
+
     const history = await model.pathCall("/panes/current/terminal/history", { maxBytes: 256 });
     expect(history).toMatchObject({
       ok: true,
@@ -358,6 +370,11 @@ describe("shell model direct", () => {
       code: "INVALID_VALUE",
       error: "Terminal pane is not attached to a runtime"
     });
+    expect(await model.pathCall("/panes/current/terminal/resize", { cols: 80, rows: 24 })).toEqual({
+      ok: false,
+      code: "INVALID_VALUE",
+      error: "Terminal pane is not attached to a runtime"
+    });
     expect(await model.pathCall("/panes/current/terminal/history")).toEqual({
       ok: false,
       code: "INVALID_VALUE",
@@ -391,6 +408,7 @@ describe("shell model direct", () => {
       terminalService: {
         create: (input) => terminalService.create(input),
         write: (input) => terminalService.write(input),
+        resize: (input) => terminalService.resize(input),
         history: (input) => terminalService.history(input),
         kill: async (input) => {
           killCalls.push(input.runtimeId);

@@ -1,4 +1,5 @@
 import type { ExtensionPaneContext, ExtensionPaneInstance, ShellPathGetResult } from "@flmux/extension-api";
+import { defineExtension, definePane } from "@flmux/extension-api";
 
 type OutputMode = "pretty" | "compact";
 type LogKind = "input" | "result" | "error" | "event" | "system";
@@ -10,7 +11,7 @@ interface LogEntry {
   timestamp: number;
 }
 
-export class CowsayPaneRenderer implements ExtensionPaneInstance {
+class CowsayPaneRenderer implements ExtensionPaneInstance {
   private outputMode: OutputMode = "pretty";
   private subscription = "*";
   private unsubscribeBus?: () => void;
@@ -104,10 +105,7 @@ export class CowsayPaneRenderer implements ExtensionPaneInstance {
     this.commandForm.addEventListener("submit", (event) => {
       event.preventDefault();
       const command = this.commandInput!.value.trim();
-      if (!command) {
-        return;
-      }
-
+      if (!command) return;
       this.commandInput!.value = "";
       void this.runCommand(command);
     });
@@ -134,91 +132,44 @@ export class CowsayPaneRenderer implements ExtensionPaneInstance {
     this.updateSubscription(this.subscription);
     this.pushLog("system", "ready", {
       paneId: this.context.paneId,
-      workspaceId: this.context.workspaceId,
-      examples: [
-        "get /title",
-        "set /title moo",
-        "call /panes/new kind=cowsay place=right",
-        "call /panes/new kind=browser url=/fixtures/counter place=right",
-        "call /panes/new kind=terminal cwd=. place=right",
-        "pub cowsay.message text=moo",
-        "ls-each-get /status/panes"
-      ]
+      workspaceId: this.context.workspaceId
     });
   }
 
   private async runCommand(command: string) {
     this.pushLog("input", command);
-
     try {
       const result = await this.executeCommand(command);
       if (result !== undefined) {
         this.pushLog("result", "result", result);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.pushLog("error", message);
+      this.pushLog("error", error instanceof Error ? error.message : String(error));
     }
   }
 
   private async executeCommand(command: string): Promise<unknown> {
     const tokens = tokenize(command);
-    if (tokens.length === 0) {
-      return undefined;
-    }
+    if (tokens.length === 0) return undefined;
 
     const [verb, ...rest] = tokens;
-
     switch (verb) {
-      case "help":
-        return {
-          commands: [
-            "get <path>",
-            "ls <path>",
-            "ls-each-get <path>",
-            "set <path> <value>",
-            "call <path> key=value ...",
-            "pub <topic> key=value ...",
-            "sub <pattern>",
-            "clear"
-          ]
-        };
-
-      case "clear":
-        this.logs = [];
-        this.renderLogs();
-        this.pushLog("system", "log.cleared");
-        return { ok: true };
-
       case "get":
         return this.context.shell.get(requiredToken(rest[0], "get <path> requires a path"));
-
       case "ls":
         return this.context.shell.list(requiredToken(rest[0], "ls <path> requires a path"));
-
       case "ls-each-get":
         return this.runListEachGet(requiredToken(rest[0], "ls-each-get <path> requires a path"));
-
       case "set": {
         const path = requiredToken(rest[0], "set <path> <value> requires a path");
-        if (rest.length < 2) {
-          throw new Error("set <path> <value> requires a value");
-        }
-
-        const rawValue = rest.slice(1).join(" ");
-        return this.context.shell.set(path, coerceScalar(rawValue));
+        return this.context.shell.set(path, coerceScalar(rest.slice(1).join(" ")));
       }
-
       case "call": {
         const path = requiredToken(rest[0], "call <path> requires a path");
         const { named, extras } = parseNamedArgs(rest.slice(1));
-        if (extras.length > 0) {
-          throw new Error("call only accepts key=value arguments");
-        }
-
+        if (extras.length > 0) throw new Error("call only accepts key=value arguments");
         return this.context.shell.call(path, named);
       }
-
       case "pub": {
         const topic = requiredToken(rest[0], "pub <topic> requires a topic");
         const { named, extras } = parseNamedArgs(rest.slice(1));
@@ -228,16 +179,19 @@ export class CowsayPaneRenderer implements ExtensionPaneInstance {
             : extras.length <= 1
               ? (extras[0] ?? null)
               : extras;
-
         return this.context.bus.publish(topic, payload);
       }
-
       case "sub": {
         const pattern = requiredToken(rest[0], "sub <pattern> requires a topic pattern");
         this.updateSubscription(pattern);
         return { ok: true, subscription: this.subscription };
       }
-
+      case "clear":
+        this.logs = [];
+        this.renderLogs();
+        return { ok: true };
+      case "help":
+        return { commands: ["get", "ls", "ls-each-get", "set", "call", "pub", "sub", "clear"] };
       default:
         throw new Error(`Unknown command '${verb}'. Try 'help'.`);
     }
@@ -245,10 +199,7 @@ export class CowsayPaneRenderer implements ExtensionPaneInstance {
 
   private async runListEachGet(path: string) {
     const listed = await this.context.shell.list(path);
-    if (!listed.ok || !listed.found) {
-      return listed;
-    }
-
+    if (!listed.ok || !listed.found) return listed;
     return Object.fromEntries(
       await Promise.all(
         listed.entries.map(async (entry) => [entry.path, unwrapValue(await this.context.shell.get(entry.path))])
@@ -267,106 +218,73 @@ export class CowsayPaneRenderer implements ExtensionPaneInstance {
 
   private pushLog(kind: LogKind, message: string, value?: unknown) {
     this.logs.push({ kind, message, value, timestamp: Date.now() });
-    if (this.logs.length > 200) {
-      this.logs.shift();
-    }
-
+    if (this.logs.length > 200) this.logs.shift();
     this.renderLogs();
   }
 
   private renderLogs() {
-    if (!this.logList) {
-      return;
-    }
-
+    if (!this.logList) return;
     this.logList.replaceChildren(
       ...this.logs.map((entry) => {
         const card = document.createElement("article");
         card.className = `cowsay-log__entry cowsay-log__entry--${entry.kind}`;
-
         const meta = document.createElement("div");
         meta.className = "cowsay-log__meta";
         meta.textContent = `${formatTime(entry.timestamp)}  ${entry.kind}`;
-
         const body = document.createElement("pre");
         body.className = "cowsay-log__body";
         body.textContent =
-          entry.value === undefined
-            ? entry.message
-            : `${entry.message}\n${formatValue(entry.value, this.outputMode)}`;
-
+          entry.value === undefined ? entry.message : `${entry.message}\n${formatValue(entry.value, this.outputMode)}`;
         card.append(meta, body);
         return card;
       })
     );
-
     this.logList.scrollTop = this.logList.scrollHeight;
   }
 }
 
-function requiredToken(token: string | undefined, message: string): string {
-  if (!token) {
-    throw new Error(message);
-  }
+const cowsayPane = definePane({
+  kind: "cowsay",
+  mount: (host, context) => new CowsayPaneRenderer(host, context),
+  getTitle: ({ input }) => input.title?.trim() || "Cowsay"
+});
 
+export default defineExtension({
+  panes: [cowsayPane]
+});
+
+function requiredToken(token: string | undefined, message: string): string {
+  if (!token) throw new Error(message);
   return token;
 }
 
 function unwrapValue(result: ShellPathGetResult) {
-  if (!result.ok) {
-    return result;
-  }
-
+  if (!result.ok) return result;
   return result.found ? result.value : { found: false };
 }
 
 function parseNamedArgs(tokens: string[]) {
   const named: Record<string, unknown> = {};
   const extras: string[] = [];
-
   for (const token of tokens) {
     const equalsIndex = token.indexOf("=");
     if (equalsIndex <= 0) {
       extras.push(token);
       continue;
     }
-
-    const key = token.slice(0, equalsIndex);
-    const rawValue = token.slice(equalsIndex + 1);
-    named[key] = coerceScalar(rawValue);
+    named[token.slice(0, equalsIndex)] = coerceScalar(token.slice(equalsIndex + 1));
   }
-
   return { named, extras };
 }
 
 function coerceScalar(rawValue: string): unknown {
-  if (rawValue === "true") {
-    return true;
+  if (rawValue === "true") return true;
+  if (rawValue === "false") return false;
+  if (rawValue === "null") return null;
+  if (/^-?\d+(\.\d+)?$/.test(rawValue)) return Number(rawValue);
+  if ((rawValue.startsWith("{") && rawValue.endsWith("}")) || (rawValue.startsWith("[") && rawValue.endsWith("]"))) {
+    try { return JSON.parse(rawValue); } catch { return rawValue; }
   }
-
-  if (rawValue === "false") {
-    return false;
-  }
-
-  if (rawValue === "null") {
-    return null;
-  }
-
-  if (/^-?\d+(\.\d+)?$/.test(rawValue)) {
-    return Number(rawValue);
-  }
-
-  if (
-    (rawValue.startsWith("{") && rawValue.endsWith("}")) ||
-    (rawValue.startsWith("[") && rawValue.endsWith("]"))
-  ) {
-    try {
-      return JSON.parse(rawValue);
-    } catch {
-      return rawValue;
-    }
-  }
-
   return rawValue;
 }
 
@@ -375,34 +293,28 @@ function tokenize(command: string): string[] {
   let current = "";
   let quote: '"' | "'" | null = null;
   let escaping = false;
-
   for (const char of command.trim()) {
     if (escaping) {
       current += char;
       escaping = false;
       continue;
     }
-
     if (char === "\\") {
       escaping = true;
       continue;
     }
-
     if (quote) {
       if (char === quote) {
         quote = null;
         continue;
       }
-
       current += char;
       continue;
     }
-
     if (char === '"' || char === "'") {
       quote = char;
       continue;
     }
-
     if (/\s/.test(char)) {
       if (current) {
         tokens.push(current);
@@ -410,26 +322,15 @@ function tokenize(command: string): string[] {
       }
       continue;
     }
-
     current += char;
   }
-
-  if (quote) {
-    throw new Error("Unterminated quoted string");
-  }
-
-  if (current) {
-    tokens.push(current);
-  }
-
+  if (quote) throw new Error("Unterminated quoted string");
+  if (current) tokens.push(current);
   return tokens;
 }
 
 function formatValue(value: unknown, mode: OutputMode): string {
-  if (typeof value === "string") {
-    return value;
-  }
-
+  if (typeof value === "string") return value;
   return mode === "compact" ? JSON.stringify(value) : JSON.stringify(value, null, 2);
 }
 

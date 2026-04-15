@@ -1,9 +1,11 @@
 import type {
   ExtensionPaneContext,
+  ExtensionDefinition,
   ExtensionPaneInstance,
   ShellPathGetResult,
   ShellPathListResult
 } from "@flmux/extension-api";
+import { defineExtension, definePane } from "@flmux/extension-api";
 
 interface SnapshotState {
   appTitle: string;
@@ -21,7 +23,7 @@ interface EventLogEntry {
   timestamp: number;
 }
 
-export class InspectorPaneRenderer implements ExtensionPaneInstance {
+class InspectorPaneRenderer implements ExtensionPaneInstance {
   private unsubscribeBus?: () => void;
   private snapshot: SnapshotState = {
     appTitle: "loading",
@@ -204,21 +206,56 @@ export class InspectorPaneRenderer implements ExtensionPaneInstance {
       ...this.eventLog.map((entry) => {
         const article = document.createElement("article");
         article.className = "inspector-log__entry";
-
         const meta = document.createElement("div");
         meta.className = "inspector-log__meta";
         meta.textContent = `${formatTime(entry.timestamp)}  ${entry.topic}`;
-
         const body = document.createElement("pre");
         body.className = "inspector-log__body";
         body.textContent = formatPayload(entry.payload);
-
         article.append(meta, body);
         return article;
       })
     );
   }
 }
+
+const inspectorPane = definePane({
+  kind: "inspector",
+  mount: (host, context) => new InspectorPaneRenderer(host, context),
+  createParams: ({ input }) => ({
+    subscription: typeof input.params?.subscription === "string" && input.params.subscription.length > 0
+      ? input.params.subscription
+      : "*"
+  }),
+  getTitle: ({ input }) => input.title?.trim() || "Inspector",
+  normalizeRestoredParams: ({ params }) => ({
+    subscription: typeof params?.subscription === "string" && params.subscription.length > 0
+      ? params.subscription
+      : "*"
+  }),
+  serializeParams: ({ currentParams }) => ({
+    subscription: typeof currentParams?.subscription === "string" && currentParams.subscription.length > 0
+      ? currentParams.subscription
+      : "*"
+  }),
+  pathMount: {
+    mountKey: "inspector",
+    getStateSnapshot: ({ currentParams }) => ({
+      subscription: typeof currentParams?.subscription === "string" && currentParams.subscription.length > 0
+        ? currentParams.subscription
+        : "*"
+    }),
+    getStatusSnapshot: ({ workspaceId, rootDir, defaultFixture }) => ({
+      workspaceId,
+      rootDir,
+      defaultFixture
+    })
+  }
+});
+
+export default defineExtension({
+  panes: [inspectorPane]
+} satisfies ExtensionDefinition);
 
 function readAppTitle(result: ShellPathGetResult) {
   return result.ok && result.found && isRecord(result.value) && typeof result.value.title === "string"

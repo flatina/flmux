@@ -22,7 +22,7 @@ async function bootstrap() {
 
   const config = await rpc.requestProxy["flmux.getConfig"]();
   const workbench = new FlmuxWorkbench(config, rpc.requestProxy);
-  registerLocalExternalPaneDescriptors(workbench);
+  registerLocalExternalPaneDescriptors(workbench, config.localExtensions);
   await workbench.start();
 
   rpc.setRequestHandler({

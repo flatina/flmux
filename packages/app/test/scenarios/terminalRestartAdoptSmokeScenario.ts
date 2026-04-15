@@ -75,7 +75,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
     }
     const rootKey = created.result.value.rootKey;
     const runtimeId = created.result.value.runtimeId;
-    const rootDir = resolve(import.meta.dir, "..", "..", "workspace-alpha");
+    const rootDir = resolve(import.meta.dir, "..", "..", "..", "..", "workspace-alpha");
 
     const marker = `flmux-restart-${crypto.randomUUID()}`;
     await postJson<{

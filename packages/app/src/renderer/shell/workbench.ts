@@ -40,16 +40,10 @@ import type {
   WorkspaceBusEvent
 } from "./types";
 import type { FlmuxSessionSnapshot, FlmuxWorkspaceSessionSnapshot } from "../../shared/session";
-import type { FlmuxHostRequestProxy } from "../../shared/rendererBridge";
+import type { FlmuxHostRequestProxy, FlmuxRendererBootstrapConfig } from "../../shared/rendererBridge";
 import type { TerminalRuntimeSummary } from "../../shared/terminal";
 import { resolveTerminalCwdFromRoot } from "../../shared/terminalPath";
 import { createWorkspaceBus } from "./workspaceBus";
-
-export interface FlmuxRendererConfig {
-  appOrigin: string;
-  fixtureBaseUrl: string;
-  projectDir: string;
-}
 
 type WorkspaceSeed = {
   id: string;
@@ -98,7 +92,7 @@ export class FlmuxWorkbench implements ShellModelHost {
   private sessionPersistenceEnabled = false;
   private sessionPersistenceSuppressed = false;
 
-  constructor(private readonly config: FlmuxRendererConfig, hostProxy: FlmuxHostRequestProxy) {
+  constructor(private readonly config: FlmuxRendererBootstrapConfig, hostProxy: FlmuxHostRequestProxy) {
     this.sessionHost = createSessionHost(hostProxy);
     this.terminalHost = createTerminalHost(hostProxy);
     this.terminalCoordinator = new TerminalCoordinator<WorkspaceRecord>({
@@ -355,7 +349,7 @@ export class FlmuxWorkbench implements ShellModelHost {
         title: seed.title,
         defaultTitle: seed.title,
         defaultFixture: seed.defaultFixture,
-        rootDir: `${this.config.projectDir}\\${seed.rootDirName}`,
+        rootDir: joinPath(this.config.projectDir, seed.rootDirName),
         surface,
         bus: createWorkspaceBus(seed.id),
         paneRecords: new Map(),
@@ -925,6 +919,11 @@ function normalizeDirection(place: PanePlacement | undefined) {
 
 function fixtureLabel(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function joinPath(basePath: string, childPath: string) {
+  const normalizedBase = basePath.replace(/[\\/]+$/, "");
+  return `${normalizedBase}/${childPath}`;
 }
 
 function cloneJsonObject(value: unknown) {

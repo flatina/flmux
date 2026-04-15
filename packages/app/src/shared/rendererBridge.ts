@@ -20,10 +20,23 @@ import type {
 
 // ── Host requests (renderer calls main) ──
 
+export interface FlmuxLocalExtensionSummary {
+  id: string;
+  name: string;
+  version: string;
+}
+
+export interface FlmuxRendererBootstrapConfig {
+  appOrigin: string;
+  fixtureBaseUrl: string;
+  projectDir: string;
+  localExtensions: FlmuxLocalExtensionSummary[];
+}
+
 export type FlmuxHostRequests = {
   "flmux.getConfig": {
     params: undefined;
-    response: { appOrigin: string; fixtureBaseUrl: string; projectDir: string };
+    response: FlmuxRendererBootstrapConfig;
   };
   "flmux.client.register": {
     params: undefined;

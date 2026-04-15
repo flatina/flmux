@@ -7,6 +7,7 @@ import { createShellModelRouter } from "./shellModelBridge";
 import { startFlmuxServer } from "./server";
 import { forwardTerminalEventToOwnedClient } from "./terminalEventForwarding";
 import { createTerminalService } from "./terminal-service";
+import { discoverLocalExtensionCatalog } from "./localExtensions";
 
 process.env.BUNITE_REMOTE_DEBUGGING_PORT ??= "9227";
 process.env.FLMUX_DEV_MODE ??= Bun.argv.includes("--dev") ? "1" : "";
@@ -16,11 +17,14 @@ const app = new AppRuntime({ logLevel: "info" });
 await app.ready;
 
 const rendererDir = app.resolve("../dist/renderer");
+const projectDir = app.resolve("../../..");
+const localExtensionsRootDir = app.resolve("../../../extensions");
 const clientRegistry = new FlmuxClientRegistry();
 const shellModelRouter = createShellModelRouter(clientRegistry);
 const terminalService = createTerminalService();
 const sessionStore = createSessionStore();
 const paneOwners = new Map<string, number>();
+const localExtensions = await discoverLocalExtensionCatalog(localExtensionsRootDir);
 
 let desktopViewId = -1;
 
@@ -30,7 +34,8 @@ const rendererRpc = BrowserView.defineRPC<FlmuxRendererBridgeSchema>({
       "flmux.getConfig": () => ({
         fixtureBaseUrl: `${server.origin}/fixtures`,
         appOrigin: server.origin,
-        projectDir: process.cwd()
+        projectDir,
+        localExtensions
       }),
       "flmux.client.register": () => {
         return shellModelRouter.registerClient(desktopViewId);

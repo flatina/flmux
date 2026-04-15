@@ -1,11 +1,11 @@
+import "@xterm/xterm/css/xterm.css";
+import type { FitAddon } from "@xterm/addon-fit";
+import type { Terminal as XtermTerminal } from "@xterm/xterm";
 import type { GroupPanelPartInitParameters, IContentRenderer } from "dockview-core";
 import type { TerminalHostAPI } from "../terminalHost";
 import type { ShellModelAPI } from "../shell/types";
 import type {
   TerminalCreateResult,
-  TerminalHistoryResult,
-  TerminalKillResult,
-  TerminalRootStatus,
   TerminalRuntimeEvent,
   TerminalRuntimeSummary,
   TerminalWriteResult
@@ -13,7 +13,7 @@ import type {
 
 export interface TerminalPaneRendererDependencies {
   shellModel: ShellModelAPI;
-  terminalEvents: Pick<TerminalHostAPI, "onEvent" | "listRoots">;
+  terminalEvents: Pick<TerminalHostAPI, "onEvent">;
   onRuntimeStateChange(
     paneId: string,
     state: { cwd: string; rootKey: string | null; runtimeId: string | null; summary: TerminalRuntimeSummary | null }
@@ -23,6 +23,7 @@ export interface TerminalPaneRendererDependencies {
 type TerminalPaneParams = {
   cwd?: string;
   rootDir?: string;
+  autoCreate?: boolean;
 };
 
 const MAX_RENDER_HISTORY_CHARS = 200_000;
@@ -31,18 +32,19 @@ export class TerminalPaneRenderer implements IContentRenderer {
   readonly element = document.createElement("div");
 
   private paneId = "";
-  private rootDir = "";
   private cwd = "";
   private rootKey: string | null = null;
   private runtimeId: string | null = null;
   private history = "";
-  private roots: TerminalRootStatus[] = [];
+  private autoCreate = false;
 
-  private commandInput?: HTMLInputElement;
-  private outputEl?: HTMLElement;
-  private summaryEl?: HTMLElement;
-  private rootsEl?: HTMLElement;
+  private xterm?: XtermTerminal;
+  private fitAddon?: FitAddon;
+  private xtermReady: Promise<void> | null = null;
+  private lastResizeSignature: string | null = null;
+  private viewportEl?: HTMLElement;
   private unsubscribeEvent?: () => void;
+  private viewportObserver?: ResizeObserver;
 
   constructor(private readonly deps: TerminalPaneRendererDependencies) {
     this.element.className = "terminal-panel";
@@ -51,77 +53,90 @@ export class TerminalPaneRenderer implements IContentRenderer {
   init(params: GroupPanelPartInitParameters) {
     this.paneId = params.api.id;
     const input = params.params as TerminalPaneParams;
-    this.rootDir = input.rootDir ?? input.cwd ?? ".";
-    this.cwd = input.cwd ?? this.rootDir;
+    this.cwd = input.cwd ?? input.rootDir ?? ".";
+    this.autoCreate = input.autoCreate === true;
 
-    this.element.innerHTML = `
-      <div class="terminal-panel__header">
-        <div>
-          <strong>terminal proof</strong>
-          <p class="terminal-panel__summary" data-role="summary">detached · cwd=${this.cwd}</p>
-        </div>
-        <div class="terminal-panel__actions">
-          <button type="button" data-action="create">Create</button>
-          <button type="button" data-action="refresh">Refresh</button>
-          <button type="button" data-action="roots">Roots</button>
-          <button type="button" data-action="kill">Kill</button>
-        </div>
-      </div>
-      <pre class="terminal-panel__output" data-role="output"></pre>
-      <form class="terminal-panel__input-row" data-role="command-form">
-        <input class="terminal-panel__input" name="command" type="text" spellcheck="false" placeholder="help" />
-        <button type="submit">Send</button>
-      </form>
-      <div class="terminal-panel__roots" data-role="roots"></div>
-    `;
-
-    this.commandInput = this.element.querySelector<HTMLInputElement>(".terminal-panel__input")!;
-    this.outputEl = this.element.querySelector<HTMLElement>('[data-role="output"]')!;
-    this.summaryEl = this.element.querySelector<HTMLElement>('[data-role="summary"]')!;
-    this.rootsEl = this.element.querySelector<HTMLElement>('[data-role="roots"]')!;
-
-    this.element.querySelector<HTMLFormElement>('[data-role="command-form"]')!.addEventListener("submit", (event) => {
-      event.preventDefault();
-      const command = this.commandInput!.value.trim();
-      if (!command) {
-        return;
-      }
-
-      this.commandInput!.value = "";
-      void this.send(command);
-    });
-
-    this.element.querySelector<HTMLButtonElement>('[data-action="create"]')!.addEventListener("click", () => {
-      void this.createRuntime();
-    });
-
-    this.element.querySelector<HTMLButtonElement>('[data-action="refresh"]')!.addEventListener("click", () => {
-      void this.refreshHistory();
-    });
-
-    this.element.querySelector<HTMLButtonElement>('[data-action="roots"]')!.addEventListener("click", () => {
-      void this.refreshRoots();
-    });
-
-    this.element.querySelector<HTMLButtonElement>('[data-action="kill"]')!.addEventListener("click", () => {
-      void this.kill();
-    });
+    this.element.innerHTML = `<div class="terminal-panel__viewport" data-role="viewport"></div>`;
+    this.viewportEl = this.element.querySelector<HTMLElement>('[data-role="viewport"]')!;
 
     this.unsubscribeEvent = this.deps.terminalEvents.onEvent((event) => {
       this.handleTerminalEvent(event);
     });
 
-    this.renderSummary(null);
-    void this.refreshRoots();
+    if (typeof ResizeObserver !== "undefined") {
+      this.viewportObserver = new ResizeObserver(() => {
+        this.fitTerminal();
+      });
+      this.viewportObserver.observe(this.viewportEl);
+    }
+
+    void this.ensureXterm().then(() => {
+      if (this.autoCreate && !this.runtimeId) {
+        void this.createRuntime();
+      }
+    });
+  }
+
+  layout() {
+    this.fitTerminal();
   }
 
   dispose() {
     this.unsubscribeEvent?.();
+    this.viewportObserver?.disconnect();
+    this.xterm?.dispose();
+  }
+
+  private async ensureXterm() {
+    if (this.xtermReady) {
+      return this.xtermReady;
+    }
+
+    this.xtermReady = (async () => {
+      const [{ Terminal }, { FitAddon }] = await Promise.all([
+        import("@xterm/xterm"),
+        import("@xterm/addon-fit")
+      ]);
+
+      if (!this.viewportEl || this.xterm) {
+        return;
+      }
+
+      const terminal = new Terminal({
+        cursorBlink: true,
+        fontFamily: `ui-monospace, "SFMono-Regular", Consolas, monospace`,
+        fontSize: 12,
+        scrollback: 10_000,
+        theme: {
+          background: "#04070c",
+          foreground: "#d7ffe1",
+          selectionBackground: "rgba(136, 214, 201, 0.28)"
+        }
+      });
+      const fitAddon = new FitAddon();
+      terminal.loadAddon(fitAddon);
+      terminal.onData((data) => {
+        void this.writeToRuntime(data);
+      });
+      terminal.onResize(({ cols, rows }) => {
+        void this.resizeRuntime(cols, rows);
+      });
+      terminal.open(this.viewportEl);
+
+      this.xterm = terminal;
+      this.fitAddon = fitAddon;
+      this.replaceTerminalBuffer();
+      this.fitTerminal();
+    })().catch((error) => {
+      this.writeSystemLine(error instanceof Error ? error.message : String(error));
+      throw error;
+    });
+
+    return this.xtermReady;
   }
 
   private async createRuntime() {
     if (this.runtimeId) {
-      this.renderError(new Error(`Terminal pane '${this.paneId}' already has an attached runtime`));
       return;
     }
 
@@ -134,20 +149,21 @@ export class TerminalPaneRenderer implements IContentRenderer {
       }
 
       this.applyCreateResult(result.value as TerminalCreateResult);
-      await this.refreshRoots();
+      await this.ensureXterm();
+      this.fitTerminal();
     } catch (error) {
-      this.renderError(error);
+      this.writeSystemLine(error instanceof Error ? error.message : String(error));
     }
   }
 
-  private async send(command: string) {
+  private async writeToRuntime(data: string) {
     if (!this.rootKey || !this.runtimeId) {
       return;
     }
 
     try {
       const result = await this.deps.shellModel.pathCall(`/panes/${this.paneId}/terminal/write`, {
-        data: command
+        data
       });
       if (!result.ok) {
         throw new Error(result.error);
@@ -156,67 +172,35 @@ export class TerminalPaneRenderer implements IContentRenderer {
       const writeResult = result.value as TerminalWriteResult;
       if (writeResult.history.length > 0) {
         this.history = clampHistory(writeResult.history);
-        this.renderHistory();
+        this.replaceTerminalBuffer();
       }
-      this.renderSummary(writeResult.terminal ?? null);
-      await this.refreshRoots();
     } catch (error) {
-      this.renderError(error);
+      this.writeSystemLine(error instanceof Error ? error.message : String(error));
     }
   }
 
-  private async refreshHistory() {
+  private async resizeRuntime(cols: number, rows: number) {
     if (!this.rootKey || !this.runtimeId) {
       return;
     }
 
-    try {
-      const result = await this.deps.shellModel.pathCall(`/panes/${this.paneId}/terminal/history`);
-      if (!result.ok) {
-        throw new Error(result.error);
-      }
-
-      this.history = clampHistory((result.value as TerminalHistoryResult).data);
-      this.renderHistory();
-    } catch (error) {
-      this.renderError(error);
-    }
-  }
-
-  private async refreshRoots() {
-    try {
-      this.roots = await this.deps.terminalEvents.listRoots();
-      this.renderRoots();
-    } catch (error) {
-      this.renderError(error);
-    }
-  }
-
-  private async kill() {
-    if (!this.rootKey || !this.runtimeId) {
-      this.renderSummary(null);
+    const signature = `${cols}x${rows}`;
+    if (signature === this.lastResizeSignature) {
       return;
     }
 
     try {
-      const result = await this.deps.shellModel.pathCall(`/panes/${this.paneId}/terminal/kill`);
-      if (!result.ok) {
-        throw new Error(result.error);
-      }
-
-      this.rootKey = null;
-      this.runtimeId = null;
-      this.deps.onRuntimeStateChange(this.paneId, {
-        cwd: this.cwd,
-        rootKey: null,
-        runtimeId: null,
-        summary: null
+      const result = await this.deps.shellModel.pathCall(`/panes/${this.paneId}/terminal/resize`, {
+        cols,
+        rows
       });
-      this.renderSummary((result.value as TerminalKillResult).terminal);
-      await this.refreshHistory();
-      await this.refreshRoots();
+      if (!result.ok) {
+        throw new Error(result.error);
+      }
+
+      this.lastResizeSignature = signature;
     } catch (error) {
-      this.renderError(error);
+      this.writeSystemLine(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -224,57 +208,42 @@ export class TerminalPaneRenderer implements IContentRenderer {
     this.rootKey = result.rootKey;
     this.runtimeId = result.runtimeId;
     this.cwd = result.terminal.cwd;
-    this.history = result.history;
+    this.history = clampHistory(result.history);
+    this.lastResizeSignature = null;
+    this.autoCreate = false;
     this.deps.onRuntimeStateChange(this.paneId, {
       cwd: this.cwd,
       rootKey: this.rootKey,
       runtimeId: this.runtimeId,
       summary: result.terminal
     });
-    this.renderHistory();
-    this.renderSummary(result.terminal);
+    this.replaceTerminalBuffer();
   }
 
-  private renderHistory() {
-    if (this.outputEl) {
-      this.outputEl.textContent = this.history;
-      this.outputEl.scrollTop = this.outputEl.scrollHeight;
-    }
+  private fitTerminal() {
+    try {
+      this.fitAddon?.fit();
+    } catch {}
   }
 
-  private renderSummary(summary: TerminalRuntimeSummary | null) {
-    if (!this.summaryEl) {
+  private replaceTerminalBuffer() {
+    if (!this.xterm) {
       return;
     }
 
-    if (!summary) {
-      this.summaryEl.textContent = `detached · cwd=${this.cwd}`;
+    this.xterm.reset();
+    if (this.history.length > 0) {
+      this.xterm.write(this.history);
+    }
+  }
+
+  private writeSystemLine(message: string) {
+    if (!message) {
       return;
     }
 
-    this.summaryEl.textContent =
-      `${summary.alive ? "alive" : "closed"} · root=${summary.rootKey} · runtime=${summary.runtimeId} · cwd=${summary.cwd}`;
-  }
-
-  private renderRoots() {
-    if (!this.rootsEl) {
-      return;
-    }
-
-    this.rootsEl.replaceChildren(
-      ...this.roots.map((root) => {
-        const item = document.createElement("div");
-        item.className = "terminal-panel__root-item";
-        item.textContent = `${root.rootKey} · ${root.runtimeCount} runtimes · ${root.rootDir}`;
-        return item;
-      })
-    );
-  }
-
-  private renderError(error: unknown) {
-    if (this.summaryEl) {
-      this.summaryEl.textContent = error instanceof Error ? error.message : String(error);
-    }
+    this.history = clampHistory(`${this.history}${this.history.length > 0 ? "\r\n" : ""}[flmux] ${message}\r\n`);
+    this.replaceTerminalBuffer();
   }
 
   private handleTerminalEvent(event: TerminalRuntimeEvent) {
@@ -284,7 +253,7 @@ export class TerminalPaneRenderer implements IContentRenderer {
 
     if (event.type === "output") {
       this.history = clampHistory(this.history + event.data);
-      this.renderHistory();
+      this.xterm?.write(event.data);
       return;
     }
 
@@ -292,26 +261,28 @@ export class TerminalPaneRenderer implements IContentRenderer {
       this.rootKey = event.terminal.rootKey;
       this.runtimeId = event.terminal.runtimeId;
       this.cwd = event.terminal.cwd;
+      this.autoCreate = false;
       this.deps.onRuntimeStateChange(this.paneId, {
         cwd: this.cwd,
         rootKey: this.rootKey,
         runtimeId: this.runtimeId,
         summary: event.terminal
       });
-      this.renderSummary(event.terminal);
+      this.fitTerminal();
       return;
     }
 
     if (event.type === "removed") {
       this.rootKey = null;
       this.runtimeId = null;
+      this.lastResizeSignature = null;
       this.deps.onRuntimeStateChange(this.paneId, {
         cwd: this.cwd,
         rootKey: null,
         runtimeId: null,
         summary: null
       });
-      this.renderSummary(null);
+      this.writeSystemLine("terminal detached");
     }
   }
 }

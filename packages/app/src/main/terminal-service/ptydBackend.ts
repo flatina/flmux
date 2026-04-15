@@ -8,13 +8,15 @@ import type {
   TerminalCreateResult,
   TerminalHistoryResult,
   TerminalKillResult,
+  TerminalResizeResult,
   TerminalRootStatus,
   TerminalRuntimeEvent,
   TerminalWriteResult
 } from "../../shared/terminal";
 import { PtydClient } from "../ptyd/client";
 import type { TerminalBackend } from "./backend";
-import { normalizeTerminalRootDir, resolveTerminalCwdFromRoot, toTerminalRootKey } from "./rootKey";
+import { toTerminalRootKey } from "./rootKey";
+import { normalizeTerminalRootDir, resolveTerminalCwdFromRoot } from "../../shared/terminalPath";
 
 export function createPtydBackend(): TerminalBackend {
   return new PtydBackend();
@@ -91,6 +93,15 @@ class PtydBackend implements TerminalBackend {
     return client.input({
       runtimeId: input.runtimeId,
       data: input.data
+    });
+  }
+
+  async resize(input: { rootKey: string; runtimeId: string; cols: number; rows: number }): Promise<TerminalResizeResult> {
+    const client = this.requireClient(input.rootKey);
+    return client.resize({
+      runtimeId: input.runtimeId,
+      cols: input.cols,
+      rows: input.rows
     });
   }
 

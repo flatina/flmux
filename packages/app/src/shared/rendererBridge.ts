@@ -12,6 +12,7 @@ import type {
   TerminalCreateResult,
   TerminalHistoryResult,
   TerminalKillResult,
+  TerminalResizeResult,
   TerminalRootStatus,
   TerminalRuntimeEvent,
   TerminalWriteResult
@@ -47,6 +48,10 @@ export type FlmuxHostRequests = {
   "flmux.terminal.write": {
     params: { rootKey: string; runtimeId: string; data: string };
     response: TerminalWriteResult;
+  };
+  "flmux.terminal.resize": {
+    params: { rootKey: string; runtimeId: string; cols: number; rows: number };
+    response: TerminalResizeResult;
   };
   "flmux.terminal.history": {
     params: { rootKey: string; runtimeId: string; maxBytes?: number };

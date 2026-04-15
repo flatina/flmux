@@ -5,13 +5,15 @@ import type {
   TerminalCreateResult,
   TerminalHistoryResult,
   TerminalKillResult,
+  TerminalResizeResult,
   TerminalRootStatus,
   TerminalRuntimeEvent,
   TerminalRuntimeSummary,
   TerminalWriteResult
 } from "../../shared/terminal";
 import type { TerminalBackend } from "./backend";
-import { normalizeTerminalRootDir, resolveTerminalCwdFromRoot, toTerminalRootKey } from "./rootKey";
+import { toTerminalRootKey } from "./rootKey";
+import { normalizeTerminalRootDir, resolveTerminalCwdFromRoot } from "../../shared/terminalPath";
 
 interface TerminalRuntimeRecord {
   ownerPaneId: string | null;
@@ -162,6 +164,34 @@ class InMemoryTerminalBackend implements TerminalBackend {
       accepted: commands.length > 0,
       runtimeId: input.runtimeId,
       history: runtime.history,
+      terminal: cloneSummary(runtime.summary)
+    };
+  }
+
+  async resize(input: { rootKey: string; runtimeId: string; cols: number; rows: number }): Promise<TerminalResizeResult> {
+    const runtime = this.requireRuntime(input.rootKey, input.runtimeId);
+    if (!runtime.summary.alive) {
+      return {
+        ok: true,
+        accepted: false,
+        runtimeId: input.runtimeId,
+        terminal: null
+      };
+    }
+
+    runtime.summary.updatedAt = new Date().toISOString();
+    const root = this.roots.get(input.rootKey)!;
+    root.status.updatedAt = runtime.summary.updatedAt;
+    emit(this.subscribers, {
+      type: "state",
+      paneId: this.runtimeOwners.get(input.runtimeId) ?? null,
+      terminal: cloneSummary(runtime.summary)
+    });
+
+    return {
+      ok: true,
+      accepted: true,
+      runtimeId: input.runtimeId,
       terminal: cloneSummary(runtime.summary)
     };
   }

@@ -29,7 +29,7 @@ export interface PaneWorkspaceContext {
 export interface PaneRendererRuntimeContext {
   shellModel: ShellModelAPI;
   browserPanelTemplate: HTMLTemplateElement;
-  terminalHost: Pick<TerminalHostAPI, "onEvent" | "listRoots">;
+  terminalHost: Pick<TerminalHostAPI, "onEvent">;
   normalizeBrowserUrl(value: string): string | null;
   onBrowserUrlChange(paneId: string, url: string): void;
   onTerminalRuntimeStateChange(

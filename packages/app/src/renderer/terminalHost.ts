@@ -4,6 +4,7 @@ import type {
   TerminalCreateResult,
   TerminalHistoryResult,
   TerminalKillResult,
+  TerminalResizeResult,
   TerminalRuntimeEvent,
   TerminalRootStatus,
   TerminalWriteResult
@@ -14,6 +15,7 @@ export interface TerminalHostAPI {
   adoptByPaneId(input: { rootDir: string; paneId: string }): Promise<TerminalAdoptResult>;
   create(input: TerminalCreateInput): Promise<TerminalCreateResult>;
   write(input: { rootKey: string; runtimeId: string; data: string }): Promise<TerminalWriteResult>;
+  resize(input: { rootKey: string; runtimeId: string; cols: number; rows: number }): Promise<TerminalResizeResult>;
   history(input: { rootKey: string; runtimeId: string; maxBytes?: number }): Promise<TerminalHistoryResult>;
   kill(input: { rootKey: string; runtimeId: string }): Promise<TerminalKillResult>;
   listRoots(): Promise<TerminalRootStatus[]>;
@@ -32,6 +34,9 @@ export function createTerminalHost(proxy: FlmuxHostRequestProxy): TerminalHostAP
     },
     write(input) {
       return proxy["flmux.terminal.write"](input);
+    },
+    resize(input) {
+      return proxy["flmux.terminal.resize"](input);
     },
     history(input) {
       return proxy["flmux.terminal.history"](input);

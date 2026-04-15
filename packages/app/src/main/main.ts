@@ -61,6 +61,9 @@ const rendererRpc = BrowserView.defineRPC<FlmuxRendererBridgeSchema>({
       "flmux.terminal.write": (params) => {
         return terminalService.write(params);
       },
+      "flmux.terminal.resize": (params) => {
+        return terminalService.resize(params);
+      },
       "flmux.terminal.history": (params) => {
         return terminalService.history(params);
       },

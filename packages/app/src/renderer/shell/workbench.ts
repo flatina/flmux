@@ -10,7 +10,8 @@ import {
 import "../styles.css";
 import { setupDropIndicatorMasks } from "../maskHelper";
 import { createSessionHost } from "../sessionHost";
-import { createTerminalHost, pushTerminalEvent } from "../terminalHost";
+import { createTerminalHost } from "../terminalHost";
+import { TerminalCoordinator } from "../terminal/terminalCoordinator";
 import { createShellModel } from "./model";
 import {
   PaneRegistry,
@@ -85,6 +86,7 @@ export class FlmuxWorkbench implements ShellModelHost {
   private readonly browserPanelTemplate = document.getElementById("browser-panel-tpl") as HTMLTemplateElement;
   private readonly sessionHost: ReturnType<typeof createSessionHost>;
   private readonly terminalHost: ReturnType<typeof createTerminalHost>;
+  private readonly terminalCoordinator: TerminalCoordinator<WorkspaceRecord>;
   private readonly paneRegistry = new PaneRegistry();
 
   private readonly workspaces = new Map<string, WorkspaceRecord>();
@@ -99,6 +101,12 @@ export class FlmuxWorkbench implements ShellModelHost {
   constructor(private readonly config: FlmuxRendererConfig, hostProxy: FlmuxHostRequestProxy) {
     this.sessionHost = createSessionHost(hostProxy);
     this.terminalHost = createTerminalHost(hostProxy);
+    this.terminalCoordinator = new TerminalCoordinator<WorkspaceRecord>({
+      terminalHost: this.terminalHost,
+      resolveTerminalCwd: resolveTerminalCwdFromRoot,
+      findWorkspaceByPaneId: (paneId) => this.findWorkspaceByPaneId(paneId),
+      onRuntimeStateChange: (workspace, paneId, state) => this.applyTerminalRuntimeStateChange(workspace, paneId, state)
+    });
     registerBuiltinPaneDescriptors(this.paneRegistry, {
       fixtureUrl: (fixture) => this.fixtureUrl(fixture),
       requireBrowserUrl: (value) => this.requireBrowserUrl(value),
@@ -108,10 +116,11 @@ export class FlmuxWorkbench implements ShellModelHost {
     this.shellModel = createShellModel({
       host: this,
       terminal: {
-        createRuntime: (paneId, input) => this.createTerminalRuntime(paneId, input),
-        writeRuntime: (paneId, input) => this.writeTerminalRuntime(paneId, input),
-        readHistory: (paneId, input) => this.readTerminalHistory(paneId, input),
-        killRuntime: (paneId) => this.killTerminalRuntime(paneId)
+        createRuntime: (paneId, input) => this.terminalCoordinator.createRuntime(paneId, input),
+        writeRuntime: (paneId, input) => this.terminalCoordinator.writeRuntime(paneId, input),
+        resizeRuntime: (paneId, input) => this.terminalCoordinator.resizeRuntime(paneId, input),
+        readHistory: (paneId, input) => this.terminalCoordinator.readHistory(paneId, input),
+        killRuntime: (paneId) => this.terminalCoordinator.killRuntime(paneId)
       },
       browser: {
         setPaneUrl: (paneId, url) => this.setBrowserPaneUrl(paneId, url)
@@ -143,7 +152,7 @@ export class FlmuxWorkbench implements ShellModelHost {
     this.buildWorkspaces();
     this.bindTopbar();
     await this.restoreSessionOrDefaults();
-    await this.adoptRestoredTerminalPanes();
+    await this.terminalCoordinator.restoreTerminals(this.workspaces.values());
     this.renderChrome();
     setupDropIndicatorMasks();
     this.sessionPersistenceEnabled = true;
@@ -215,7 +224,7 @@ export class FlmuxWorkbench implements ShellModelHost {
   async closePane(paneId: string) {
     const workspace = this.findWorkspaceByPaneId(paneId) ?? this.getCurrentWorkspace();
     const record = this.requirePaneRecord(workspace, paneId);
-    await this.killAttachedTerminalRuntime(workspace, paneId, record);
+    await this.terminalCoordinator.killAttachedRuntime(workspace, paneId, record);
     record.panel.api.close();
     return { paneId, closed: true };
   }
@@ -314,74 +323,6 @@ export class FlmuxWorkbench implements ShellModelHost {
     return event;
   }
 
-  private async createTerminalRuntime(paneId: string, input: { cwd?: string }) {
-    const workspace = this.findWorkspaceByPaneId(paneId);
-    if (!workspace) {
-      throw new Error(`Pane '${paneId}' does not belong to a known workspace`);
-    }
-
-    const record = this.requirePaneRecord(workspace, paneId);
-    if (!isTerminalPaneRecord(record)) {
-      throw new Error(`Pane '${paneId}' is not a terminal pane`);
-    }
-
-    if (record.runtimeId) {
-      throw new Error(`Terminal pane '${paneId}' already has an attached runtime`);
-    }
-
-    const result = await this.terminalHost.create({
-      paneId,
-      rootDir: record.rootDir,
-      cwd: resolveTerminalCwd(workspace, input.cwd ?? record.cwd)
-    });
-    return result;
-  }
-
-  private async writeTerminalRuntime(paneId: string, input: { data: string }) {
-    const { workspace, record } = this.requireTerminalPane(paneId);
-    if (!record.rootKey || !record.runtimeId) {
-      throw new Error(`Terminal pane '${paneId}' is not attached to a runtime`);
-    }
-
-    return this.terminalHost.write({
-      rootKey: record.rootKey,
-      runtimeId: record.runtimeId,
-      data: input.data
-    });
-  }
-
-  private async readTerminalHistory(paneId: string, input: { maxBytes?: number }) {
-    const { record } = this.requireTerminalPane(paneId);
-    if (!record.rootKey || !record.runtimeId) {
-      throw new Error(`Terminal pane '${paneId}' is not attached to a runtime`);
-    }
-
-    return this.terminalHost.history({
-      rootKey: record.rootKey,
-      runtimeId: record.runtimeId,
-      maxBytes: input.maxBytes
-    });
-  }
-
-  private async killTerminalRuntime(paneId: string) {
-    const { workspace, record } = this.requireTerminalPane(paneId);
-    if (!record.rootKey || !record.runtimeId) {
-      throw new Error(`Terminal pane '${paneId}' is not attached to a runtime`);
-    }
-
-    const result = await this.terminalHost.kill({
-      rootKey: record.rootKey,
-      runtimeId: record.runtimeId
-    });
-    this.handleTerminalRuntimeChange(workspace, paneId, {
-      cwd: record.cwd,
-      rootKey: null,
-      runtimeId: null,
-      summary: null
-    });
-    return result;
-  }
-
   private requirePaneDescriptor(kind: string) {
     const descriptor = this.paneRegistry.get(kind);
     if (!descriptor) {
@@ -463,7 +404,8 @@ export class FlmuxWorkbench implements ShellModelHost {
       void this.shellModel.pathCall("/panes/new", {
         kind: "terminal",
         cwd: ".",
-        place: "right"
+        place: "right",
+        autoCreate: true
       });
     });
 
@@ -530,7 +472,7 @@ export class FlmuxWorkbench implements ShellModelHost {
     api.onDidRemovePanel((panel) => {
       const record = workspace.paneRecords.get(panel.id);
       if (record) {
-        void this.killAttachedTerminalRuntime(workspace, panel.id, record).catch((error) => {
+        void this.terminalCoordinator.killAttachedRuntime(workspace, panel.id, record).catch((error) => {
           console.warn("failed to clean up terminal runtime for removed pane", panel.id, error);
         });
       }
@@ -554,7 +496,7 @@ export class FlmuxWorkbench implements ShellModelHost {
         terminalHost: this.terminalHost,
         normalizeBrowserUrl: (value) => this.normalizeBrowserUrl(value),
         onBrowserUrlChange: (paneId, url) => this.handleBrowserUrlChange(workspace, paneId, url),
-        onTerminalRuntimeStateChange: (paneId, state) => this.handleTerminalRuntimeChange(workspace, paneId, state)
+        onTerminalRuntimeStateChange: (paneId, state) => this.terminalCoordinator.applyRuntimeStateChange(paneId, state)
       }
     });
   }
@@ -672,20 +614,6 @@ export class FlmuxWorkbench implements ShellModelHost {
     return record;
   }
 
-  private requireTerminalPane(paneId: string) {
-    const workspace = this.findWorkspaceByPaneId(paneId);
-    if (!workspace) {
-      throw new Error(`Pane '${paneId}' does not belong to a known workspace`);
-    }
-
-    const record = this.requirePaneRecord(workspace, paneId);
-    if (!isTerminalPaneRecord(record)) {
-      throw new Error(`Pane '${paneId}' is not a terminal pane`);
-    }
-
-    return { workspace, record };
-  }
-
   private mustGetPaneSnapshot(workspace: WorkspaceRecord, paneId: string): ShellPaneSnapshot {
     const record = this.requirePaneRecord(workspace, paneId);
     const isActive = workspace.api?.activePanel?.id === paneId;
@@ -732,7 +660,7 @@ export class FlmuxWorkbench implements ShellModelHost {
     this.scheduleSessionSave();
   }
 
-  private handleTerminalRuntimeChange(
+  private applyTerminalRuntimeStateChange(
     workspace: WorkspaceRecord,
     paneId: string,
     state: { cwd: string; rootKey: string | null; runtimeId: string | null; summary: TerminalRuntimeSummary | null }
@@ -779,48 +707,6 @@ export class FlmuxWorkbench implements ShellModelHost {
       this.activateWorkspace(activeWorkspaceId, { persist: false });
     } finally {
       this.sessionPersistenceSuppressed = false;
-    }
-  }
-
-  private async adoptRestoredTerminalPanes() {
-    for (const workspace of this.workspaces.values()) {
-      for (const [paneId, record] of workspace.paneRecords.entries()) {
-        if (!isTerminalPaneRecord(record) || record.runtimeId !== null) {
-          continue;
-        }
-
-        try {
-          const result = await this.terminalHost.adoptByPaneId({
-            rootDir: record.rootDir,
-            paneId
-          });
-          if (result.outcome !== "adopted") {
-            continue;
-          }
-
-          this.handleTerminalRuntimeChange(workspace, paneId, {
-            cwd: result.terminal.cwd,
-            rootKey: result.rootKey,
-            runtimeId: result.runtimeId,
-            summary: result.terminal
-          });
-          pushTerminalEvent({
-            type: "state",
-            paneId,
-            terminal: result.terminal
-          });
-          if (result.history.length > 0) {
-            pushTerminalEvent({
-              type: "output",
-              paneId,
-              runtimeId: result.runtimeId,
-              data: result.history
-            });
-          }
-        } catch (error) {
-          console.warn(`failed to adopt restored terminal pane '${paneId}'`, error);
-        }
-      }
     }
   }
 
@@ -943,26 +829,6 @@ export class FlmuxWorkbench implements ShellModelHost {
     }, 250);
   }
 
-  private async killAttachedTerminalRuntime(workspace: WorkspaceRecord, paneId: string, record: PaneRecord) {
-    if (!isTerminalPaneRecord(record) || !record.rootKey || !record.runtimeId) {
-      return;
-    }
-
-    try {
-      await this.terminalHost.kill({
-        rootKey: record.rootKey,
-        runtimeId: record.runtimeId
-      });
-    } finally {
-      this.handleTerminalRuntimeChange(workspace, paneId, {
-        cwd: record.cwd,
-        rootKey: null,
-        runtimeId: null,
-        summary: null
-      });
-    }
-  }
-
   private normalizeBrowserUrl(value: string): string | null {
     const trimmed = value.trim();
     if (!trimmed) {
@@ -1059,10 +925,6 @@ function normalizeDirection(place: PanePlacement | undefined) {
 
 function fixtureLabel(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
-function resolveTerminalCwd(workspace: WorkspaceRecord, inputCwd: string | undefined) {
-  return resolveTerminalCwdFromRoot(workspace.rootDir, inputCwd);
 }
 
 function cloneJsonObject(value: unknown) {

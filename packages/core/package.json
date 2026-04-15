@@ -3,5 +3,29 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "main": "src/index.ts"
+  "main": "src/index.ts",
+  "dependencies": {
+    "bun-pty": "^0.4.8"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./shell": "./src/shell/index.ts",
+    "./shell/model": "./src/shell/model.ts",
+    "./shell/types": "./src/shell/types.ts",
+    "./shell/workspaceBus": "./src/shell/workspaceBus.ts",
+    "./terminal": "./src/terminal/index.ts",
+    "./terminal/types": "./src/terminal/terminal.ts",
+    "./terminal/path": "./src/terminal/terminalPath.ts",
+    "./terminal/rootKey": "./src/terminal/rootKey.ts",
+    "./terminal/backend": "./src/terminal/backend.ts",
+    "./terminal/ptyd": "./src/terminal/ptyd/index.ts",
+    "./terminal/ptyd/client": "./src/terminal/ptyd/client.ts",
+    "./terminal/ptyd/controlPlane": "./src/terminal/ptyd/controlPlane.ts",
+    "./terminal/ptyd/daemon": "./src/terminal/ptyd/daemon.ts",
+    "./terminal/ptyd/ipcPaths": "./src/terminal/ptyd/ipcPaths.ts",
+    "./terminal/ptyd/jsonLines": "./src/terminal/ptyd/jsonLines.ts",
+    "./terminal/ptyd/jsonRpcIpc": "./src/terminal/ptyd/jsonRpcIpc.ts",
+    "./terminal/ptyd/lockFile": "./src/terminal/ptyd/lockFile.ts",
+    "./terminal/ptyd/terminalRuntimeManager": "./src/terminal/ptyd/terminalRuntimeManager.ts"
+  }
 }

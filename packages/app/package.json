@@ -14,7 +14,9 @@
     "test:harness-smoke": "bun test test/harnessSmoke.test.ts"
   },
   "dependencies": {
-    "bun-pty": "^0.4.8",
+    "@flmux/core": "workspace:*",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
     "bunite-core": "^0.0.14",
     "bunite-native-win-x64": "^0.0.3",
     "dockview-core": "^5.1.0",

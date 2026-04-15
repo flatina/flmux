@@ -85,7 +85,8 @@ function createBuiltinPaneDescriptors(
       lifecycle: {
         createParams: ({ workspace, input }) => ({
           cwd: deps.resolveTerminalCwd(workspace.rootDir, input.cwd),
-          rootDir: workspace.rootDir
+          rootDir: workspace.rootDir,
+          autoCreate: input.params?.autoCreate === true
         }),
         getTitle: ({ input }) => input.title?.trim() || "Terminal",
         createRecord: ({ workspace, panel, params }) => ({

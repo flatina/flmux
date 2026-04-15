@@ -54,7 +54,7 @@ describe("local extension loading", () => {
         name: "Cowsay",
         version: "0.1.0",
         manifestUrl: "http://127.0.0.1:4321/__flmux/ext/sample.cowsay/0.1.0/manifest.json",
-        rendererEntryUrl: "http://127.0.0.1:4321/__flmux/ext/sample.cowsay/0.1.0/renderer.js"
+        rendererEntryUrl: "http://127.0.0.1:4321/__flmux/ext/sample.cowsay/0.1.0/index.ts"
       }
     ]);
   });
@@ -110,12 +110,17 @@ describe("local extension loading", () => {
     expect(discovered[0]!.rendererEntryPath!.replace(/\\/g, "/")).toEndWith("/src/renderer-entry.ts");
   });
 
-  it("serves local extension manifest, runtime shim, and transpiled renderer entry from same-origin routes", async () => {
+  it("serves local extension manifest, runtime module tree, and transpiled renderer entry from same-origin routes", async () => {
     const extensionsRootDir = await createTempExtensionRoot("server");
     await writeExtensionFixture(extensionsRootDir, {
       id: "sample.cowsay",
       name: "Cowsay",
-      version: "0.1.0"
+      version: "0.1.0",
+      rendererEntry: "./index.ts",
+      helperModule: "./lib/helper.ts",
+      helperValue: "sample.helper",
+      assetPath: "./template.html",
+      assetContents: "<section>template asset</section>"
     });
     const rendererDir = await createTempRendererDir();
     const localExtensions = await discoverLocalExtensions(extensionsRootDir);
@@ -128,11 +133,13 @@ describe("local extension loading", () => {
     });
 
     try {
-      const [manifestResponse, runtimeResponse, runtimeManifestResponse, rendererResponse] = await Promise.all([
+      const [manifestResponse, runtimeResponse, runtimeManifestResponse, rendererResponse, helperResponse, assetResponse] = await Promise.all([
         fetch(loadEntry.manifestUrl.replace("http://127.0.0.1:0", server.origin)),
         fetch(`${server.origin}/__flmux/runtime/extension-api.js`),
         fetch(`${server.origin}/__flmux/runtime/extension-api/manifest.js`),
-        fetch(loadEntry.rendererEntryUrl.replace("http://127.0.0.1:0", server.origin))
+        fetch(loadEntry.rendererEntryUrl.replace("http://127.0.0.1:0", server.origin)),
+        fetch(`${server.origin}/__flmux/ext/sample.cowsay/0.1.0/lib/helper.ts`),
+        fetch(`${server.origin}/__flmux/ext/sample.cowsay/0.1.0/template.html`)
       ]);
 
       expect(manifestResponse.status).toBe(200);
@@ -161,14 +168,20 @@ describe("local extension loading", () => {
       const rendererModule = await rendererResponse.text();
       expect(rendererModule).toContain('from "/__flmux/runtime/extension-api.js"');
       expect(rendererModule).not.toContain("@flmux/extension-api");
-      expect(rendererModule).toContain("defineExtension");
-      expect(rendererModule).toContain("definePane");
+      expect(rendererModule).toContain('from "./lib/helper.ts"');
+
+      expect(helperResponse.status).toBe(200);
+      const helperModule = await helperResponse.text();
+      expect(helperModule).toContain('export const paneKind = "sample.helper"');
+
+      expect(assetResponse.status).toBe(200);
+      expect(await assetResponse.text()).toBe("<section>template asset</section>");
     } finally {
       server.stop();
     }
   });
 
-  it("returns a generic 500 when a discovered renderer entry disappears before request time", async () => {
+  it("returns 404 when a discovered renderer entry disappears before request time", async () => {
     const extensionsRootDir = await createTempExtensionRoot("server-missing-entry");
     const extensionPaths = await writeExtensionFixture(extensionsRootDir, {
       id: "sample.cowsay",
@@ -188,8 +201,8 @@ describe("local extension loading", () => {
 
     try {
       const response = await fetch(loadEntry.rendererEntryUrl.replace("http://127.0.0.1:0", server.origin));
-      expect(response.status).toBe(500);
-      expect(await response.text()).toBe("Failed to load local extension renderer entry");
+      expect(response.status).toBe(404);
+      expect(await response.text()).toBe("Not Found");
     } finally {
       server.stop();
     }
@@ -208,14 +221,14 @@ describe("local extension loading", () => {
         name: "Cowsay",
         version: "0.1.0",
         manifestUrl: "http://127.0.0.1:4321/__flmux/ext/sample.cowsay/0.1.0/manifest.json",
-        rendererEntryUrl: "http://127.0.0.1:4321/__flmux/ext/sample.cowsay/0.1.0/renderer.js"
+        rendererEntryUrl: "http://127.0.0.1:4321/__flmux/ext/sample.cowsay/0.1.0/index.ts"
       },
       {
         id: "sample.inspector",
         name: "Inspector",
         version: "0.1.0",
         manifestUrl: "http://127.0.0.1:4321/__flmux/ext/sample.inspector/0.1.0/manifest.json",
-        rendererEntryUrl: "http://127.0.0.1:4321/__flmux/ext/sample.inspector/0.1.0/renderer.js"
+        rendererEntryUrl: "http://127.0.0.1:4321/__flmux/ext/sample.inspector/0.1.0/index.ts"
       }
     ];
 
@@ -265,6 +278,10 @@ async function writeExtensionFixture(
     dirName?: string;
     apiVersion?: number;
     rendererEntry?: string;
+    helperModule?: string;
+    helperValue?: string;
+    assetPath?: string;
+    assetContents?: string;
   }
 ) {
   const extensionDir = join(rootDir, manifest.dirName ?? manifest.id.split(".").pop() ?? "extension");
@@ -281,25 +298,28 @@ async function writeExtensionFixture(
       apiVersion: manifest.apiVersion ?? 1,
       entrypoints: {
         renderer: rendererEntry
-      }
+      },
+      commands: undefined
     }, null, 2),
     "utf8"
   );
+  if (manifest.helperModule) {
+    const helperModulePath = join(extensionDir, manifest.helperModule);
+    await mkdir(dirname(helperModulePath), { recursive: true });
+    await writeFile(
+      helperModulePath,
+      `export const paneKind = ${JSON.stringify(manifest.helperValue ?? manifest.id)};\n`,
+      "utf8"
+    );
+  }
+  if (manifest.assetPath) {
+    const assetPath = join(extensionDir, manifest.assetPath);
+    await mkdir(dirname(assetPath), { recursive: true });
+    await writeFile(assetPath, manifest.assetContents ?? "", "utf8");
+  }
   await writeFile(
     rendererEntryPath,
-    [
-      'import { defineExtension, definePane } from "@flmux/extension-api";',
-      "",
-      "export default defineExtension({",
-      "  panes: [",
-      "    definePane({",
-      `      kind: ${JSON.stringify(manifest.id)},`,
-      "      mount() {}",
-      "    })",
-      "  ]",
-      "});",
-      ""
-    ].join("\n"),
+    buildRendererEntrySource(manifest),
     "utf8"
   );
 
@@ -308,6 +328,33 @@ async function writeExtensionFixture(
     manifestPath: join(extensionDir, "manifest.json"),
     rendererEntryPath
   };
+}
+
+function buildRendererEntrySource(manifest: {
+  id: string;
+  helperModule?: string;
+  assetPath?: string;
+}) {
+  const lines = ['import { defineExtension, definePane } from "@flmux/extension-api";'];
+  if (manifest.helperModule) {
+    lines.push(`import { paneKind } from ${JSON.stringify(manifest.helperModule)};`);
+  }
+  if (manifest.assetPath) {
+    lines.push(`export const assetUrl = new URL(${JSON.stringify(manifest.assetPath)}, import.meta.url).href;`);
+  }
+  lines.push(
+    "",
+    "export default defineExtension({",
+    "  panes: [",
+    "    definePane({",
+    `      kind: ${manifest.helperModule ? "paneKind" : JSON.stringify(manifest.id)},`,
+    "      mount() {}",
+    "    })",
+    "  ]",
+    "});",
+    ""
+  );
+  return lines.join("\n");
 }
 
 function createShellModelRouterStub() {

@@ -17,6 +17,7 @@ import type { FlmuxShellModelRouter } from "./shellModelBridge";
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
+  ".ts": "application/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
@@ -60,9 +61,6 @@ export function startFlmuxServer(options: {
     )
     .get("/__flmux/ext/:extensionId/:version/manifest.json", ({ params, set }) =>
       handleLocalExtensionManifestRequest(params, set, options.localExtensions ?? [])
-    )
-    .get("/__flmux/ext/:extensionId/:version/renderer.js", async ({ params, set }) =>
-      await handleLocalExtensionRendererEntryRequest(params, set, options.localExtensions ?? [])
     )
     .post("/api/model/path/get", async ({ request, set }) =>
       handleJsonRequest<ClientScopedPathGetInput>(request, set, (input) => options.shellModelRouter.pathGet(input))
@@ -143,6 +141,11 @@ export function startFlmuxServer(options: {
     )
     .all("*", ({ request, set }) => {
       const pathname = decodeURIComponent(new URL(request.url).pathname);
+      const extensionRuntimeResponse = maybeHandleLocalExtensionRuntimeRequest(pathname, set, options.localExtensions ?? []);
+      if (extensionRuntimeResponse) {
+        return extensionRuntimeResponse;
+      }
+
       const resolved = resolveRendererPath(options.rendererDir, pathname);
       if (!resolved) {
         set.status = 404;
@@ -225,31 +228,6 @@ function handleLocalExtensionManifestRequest(
   });
 }
 
-async function handleLocalExtensionRendererEntryRequest(
-  params: { extensionId: string; version: string },
-  set: { status?: number | string },
-  localExtensions: DiscoveredLocalExtension[]
-) {
-  const extension = resolveLocalExtension(params, localExtensions);
-  if (!extension || !extension.rendererEntryPath) {
-    set.status = 404;
-    return "Not Found";
-  }
-
-  try {
-    const source = await readFile(extension.rendererEntryPath, "utf8");
-    const rewritten = rewriteExtensionModuleImports(source);
-    const code = extensionModuleTranspiler.transformSync(rewritten);
-    return new Response(code, {
-      headers: { "content-type": "application/javascript; charset=utf-8" }
-    });
-  } catch (error) {
-    console.warn(`[flmux] failed to serve local extension renderer entry: ${extension.id}`, error);
-    set.status = 500;
-    return "Failed to load local extension renderer entry";
-  }
-}
-
 function resolveLocalExtension(
   params: { extensionId: string; version: string },
   localExtensions: DiscoveredLocalExtension[]
@@ -270,6 +248,109 @@ function rewriteExtensionModuleImports(source: string) {
       `$1"${EXTENSION_API_RUNTIME_URL}"`
     )
     .replace(/import\(\s*["']@flmux\/extension-api["']\s*\)/g, `import("${EXTENSION_API_RUNTIME_URL}")`);
+}
+
+function maybeHandleLocalExtensionRuntimeRequest(
+  pathname: string,
+  set: { status?: number | string },
+  localExtensions: DiscoveredLocalExtension[]
+) {
+  if (!pathname.startsWith("/__flmux/ext/")) {
+    return null;
+  }
+
+  return handleLocalExtensionRuntimeRequest(pathname, set, localExtensions);
+}
+
+function handleLocalExtensionRuntimeRequest(
+  pathname: string,
+  set: { status?: number | string },
+  localExtensions: DiscoveredLocalExtension[]
+) {
+  const resolved = resolveLocalExtensionRuntimeFile(pathname, localExtensions);
+  if (!resolved) {
+    set.status = 404;
+    return "Not Found";
+  }
+
+  const { extension, filePath } = resolved;
+  const contentType = MIME_TYPES[extname(filePath)] ?? "application/octet-stream";
+
+  if (contentType === "application/javascript; charset=utf-8") {
+    return serveLocalExtensionModule(extension.id, filePath, set);
+  }
+
+  return new Response(Bun.file(filePath), {
+    headers: { "content-type": contentType }
+  });
+}
+
+function resolveLocalExtensionRuntimeFile(
+  pathname: string,
+  localExtensions: DiscoveredLocalExtension[]
+) {
+  const parts = pathname.split("/").filter(Boolean);
+  if (parts.length < 5) {
+    return null;
+  }
+
+  const [, , extensionId, version, ...relativeParts] = parts;
+  const extension = resolveLocalExtension({ extensionId, version }, localExtensions);
+  if (!extension || relativeParts.length === 0) {
+    return null;
+  }
+
+  const relativePath = relativeParts.join("/");
+  const filePath = resolveExtensionRuntimePath(extension.rootDir, relativePath);
+  if (!filePath || !existsSync(filePath)) {
+    return null;
+  }
+
+  return {
+    extension,
+    relativePath,
+    filePath
+  };
+}
+
+function resolveExtensionRuntimePath(rootDir: string, relativePath: string) {
+  if (!relativePath || relativePath.startsWith("/") || relativePath.includes("\\")) {
+    return null;
+  }
+
+  const normalizedRelativePath = normalize(relativePath);
+  if (normalizedRelativePath.startsWith("..")) {
+    return null;
+  }
+
+  const fullPath = join(rootDir, normalizedRelativePath);
+  const normalizedRoot = normalize(rootDir).replace(/[\\/]+$/, "");
+  const normalizedFullPath = normalize(fullPath);
+  if (!normalizedFullPath.startsWith(normalizedRoot)) {
+    return null;
+  }
+
+  return normalizedFullPath;
+}
+
+function serveLocalExtensionModule(
+  extensionId: string,
+  filePath: string,
+  set: { status?: number | string }
+) {
+  return readFile(filePath, "utf8")
+    .then((source) => {
+      const rewritten = rewriteExtensionModuleImports(source);
+      const code = extensionModuleTranspiler.transformSync(rewritten);
+      return new Response(code, {
+        headers: { "content-type": "application/javascript; charset=utf-8" }
+      });
+    })
+    .catch((error) => {
+      console.warn(`[flmux] failed to serve local extension module: ${extensionId}`, error);
+      set.status = 500;
+      return "Failed to load local extension module";
+    });
 }
 
 async function handleExtensionApiRuntimeModuleRequest(

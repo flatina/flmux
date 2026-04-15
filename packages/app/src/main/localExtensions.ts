@@ -107,12 +107,13 @@ export function createLocalExtensionLoadEntries(
     .filter((extension) => extension.rendererEntryPath !== null)
     .map((extension) => {
       const baseUrl = `${appOrigin}/__flmux/ext/${encodeURIComponent(extension.id)}/${encodeURIComponent(extension.version)}`;
+      const rendererEntrypoint = extension.manifest.entrypoints.renderer!;
       return {
         id: extension.id,
         name: extension.name,
         version: extension.version,
         manifestUrl: `${baseUrl}/manifest.json`,
-        rendererEntryUrl: `${baseUrl}/renderer.js`
+        rendererEntryUrl: `${baseUrl}/${toServedExtensionPath(rendererEntrypoint)}`
       } satisfies FlmuxLocalExtensionLoadEntry;
     });
 }
@@ -129,6 +130,10 @@ function resolveExtensionRelativePath(rootDir: string, relativePath: string) {
   }
 
   return resolved;
+}
+
+function toServedExtensionPath(relativePath: string) {
+  return relativePath.replace(/^\.\/+/, "");
 }
 
 async function resolveValidatedEntrypoint(options: {

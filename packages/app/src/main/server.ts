@@ -33,6 +33,7 @@ export interface FlmuxServerHandle {
 const EXTENSION_API_RUNTIME_URL = "/__flmux/runtime/extension-api.js";
 const EXTENSION_API_RUNTIME_PREFIX = "/__flmux/runtime/extension-api";
 const EXTENSION_API_RUNTIME_SOURCE_DIR = fileURLToPath(new URL("../../../extension-api/src/", import.meta.url));
+const EXTENSION_API_RUNTIME_DIST_DIR = fileURLToPath(new URL("../../../extension-api/dist-runtime/", import.meta.url));
 const extensionModuleTranspiler = new Bun.Transpiler({ loader: "ts" });
 
 export function startFlmuxServer(options: {
@@ -357,6 +358,13 @@ async function handleExtensionApiRuntimeModuleRequest(
   moduleName: string,
   set: { status?: number | string }
 ) {
+  const builtPath = resolveExtensionApiRuntimeBuiltPath(moduleName);
+  if (builtPath) {
+    return new Response(Bun.file(builtPath), {
+      headers: { "content-type": "application/javascript; charset=utf-8" }
+    });
+  }
+
   const sourcePath = resolveExtensionApiRuntimeSourcePath(moduleName);
   if (!sourcePath) {
     set.status = 404;
@@ -384,6 +392,18 @@ function resolveExtensionApiRuntimeSourcePath(moduleName: string) {
 
   const sourcePath = join(EXTENSION_API_RUNTIME_SOURCE_DIR, moduleName.replace(/\.js$/, ".ts"));
   return existsSync(sourcePath) ? sourcePath : null;
+}
+
+function resolveExtensionApiRuntimeBuiltPath(moduleName: string) {
+  if (!/^[A-Za-z0-9_-]+\.js$/.test(moduleName)) {
+    return null;
+  }
+
+  const builtPath =
+    moduleName === "index.js"
+      ? join(EXTENSION_API_RUNTIME_DIST_DIR, "index.js")
+      : join(EXTENSION_API_RUNTIME_DIST_DIR, moduleName);
+  return existsSync(builtPath) ? builtPath : null;
 }
 
 function rewriteExtensionApiRuntimeImports(source: string) {

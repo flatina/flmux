@@ -3,5 +3,12 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "main": "src/index.ts"
+  "main": "src/index.ts",
+  "bin": {
+    "flmux-ext": "./src/cli.ts"
+  },
+  "scripts": {
+    "validate": "bun src/cli.ts validate",
+    "test": "bun test"
+  }
 }

@@ -12,6 +12,7 @@
     "test:direct": "bun run --filter @flmux/app test:direct",
     "test:smoke": "bun run --filter @flmux/app test:smoke",
     "test:harness-smoke": "bun run --filter @flmux/app test:harness-smoke",
-    "typecheck": "bun run --filter @flmux/app typecheck"
+    "typecheck": "bun run --filter @flmux/app typecheck",
+    "validate:extensions": "bun run --filter @flmux/extension-devkit validate ../../extensions/cowsay ../../extensions/inspector ../../extensions/scratchpad"
   }
 }

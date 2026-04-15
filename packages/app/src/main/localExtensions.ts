@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { isAbsolute, join, normalize, relative } from "node:path";
-import { FLMUX_EXTENSION_API_VERSION, type ExtensionManifest } from "@flmux/extension-api";
+import { validateExtensionManifest, type ExtensionManifest } from "@flmux/extension-api";
 import type { FlmuxLocalExtensionLoadEntry } from "../shared/rendererBridge";
 
 export interface DiscoveredLocalExtension {
@@ -31,24 +31,14 @@ export async function discoverLocalExtensions(rootDir: string): Promise<Discover
 
         try {
           const raw = await readFile(manifestPath, "utf8");
-          const manifest = JSON.parse(raw) as Partial<ExtensionManifest>;
-          if (
-            typeof manifest.id !== "string" ||
-            typeof manifest.name !== "string" ||
-            typeof manifest.version !== "string" ||
-            typeof manifest.apiVersion !== "number" ||
-            !isPlainObject(manifest.entrypoints)
-          ) {
-            console.warn(`[flmux] invalid extension manifest fields: ${manifestPath}`);
-            return null;
-          }
-
-          if (manifest.apiVersion !== FLMUX_EXTENSION_API_VERSION) {
+          const manifestResult = validateExtensionManifest(JSON.parse(raw));
+          if (!manifestResult.ok) {
             console.warn(
-              `[flmux] unsupported extension apiVersion ${manifest.apiVersion} in: ${manifestPath}`
+              `[flmux] invalid extension manifest: ${manifestPath}\n- ${manifestResult.errors.join("\n- ")}`
             );
             return null;
           }
+          const manifest = manifestResult.manifest;
 
           if (typeof manifest.entrypoints.renderer !== "string") {
             console.warn(`[flmux] missing local extension renderer entrypoint: ${manifestPath}`);
@@ -135,8 +125,4 @@ function resolveExtensionRelativePath(rootDir: string, relativePath: string) {
   }
 
   return resolved;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

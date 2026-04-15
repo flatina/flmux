@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Elysia } from "elysia";
 import type { FlmuxSessionSnapshot } from "../shared/session";
 import type {
@@ -29,15 +30,8 @@ export interface FlmuxServerHandle {
 }
 
 const EXTENSION_API_RUNTIME_URL = "/__flmux/runtime/extension-api.js";
-const EXTENSION_API_RUNTIME_MODULE = [
-  "export function defineExtension(definition) {",
-  "  return definition;",
-  "}",
-  "",
-  "export function definePane(definition) {",
-  "  return definition;",
-  "}"
-].join("\n");
+const EXTENSION_API_RUNTIME_PREFIX = "/__flmux/runtime/extension-api";
+const EXTENSION_API_RUNTIME_SOURCE_DIR = fileURLToPath(new URL("../../../extension-api/src/", import.meta.url));
 const extensionModuleTranspiler = new Bun.Transpiler({ loader: "ts" });
 
 export function startFlmuxServer(options: {
@@ -58,9 +52,12 @@ export function startFlmuxServer(options: {
       ok: true,
       clients: await options.shellModelRouter.listClients()
     }))
-    .get("/__flmux/runtime/extension-api.js", () => new Response(EXTENSION_API_RUNTIME_MODULE, {
-      headers: { "content-type": "application/javascript; charset=utf-8" }
-    }))
+    .get("/__flmux/runtime/extension-api.js", async ({ set }) =>
+      await handleExtensionApiRuntimeModuleRequest("index.js", set)
+    )
+    .get("/__flmux/runtime/extension-api/:module", async ({ params, set }) =>
+      await handleExtensionApiRuntimeModuleRequest(params.module, set)
+    )
     .get("/__flmux/ext/:extensionId/:version/manifest.json", ({ params, set }) =>
       handleLocalExtensionManifestRequest(params, set, options.localExtensions ?? [])
     )
@@ -273,6 +270,46 @@ function rewriteExtensionModuleImports(source: string) {
       `$1"${EXTENSION_API_RUNTIME_URL}"`
     )
     .replace(/import\(\s*["']@flmux\/extension-api["']\s*\)/g, `import("${EXTENSION_API_RUNTIME_URL}")`);
+}
+
+async function handleExtensionApiRuntimeModuleRequest(
+  moduleName: string,
+  set: { status?: number | string }
+) {
+  const sourcePath = resolveExtensionApiRuntimeSourcePath(moduleName);
+  if (!sourcePath) {
+    set.status = 404;
+    return "Not Found";
+  }
+
+  try {
+    const source = await readFile(sourcePath, "utf8");
+    const rewritten = rewriteExtensionApiRuntimeImports(source);
+    const code = extensionModuleTranspiler.transformSync(rewritten);
+    return new Response(code, {
+      headers: { "content-type": "application/javascript; charset=utf-8" }
+    });
+  } catch (error) {
+    console.warn(`[flmux] failed to serve extension-api runtime module: ${moduleName}`, error);
+    set.status = 500;
+    return "Failed to load extension-api runtime module";
+  }
+}
+
+function resolveExtensionApiRuntimeSourcePath(moduleName: string) {
+  if (!/^[A-Za-z0-9_-]+\.js$/.test(moduleName)) {
+    return null;
+  }
+
+  const sourcePath = join(EXTENSION_API_RUNTIME_SOURCE_DIR, moduleName.replace(/\.js$/, ".ts"));
+  return existsSync(sourcePath) ? sourcePath : null;
+}
+
+function rewriteExtensionApiRuntimeImports(source: string) {
+  return source.replace(
+    /(["'])\.\/([A-Za-z0-9_-]+)\1/g,
+    (_, quote: string, moduleName: string) => `${quote}${EXTENSION_API_RUNTIME_PREFIX}/${moduleName}.js${quote}`
+  );
 }
 
 function fixtureHtml(title: string, body: string): Response {

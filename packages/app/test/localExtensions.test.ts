@@ -128,9 +128,10 @@ describe("local extension loading", () => {
     });
 
     try {
-      const [manifestResponse, runtimeResponse, rendererResponse] = await Promise.all([
+      const [manifestResponse, runtimeResponse, runtimeManifestResponse, rendererResponse] = await Promise.all([
         fetch(loadEntry.manifestUrl.replace("http://127.0.0.1:0", server.origin)),
         fetch(`${server.origin}/__flmux/runtime/extension-api.js`),
+        fetch(`${server.origin}/__flmux/runtime/extension-api/manifest.js`),
         fetch(loadEntry.rendererEntryUrl.replace("http://127.0.0.1:0", server.origin))
       ]);
 
@@ -146,7 +147,15 @@ describe("local extension loading", () => {
       });
 
       expect(runtimeResponse.status).toBe(200);
-      expect(await runtimeResponse.text()).toContain("export function defineExtension");
+      const runtimeRootModule = await runtimeResponse.text();
+      expect(runtimeRootModule).toContain('export * from "/__flmux/runtime/extension-api/extension.js"');
+      expect(runtimeRootModule).toContain('export * from "/__flmux/runtime/extension-api/pane.js"');
+      expect(runtimeRootModule).toContain('export * from "/__flmux/runtime/extension-api/manifest.js"');
+
+      expect(runtimeManifestResponse.status).toBe(200);
+      const runtimeManifestModule = await runtimeManifestResponse.text();
+      expect(runtimeManifestModule).toContain("export const FLMUX_EXTENSION_API_VERSION = 1");
+      expect(runtimeManifestModule).toContain("export function validateExtensionManifest");
 
       expect(rendererResponse.status).toBe(200);
       const rendererModule = await rendererResponse.text();

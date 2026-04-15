@@ -36,6 +36,7 @@ import type {
   ShellModelHost,
   ShellPaneRecordSnapshot,
   ShellResolvedPanePathMount,
+  ScopedPropertyTarget,
   WorkspaceBus,
   WorkspaceBusEvent
 } from "./types";
@@ -180,28 +181,48 @@ export class FlmuxWorkbench implements ShellModelHost {
     return this.toWorkspaceStatus(workspace);
   }
 
-  setAppTitle(title: string): AppStatusSnapshot {
-    this.appTitle = title;
-    this.renderChrome();
-    this.scheduleSessionSave();
-    return this.getAppStatus();
-  }
-
   getWorkspaceStatus() {
     return this.toWorkspaceStatus(this.getCurrentWorkspace());
   }
 
-  hasPaneKind(kind: string) {
-    return this.paneRegistry.get(kind) !== undefined;
+  setScopedProperty(target: ScopedPropertyTarget, key: string, value: unknown) {
+    const nextValue = asNonEmptyString(value, `${target.scope} property '${key}'`);
+
+    if (key !== "title") {
+      throw new Error(`Unsupported scoped property '${key}'`);
+    }
+
+    switch (target.scope) {
+      case "app":
+        this.appTitle = nextValue;
+        this.renderChrome();
+        this.scheduleSessionSave();
+        return { value: this.appTitle };
+      case "workspace": {
+        const workspace = target.workspaceId ? this.requireWorkspace(target.workspaceId) : this.getCurrentWorkspace();
+        workspace.title = nextValue;
+        this.renderWorkspaceSwitcher();
+        this.renderChrome();
+        this.scheduleSessionSave();
+        return { value: workspace.title };
+      }
+      case "pane": {
+        const workspace = this.findWorkspaceByPaneId(target.paneId);
+        if (!workspace) {
+          throw new Error(`Pane '${target.paneId}' does not belong to a known workspace`);
+        }
+
+        const record = this.requirePaneRecord(workspace, target.paneId);
+        record.panel.api.setTitle(nextValue);
+        this.renderChrome();
+        this.scheduleSessionSave();
+        return { value: record.panel.title ?? nextValue };
+      }
+    }
   }
 
-  setWorkspaceTitle(title: string) {
-    const workspace = this.getCurrentWorkspace();
-    workspace.title = title;
-    this.renderWorkspaceSwitcher();
-    this.renderChrome();
-    this.scheduleSessionSave();
-    return this.getWorkspaceStatus();
+  hasPaneKind(kind: string) {
+    return this.paneRegistry.get(kind) !== undefined;
   }
 
   listPanes(): ShellPaneRecordSnapshot[] {
@@ -231,15 +252,6 @@ export class FlmuxWorkbench implements ShellModelHost {
     await this.terminalCoordinator.killAttachedRuntime(workspace, paneId, record);
     record.panel.api.close();
     return { paneId, closed: true };
-  }
-
-  setPaneTitle(paneId: string, title: string): ShellPaneRecordSnapshot {
-    const workspace = this.getCurrentWorkspace();
-    const record = this.requirePaneRecord(workspace, paneId);
-    record.panel.api.setTitle(title);
-    this.renderChrome();
-    this.scheduleSessionSave();
-    return this.mustGetPaneSnapshot(workspace, paneId);
   }
 
   private setBrowserPaneUrl(paneId: string, url: string): ShellPaneRecordSnapshot {
@@ -967,6 +979,19 @@ function createPaneId() {
 
 function normalizeDirection(place: PanePlacement | undefined) {
   return place ?? "within";
+}
+
+function asNonEmptyString(value: unknown, label: string) {
+  if (typeof value !== "string") {
+    throw new Error(`${label} must be a string`);
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(`${label} cannot be empty`);
+  }
+
+  return trimmed;
 }
 
 function defaultBrowserPath(workspaceId: string) {

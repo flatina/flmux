@@ -13,6 +13,7 @@ import type {
   ShellModelHost,
   ShellPaneRecordSnapshot,
   ShellPathEntry,
+  ScopedPropertyTarget,
   ShellTerminalDelegate
 } from "./types";
 
@@ -82,11 +83,18 @@ class ShellModel implements ShellModelAPI {
       return await this.getApp(segments.slice(1));
     }
 
-    if (segments[0] === "title") {
+    const rootProperty = getWorkspaceStatePropertyByAlias(segments[0]);
+    if (rootProperty) {
+      if (segments.length !== 1) {
+        return notFoundGet();
+      }
+
       const workspace = await this.host.getWorkspaceStatus();
-      return segments.length === 1
-        ? { ok: true, found: true, value: workspace.title }
-        : notFoundGet();
+      return {
+        ok: true,
+        found: true,
+        value: rootProperty.read(workspace)
+      };
     }
 
     if (segments[0] === "workspaces") {
@@ -114,7 +122,7 @@ class ShellModel implements ShellModelAPI {
         ok: true,
         found: true,
         entries: [
-          leafEntry("title", "/title", true),
+          ...workspaceRootAliasEntries(),
           objectEntry("workspaces", "/workspaces"),
           objectEntry("bus", "/bus"),
           objectEntry("panes", "/panes"),
@@ -127,7 +135,7 @@ class ShellModel implements ShellModelAPI {
       return await this.listApp(segments.slice(1));
     }
 
-    if (segments[0] === "title") {
+    if (getWorkspaceStatePropertyByAlias(segments[0])) {
       return throwPathError("INVALID_PATH", "Leaf path cannot be listed");
     }
 
@@ -156,26 +164,28 @@ class ShellModel implements ShellModelAPI {
     }
 
     if (segments[0] === "app") {
-      if (segments.length === 2 && segments[1] === "title") {
-        const appStatus = await this.host.setAppTitle(asNonEmptyString(value, "App title"));
+      const property = segments.length === 2 ? getAppStateProperty(segments[1]) : undefined;
+      if (property) {
+        const result = await this.setScopedProperty({ scope: "app" }, property, value);
         return {
           ok: true,
-          value: appStatus.title
+          value: result.value
         };
       }
 
       return throwPathError("NOT_WRITABLE", "Path is not writable");
     }
 
-    if (segments[0] === "title") {
+    const rootProperty = getWorkspaceStatePropertyByAlias(segments[0]);
+    if (rootProperty) {
       if (segments.length !== 1) {
         return throwPathError("NOT_WRITABLE", "Path is not writable");
       }
 
-      const workspaceStatus = await this.host.setWorkspaceTitle(asNonEmptyString(value, "Workspace title"));
+      const result = await this.setScopedProperty({ scope: "workspace" }, rootProperty, value);
       return {
         ok: true,
-        value: workspaceStatus.title
+        value: result.value
       };
     }
 
@@ -190,11 +200,12 @@ class ShellModel implements ShellModelAPI {
         return throwPathError("NOT_FOUND", `Pane '${paneSegment}' not found`);
       }
 
-      if (segments.length === 3 && segments[2] === "title") {
-        const updatedPane = await this.host.setPaneTitle(pane.id, asNonEmptyString(value, "Pane title"));
+      const property = segments.length === 3 ? getPaneStateProperty(segments[2]) : undefined;
+      if (property) {
+        const result = await this.setScopedProperty({ scope: "pane", paneId: pane.id }, property, value);
         return {
           ok: true,
-          value: updatedPane.title
+          value: result.value
         };
       }
 
@@ -226,7 +237,12 @@ class ShellModel implements ShellModelAPI {
     args: Record<string, unknown>,
     caller: PathCallerContext
   ): Promise<PathCallResult> {
-    if (segments.length === 0 || segments[0] === "app" || segments[0] === "title" || segments[0] === "status") {
+    if (
+      segments.length === 0 ||
+      segments[0] === "app" ||
+      Boolean(getWorkspaceStatePropertyByAlias(segments[0])) ||
+      segments[0] === "status"
+    ) {
       return throwPathError("NOT_CALLABLE", "Path is not callable");
     }
 
@@ -385,12 +401,17 @@ class ShellModel implements ShellModelAPI {
       return {
         ok: true,
         found: true,
-        value: { title: appStatus.title }
+        value: statePropertySnapshot(appStatus, APP_STATE_PROPERTIES)
       };
     }
 
-    if (segments.length === 1 && segments[0] === "title") {
-      return { ok: true, found: true, value: appStatus.title };
+    const property = segments.length === 1 ? getAppStateProperty(segments[0]) : undefined;
+    if (property) {
+      return {
+        ok: true,
+        found: true,
+        value: property.read(appStatus)
+      };
     }
 
     return notFoundGet();
@@ -422,6 +443,15 @@ class ShellModel implements ShellModelAPI {
       };
     }
 
+    const property = segments.length === 2 ? getWorkspaceStateProperty(segments[1]) : undefined;
+    if (property) {
+      return {
+        ok: true,
+        found: true,
+        value: property.read(workspace)
+      };
+    }
+
     if (segments.length === 2 && isWorkspaceStatusKey(segments[1])) {
       return {
         ok: true,
@@ -438,11 +468,11 @@ class ShellModel implements ShellModelAPI {
       return {
         ok: true,
         found: true,
-        entries: [leafEntry("title", "/app/title", true)]
+        entries: statePropertyEntries(APP_STATE_PROPERTIES, "/app")
       };
     }
 
-    if (segments.length === 1 && segments[0] === "title") {
+    if (segments.length === 1 && getAppStateProperty(segments[0])) {
       return throwPathError("INVALID_PATH", "Leaf path cannot be listed");
     }
 
@@ -478,14 +508,14 @@ class ShellModel implements ShellModelAPI {
         found: true,
         entries: [
           leafEntry("id", `/workspaces/${workspace.id}/id`),
-          leafEntry("title", `/workspaces/${workspace.id}/title`),
+          ...statePropertyEntries(WORKSPACE_STATE_PROPERTIES, `/workspaces/${workspace.id}`, "key", false),
           leafEntry("activePaneId", `/workspaces/${workspace.id}/activePaneId`),
           leafEntry("paneCount", `/workspaces/${workspace.id}/paneCount`)
         ]
       };
     }
 
-    if (segments.length === 2 && isWorkspaceStatusKey(segments[1])) {
+    if (segments.length === 2 && (getWorkspaceStateProperty(segments[1]) || isWorkspaceStatusKey(segments[1]))) {
       return throwPathError("INVALID_PATH", "Leaf path cannot be listed");
     }
 
@@ -517,8 +547,13 @@ class ShellModel implements ShellModelAPI {
       return { ok: true, found: true, value: pane.kind };
     }
 
-    if (segments.length === 2 && segments[1] === "title") {
-      return { ok: true, found: true, value: pane.title };
+    const property = segments.length === 2 ? getPaneStateProperty(segments[1]) : undefined;
+    if (property) {
+      return {
+        ok: true,
+        found: true,
+        value: property.read(pane)
+      };
     }
 
     if (segments.length === 2 && segments[1] === "browser" && pane.kind === "browser") {
@@ -599,7 +634,7 @@ class ShellModel implements ShellModelAPI {
     }
 
     if (segments.length === 2) {
-      if (segments[1] === "kind" || segments[1] === "title") {
+      if (segments[1] === "kind" || getPaneStateProperty(segments[1])) {
         return throwPathError("INVALID_PATH", "Leaf path cannot be listed");
       }
 
@@ -1002,7 +1037,7 @@ class ShellModel implements ShellModelAPI {
     const panes = await this.host.listPanes();
     const app = await this.host.getAppStatus();
     return {
-      title: workspace.title,
+      ...statePropertySnapshot(workspace, WORKSPACE_STATE_PROPERTIES, "alias"),
       workspaces: Object.fromEntries(
         workspaces.map((entry) => [entry.id, entry])
       ),
@@ -1060,6 +1095,96 @@ class ShellModel implements ShellModelAPI {
 
     return notFoundList();
   }
+
+  private async setScopedProperty(
+    target: ScopedPropertyTarget,
+    property: ScopedStatePropertyDescriptor<any>,
+    value: unknown
+  ) {
+    return await this.host.setScopedProperty(target, property.key, asNonEmptyString(value, property.label));
+  }
+}
+
+interface ScopedStatePropertyDescriptor<TTarget> {
+  key: string;
+  label: string;
+  writable: boolean;
+  alias?: string;
+  read(target: TTarget): unknown;
+}
+
+const APP_STATE_PROPERTIES: readonly ScopedStatePropertyDescriptor<AppStatusSnapshot>[] = [
+  {
+    key: "title",
+    label: "App title",
+    writable: true,
+    read: (app) => app.title
+  }
+];
+
+const WORKSPACE_STATE_PROPERTIES: readonly ScopedStatePropertyDescriptor<Awaited<ReturnType<ShellModelHost["getWorkspaceStatus"]>>>[] = [
+  {
+    key: "title",
+    label: "Workspace title",
+    writable: true,
+    alias: "title",
+    read: (workspace) => workspace.title
+  }
+];
+
+const PANE_STATE_PROPERTIES: readonly ScopedStatePropertyDescriptor<ShellPaneRecordSnapshot>[] = [
+  {
+    key: "title",
+    label: "Pane title",
+    writable: true,
+    read: (pane) => pane.title
+  }
+];
+
+function getAppStateProperty(key: string) {
+  return APP_STATE_PROPERTIES.find((property) => property.key === key);
+}
+
+function getWorkspaceStateProperty(key: string) {
+  return WORKSPACE_STATE_PROPERTIES.find((property) => property.key === key);
+}
+
+function getWorkspaceStatePropertyByAlias(alias: string) {
+  return WORKSPACE_STATE_PROPERTIES.find((property) => (property.alias ?? property.key) === alias);
+}
+
+function getPaneStateProperty(key: string) {
+  return PANE_STATE_PROPERTIES.find((property) => property.key === key);
+}
+
+function statePropertyEntries(
+  properties: readonly ScopedStatePropertyDescriptor<any>[],
+  basePath: string,
+  pathMode: "key" | "alias" = "key",
+  writableOverride?: boolean
+) {
+  return properties.map((property) => {
+    const leafName = pathMode === "alias" ? property.alias ?? property.key : property.key;
+    return leafEntry(
+      leafName,
+      `${basePath}/${leafName}`.replace(/\/+/g, "/"),
+      writableOverride ?? property.writable
+    );
+  });
+}
+
+function statePropertySnapshot(
+  target: AppStatusSnapshot | Awaited<ReturnType<ShellModelHost["getWorkspaceStatus"]>>,
+  properties: readonly ScopedStatePropertyDescriptor<any>[],
+  keyMode: "key" | "alias" = "key"
+) {
+  return Object.fromEntries(
+    properties.map((property) => [keyMode === "alias" ? property.alias ?? property.key : property.key, property.read(target)])
+  );
+}
+
+function workspaceRootAliasEntries() {
+  return statePropertyEntries(WORKSPACE_STATE_PROPERTIES, "", "alias");
 }
 
 class ModelPathError extends Error {
@@ -1227,33 +1352,35 @@ function toPaneStatusSnapshot(pane: ShellPaneRecordSnapshot) {
 }
 
 function paneStateEntries(pane: ShellPaneRecordSnapshot, basePath: string): ShellPathEntry[] {
+  const propertyEntries = statePropertyEntries(PANE_STATE_PROPERTIES, basePath);
   return pane.kind === "browser"
     ? [
         leafEntry("kind", `${basePath}/kind`),
-        leafEntry("title", `${basePath}/title`, true),
+        ...propertyEntries,
         objectEntry("browser", `${basePath}/browser`),
         actionEntry("close", `${basePath}/close`)
       ]
     : pane.kind === "terminal"
       ? [
           leafEntry("kind", `${basePath}/kind`),
-          leafEntry("title", `${basePath}/title`, true),
+          ...propertyEntries,
           objectEntry("terminal", `${basePath}/terminal`),
           actionEntry("close", `${basePath}/close`)
         ]
     : [
         leafEntry("kind", `${basePath}/kind`),
-        leafEntry("title", `${basePath}/title`, true),
+        ...propertyEntries,
         actionEntry("close", `${basePath}/close`)
       ];
 }
 
 function paneStatusEntries(pane: ShellPaneRecordSnapshot, basePath: string): ShellPathEntry[] {
+  const propertyEntries = statePropertyEntries(PANE_STATE_PROPERTIES, basePath, "key", false);
   return pane.kind === "browser"
     ? [
         leafEntry("id", `${basePath}/id`),
         leafEntry("kind", `${basePath}/kind`),
-        leafEntry("title", `${basePath}/title`),
+        ...propertyEntries,
         leafEntry("active", `${basePath}/active`),
         objectEntry("browser", `${basePath}/browser`)
       ]
@@ -1261,14 +1388,14 @@ function paneStatusEntries(pane: ShellPaneRecordSnapshot, basePath: string): She
       ? [
           leafEntry("id", `${basePath}/id`),
           leafEntry("kind", `${basePath}/kind`),
-          leafEntry("title", `${basePath}/title`),
+          ...propertyEntries,
           leafEntry("active", `${basePath}/active`),
           objectEntry("terminal", `${basePath}/terminal`)
         ]
     : [
         leafEntry("id", `${basePath}/id`),
         leafEntry("kind", `${basePath}/kind`),
-        leafEntry("title", `${basePath}/title`),
+        ...propertyEntries,
         leafEntry("active", `${basePath}/active`)
       ];
 }

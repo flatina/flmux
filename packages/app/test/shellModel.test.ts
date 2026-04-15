@@ -172,6 +172,11 @@ describe("shell model direct", () => {
       ok: true,
       value: "Workspace Renamed"
     });
+    expect(await model.pathSet("/workspaces/workspace.test/title", "Workspace Explicit")).toEqual({
+      ok: false,
+      code: "NOT_WRITABLE",
+      error: "Path is not writable"
+    });
     expect(await model.pathGet("/panes/pane.browser/browser")).toEqual({
       ok: true,
       found: true,
@@ -196,6 +201,16 @@ describe("shell model direct", () => {
         { name: "url", path: "/panes/pane.browser/browser/url", kind: "leaf", writable: true }
       ]
     });
+    expect(await model.pathList("/workspaces/workspace.test")).toEqual({
+      ok: true,
+      found: true,
+      entries: [
+        { name: "id", path: "/workspaces/workspace.test/id", kind: "leaf", writable: false },
+        { name: "title", path: "/workspaces/workspace.test/title", kind: "leaf", writable: false },
+        { name: "activePaneId", path: "/workspaces/workspace.test/activePaneId", kind: "leaf", writable: false },
+        { name: "paneCount", path: "/workspaces/workspace.test/paneCount", kind: "leaf", writable: false }
+      ]
+    });
     expect(await model.pathSet("/panes/pane.browser/browser/url", "https://example.next")).toEqual({
       ok: true,
       value: "https://example.next"
@@ -216,14 +231,26 @@ describe("shell model direct", () => {
       error: "Only browser panes expose a writable browser/url"
     });
 
-    expect(host.calls.setAppTitle).toEqual(["Flmux Test"]);
-    expect(host.calls.setWorkspaceTitle).toEqual(["Workspace Renamed"]);
+    expect(host.calls.setScopedProperty).toEqual([
+      { target: { scope: "app" }, key: "title", value: "Flmux Test" },
+      { target: { scope: "workspace" }, key: "title", value: "Workspace Renamed" }
+    ]);
     expect(host.calls.setBrowserPaneUrl).toEqual([
       {
         paneId: "pane.browser",
         url: "https://example.next"
       }
     ]);
+    expect(await model.pathSet("/workspaces/workspace.missing/title", "Missing")).toEqual({
+      ok: false,
+      code: "NOT_WRITABLE",
+      error: "Path is not writable"
+    });
+    expect(await model.pathSet("/workspaces/new/title", "Reserved")).toEqual({
+      ok: false,
+      code: "NOT_WRITABLE",
+      error: "Path is not writable"
+    });
   });
 
   it("resolves /panes/current for reads, writes, and terminal path actions", async () => {
@@ -351,7 +378,9 @@ describe("shell model direct", () => {
 
     const rename = await model.pathSet("/panes/current/title", "Renamed Terminal");
     expect(rename).toEqual({ ok: true, value: "Renamed Terminal" });
-    expect(host.calls.setPaneTitle).toEqual([{ paneId: "pane.term", title: "Renamed Terminal" }]);
+    expect(host.calls.setScopedProperty).toEqual([
+      { target: { scope: "pane", paneId: "pane.term" }, key: "title", value: "Renamed Terminal" }
+    ]);
 
     expect(await model.pathCall("/panes/current/terminal/create", { cwd: "." })).toEqual({
       ok: false,

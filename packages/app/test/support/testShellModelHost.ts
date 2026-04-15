@@ -4,6 +4,7 @@ import type {
   ShellModelHost,
   ShellPaneRecordSnapshot,
   ShellResolvedPanePathMount,
+  ScopedPropertyTarget,
   ShellTerminalDelegate,
   WorkspaceBusEvent,
   WorkspaceStatusSnapshot
@@ -69,9 +70,7 @@ export class TestShellModelHost implements ShellModelHost {
   readonly calls = {
     createWorkspace: [] as Array<{ title?: string }>,
     createPane: [] as NewPaneInput[],
-    setAppTitle: [] as string[],
-    setWorkspaceTitle: [] as string[],
-    setPaneTitle: [] as Array<{ paneId: string; title: string }>,
+    setScopedProperty: [] as Array<{ target: ScopedPropertyTarget; key: string; value: unknown }>,
     setBrowserPaneUrl: [] as Array<{ paneId: string; url: string }>,
     setPaneParams: [] as Array<{ paneId: string; nextParams: Record<string, unknown> }>,
     patchPaneParams: [] as Array<{ paneId: string; patch: Record<string, unknown> }>,
@@ -216,12 +215,6 @@ export class TestShellModelHost implements ShellModelHost {
     return this.getWorkspaceStatus();
   }
 
-  setAppTitle(title: string) {
-    this.appTitle = title;
-    this.calls.setAppTitle.push(title);
-    return this.getAppStatus();
-  }
-
   getWorkspaceStatus(): WorkspaceStatusSnapshot {
     this.syncCurrentWorkspaceSnapshot();
     return {
@@ -236,11 +229,36 @@ export class TestShellModelHost implements ShellModelHost {
     return kind === "browser" || kind === "cowsay" || kind === "terminal" || kind === "inspector" || kind === "scratchpad";
   }
 
-  setWorkspaceTitle(title: string): WorkspaceStatusSnapshot {
-    this.workspaceTitle = title;
-    this.workspaceTitles.set(this.workspaceId, title);
-    this.calls.setWorkspaceTitle.push(title);
-    return this.getWorkspaceStatus();
+  setScopedProperty(target: ScopedPropertyTarget, key: string, value: unknown) {
+    if (key !== "title") {
+      throw new Error(`Unsupported scoped property '${key}'`);
+    }
+
+    const nextValue = asNonEmptyString(value, `${target.scope} property '${key}'`);
+    this.calls.setScopedProperty.push({ target, key, value: nextValue });
+
+    switch (target.scope) {
+      case "app":
+        this.appTitle = nextValue;
+        return { value: this.appTitle };
+      case "workspace": {
+        const workspaceId = target.workspaceId ?? this.workspaceId;
+        if (!this.workspaceTitles.has(workspaceId)) {
+          throw new Error(`Unknown workspace '${workspaceId}'`);
+        }
+
+        if (workspaceId === this.workspaceId) {
+          this.workspaceTitle = nextValue;
+        }
+        this.workspaceTitles.set(workspaceId, nextValue);
+        return { value: nextValue };
+      }
+      case "pane": {
+        const pane = this.requirePane(target.paneId);
+        pane.title = nextValue;
+        return { value: pane.title };
+      }
+    }
   }
 
   listPanes(): ShellPaneRecordSnapshot[] {
@@ -283,13 +301,6 @@ export class TestShellModelHost implements ShellModelHost {
     this.syncCurrentWorkspaceSnapshot();
 
     return { paneId, closed };
-  }
-
-  setPaneTitle(paneId: string, title: string): ShellPaneRecordSnapshot {
-    const pane = this.requirePane(paneId);
-    pane.title = title;
-    this.calls.setPaneTitle.push({ paneId, title });
-    return this.toPaneSnapshot(paneId);
   }
 
   setBrowserPaneUrl(paneId: string, url: string): ShellPaneRecordSnapshot {
@@ -725,4 +736,17 @@ function cloneJsonObject(value: unknown) {
   return value && typeof value === "object"
     ? JSON.parse(JSON.stringify(value)) as Record<string, unknown>
     : undefined;
+}
+
+function asNonEmptyString(value: unknown, label: string) {
+  if (typeof value !== "string") {
+    throw new Error(`${label} must be a string`);
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(`${label} cannot be empty`);
+  }
+
+  return trimmed;
 }

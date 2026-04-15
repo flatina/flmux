@@ -26,11 +26,15 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
   try {
     const mainTarget = await waitForMainTarget(port, "main flmux target");
     const appOrigin = new URL(mainTarget.url).origin;
+    const workspaceAlphaStartPath = "/__flmux/internal/start?workspace=workspace.alpha";
+    const workspaceBetaStartPath = "/__flmux/internal/start?workspace=workspace.beta";
+    const workspaceAlphaStartUrl = `${appOrigin}${workspaceAlphaStartPath}`;
+    const workspaceBetaStartUrl = `${appOrigin}${workspaceBetaStartPath}`;
 
     await waitFor(async () => {
       const targets = await fetchTargets(port);
-      return targets.some((target) => target.url.endsWith("/fixtures/counter")) ? true : null;
-    }, { timeoutMs: 20_000, intervalMs: 500, label: "default counter browser target" });
+      return targets.some((target) => target.url === workspaceAlphaStartUrl) ? true : null;
+    }, { timeoutMs: 20_000, intervalMs: 500, label: "default start browser target" });
 
     const session = await connectCdp(mainTarget.webSocketDebuggerUrl!);
     await session.send("Runtime.enable");
@@ -200,7 +204,7 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
         value: {
           workspaceId: string;
           rootDir: string;
-          defaultFixture: string;
+          defaultBrowserPath: string;
         };
       };
     }>(`${appOrigin}/api/model/path/get`, {
@@ -209,8 +213,12 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
     });
     expect(inspectorStatus.result.value).toMatchObject({
       workspaceId: "workspace.beta",
-      defaultFixture: "form"
+      defaultBrowserPath: workspaceBetaStartPath
     });
+
+    const betaStartTargetCountBefore = (await fetchTargets(port))
+      .filter((target) => target.url === workspaceBetaStartUrl)
+      .length;
 
     const inspectorWriteBlocked = await postJson<{
       ok: true;
@@ -277,20 +285,22 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
       return state.workspaceId === "workspace.beta" && state.note === "" ? state : null;
     }, { timeoutMs: 20_000, intervalMs: 250, label: "scratchpad panel on workspace beta" });
 
-    const clickedFixture = await session.evaluate<boolean>(`(() => {
-      const button = document.querySelector('[data-fixture="form"]');
+    const clickedBrowser = await session.evaluate<boolean>(`(() => {
+      const button = document.querySelector('[data-action="new-browser"]');
       if (!(button instanceof HTMLButtonElement)) {
         return false;
       }
       button.click();
       return true;
     })()`);
-    expect(clickedFixture).toBe(true);
+    expect(clickedBrowser).toBe(true);
 
     await waitFor(async () => {
       const targets = await fetchTargets(port);
-      return targets.some((target) => target.url.endsWith("/fixtures/form")) ? true : null;
-    }, { timeoutMs: 20_000, intervalMs: 500, label: "form browser target" });
+      return targets.filter((target) => target.url === workspaceBetaStartUrl).length > betaStartTargetCountBefore
+        ? true
+        : null;
+    }, { timeoutMs: 20_000, intervalMs: 500, label: "new workspace beta browser target" });
     await session.close();
   } finally {
     await rm(sessionDir, { recursive: true, force: true });

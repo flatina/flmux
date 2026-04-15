@@ -995,10 +995,6 @@ function parseNewPaneArgs(args: Record<string, unknown>): NewPaneInput {
     ))
   );
 
-  if (kind === "browser" && !url) {
-    throw new ModelPathError("INVALID_VALUE", "Browser panes require url=...");
-  }
-
   return {
     kind,
     title,

@@ -31,7 +31,7 @@ export interface ExtensionPanePathMountSnapshotArgs {
   paneId: string;
   workspaceId: string;
   rootDir: string;
-  defaultFixture: string;
+  defaultBrowserPath: string;
   currentParams: Record<string, unknown> | undefined;
 }
 
@@ -60,26 +60,26 @@ export interface ExtensionPaneDefinition {
   createParams?(args: {
     workspaceId: string;
     rootDir: string;
-    defaultFixture: string;
+    defaultBrowserPath: string;
     input: NewPaneInput;
   }): Record<string, unknown> | undefined;
   getTitle?(args: {
     workspaceId: string;
     rootDir: string;
-    defaultFixture: string;
+    defaultBrowserPath: string;
     input: NewPaneInput;
     params: Record<string, unknown> | undefined;
   }): string;
   normalizeRestoredParams?(args: {
     workspaceId: string;
     rootDir: string;
-    defaultFixture: string;
+    defaultBrowserPath: string;
     params: Record<string, unknown> | undefined;
   }): Record<string, unknown> | undefined;
   serializeParams?(args: {
     workspaceId: string;
     rootDir: string;
-    defaultFixture: string;
+    defaultBrowserPath: string;
     currentParams: Record<string, unknown> | undefined;
   }): Record<string, unknown> | undefined;
   pathMount?: ExtensionPanePathMount;

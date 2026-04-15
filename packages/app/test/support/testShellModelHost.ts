@@ -297,7 +297,7 @@ export class TestShellModelHost implements ShellModelHost {
         getStatusSnapshot: () => ({
           workspaceId: this.workspaceId,
           rootDir: this.workspaceRootDir,
-          defaultFixture: "counter"
+          defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.test"
         })
       };
     }
@@ -473,8 +473,8 @@ export class TestShellModelHost implements ShellModelHost {
         return {
           id: paneId,
           kind: "browser",
-          title: input.title?.trim() || "Browser",
-          url: input.url ?? "about:blank"
+          title: input.title?.trim() || "Start",
+          url: input.url ?? `${this.appOrigin}${this.defaultBrowserPath()}`
         };
 
       case "cowsay":
@@ -597,6 +597,10 @@ export class TestShellModelHost implements ShellModelHost {
   private readInspectorSubscription(paneId: string) {
     const params = this.getPaneParams(paneId);
     return typeof params?.subscription === "string" && params.subscription.length > 0 ? params.subscription : "*";
+  }
+
+  private defaultBrowserPath() {
+    return `/__flmux/internal/start?workspace=${this.workspaceId}`;
   }
 
   private toPaneSnapshot(paneId: string): ShellPaneRecordSnapshot {

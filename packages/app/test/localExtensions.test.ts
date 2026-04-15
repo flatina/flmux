@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, mkdir, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { FLMUX_EXTENSION_API_VERSION } from "@flmux/extension-api";
 import type { FlmuxLocalExtensionLoadEntry } from "../src/shared/rendererBridge";
 import {
   createLocalExtensionLoadEntries,
@@ -42,7 +43,7 @@ describe("local extension loading", () => {
       name: "Cowsay",
       version: "0.1.0",
       runtimeManifest: {
-        apiVersion: 1,
+        apiVersion: FLMUX_EXTENSION_API_VERSION,
         entrypoints: {
           renderer: "index.js"
         }
@@ -210,7 +211,7 @@ describe("local extension loading", () => {
         id: "sample.cowsay",
         name: "Cowsay",
         version: "0.1.0",
-        apiVersion: 1,
+        apiVersion: FLMUX_EXTENSION_API_VERSION,
         entrypoints: {
           renderer: "index.js"
         }
@@ -226,6 +227,28 @@ describe("local extension loading", () => {
 
       expect(assetResponse.status).toBe(200);
       expect(await assetResponse.text()).toBe("<section>template asset</section>");
+    } finally {
+      server.stop();
+    }
+  });
+
+  it("serves the built-in start page with the requested workspace label", async () => {
+    const rendererDir = await createTempRendererDir();
+    const server = startFlmuxServer({
+      rendererDir,
+      shellModelRouter: createShellModelRouterStub()
+    });
+
+    try {
+      const response = await fetch(`${server.origin}/__flmux/internal/start?workspace=workspace.alpha`);
+      expect(response.status).toBe(200);
+      const html = await response.text();
+      expect(html).toContain("<title>flmux Start</title>");
+      expect(html).toContain("Built-in Start Page");
+      expect(html).toContain("workspace.alpha");
+
+      const missingFixture = await fetch(`${server.origin}/fixtures/counter`);
+      expect(missingFixture.status).toBe(404);
     } finally {
       server.stop();
     }
@@ -401,7 +424,7 @@ async function writeExtensionFixture(
       id: manifest.id,
       name: manifest.name,
       version: manifest.version,
-      apiVersion: manifest.apiVersion ?? 1,
+      apiVersion: manifest.apiVersion ?? FLMUX_EXTENSION_API_VERSION,
       entrypoints: {
         renderer: sourceRendererEntry
       }
@@ -415,7 +438,7 @@ async function writeExtensionFixture(
       id: manifest.id,
       name: manifest.name,
       version: manifest.version,
-      apiVersion: manifest.runtimeApiVersion ?? manifest.apiVersion ?? 1,
+      apiVersion: manifest.runtimeApiVersion ?? manifest.apiVersion ?? FLMUX_EXTENSION_API_VERSION,
       entrypoints: {
         renderer: runtimeRendererEntry
       }

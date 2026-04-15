@@ -8,7 +8,6 @@ import {
 } from "./paneRegistry";
 
 export interface BuiltinPaneDescriptorDependencies {
-  fixtureUrl(fixture: string): string;
   requireBrowserUrl(value: string): string;
   resolveTerminalCwd(rootDir: string, inputCwd: string | undefined): string;
   serializeBrowserUrl(url: string): string;
@@ -37,13 +36,13 @@ function createBuiltinPaneDescriptors(
         }),
       lifecycle: {
         createParams: ({ workspace, input }) => ({
-          url: deps.requireBrowserUrl(input.url ?? deps.fixtureUrl(workspace.defaultFixture))
+          url: deps.requireBrowserUrl(input.url ?? workspace.defaultBrowserPath)
         }),
         getTitle: ({ input, params }) =>
           input.title?.trim() || inferBrowserTitle(optionalStringParam(params?.url) ?? "Browser"),
         createRecord: ({ workspace, params }) => ({
           kind: "browser",
-          url: deps.requireBrowserUrl(optionalStringParam(params?.url) ?? deps.fixtureUrl(workspace.defaultFixture))
+          url: deps.requireBrowserUrl(optionalStringParam(params?.url) ?? workspace.defaultBrowserPath)
         }),
         createSnapshot: ({ paneId, title, active, record }) =>
           isBrowserPaneRecord(record)
@@ -65,7 +64,7 @@ function createBuiltinPaneDescriptors(
       },
       persistence: {
         normalizeRestoredParams: ({ workspace, params }) => ({
-          url: deps.requireBrowserUrl(optionalStringParam(params?.url) ?? deps.fixtureUrl(workspace.defaultFixture))
+          url: deps.requireBrowserUrl(optionalStringParam(params?.url) ?? workspace.defaultBrowserPath)
         }),
         serializeParams: ({ record }) =>
           isBrowserPaneRecord(record)
@@ -143,12 +142,12 @@ function inferBrowserTitle(url: string) {
   try {
     const parsed = new URL(url);
     const lastPath = parsed.pathname.split("/").filter(Boolean).pop();
-    return lastPath ? fixtureLabel(lastPath) : parsed.host || "Browser";
+    return lastPath ? capitalizeSegment(lastPath) : parsed.host || "Browser";
   } catch {
     return "Browser";
   }
 }
 
-function fixtureLabel(value: string) {
+function capitalizeSegment(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }

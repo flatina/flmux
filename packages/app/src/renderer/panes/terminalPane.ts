@@ -1,4 +1,3 @@
-import "@xterm/xterm/css/xterm.css";
 import type { FitAddon } from "@xterm/addon-fit";
 import type { Terminal as XtermTerminal } from "@xterm/xterm";
 import type { GroupPanelPartInitParameters, IContentRenderer } from "dockview-core";

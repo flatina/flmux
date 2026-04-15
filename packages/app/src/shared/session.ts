@@ -4,7 +4,7 @@ export interface FlmuxWorkspaceSessionSnapshot {
 }
 
 export interface FlmuxSessionSnapshot {
-  version: 1;
+  version: 2;
   appTitle: string;
   activeWorkspaceId: string;
   workspaces: Record<string, FlmuxWorkspaceSessionSnapshot>;

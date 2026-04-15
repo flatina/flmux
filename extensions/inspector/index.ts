@@ -245,10 +245,10 @@ const inspectorPane = definePane({
         ? currentParams.subscription
         : "*"
     }),
-    getStatusSnapshot: ({ workspaceId, rootDir, defaultFixture }) => ({
+    getStatusSnapshot: ({ workspaceId, rootDir, defaultBrowserPath }) => ({
       workspaceId,
       rootDir,
-      defaultFixture
+      defaultBrowserPath
     })
   }
 });

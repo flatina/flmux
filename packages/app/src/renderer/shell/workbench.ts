@@ -48,7 +48,7 @@ import { createWorkspaceBus } from "./workspaceBus";
 type WorkspaceSeed = {
   id: string;
   title: string;
-  defaultFixture: string;
+  defaultBrowserPath: string;
   rootDirName: string;
 };
 
@@ -56,7 +56,7 @@ type WorkspaceRecord = {
   id: string;
   title: string;
   defaultTitle: string;
-  defaultFixture: string;
+  defaultBrowserPath: string;
   rootDir: string;
   surface: HTMLElement;
   bus: WorkspaceBus;
@@ -65,8 +65,18 @@ type WorkspaceRecord = {
 };
 
 const WORKSPACE_SEEDS: WorkspaceSeed[] = [
-  { id: "workspace.alpha", title: "Workspace Alpha", defaultFixture: "counter", rootDirName: "workspace-alpha" },
-  { id: "workspace.beta", title: "Workspace Beta", defaultFixture: "form", rootDirName: "workspace-beta" }
+  {
+    id: "workspace.alpha",
+    title: "Workspace Alpha",
+    defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.alpha",
+    rootDirName: "workspace-alpha"
+  },
+  {
+    id: "workspace.beta",
+    title: "Workspace Beta",
+    defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.beta",
+    rootDirName: "workspace-beta"
+  }
 ];
 
 export class FlmuxWorkbench implements ShellModelHost {
@@ -102,7 +112,6 @@ export class FlmuxWorkbench implements ShellModelHost {
       onRuntimeStateChange: (workspace, paneId, state) => this.applyTerminalRuntimeStateChange(workspace, paneId, state)
     });
     registerBuiltinPaneDescriptors(this.paneRegistry, {
-      fixtureUrl: (fixture) => this.fixtureUrl(fixture),
       requireBrowserUrl: (value) => this.requireBrowserUrl(value),
       resolveTerminalCwd: resolveTerminalCwdFromRoot,
       serializeBrowserUrl: (url) => this.serializeBrowserUrl(url)
@@ -330,7 +339,7 @@ export class FlmuxWorkbench implements ShellModelHost {
     return {
       id: workspace.id,
       rootDir: workspace.rootDir,
-      defaultFixture: workspace.defaultFixture,
+      defaultBrowserPath: workspace.defaultBrowserPath,
       bus: workspace.bus
     };
   }
@@ -348,7 +357,7 @@ export class FlmuxWorkbench implements ShellModelHost {
         id: seed.id,
         title: seed.title,
         defaultTitle: seed.title,
-        defaultFixture: seed.defaultFixture,
+        defaultBrowserPath: seed.defaultBrowserPath,
         rootDir: joinPath(this.config.projectDir, seed.rootDirName),
         surface,
         bus: createWorkspaceBus(seed.id),
@@ -361,15 +370,10 @@ export class FlmuxWorkbench implements ShellModelHost {
   }
 
   private bindTopbar() {
-    document.querySelectorAll<HTMLButtonElement>("[data-fixture]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const fixture = button.dataset.fixture!;
-        void this.shellModel.pathCall("/panes/new", {
-          kind: "browser",
-          title: fixtureLabel(fixture),
-          url: this.fixtureUrl(fixture),
-          place: "right"
-        });
+    document.querySelector<HTMLButtonElement>('[data-action="new-browser"]')!.addEventListener("click", () => {
+      void this.shellModel.pathCall("/panes/new", {
+        kind: "browser",
+        place: "right"
       });
     });
 
@@ -507,8 +511,8 @@ export class FlmuxWorkbench implements ShellModelHost {
     const cowsay = this.addPane(workspace, { kind: "cowsay", title: "Cowsay" });
     this.addPane(workspace, {
       kind: "browser",
-      title: fixtureLabel(workspace.defaultFixture),
-      url: this.fixtureUrl(workspace.defaultFixture),
+      title: "Start",
+      url: workspace.defaultBrowserPath,
       place: "right",
       referencePaneId: cowsay.id
     });
@@ -771,7 +775,7 @@ export class FlmuxWorkbench implements ShellModelHost {
 
   private serializeSessionSnapshot(): FlmuxSessionSnapshot {
     return {
-      version: 1,
+      version: 2,
       appTitle: this.appTitle,
       activeWorkspaceId: this.activeWorkspaceId,
       workspaces: Object.fromEntries(
@@ -849,10 +853,6 @@ export class FlmuxWorkbench implements ShellModelHost {
     return normalized;
   }
 
-  private fixtureUrl(fixture: string) {
-    return `${this.config.fixtureBaseUrl}/${fixture}`;
-  }
-
   private async flushSessionSave(options: { preferBeacon?: boolean } = {}) {
     if (!this.sessionPersistenceEnabled || this.sessionPersistenceSuppressed) {
       return;
@@ -915,10 +915,6 @@ function createPaneId() {
 
 function normalizeDirection(place: PanePlacement | undefined) {
   return place ?? "within";
-}
-
-function fixtureLabel(value: string) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function joinPath(basePath: string, childPath: string) {

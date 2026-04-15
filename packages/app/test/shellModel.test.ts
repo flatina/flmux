@@ -508,11 +508,33 @@ describe("shell model direct", () => {
     });
     const model = host.createModel();
 
-    expect(await model.pathCall("/panes/new", { kind: "browser", place: "right" })).toEqual({
-      ok: false,
-      code: "INVALID_VALUE",
-      error: "Browser panes require url=..."
+    const defaultBrowser = await model.pathCall("/panes/new", { kind: "browser", place: "right" });
+    expect(defaultBrowser).toMatchObject({
+      ok: true,
+      value: {
+        path: expect.stringMatching(/^\/panes\/pane_/),
+        pane: {
+          kind: "browser",
+          title: "Start",
+          browser: {
+            url: "http://127.0.0.1:4321/__flmux/internal/start?workspace=workspace.test"
+          },
+          active: true
+        }
+      }
     });
+    expect(host.calls.createPane).toEqual([
+      {
+        kind: "browser",
+        title: undefined,
+        url: undefined,
+        place: "right",
+        cwd: undefined,
+        params: undefined,
+        referencePaneId: undefined
+      }
+    ]);
+    host.calls.createPane.length = 0;
 
     expect(await model.pathCall("/panes/new", { kind: "missing.pane", place: "right" })).toEqual({
       ok: false,
@@ -801,7 +823,7 @@ describe("shell model direct", () => {
       value: {
         workspaceId: "workspace.test",
         rootDir: WORKSPACE_ROOT_DIR,
-        defaultFixture: "counter"
+        defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.test"
       }
     });
     expect(await model.pathSet("/panes/pane.inspector/inspector/subscription", "other.*")).toEqual({

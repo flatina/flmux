@@ -34,7 +34,7 @@ export function isSessionSnapshot(value: unknown): value is FlmuxSessionSnapshot
 
   const snapshot = value as Record<string, unknown>;
   if (
-    snapshot.version !== 1 ||
+    snapshot.version !== 2 ||
     typeof snapshot.appTitle !== "string" ||
     typeof snapshot.activeWorkspaceId !== "string" ||
     !snapshot.workspaces ||

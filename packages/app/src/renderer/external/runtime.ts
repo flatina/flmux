@@ -35,7 +35,7 @@ export function createExternalPaneDescriptor(options: ExtensionPaneDefinition): 
                   options.createParams!({
                     workspaceId: workspace.id,
                     rootDir: workspace.rootDir,
-                    defaultFixture: workspace.defaultFixture,
+                    defaultBrowserPath: workspace.defaultBrowserPath,
                     input
                   })
               : undefined,
@@ -44,7 +44,7 @@ export function createExternalPaneDescriptor(options: ExtensionPaneDefinition): 
                   options.getTitle!({
                     workspaceId: workspace.id,
                     rootDir: workspace.rootDir,
-                    defaultFixture: workspace.defaultFixture,
+                    defaultBrowserPath: workspace.defaultBrowserPath,
                     input,
                     params
                   })
@@ -59,7 +59,7 @@ export function createExternalPaneDescriptor(options: ExtensionPaneDefinition): 
                   options.normalizeRestoredParams!({
                     workspaceId: workspace.id,
                     rootDir: workspace.rootDir,
-                    defaultFixture: workspace.defaultFixture,
+                    defaultBrowserPath: workspace.defaultBrowserPath,
                     params
                   })
               : undefined,
@@ -68,7 +68,7 @@ export function createExternalPaneDescriptor(options: ExtensionPaneDefinition): 
                   options.serializeParams!({
                     workspaceId: workspace.id,
                     rootDir: workspace.rootDir,
-                    defaultFixture: workspace.defaultFixture,
+                    defaultBrowserPath: workspace.defaultBrowserPath,
                     currentParams
                   })
               : undefined
@@ -87,7 +87,7 @@ function createExternalPanePathMount(options: ExtensionPanePathMount): PanePathM
             paneId,
             workspaceId: workspace.id,
             rootDir: workspace.rootDir,
-            defaultFixture: workspace.defaultFixture,
+            defaultBrowserPath: workspace.defaultBrowserPath,
             currentParams
           })
       : undefined,
@@ -97,7 +97,7 @@ function createExternalPanePathMount(options: ExtensionPanePathMount): PanePathM
             paneId,
             workspaceId: workspace.id,
             rootDir: workspace.rootDir,
-            defaultFixture: workspace.defaultFixture,
+            defaultBrowserPath: workspace.defaultBrowserPath,
             currentParams,
             relativePath
           })
@@ -108,7 +108,7 @@ function createExternalPanePathMount(options: ExtensionPanePathMount): PanePathM
             paneId,
             workspaceId: workspace.id,
             rootDir: workspace.rootDir,
-            defaultFixture: workspace.defaultFixture,
+            defaultBrowserPath: workspace.defaultBrowserPath,
             currentParams,
             relativePath,
             value,
@@ -122,7 +122,7 @@ function createExternalPanePathMount(options: ExtensionPanePathMount): PanePathM
             paneId,
             workspaceId: workspace.id,
             rootDir: workspace.rootDir,
-            defaultFixture: workspace.defaultFixture,
+            defaultBrowserPath: workspace.defaultBrowserPath,
             currentParams
           })
       : undefined

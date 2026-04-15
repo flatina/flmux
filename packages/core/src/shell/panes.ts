@@ -4,7 +4,7 @@ import type { Awaitable, NewPaneInput, ShellPaneRecordSnapshot, WorkspaceBus } f
 export interface PaneWorkspaceContext {
   id: string;
   rootDir: string;
-  defaultFixture: string;
+  defaultBrowserPath: string;
   bus: WorkspaceBus;
 }
 

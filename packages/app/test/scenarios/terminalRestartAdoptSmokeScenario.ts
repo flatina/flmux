@@ -108,8 +108,8 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
       path: "/panes/new",
       args: {
         kind: "browser",
-        title: "Form",
-        url: "/fixtures/form",
+        title: "Start",
+        url: "/__flmux/internal/start?workspace=restored-browser",
         place: "right"
       }
     });
@@ -273,7 +273,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
       try {
         const saved = await Bun.file(sessionFile).text();
         return (
-          saved.includes("\"version\": 1") &&
+          saved.includes("\"version\": 2") &&
           saved.includes(paneId) &&
           saved.includes(browserPaneId) &&
           saved.includes(cowsayPaneId) &&
@@ -396,7 +396,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
       clientId: secondClientId,
       path: `/status/panes/${browserPaneId}/browser/url`
     });
-    expect(restoredBrowser.result.value).toBe(`${secondOrigin}/fixtures/form`);
+    expect(restoredBrowser.result.value).toBe(`${secondOrigin}/__flmux/internal/start?workspace=restored-browser`);
 
     const restoredCowsayPane = await postJson<{
       ok: true;
@@ -514,8 +514,8 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
 
     await waitFor(async () => {
       const targets = await fetchTargets(secondPort);
-      return targets.some((target) => target.url === `${secondOrigin}/fixtures/form`) ? true : null;
-    }, { timeoutMs: 20_000, intervalMs: 500, label: "restored form browser target" });
+      return targets.some((target) => target.url === `${secondOrigin}/__flmux/internal/start?workspace=restored-browser`) ? true : null;
+    }, { timeoutMs: 20_000, intervalMs: 500, label: "restored start browser target" });
   } finally {
     if (secondSession) {
       await secondSession.close();

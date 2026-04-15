@@ -36,7 +36,6 @@ const rendererRpc = BrowserView.defineRPC<FlmuxRendererBridgeSchema>({
   handlers: {
     requests: {
       "flmux.getConfig": () => ({
-        fixtureBaseUrl: `${server.origin}/fixtures`,
         appOrigin: server.origin,
         projectDir,
         localExtensions: createLocalExtensionLoadEntries(localExtensions, server.origin)

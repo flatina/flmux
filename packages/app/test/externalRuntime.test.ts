@@ -58,7 +58,7 @@ describe("external pane runtime", () => {
       workspace: {
         id: "workspace.external",
         rootDir: "C:\\workspace",
-        defaultFixture: "counter",
+        defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
         bus: workspaceBus
       } satisfies PaneWorkspaceContext,
       options: {
@@ -133,7 +133,7 @@ describe("external pane runtime", () => {
         workspace: {
           id: "workspace.external",
           rootDir: "C:\\workspace",
-          defaultFixture: "counter",
+          defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
           bus: {
             publish() {},
             subscribe() {
@@ -176,7 +176,7 @@ describe("external pane runtime", () => {
       workspace: {
         id: "workspace.external",
         rootDir: "C:\\workspace",
-        defaultFixture: "counter",
+        defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
         bus: {
           publish() {},
           subscribe() {
@@ -252,7 +252,7 @@ describe("external pane runtime", () => {
         workspace: {
           id: "workspace.external",
           rootDir: "C:\\workspace",
-          defaultFixture: "counter",
+          defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
           bus: {
             publish() {},
             subscribe() {
@@ -276,7 +276,7 @@ describe("external pane runtime", () => {
         workspace: {
           id: "workspace.external",
           rootDir: "C:\\workspace",
-          defaultFixture: "counter",
+          defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
           bus: {
             publish() {},
             subscribe() {
@@ -297,7 +297,7 @@ describe("external pane runtime", () => {
         workspace: {
           id: "workspace.external",
           rootDir: "C:\\workspace",
-          defaultFixture: "counter",
+          defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
           bus: {
             publish() {},
             subscribe() {
@@ -337,7 +337,7 @@ describe("external pane runtime", () => {
       workspace: {
         id: "workspace.external",
         rootDir: "C:\\workspace",
-        defaultFixture: "counter",
+        defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
         bus: {
           publish() {},
           subscribe() {
@@ -419,7 +419,7 @@ describe("external pane runtime", () => {
       workspace: {
         id: "workspace.external",
         rootDir: "C:\\workspace",
-        defaultFixture: "counter",
+        defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
         bus: {
           publish() {},
           subscribe() {
@@ -444,7 +444,7 @@ describe("external pane runtime", () => {
       workspace: {
         id: "workspace.external",
         rootDir: "C:\\workspace",
-        defaultFixture: "counter",
+        defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
         bus: {
           publish() {},
           subscribe() {
@@ -476,7 +476,7 @@ describe("external pane runtime", () => {
       workspace: {
         id: "workspace.external",
         rootDir: "C:\\workspace",
-        defaultFixture: "counter",
+        defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
         bus: {
           publish() {},
           subscribe() {

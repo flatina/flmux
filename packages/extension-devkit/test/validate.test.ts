@@ -60,7 +60,7 @@ describe("extension manifest validation", () => {
       throw new Error("expected manifest validation to fail");
     }
     expect(result.errors).toEqual([
-      "Manifest field 'apiVersion' must be 1, got 999",
+      `Manifest field 'apiVersion' must be ${FLMUX_EXTENSION_API_VERSION}, got 999`,
       "Manifest field 'entrypoints.renderer' must stay within the extension directory"
     ]);
   });
@@ -158,7 +158,7 @@ describe("extension-devkit validate", () => {
       id: "sample.cowsay",
       name: "Cowsay",
       version: "0.1.0",
-      apiVersion: 1,
+      apiVersion: FLMUX_EXTENSION_API_VERSION,
       entrypoints: {
         renderer: "src/index.js"
       }

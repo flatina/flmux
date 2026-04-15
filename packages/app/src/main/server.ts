@@ -82,58 +82,7 @@ export function startFlmuxServer(options: {
         return { ok: true };
       })
     )
-    .get(
-      "/fixtures/counter",
-      () =>
-        fixtureHtml(
-          "Counter",
-          `
-      <p>Counter fixture running on local HTTP origin.</p>
-      <button id="inc">count: 0</button>
-      <script>
-        const btn = document.getElementById('inc');
-        let count = 0;
-        btn.addEventListener('click', () => {
-          count += 1;
-          btn.textContent = 'count: ' + count;
-        });
-      </script>
-    `
-        )
-    )
-    .get(
-      "/fixtures/list",
-      () =>
-        fixtureHtml(
-          "List",
-          `
-      <ul>
-        <li>alpha</li>
-        <li>beta</li>
-        <li>gamma</li>
-      </ul>
-    `
-        )
-    )
-    .get(
-      "/fixtures/form",
-      () =>
-        fixtureHtml(
-          "Form",
-          `
-      <form style="display:grid;gap:12px;max-width:360px">
-        <label>Project <input name="project" value="flmux"></label>
-        <label>Mode
-          <select name="mode">
-            <option>desktop</option>
-            <option>web</option>
-          </select>
-        </label>
-        <button type="button">Submit</button>
-      </form>
-    `
-        )
-    )
+    .get("/__flmux/internal/start", ({ request }) => handleInternalStartPageRequest(request))
     .all("*", ({ request, set }) => {
       const pathname = decodeURIComponent(new URL(request.url).pathname);
       const extensionRuntimeResponse = maybeHandleLocalExtensionRuntimeRequest(pathname, set, options.localExtensions ?? []);
@@ -348,28 +297,48 @@ function resolveExtensionApiRuntimeBuiltPath(moduleName: string) {
   return existsSync(builtPath) ? builtPath : null;
 }
 
-function fixtureHtml(title: string, body: string): Response {
+function handleInternalStartPageRequest(request: Request): Response {
+  const url = new URL(request.url);
+  const workspaceId = url.searchParams.get("workspace");
+  const workspaceLabel = workspaceId?.trim() || "current workspace";
+
   return new Response(
     `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${title}</title>
+  <title>flmux Start</title>
   <style>
     body { margin: 0; padding: 24px; color: #e6eefc; background: #0f1726; font: 14px/1.5 system-ui, sans-serif; }
-    button, input, select { font: inherit; }
-    input, select { width: 100%; padding: 8px 10px; border: 1px solid #32445f; border-radius: 8px; background: #111c2d; color: inherit; }
-    button { padding: 8px 12px; border: 1px solid #3f5e87; border-radius: 8px; background: #16263d; color: inherit; cursor: pointer; }
+    main { display: grid; gap: 16px; max-width: 720px; }
+    .badge { display: inline-block; padding: 4px 10px; border: 1px solid #3f5e87; border-radius: 999px; background: #16263d; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+    .card { padding: 16px; border: 1px solid #32445f; border-radius: 12px; background: #111c2d; }
+    code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
   </style>
 </head>
 <body>
-  <h1>${title}</h1>
-  ${body}
+  <main>
+    <span class="badge">Built-in Start Page</span>
+    <section class="card">
+      <h1>flmux browser pane</h1>
+      <p>This is the default same-origin browser content for ${escapeHtml(workspaceLabel)}.</p>
+      <p>Open a URL from the browser pane navigation field or create a browser pane with an explicit <code>url</code>.</p>
+    </section>
+  </main>
 </body>
 </html>`,
     {
       headers: { "content-type": "text/html; charset=utf-8" }
     }
   );
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
 }

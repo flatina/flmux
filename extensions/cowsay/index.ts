@@ -62,7 +62,7 @@ class CowsayPaneRenderer implements ExtensionPaneInstance {
           <div class="cowsay-examples">
             <button type="button" data-example="get /title">get /title</button>
             <button type="button" data-example="set /title moo">set /title moo</button>
-            <button type="button" data-example="call /panes/new kind=browser url=/fixtures/counter place=right">new browser</button>
+            <button type="button" data-example="call /panes/new kind=browser place=right">new browser</button>
             <button type="button" data-example="call /panes/new kind=terminal cwd=. place=right">new terminal</button>
             <button type="button" data-example="pub cowsay.message text=moo">pub cowsay.message</button>
             <button type="button" data-example="ls-each-get /status/panes">ls-each-get /status/panes</button>

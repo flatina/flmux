@@ -20,7 +20,7 @@ afterAll(() => {
 
 describe("flmux app smoke", () => {
   it(
-    "boots the real app, switches workspace, and opens a browser fixture",
+    "boots the real app, switches workspace, and opens a browser pane",
     async () => {
       await runAppBootSmokeScenario(appHandles);
     },

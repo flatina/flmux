@@ -30,7 +30,6 @@ export interface FlmuxLocalExtensionLoadEntry {
 
 export interface FlmuxRendererBootstrapConfig {
   appOrigin: string;
-  fixtureBaseUrl: string;
   projectDir: string;
   localExtensions: FlmuxLocalExtensionLoadEntry[];
 }

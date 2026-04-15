@@ -1,12 +1,13 @@
 import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
-import type { ExtensionManifest } from "@flmux/extension-api";
+import { isAbsolute, join, normalize, relative } from "node:path";
+import { FLMUX_EXTENSION_API_VERSION, type ExtensionManifest } from "@flmux/extension-api";
 import type { FlmuxLocalExtensionLoadEntry } from "../shared/rendererBridge";
 
 export interface DiscoveredLocalExtension {
   id: string;
   name: string;
   version: string;
+  manifest: ExtensionManifest;
   rootDir: string;
   manifestPath: string;
   rendererEntryPath: string;
@@ -27,7 +28,6 @@ export async function discoverLocalExtensions(rootDir: string): Promise<Discover
       .map(async (entry) => {
         const extensionRootDir = join(rootDir, entry.name);
         const manifestPath = join(extensionRootDir, "manifest.json");
-        const rendererEntryPath = join(extensionRootDir, "index.ts");
 
         try {
           const raw = await readFile(manifestPath, "utf8");
@@ -35,9 +35,31 @@ export async function discoverLocalExtensions(rootDir: string): Promise<Discover
           if (
             typeof manifest.id !== "string" ||
             typeof manifest.name !== "string" ||
-            typeof manifest.version !== "string"
+            typeof manifest.version !== "string" ||
+            typeof manifest.apiVersion !== "number" ||
+            !isPlainObject(manifest.entrypoints)
           ) {
             console.warn(`[flmux] invalid extension manifest fields: ${manifestPath}`);
+            return null;
+          }
+
+          if (manifest.apiVersion !== FLMUX_EXTENSION_API_VERSION) {
+            console.warn(
+              `[flmux] unsupported extension apiVersion ${manifest.apiVersion} in: ${manifestPath}`
+            );
+            return null;
+          }
+
+          if (typeof manifest.entrypoints.renderer !== "string") {
+            console.warn(`[flmux] missing local extension renderer entrypoint: ${manifestPath}`);
+            return null;
+          }
+
+          const rendererEntryPath = resolveExtensionRelativePath(extensionRootDir, manifest.entrypoints.renderer);
+          if (!rendererEntryPath) {
+            console.warn(
+              `[flmux] invalid local extension renderer entrypoint '${manifest.entrypoints.renderer}': ${manifestPath}`
+            );
             return null;
           }
 
@@ -50,6 +72,7 @@ export async function discoverLocalExtensions(rootDir: string): Promise<Discover
             id: manifest.id,
             name: manifest.name,
             version: manifest.version,
+            manifest: manifest as ExtensionManifest,
             rootDir: extensionRootDir,
             manifestPath,
             rendererEntryPath
@@ -98,4 +121,22 @@ export function createLocalExtensionLoadEntries(
       rendererEntryUrl: `${baseUrl}/renderer.js`
     } satisfies FlmuxLocalExtensionLoadEntry;
   });
+}
+
+function resolveExtensionRelativePath(rootDir: string, relativePath: string) {
+  if (!relativePath.trim() || isAbsolute(relativePath)) {
+    return null;
+  }
+
+  const resolved = normalize(join(rootDir, relativePath));
+  const relativeToRoot = relative(rootDir, resolved);
+  if (relativeToRoot.startsWith("..") || isAbsolute(relativeToRoot)) {
+    return null;
+  }
+
+  return resolved;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

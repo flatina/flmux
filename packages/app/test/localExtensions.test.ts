@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, mkdir, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { FlmuxLocalExtensionLoadEntry } from "../src/shared/rendererBridge";
 import {
   createLocalExtensionLoadEntries,
@@ -38,7 +38,13 @@ describe("local extension loading", () => {
     expect(discovered[0]).toMatchObject({
       id: "sample.cowsay",
       name: "Cowsay",
-      version: "0.1.0"
+      version: "0.1.0",
+      manifest: {
+        apiVersion: 1,
+        entrypoints: {
+          renderer: "./index.ts"
+        }
+      }
     });
 
     const loadEntries = createLocalExtensionLoadEntries(discovered, "http://127.0.0.1:4321");
@@ -76,6 +82,33 @@ describe("local extension loading", () => {
     });
   });
 
+  it("rejects local extensions with unsupported apiVersion", async () => {
+    const extensionsRootDir = await createTempExtensionRoot("api-version");
+    await writeExtensionFixture(extensionsRootDir, {
+      id: "sample.cowsay",
+      name: "Cowsay",
+      version: "0.1.0",
+      apiVersion: 99
+    });
+
+    const discovered = await discoverLocalExtensions(extensionsRootDir);
+    expect(discovered).toEqual([]);
+  });
+
+  it("resolves renderer entrypoints from the manifest instead of assuming index.ts", async () => {
+    const extensionsRootDir = await createTempExtensionRoot("custom-entry");
+    await writeExtensionFixture(extensionsRootDir, {
+      id: "sample.cowsay",
+      name: "Cowsay",
+      version: "0.1.0",
+      rendererEntry: "./src/renderer-entry.ts"
+    });
+
+    const discovered = await discoverLocalExtensions(extensionsRootDir);
+    expect(discovered).toHaveLength(1);
+    expect(discovered[0]?.rendererEntryPath.replace(/\\/g, "/")).toEndWith("/src/renderer-entry.ts");
+  });
+
   it("serves local extension manifest, runtime shim, and transpiled renderer entry from same-origin routes", async () => {
     const extensionsRootDir = await createTempExtensionRoot("server");
     await writeExtensionFixture(extensionsRootDir, {
@@ -104,7 +137,11 @@ describe("local extension loading", () => {
       expect(await manifestResponse.json()).toEqual({
         id: "sample.cowsay",
         name: "Cowsay",
-        version: "0.1.0"
+        version: "0.1.0",
+        apiVersion: 1,
+        entrypoints: {
+          renderer: "./index.ts"
+        }
       });
 
       expect(runtimeResponse.status).toBe(200);
@@ -214,21 +251,32 @@ async function createTempRendererDir() {
 
 async function writeExtensionFixture(
   rootDir: string,
-  manifest: Pick<DiscoveredLocalExtension, "id" | "name" | "version"> & { dirName?: string }
+  manifest: Pick<DiscoveredLocalExtension, "id" | "name" | "version"> & {
+    dirName?: string;
+    apiVersion?: number;
+    rendererEntry?: string;
+  }
 ) {
   const extensionDir = join(rootDir, manifest.dirName ?? manifest.id.split(".").pop() ?? "extension");
+  const rendererEntry = manifest.rendererEntry ?? "./index.ts";
+  const rendererEntryPath = join(extensionDir, rendererEntry);
   await mkdir(extensionDir, { recursive: true });
+  await mkdir(dirname(rendererEntryPath), { recursive: true });
   await writeFile(
     join(extensionDir, "manifest.json"),
     JSON.stringify({
       id: manifest.id,
       name: manifest.name,
-      version: manifest.version
+      version: manifest.version,
+      apiVersion: manifest.apiVersion ?? 1,
+      entrypoints: {
+        renderer: rendererEntry
+      }
     }, null, 2),
     "utf8"
   );
   await writeFile(
-    join(extensionDir, "index.ts"),
+    rendererEntryPath,
     [
       'import { defineExtension, definePane } from "@flmux/extension-api";',
       "",
@@ -248,7 +296,7 @@ async function writeExtensionFixture(
   return {
     extensionDir,
     manifestPath: join(extensionDir, "manifest.json"),
-    rendererEntryPath: join(extensionDir, "index.ts")
+    rendererEntryPath
   };
 }
 

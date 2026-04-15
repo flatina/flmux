@@ -262,4 +262,51 @@ describe("flmux harness smoke", () => {
       updatedAt: null
     });
   }, 30_000);
+
+  it("dispatches a local extension CLI command through the real CLI entrypoint", async () => {
+    const result = await harness.runCliJson<
+      {
+        ok: true;
+        value: {
+          paneId: string;
+          path: string;
+          pane: {
+            id: string;
+            kind: string;
+            title: string;
+            active: boolean;
+          };
+        };
+      }
+    >(["cowsay", "hello", "from", "cli"]);
+
+    const paneId = result.value.paneId;
+    expect(result.value).toMatchObject({
+      path: `/panes/${paneId}`,
+      pane: {
+        id: paneId,
+        kind: "cowsay",
+        title: "hello from cli",
+        active: true
+      }
+    });
+
+    const paneStatus = await harness.runCliJson<
+      ModelEnvelope<{
+        ok: true;
+        found: true;
+        value: {
+          id: string;
+          kind: string;
+          title: string;
+          active: boolean;
+        };
+      }>
+    >(["get", `/status/panes/${paneId}`]);
+    expect(paneStatus.result.value).toMatchObject({
+      id: paneId,
+      kind: "cowsay",
+      title: "hello from cli"
+    });
+  });
 });

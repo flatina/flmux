@@ -106,7 +106,8 @@ describe("local extension loading", () => {
 
     const discovered = await discoverLocalExtensions(extensionsRootDir);
     expect(discovered).toHaveLength(1);
-    expect(discovered[0]?.rendererEntryPath.replace(/\\/g, "/")).toEndWith("/src/renderer-entry.ts");
+    expect(discovered[0]?.rendererEntryPath).not.toBeNull();
+    expect(discovered[0]!.rendererEntryPath!.replace(/\\/g, "/")).toEndWith("/src/renderer-entry.ts");
   });
 
   it("serves local extension manifest, runtime shim, and transpiled renderer entry from same-origin routes", async () => {

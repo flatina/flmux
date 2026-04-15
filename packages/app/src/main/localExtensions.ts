@@ -10,7 +10,8 @@ export interface DiscoveredLocalExtension {
   manifest: ExtensionManifest;
   rootDir: string;
   manifestPath: string;
-  rendererEntryPath: string;
+  rendererEntryPath: string | null;
+  cliEntryPath: string | null;
 }
 
 export async function discoverLocalExtensions(rootDir: string): Promise<DiscoveredLocalExtension[]> {
@@ -40,21 +41,21 @@ export async function discoverLocalExtensions(rootDir: string): Promise<Discover
           }
           const manifest = manifestResult.manifest;
 
-          if (typeof manifest.entrypoints.renderer !== "string") {
-            console.warn(`[flmux] missing local extension renderer entrypoint: ${manifestPath}`);
-            return null;
-          }
+          const rendererEntryPath = await resolveValidatedEntrypoint({
+            extensionRootDir,
+            manifestPath,
+            value: manifest.entrypoints.renderer,
+            label: "renderer"
+          });
+          const cliEntryPath = await resolveValidatedEntrypoint({
+            extensionRootDir,
+            manifestPath,
+            value: manifest.entrypoints.cli,
+            label: "cli"
+          });
 
-          const rendererEntryPath = resolveExtensionRelativePath(extensionRootDir, manifest.entrypoints.renderer);
-          if (!rendererEntryPath) {
-            console.warn(
-              `[flmux] invalid local extension renderer entrypoint '${manifest.entrypoints.renderer}': ${manifestPath}`
-            );
-            return null;
-          }
-
-          if (!(await Bun.file(rendererEntryPath).exists())) {
-            console.warn(`[flmux] missing local extension renderer entry: ${rendererEntryPath}`);
+          if (!rendererEntryPath && !cliEntryPath) {
+            console.warn(`[flmux] local extension has no usable renderer or cli entrypoint: ${manifestPath}`);
             return null;
           }
 
@@ -65,7 +66,8 @@ export async function discoverLocalExtensions(rootDir: string): Promise<Discover
             manifest: manifest as ExtensionManifest,
             rootDir: extensionRootDir,
             manifestPath,
-            rendererEntryPath
+            rendererEntryPath,
+            cliEntryPath
           } satisfies DiscoveredLocalExtension;
         } catch (error) {
           console.warn(
@@ -101,16 +103,18 @@ export function createLocalExtensionLoadEntries(
   extensions: DiscoveredLocalExtension[],
   appOrigin: string
 ): FlmuxLocalExtensionLoadEntry[] {
-  return extensions.map((extension) => {
-    const baseUrl = `${appOrigin}/__flmux/ext/${encodeURIComponent(extension.id)}/${encodeURIComponent(extension.version)}`;
-    return {
-      id: extension.id,
-      name: extension.name,
-      version: extension.version,
-      manifestUrl: `${baseUrl}/manifest.json`,
-      rendererEntryUrl: `${baseUrl}/renderer.js`
-    } satisfies FlmuxLocalExtensionLoadEntry;
-  });
+  return extensions
+    .filter((extension) => extension.rendererEntryPath !== null)
+    .map((extension) => {
+      const baseUrl = `${appOrigin}/__flmux/ext/${encodeURIComponent(extension.id)}/${encodeURIComponent(extension.version)}`;
+      return {
+        id: extension.id,
+        name: extension.name,
+        version: extension.version,
+        manifestUrl: `${baseUrl}/manifest.json`,
+        rendererEntryUrl: `${baseUrl}/renderer.js`
+      } satisfies FlmuxLocalExtensionLoadEntry;
+    });
 }
 
 function resolveExtensionRelativePath(rootDir: string, relativePath: string) {
@@ -121,6 +125,32 @@ function resolveExtensionRelativePath(rootDir: string, relativePath: string) {
   const resolved = normalize(join(rootDir, relativePath));
   const relativeToRoot = relative(rootDir, resolved);
   if (relativeToRoot.startsWith("..") || isAbsolute(relativeToRoot)) {
+    return null;
+  }
+
+  return resolved;
+}
+
+async function resolveValidatedEntrypoint(options: {
+  extensionRootDir: string;
+  manifestPath: string;
+  value: string | undefined;
+  label: "renderer" | "cli";
+}) {
+  if (typeof options.value !== "string") {
+    return null;
+  }
+
+  const resolved = resolveExtensionRelativePath(options.extensionRootDir, options.value);
+  if (!resolved) {
+    console.warn(
+      `[flmux] invalid local extension ${options.label} entrypoint '${options.value}': ${options.manifestPath}`
+    );
+    return null;
+  }
+
+  if (!(await Bun.file(resolved).exists())) {
+    console.warn(`[flmux] missing local extension ${options.label} entry: ${resolved}`);
     return null;
   }
 

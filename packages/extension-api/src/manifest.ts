@@ -5,12 +5,18 @@ export interface ExtensionManifestEntrypoints {
   cli?: string;
 }
 
+export interface ExtensionManifestCommand {
+  id: string;
+  description?: string;
+}
+
 export interface ExtensionManifest {
   id: string;
   name: string;
   version: string;
   apiVersion: number;
   entrypoints: ExtensionManifestEntrypoints;
+  commands?: ExtensionManifestCommand[];
 }
 
 export type ExtensionManifestValidationResult =
@@ -28,6 +34,7 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
   const version = asNonEmptyString(value.version);
   const apiVersion = value.apiVersion;
   const entrypoints = value.entrypoints;
+  const commands = value.commands;
 
   if (!id) {
     errors.push("Manifest field 'id' must be a non-empty string");
@@ -51,12 +58,16 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
   const cli = isPlainObject(entrypoints) ? entrypoints.cli : undefined;
   const rendererPath = validateManifestEntrypointPath(renderer, "entrypoints.renderer");
   const cliPath = validateManifestEntrypointPath(cli, "entrypoints.cli");
+  const commandsResult = validateManifestCommands(commands, Boolean(cli));
 
   if (rendererPath) {
     errors.push(rendererPath);
   }
   if (cliPath) {
     errors.push(cliPath);
+  }
+  if (!commandsResult.ok) {
+    errors.push(...commandsResult.errors);
   }
 
   if (!renderer && !cli) {
@@ -67,19 +78,20 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
     return { ok: false, errors };
   }
 
-  return {
-    ok: true,
-    manifest: {
-      id,
-      name,
+    return {
+      ok: true,
+      manifest: {
+        id,
+        name,
       version,
-      apiVersion: FLMUX_EXTENSION_API_VERSION,
-      entrypoints: {
-        renderer: typeof renderer === "string" ? renderer.trim() : undefined,
-        cli: typeof cli === "string" ? cli.trim() : undefined
+        apiVersion: FLMUX_EXTENSION_API_VERSION,
+        entrypoints: {
+          renderer: typeof renderer === "string" ? renderer.trim() : undefined,
+          cli: typeof cli === "string" ? cli.trim() : undefined
+        },
+        commands: commandsResult.ok ? commandsResult.commands : undefined
       }
-    }
-  };
+    };
 }
 
 function validateManifestEntrypointPath(value: unknown, label: string) {
@@ -106,6 +118,59 @@ function validateManifestEntrypointPath(value: unknown, label: string) {
 
 function asNonEmptyString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function validateManifestCommands(value: unknown, hasCliEntrypoint: boolean) {
+  if (value === undefined) {
+    return hasCliEntrypoint
+      ? { ok: false as const, errors: ["Manifest field 'commands' must be a non-empty array when 'entrypoints.cli' is set"] }
+      : { ok: true as const, commands: undefined };
+  }
+
+  if (!hasCliEntrypoint) {
+    return { ok: false as const, errors: ["Manifest field 'commands' requires 'entrypoints.cli'"] };
+  }
+
+  if (!Array.isArray(value) || value.length === 0) {
+    return { ok: false as const, errors: ["Manifest field 'commands' must be a non-empty array when 'entrypoints.cli' is set"] };
+  }
+
+  const commands: ExtensionManifestCommand[] = [];
+  const errors: string[] = [];
+  const seenIds = new Set<string>();
+
+  value.forEach((entry, index) => {
+    if (!isPlainObject(entry)) {
+      errors.push(`Manifest field 'commands[${index}]' must be an object`);
+      return;
+    }
+
+    const id = asNonEmptyString(entry.id);
+    const description =
+      entry.description === undefined
+        ? undefined
+        : asNonEmptyString(entry.description);
+
+    if (!id) {
+      errors.push(`Manifest field 'commands[${index}].id' must be a non-empty string`);
+      return;
+    }
+    if (entry.description !== undefined && !description) {
+      errors.push(`Manifest field 'commands[${index}].description' must be a non-empty string when provided`);
+      return;
+    }
+    if (seenIds.has(id)) {
+      errors.push(`Manifest field 'commands' contains duplicate command id '${id}'`);
+      return;
+    }
+
+    seenIds.add(id);
+    commands.push(description ? { id, description } : { id });
+  });
+
+  return errors.length > 0
+    ? { ok: false as const, errors }
+    : { ok: true as const, commands };
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

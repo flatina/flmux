@@ -1,4 +1,13 @@
-type Command = "clients" | "get" | "ls" | "ls-each-get" | "set" | "call";
+import { dispatchLocalCliExtensionCommand } from "./cliExtensions";
+import type {
+  ShellClient,
+  ShellPathCallResult,
+  ShellPathGetResult,
+  ShellPathListResult,
+  ShellPathSetResult
+} from "@flmux/extension-api";
+
+type BuiltinCommand = "clients" | "get" | "ls" | "ls-each-get" | "set" | "call";
 
 interface Flags {
   origin?: string;
@@ -6,14 +15,14 @@ interface Flags {
 }
 
 const argv = process.argv.slice(2);
-const [command, ...rest] = argv as [Command | undefined, ...string[]];
+const [command, ...rest] = argv as [string | undefined, ...string[]];
 
 void main(command, rest).catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 });
 
-async function main(command: Command | undefined, args: string[]) {
+async function main(command: string | undefined, args: string[]) {
   if (!command) {
     throw new Error(usage());
   }
@@ -21,7 +30,7 @@ async function main(command: Command | undefined, args: string[]) {
   const { positionals, flags } = parseFlags(args);
   const origin = resolveOrigin(flags);
 
-  switch (command) {
+  switch (command as BuiltinCommand) {
     case "clients":
       return printJson(await apiGet<{ ok: true; clients: unknown[] }>(origin, "/api/clients"));
 
@@ -82,14 +91,31 @@ async function main(command: Command | undefined, args: string[]) {
       const args = parseNamedArgs(positionals.slice(1));
       return printJson(await modelPost(origin, "/api/model/path/call", { clientId, path, args }));
     }
-
-    default:
-      throw new Error(usage());
   }
+
+  const handledByExtension = await dispatchLocalCliExtensionCommand({
+    commandId: command,
+    argv: positionals,
+    env: process.env as Record<string, string | undefined>,
+    cwd: process.cwd(),
+    getClient: async (clientId) => createShellClient(origin, flags, clientId),
+    print: printJson,
+    printError: (message) => console.error(message)
+  });
+  if (handledByExtension) {
+    return;
+  }
+
+  throw new Error(usage());
 }
 
 async function modelPost<T = unknown>(origin: string, pathname: string, body: unknown): Promise<T> {
   return apiPost<T>(origin, pathname, body);
+}
+
+async function modelResultPost<T = unknown>(origin: string, pathname: string, body: unknown): Promise<T> {
+  const payload = await apiPost<{ ok: true; result: T }>(origin, pathname, body);
+  return payload.result;
 }
 
 async function apiGet<T>(origin: string, pathname: string): Promise<T> {
@@ -148,15 +174,6 @@ function resolveOrigin(flags: Flags) {
   return origin.replace(/\/+$/, "");
 }
 
-function requireClientId(flags: Flags) {
-  const clientId = flags.clientId ?? process.env.FLMUX_CLIENT_ID;
-  if (!clientId) {
-    throw new Error("Provide --client <clientId> or set FLMUX_CLIENT_ID");
-  }
-
-  return clientId;
-}
-
 async function resolveClientId(origin: string, flags: Flags) {
   const explicit = flags.clientId ?? process.env.FLMUX_CLIENT_ID;
   if (explicit) {
@@ -189,6 +206,29 @@ async function resolveClientId(origin: string, flags: Flags) {
     .join(", ");
 
   throw new Error(`Multiple flmux clients are connected. Use --client <clientId>. Available: ${available}`);
+}
+
+function createShellClient(origin: string, flags: Flags, explicitClientId?: string): ShellClient {
+  return {
+    get: async (path: string): Promise<ShellPathGetResult> => await modelResultPost(origin, "/api/model/path/get", {
+      clientId: await resolveClientId(origin, { ...flags, clientId: explicitClientId ?? flags.clientId }),
+      path
+    }),
+    list: async (path: string): Promise<ShellPathListResult> => await modelResultPost(origin, "/api/model/path/list", {
+      clientId: await resolveClientId(origin, { ...flags, clientId: explicitClientId ?? flags.clientId }),
+      path
+    }),
+    set: async (path: string, value: unknown): Promise<ShellPathSetResult> => await modelResultPost(origin, "/api/model/path/set", {
+      clientId: await resolveClientId(origin, { ...flags, clientId: explicitClientId ?? flags.clientId }),
+      path,
+      value
+    }),
+    call: async (path: string, args?: Record<string, unknown>): Promise<ShellPathCallResult> => await modelResultPost(origin, "/api/model/path/call", {
+      clientId: await resolveClientId(origin, { ...flags, clientId: explicitClientId ?? flags.clientId }),
+      path,
+      args
+    })
+  };
 }
 
 function requirePositional(positionals: string[], index: number, message: string) {
@@ -259,6 +299,7 @@ function usage() {
     "  bun src/cli.ts ls-each-get /status/panes --origin http://127.0.0.1:PORT",
     "  bun src/cli.ts set /title moo --origin http://127.0.0.1:PORT",
     "  bun src/cli.ts call /panes/new kind=cowsay place=right --origin http://127.0.0.1:PORT",
+    "  bun src/cli.ts cowsay hello from cli --origin http://127.0.0.1:PORT",
     "  note: --client is only required when multiple renderer clients are connected"
   ].join("\n");
 }

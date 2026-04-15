@@ -234,7 +234,7 @@ async function handleLocalExtensionRendererEntryRequest(
   localExtensions: DiscoveredLocalExtension[]
 ) {
   const extension = resolveLocalExtension(params, localExtensions);
-  if (!extension) {
+  if (!extension || !extension.rendererEntryPath) {
     set.status = 404;
     return "Not Found";
   }

@@ -8,7 +8,7 @@
     "dev": "bunx vite build && bun src/main.ts --dev",
     "build": "bunite-build && bun run build:ptyd && bunx vite build",
     "typecheck": "bun x tsc -p tsconfig.json --noEmit && bun x tsc -p src/renderer/tsconfig.json --noEmit",
-    "test:direct": "bun test test/externalRuntime.test.ts test/localExtensions.test.ts test/paneRegistry.test.ts test/shellModel.test.ts test/terminalPath.test.ts test/workspaceBus.test.ts test/ptydBackend.test.ts",
+    "test:direct": "bun test test/cliExtensions.test.ts test/externalRuntime.test.ts test/localExtensions.test.ts test/paneRegistry.test.ts test/shellModel.test.ts test/terminalPath.test.ts test/workspaceBus.test.ts test/ptydBackend.test.ts",
     "test:shell-model": "bun test test/shellModel.test.ts",
     "test:smoke": "bun test test/appSmoke.test.ts",
     "test:harness-smoke": "bun test test/harnessSmoke.test.ts"

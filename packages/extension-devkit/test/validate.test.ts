@@ -37,7 +37,8 @@ describe("extension manifest validation", () => {
         entrypoints: {
           renderer: "./index.ts",
           cli: undefined
-        }
+        },
+        commands: undefined
       }
     });
   });
@@ -60,6 +61,26 @@ describe("extension manifest validation", () => {
     expect(result.errors).toEqual([
       "Manifest field 'apiVersion' must be 1, got 999",
       "Manifest field 'entrypoints.renderer' must stay within the extension directory"
+    ]);
+  });
+
+  it("requires command metadata when cli entrypoints are declared", () => {
+    const result = validateExtensionManifest({
+      id: "sample.cowsay",
+      name: "Cowsay",
+      version: "0.1.0",
+      apiVersion: FLMUX_EXTENSION_API_VERSION,
+      entrypoints: {
+        cli: "./cli.ts"
+      }
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error("expected manifest validation to fail");
+    }
+    expect(result.errors).toEqual([
+      "Manifest field 'commands' must be a non-empty array when 'entrypoints.cli' is set"
     ]);
   });
 });

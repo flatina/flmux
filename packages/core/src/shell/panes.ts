@@ -78,14 +78,21 @@ export interface PanePathMount<TRecord extends PaneStateRecord = PaneStateRecord
   getStatusSnapshot?(ctx: PanePathMountContext<TRecord>): Awaitable<Record<string, unknown> | undefined>;
 }
 
+export type PaneSubtreeMount<TRecord extends PaneStateRecord = PaneStateRecord> = PanePathMount<TRecord>;
+
 export interface PaneSpec<TRecord extends PaneStateRecord = PaneStateRecord> {
   kind: string;
   lifecycle?: PaneLifecycleHooks<TRecord>;
   persistence?: PanePersistenceHooks<TRecord>;
+  subtreeMounts?: PaneSubtreeMount<TRecord>[];
   pathMount?: PanePathMount<TRecord>;
 }
 
-export class PaneRegistry<TDescriptor extends { kind: string; pathMount?: { mountKey: string } | undefined }> {
+export class PaneRegistry<TDescriptor extends {
+  kind: string;
+  pathMount?: { mountKey: string } | undefined;
+  subtreeMounts?: Array<{ mountKey: string }> | undefined;
+}> {
   private readonly descriptors = new Map<string, TDescriptor>();
 
   register(descriptor: TDescriptor) {
@@ -93,7 +100,7 @@ export class PaneRegistry<TDescriptor extends { kind: string; pathMount?: { moun
       throw new Error(`Pane descriptor '${descriptor.kind}' is already registered`);
     }
 
-    validateDescriptorPathMount(descriptor);
+    validateDescriptorMounts(descriptor);
     this.descriptors.set(descriptor.kind, descriptor);
   }
 
@@ -211,19 +218,48 @@ const RESERVED_MOUNT_KEYS = new Set([
   "url"
 ]);
 
-function validateDescriptorPathMount(descriptor: { kind: string; pathMount?: { mountKey: string } | undefined }) {
-  const mountKey = descriptor.pathMount?.mountKey;
-  if (!mountKey) {
-    return;
+const RESERVED_SUBTREE_MOUNT_KEYS = new Set([
+  "__proto__",
+  "active",
+  "close",
+  "constructor",
+  "id",
+  "kind",
+  "prototype",
+  "title"
+]);
+
+function validateDescriptorMounts(descriptor: {
+  kind: string;
+  pathMount?: { mountKey: string } | undefined;
+  subtreeMounts?: Array<{ mountKey: string }> | undefined;
+}) {
+  const seenKeys = new Set<string>();
+  const pathMountKey = descriptor.pathMount?.mountKey;
+  if (pathMountKey) {
+    validateMountKey(descriptor.kind, pathMountKey, "path mount key");
+    if (RESERVED_MOUNT_KEYS.has(pathMountKey)) {
+      throw new Error(`Pane descriptor '${descriptor.kind}' uses reserved path mount key '${pathMountKey}'`);
+    }
+    seenKeys.add(pathMountKey);
   }
 
+  for (const subtreeMount of descriptor.subtreeMounts ?? []) {
+    validateMountKey(descriptor.kind, subtreeMount.mountKey, "subtree mount key");
+    if (RESERVED_SUBTREE_MOUNT_KEYS.has(subtreeMount.mountKey)) {
+      throw new Error(`Pane descriptor '${descriptor.kind}' uses reserved subtree mount key '${subtreeMount.mountKey}'`);
+    }
+    if (seenKeys.has(subtreeMount.mountKey)) {
+      throw new Error(`Pane descriptor '${descriptor.kind}' defines duplicate mount key '${subtreeMount.mountKey}'`);
+    }
+    seenKeys.add(subtreeMount.mountKey);
+  }
+}
+
+function validateMountKey(kind: string, mountKey: string, label: string) {
   if (!/^[a-z0-9-]+$/.test(mountKey)) {
     throw new Error(
-      `Pane descriptor '${descriptor.kind}' has invalid path mount key '${mountKey}'; use lowercase letters, numbers, and hyphen only`
+      `Pane descriptor '${kind}' has invalid ${label} '${mountKey}'; use lowercase letters, numbers, and hyphen only`
     );
-  }
-
-  if (RESERVED_MOUNT_KEYS.has(mountKey)) {
-    throw new Error(`Pane descriptor '${descriptor.kind}' uses reserved path mount key '${mountKey}'`);
   }
 }

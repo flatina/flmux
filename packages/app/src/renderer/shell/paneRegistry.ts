@@ -6,6 +6,7 @@ import type {
   PanePathMount,
   PanePathMountContext,
   PanePersistenceHooks,
+  PaneSubtreeMount,
   PaneSpec,
   PaneStateRecord,
   PaneWorkspaceContext,
@@ -26,7 +27,14 @@ import type { TerminalRuntimeSummary } from "../../shared/terminal";
 import type { TerminalHostAPI } from "../terminalHost";
 import type { NewPaneInput, ShellModelAPI } from "./types";
 
-export type { PaneWorkspaceContext, PaneLifecycleHooks, PanePersistenceHooks, PanePathMountContext, PanePathMount };
+export type {
+  PaneWorkspaceContext,
+  PaneLifecycleHooks,
+  PanePersistenceHooks,
+  PanePathMountContext,
+  PanePathMount,
+  PaneSubtreeMount
+};
 
 export type PaneRecordOf<TStateRecord extends PaneStateRecord = PaneStateRecord> = TStateRecord & { panel: IDockviewPanel };
 

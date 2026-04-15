@@ -36,6 +36,7 @@ import type {
   ShellModelHost,
   ShellPaneRecordSnapshot,
   ShellResolvedPanePathMount,
+  ShellResolvedPaneSubtreeMount,
   ScopedPropertyTarget,
   WorkspaceBus,
   WorkspaceBusEvent
@@ -119,9 +120,6 @@ export class FlmuxWorkbench implements ShellModelHost {
         resizeRuntime: (paneId, input) => this.terminalCoordinator.resizeRuntime(paneId, input),
         readHistory: (paneId, input) => this.terminalCoordinator.readHistory(paneId, input),
         killRuntime: (paneId) => this.terminalCoordinator.killRuntime(paneId)
-      },
-      browser: {
-        setPaneUrl: (paneId, url) => this.setBrowserPaneUrl(paneId, url)
       }
     });
   }
@@ -254,20 +252,6 @@ export class FlmuxWorkbench implements ShellModelHost {
     return { paneId, closed: true };
   }
 
-  private setBrowserPaneUrl(paneId: string, url: string): ShellPaneRecordSnapshot {
-    const workspace = this.getCurrentWorkspace();
-    const record = this.requirePaneRecord(workspace, paneId);
-    if (!isBrowserPaneRecord(record)) {
-      throw new Error(`Pane '${paneId}' is not a browser pane`);
-    }
-
-    const nextUrl = this.requireBrowserUrl(url);
-    record.url = nextUrl;
-    record.panel.update({ params: { url: nextUrl } });
-    this.scheduleSessionSave();
-    return this.mustGetPaneSnapshot(workspace, paneId);
-  }
-
   getPaneParams(paneId: string) {
     const workspace = this.getCurrentWorkspace();
     const record = this.requirePaneRecord(workspace, paneId);
@@ -287,6 +271,34 @@ export class FlmuxWorkbench implements ShellModelHost {
     return this.setPaneParams(paneId, {
       ...(this.getPaneParams(paneId) ?? {}),
       ...(cloneJsonObject(patch) ?? {})
+    });
+  }
+
+  getPaneSubtreeMounts(paneId: string): ShellResolvedPaneSubtreeMount[] {
+    const workspace = this.getCurrentWorkspace();
+    const record = this.requirePaneRecord(workspace, paneId);
+    const descriptor = this.requirePaneDescriptor(record.kind);
+    return (descriptor.subtreeMounts ?? []).map((mount) => {
+      const createContext = () => ({
+        paneId,
+        workspace: this.toPaneWorkspaceContext(workspace),
+        record,
+        currentParams: this.getPaneParams(paneId),
+        setParams: (nextParams: Record<string, unknown>) => this.setPaneParams(paneId, nextParams),
+        patchParams: (patch: Record<string, unknown>) => this.patchPaneParams(paneId, patch)
+      });
+
+      return {
+        mountKey: mount.mountKey,
+        getStateSnapshot: () => mount.getStateSnapshot?.(createContext()),
+        canSetStatePath: mount.canSetStatePath
+          ? (relativePath) => mount.canSetStatePath!(createContext(), relativePath)
+          : undefined,
+        setState: mount.setState
+          ? (relativePath, value) => mount.setState!(createContext(), relativePath, value)
+          : undefined,
+        getStatusSnapshot: () => mount.getStatusSnapshot?.(createContext())
+      };
     });
   }
 

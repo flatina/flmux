@@ -190,8 +190,8 @@ describe("shell model direct", () => {
       entries: [
         { name: "kind", path: "/panes/pane.browser/kind", kind: "leaf", writable: false },
         { name: "title", path: "/panes/pane.browser/title", kind: "leaf", writable: true },
-        { name: "browser", path: "/panes/pane.browser/browser", kind: "object", writable: false },
-        { name: "close", path: "/panes/pane.browser/close", kind: "action", writable: false }
+        { name: "close", path: "/panes/pane.browser/close", kind: "action", writable: false },
+        { name: "browser", path: "/panes/pane.browser/browser", kind: "object", writable: false }
       ]
     });
     expect(await model.pathList("/panes/pane.browser/browser")).toEqual({
@@ -228,17 +228,19 @@ describe("shell model direct", () => {
     expect(await model.pathSet("/panes/pane.term/browser/url", "https://should.fail")).toEqual({
       ok: false,
       code: "NOT_WRITABLE",
-      error: "Only browser panes expose a writable browser/url"
+      error: "Path is not writable"
     });
 
     expect(host.calls.setScopedProperty).toEqual([
       { target: { scope: "app" }, key: "title", value: "Flmux Test" },
       { target: { scope: "workspace" }, key: "title", value: "Workspace Renamed" }
     ]);
-    expect(host.calls.setBrowserPaneUrl).toEqual([
+    expect(host.calls.setPaneParams).toEqual([
       {
         paneId: "pane.browser",
-        url: "https://example.next"
+        nextParams: {
+          url: "https://example.next"
+        }
       }
     ]);
     expect(await model.pathSet("/workspaces/workspace.missing/title", "Missing")).toEqual({

@@ -115,6 +115,8 @@ export interface ShellResolvedPanePathMount {
   setState?(relativePath: string[], value: unknown): Awaitable<{ value: unknown }>;
 }
 
+export type ShellResolvedPaneSubtreeMount = ShellResolvedPanePathMount;
+
 export interface NewPaneInput {
   kind: PaneKind;
   title?: string;
@@ -144,6 +146,7 @@ export interface ShellModelHost {
   getPaneParams(paneId: string): Awaitable<Record<string, unknown> | undefined>;
   setPaneParams(paneId: string, nextParams: Record<string, unknown>): Awaitable<Record<string, unknown>>;
   patchPaneParams(paneId: string, patch: Record<string, unknown>): Awaitable<Record<string, unknown>>;
+  getPaneSubtreeMounts(paneId: string): Awaitable<ShellResolvedPaneSubtreeMount[]>;
   getPanePathMount(paneId: string): Awaitable<ShellResolvedPanePathMount | undefined>;
   publishWorkspaceEvent(input: { topic: string; sourcePaneId: string; payload: unknown }): Awaitable<WorkspaceBusEvent>;
 }
@@ -154,10 +157,6 @@ export interface ShellTerminalDelegate {
   resizeRuntime(paneId: string, input: { cols: number; rows: number }): Awaitable<TerminalResizeResult>;
   readHistory(paneId: string, input: { maxBytes?: number }): Awaitable<TerminalHistoryResult>;
   killRuntime(paneId: string): Awaitable<TerminalKillResult>;
-}
-
-export interface ShellBrowserDelegate {
-  setPaneUrl(paneId: string, url: string): Awaitable<ShellPaneRecordSnapshot>;
 }
 
 export interface ShellModelAPI {

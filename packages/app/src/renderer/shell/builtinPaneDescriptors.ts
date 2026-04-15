@@ -62,6 +62,39 @@ function createBuiltinPaneDescriptors(
                 active
               }
       },
+      subtreeMounts: [
+        {
+          mountKey: "browser",
+          getStateSnapshot: ({ record }) =>
+            isBrowserPaneRecord(record)
+              ? { url: record.url }
+              : undefined,
+          canSetStatePath: ({ record }, relativePath) =>
+            isBrowserPaneRecord(record) &&
+            relativePath.length === 1 &&
+            relativePath[0] === "url",
+          setState: async ({ record, currentParams, setParams }, relativePath, value) => {
+            if (!isBrowserPaneRecord(record)) {
+              throw new Error("browser subtree only applies to browser panes");
+            }
+            if (relativePath.length !== 1 || relativePath[0] !== "url") {
+              throw new Error(`Unsupported browser path '${relativePath.join("/")}'`);
+            }
+
+            const nextUrl = deps.requireBrowserUrl(requiredString(value, "Pane url"));
+            record.url = nextUrl;
+            await setParams({
+              ...(currentParams ?? {}),
+              url: nextUrl
+            });
+            return { value: nextUrl };
+          },
+          getStatusSnapshot: ({ record }) =>
+            isBrowserPaneRecord(record)
+              ? { url: record.url }
+              : undefined
+        }
+      ],
       persistence: {
         normalizeRestoredParams: ({ workspace, params }) => ({
           url: deps.requireBrowserUrl(optionalStringParam(params?.url) ?? workspace.defaultBrowserPath)
@@ -136,6 +169,19 @@ function createBuiltinPaneDescriptors(
 
 function optionalStringParam(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function requiredString(value: unknown, label: string) {
+  if (typeof value !== "string") {
+    throw new Error(`${label} must be a string`);
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(`${label} cannot be empty`);
+  }
+
+  return trimmed;
 }
 
 function inferBrowserTitle(url: string) {

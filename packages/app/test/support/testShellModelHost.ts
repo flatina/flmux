@@ -1,9 +1,9 @@
 import type {
   NewPaneInput,
-  ShellBrowserDelegate,
   ShellModelHost,
   ShellPaneRecordSnapshot,
   ShellResolvedPanePathMount,
+  ShellResolvedPaneSubtreeMount,
   ScopedPropertyTarget,
   ShellTerminalDelegate,
   WorkspaceBusEvent,
@@ -71,7 +71,6 @@ export class TestShellModelHost implements ShellModelHost {
     createWorkspace: [] as Array<{ title?: string }>,
     createPane: [] as NewPaneInput[],
     setScopedProperty: [] as Array<{ target: ScopedPropertyTarget; key: string; value: unknown }>,
-    setBrowserPaneUrl: [] as Array<{ paneId: string; url: string }>,
     setPaneParams: [] as Array<{ paneId: string; nextParams: Record<string, unknown> }>,
     patchPaneParams: [] as Array<{ paneId: string; patch: Record<string, unknown> }>,
     createTerminalRuntime: [] as Array<{ paneId: string; input: { cwd?: string } }>,
@@ -121,8 +120,7 @@ export class TestShellModelHost implements ShellModelHost {
   createModel(): ShellModelAPI {
     return createShellModel({
       host: this,
-      terminal: this.createTerminalDelegate(),
-      browser: this.createBrowserDelegate()
+      terminal: this.createTerminalDelegate()
     });
   }
 
@@ -133,12 +131,6 @@ export class TestShellModelHost implements ShellModelHost {
       resizeRuntime: (paneId, input) => this.resizeTerminalRuntime(paneId, input),
       readHistory: (paneId, input) => this.readTerminalHistory(paneId, input),
       killRuntime: (paneId) => this.killTerminalRuntime(paneId)
-    };
-  }
-
-  createBrowserDelegate(): ShellBrowserDelegate {
-    return {
-      setPaneUrl: (paneId, url) => this.setBrowserPaneUrl(paneId, url)
     };
   }
 
@@ -303,17 +295,6 @@ export class TestShellModelHost implements ShellModelHost {
     return { paneId, closed };
   }
 
-  setBrowserPaneUrl(paneId: string, url: string): ShellPaneRecordSnapshot {
-    const pane = this.requirePane(paneId);
-    if (pane.kind !== "browser") {
-      throw new Error(`Pane '${paneId}' is not a browser pane`);
-    }
-
-    pane.url = url;
-    this.calls.setBrowserPaneUrl.push({ paneId, url });
-    return this.toPaneSnapshot(paneId);
-  }
-
   getPaneParams(paneId: string) {
     return cloneJsonObject(this.paneParams.get(paneId));
   }
@@ -336,6 +317,37 @@ export class TestShellModelHost implements ShellModelHost {
       ...(this.getPaneParams(paneId) ?? {}),
       ...nextPatch
     });
+  }
+
+  getPaneSubtreeMounts(paneId: string): ShellResolvedPaneSubtreeMount[] {
+    const pane = this.requirePane(paneId);
+    if (pane.kind !== "browser") {
+      return [];
+    }
+
+    return [
+      {
+        mountKey: "browser",
+        getStateSnapshot: () => ({
+          url: pane.url
+        }),
+        canSetStatePath: (relativePath) =>
+          relativePath.length === 1 && relativePath[0] === "url",
+        setState: (relativePath, value) => {
+          if (relativePath.length !== 1 || relativePath[0] !== "url") {
+            throw new Error(`Unsupported browser path '${relativePath.join("/")}'`);
+          }
+
+          const nextUrl = asNonEmptyString(value, "Pane url");
+          pane.url = nextUrl;
+          this.setPaneParams(paneId, { url: nextUrl });
+          return { value: nextUrl };
+        },
+        getStatusSnapshot: () => ({
+          url: pane.url
+        })
+      }
+    ];
   }
 
   getPanePathMount(paneId: string): ShellResolvedPanePathMount | undefined {

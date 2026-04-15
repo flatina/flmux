@@ -8,11 +8,11 @@ import type {
   PathGetResult,
   PathListResult,
   PathSetResult,
-  ShellBrowserDelegate,
   ShellModelAPI,
   ShellModelHost,
   ShellPaneRecordSnapshot,
   ShellPathEntry,
+  ShellResolvedPaneSubtreeMount,
   ScopedPropertyTarget,
   ShellTerminalDelegate
 } from "./types";
@@ -20,7 +20,6 @@ import type {
 export interface ShellModelDependencies {
   host: ShellModelHost;
   terminal: ShellTerminalDelegate;
-  browser: ShellBrowserDelegate;
 }
 
 export function createShellModel(deps: ShellModelDependencies): ShellModelAPI {
@@ -30,12 +29,10 @@ export function createShellModel(deps: ShellModelDependencies): ShellModelAPI {
 class ShellModel implements ShellModelAPI {
   private readonly host: ShellModelHost;
   private readonly terminal: ShellTerminalDelegate;
-  private readonly browser: ShellBrowserDelegate;
 
   constructor(deps: ShellModelDependencies) {
     this.host = deps.host;
     this.terminal = deps.terminal;
-    this.browser = deps.browser;
   }
 
   async pathGet(path: string): Promise<PathGetResult> {
@@ -209,16 +206,9 @@ class ShellModel implements ShellModelAPI {
         };
       }
 
-      if (segments.length === 4 && segments[2] === "browser" && segments[3] === "url") {
-        if (pane.kind !== "browser") {
-          return throwPathError("NOT_WRITABLE", "Only browser panes expose a writable browser/url");
-        }
-
-        const updatedPane = await this.browser.setPaneUrl(pane.id, asNonEmptyString(value, "Pane url"));
-        return {
-          ok: true,
-          value: readBrowserUrl(updatedPane)
-        };
+      const subtreeMount = await this.resolvePaneSubtreeMount(pane.id, segments[2]);
+      if (subtreeMount) {
+        return await this.setPaneMountStatePath(pane.id, subtreeMount, segments.slice(3), value);
       }
 
       const mount = await this.host.getPanePathMount(pane.id);
@@ -556,16 +546,9 @@ class ShellModel implements ShellModelAPI {
       };
     }
 
-    if (segments.length === 2 && segments[1] === "browser" && pane.kind === "browser") {
-      return {
-        ok: true,
-        found: true,
-        value: toBrowserStateSnapshot(pane)
-      };
-    }
-
-    if (segments.length === 3 && segments[1] === "browser" && segments[2] === "url" && pane.kind === "browser") {
-      return { ok: true, found: true, value: readBrowserUrl(pane) };
+    const subtreeMount = await this.resolvePaneSubtreeMount(pane.id, segments[1]);
+    if (subtreeMount) {
+      return await this.getPaneMountPath(subtreeMount, segments.slice(2), "state");
     }
 
     if (segments.length === 2 && segments[1] === "terminal" && pane.kind === "terminal") {
@@ -626,10 +609,11 @@ class ShellModel implements ShellModelAPI {
 
     if (segments.length === 1) {
       const mount = await this.host.getPanePathMount(pane.id);
+      const subtreeMounts = await this.host.getPaneSubtreeMounts(pane.id);
       return {
         ok: true,
         found: true,
-        entries: withMountEntry(paneStateEntries(pane, `/panes/${segments[0]}`), mount, `/panes/${segments[0]}`)
+        entries: withMountEntries(paneStateEntries(pane, `/panes/${segments[0]}`), [...subtreeMounts, ...(mount ? [mount] : [])], `/panes/${segments[0]}`)
       };
     }
 
@@ -638,12 +622,9 @@ class ShellModel implements ShellModelAPI {
         return throwPathError("INVALID_PATH", "Leaf path cannot be listed");
       }
 
-      if (segments[1] === "browser" && pane.kind === "browser") {
-        return {
-          ok: true,
-          found: true,
-          entries: [leafEntry("url", `/panes/${segments[0]}/browser/url`, true)]
-        };
+      const subtreeMount = await this.resolvePaneSubtreeMount(pane.id, segments[1]);
+      if (subtreeMount) {
+        return await this.listPaneMountPath(subtreeMount, [], `/panes/${segments[0]}/${subtreeMount.mountKey}`, "state");
       }
 
       if (segments[1] === "terminal" && pane.kind === "terminal") {
@@ -826,14 +807,6 @@ class ShellModel implements ShellModelAPI {
       return { ok: true, found: true, value: status };
     }
 
-    if (segments.length === 2 && segments[1] === "browser" && pane.kind === "browser") {
-      return {
-        ok: true,
-        found: true,
-        value: toBrowserStatusSnapshot(pane)
-      };
-    }
-
     if (segments.length === 2 && segments[1] === "terminal" && pane.kind === "terminal") {
       return {
         ok: true,
@@ -846,12 +819,9 @@ class ShellModel implements ShellModelAPI {
       return { ok: true, found: true, value: status[segments[1]] };
     }
 
-    if (segments.length === 3 && segments[1] === "browser" && segments[2] === "url" && pane.kind === "browser") {
-      return {
-        ok: true,
-        found: true,
-        value: readBrowserUrl(pane)
-      };
+    const subtreeMount = await this.resolvePaneSubtreeMount(pane.id, segments[1]);
+    if (subtreeMount) {
+      return await this.getPaneMountPath(subtreeMount, segments.slice(2), "status");
     }
 
     if (segments.length === 3 && segments[1] === "terminal" && pane.kind === "terminal") {
@@ -899,19 +869,28 @@ class ShellModel implements ShellModelAPI {
 
     if (segments.length === 1) {
       const mount = await this.host.getPanePathMount(pane.id);
+      const subtreeMounts = await this.host.getPaneSubtreeMounts(pane.id);
       return {
         ok: true,
         found: true,
-        entries: withMountEntry(paneStatusEntries(pane, `/status/panes/${segments[0]}`), mount, `/status/panes/${segments[0]}`)
+        entries: withMountEntries(
+          paneStatusEntries(pane, `/status/panes/${segments[0]}`),
+          [...subtreeMounts, ...(mount ? [mount] : [])],
+          `/status/panes/${segments[0]}`
+        )
       };
     }
 
-    if (segments.length === 2 && segments[1] === "browser" && pane.kind === "browser") {
-      return {
-        ok: true,
-        found: true,
-        entries: [leafEntry("url", `/status/panes/${segments[0]}/browser/url`)]
-      };
+    if (segments.length === 2) {
+      const subtreeMount = await this.resolvePaneSubtreeMount(pane.id, segments[1]);
+      if (subtreeMount) {
+        return await this.listPaneMountPath(
+          subtreeMount,
+          [],
+          `/status/panes/${segments[0]}/${subtreeMount.mountKey}`,
+          "status"
+        );
+      }
     }
 
     if (segments.length === 2 && segments[1] === "terminal" && pane.kind === "terminal") {
@@ -1094,6 +1073,10 @@ class ShellModel implements ShellModelAPI {
     }
 
     return notFoundList();
+  }
+
+  private async resolvePaneSubtreeMount(paneId: string, mountKey: string) {
+    return (await this.host.getPaneSubtreeMounts(paneId)).find((mount) => mount.mountKey === mountKey);
   }
 
   private async setScopedProperty(
@@ -1357,7 +1340,6 @@ function paneStateEntries(pane: ShellPaneRecordSnapshot, basePath: string): Shel
     ? [
         leafEntry("kind", `${basePath}/kind`),
         ...propertyEntries,
-        objectEntry("browser", `${basePath}/browser`),
         actionEntry("close", `${basePath}/close`)
       ]
     : pane.kind === "terminal"
@@ -1382,7 +1364,6 @@ function paneStatusEntries(pane: ShellPaneRecordSnapshot, basePath: string): She
         leafEntry("kind", `${basePath}/kind`),
         ...propertyEntries,
         leafEntry("active", `${basePath}/active`),
-        objectEntry("browser", `${basePath}/browser`)
       ]
     : pane.kind === "terminal"
       ? [
@@ -1481,15 +1462,15 @@ function readTerminalRuntimeId(pane: ShellPaneRecordSnapshot) {
   return readTerminalStatus(pane).runtimeId;
 }
 
-function withMountEntry(
+function withMountEntries(
   entries: ShellPathEntry[],
-  mount: Awaited<ReturnType<ShellModelHost["getPanePathMount"]>>,
+  mounts: Array<ShellResolvedPaneSubtreeMount>,
   basePath: string
 ) {
-  return mount
+  return mounts.length > 0
     ? [
         ...entries,
-        objectEntry(mount.mountKey, `${basePath}/${mount.mountKey}`)
+        ...mounts.map((mount) => objectEntry(mount.mountKey, `${basePath}/${mount.mountKey}`))
       ]
     : entries;
 }

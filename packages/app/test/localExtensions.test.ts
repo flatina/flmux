@@ -139,11 +139,16 @@ describe("local extension loading", () => {
       }, null, 2),
       "utf8"
     );
-    await writeFile(join(fixture.extensionDir, "dist", "src", "index.js"), "export default {};\n", "utf8");
+    await writeFile(
+      join(fixture.extensionDir, "dist", "src", "index.js"),
+      'export { defineExtension } from "/__flmux/runtime/extension-api.js";\n',
+      "utf8"
+    );
 
     const discovered = await discoverLocalExtensions(extensionsRootDir);
     expect(discovered).toHaveLength(1);
     expect(discovered[0]).toMatchObject({
+      runtimeMode: "dist",
       runtimeRootDir: join(fixture.extensionDir, "dist"),
       runtimeManifestPath: join(fixture.extensionDir, "dist", "manifest.json"),
       runtimeManifest: {
@@ -160,7 +165,7 @@ describe("local extension loading", () => {
     );
   });
 
-  it("serves local extension manifest, runtime module tree, and transpiled renderer entry from same-origin routes", async () => {
+  it("serves local extension manifest, runtime module tree, and source fallback renderer entry from same-origin routes", async () => {
     const extensionsRootDir = await createTempExtensionRoot("server");
     await writeExtensionFixture(extensionsRootDir, {
       id: "sample.cowsay",
@@ -226,6 +231,49 @@ describe("local extension loading", () => {
 
       expect(assetResponse.status).toBe(200);
       expect(await assetResponse.text()).toBe("<section>template asset</section>");
+    } finally {
+      server.stop();
+    }
+  });
+
+  it("serves built dist renderer modules without server-side rewrite", async () => {
+    const extensionsRootDir = await createTempExtensionRoot("built-static");
+    const fixture = await writeExtensionFixture(extensionsRootDir, {
+      id: "sample.cowsay",
+      name: "Cowsay",
+      version: "0.1.0",
+      rendererEntry: "./src/index.ts"
+    });
+    await mkdir(join(fixture.extensionDir, "dist", "src"), { recursive: true });
+    await writeFile(
+      join(fixture.extensionDir, "dist", "manifest.json"),
+      JSON.stringify({
+        id: "sample.cowsay",
+        name: "Cowsay",
+        version: "0.1.0",
+        apiVersion: 1,
+        entrypoints: {
+          renderer: "src/index.js"
+        }
+      }, null, 2),
+      "utf8"
+    );
+    const builtCode = 'export { defineExtension } from "/__flmux/runtime/extension-api.js";\n';
+    await writeFile(join(fixture.extensionDir, "dist", "src", "index.js"), builtCode, "utf8");
+
+    const rendererDir = await createTempRendererDir();
+    const localExtensions = await discoverLocalExtensions(extensionsRootDir);
+    const loadEntry = createLocalExtensionLoadEntries(localExtensions, "http://127.0.0.1:0")[0];
+    const server = startFlmuxServer({
+      rendererDir,
+      localExtensions,
+      shellModelRouter: createShellModelRouterStub()
+    });
+
+    try {
+      const response = await fetch(loadEntry.rendererEntryUrl.replace("http://127.0.0.1:0", server.origin));
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe(builtCode);
     } finally {
       server.stop();
     }

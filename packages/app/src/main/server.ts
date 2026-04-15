@@ -276,7 +276,7 @@ function handleLocalExtensionRuntimeRequest(
   const { extension, filePath } = resolved;
   const contentType = MIME_TYPES[extname(filePath)] ?? "application/octet-stream";
 
-  if (contentType === "application/javascript; charset=utf-8") {
+  if (contentType === "application/javascript; charset=utf-8" && extension.runtimeMode !== "dist") {
     return serveLocalExtensionModule(extension.id, filePath, set);
   }
 

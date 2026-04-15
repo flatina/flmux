@@ -9,6 +9,7 @@ export interface DiscoveredLocalExtension {
   rootDir: string;
   sourceManifestPath: string;
   sourceManifest: ExtensionManifest;
+  runtimeMode: "source" | "dist";
   runtimeRootDir: string;
   runtimeManifestPath: string;
   runtimeManifest: ExtensionManifest;
@@ -70,6 +71,7 @@ export async function discoverLocalExtensions(rootDir: string): Promise<Discover
             rootDir: extensionRootDir,
             sourceManifestPath,
             sourceManifest,
+            runtimeMode: runtimeManifestRecord.mode,
             runtimeRootDir: runtimeManifestRecord.rootDir,
             runtimeManifestPath: runtimeManifestRecord.manifestPath,
             runtimeManifest,
@@ -175,6 +177,7 @@ async function loadRuntimeManifest(extensionRootDir: string, sourceManifest: Ext
   if (!(await Bun.file(distManifestPath).exists())) {
     return {
       rootDir: extensionRootDir,
+      mode: "source" as const,
       manifestPath: join(extensionRootDir, "manifest.json"),
       manifest: sourceManifest
     };
@@ -189,6 +192,7 @@ async function loadRuntimeManifest(extensionRootDir: string, sourceManifest: Ext
       );
       return {
         rootDir: extensionRootDir,
+        mode: "source" as const,
         manifestPath: join(extensionRootDir, "manifest.json"),
         manifest: sourceManifest
       };
@@ -196,6 +200,7 @@ async function loadRuntimeManifest(extensionRootDir: string, sourceManifest: Ext
 
     return {
       rootDir: join(extensionRootDir, "dist"),
+      mode: "dist" as const,
       manifestPath: distManifestPath,
       manifest: manifestResult.manifest
     };
@@ -203,6 +208,7 @@ async function loadRuntimeManifest(extensionRootDir: string, sourceManifest: Ext
     console.warn(`[flmux] failed to read runtime extension manifest: ${distManifestPath}`, error);
     return {
       rootDir: extensionRootDir,
+      mode: "source" as const,
       manifestPath: join(extensionRootDir, "manifest.json"),
       manifest: sourceManifest
     };

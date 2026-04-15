@@ -142,9 +142,10 @@ describe("extension-devkit validate", () => {
         }
       ],
       rendererContents: [
+        'import { defineExtension } from "@flmux/extension-api";',
         'import { label } from "./lib/helper.ts";',
         'export const assetUrl = new URL("./template.html", import.meta.url).href;',
-        "export default label;",
+        "export default defineExtension({ label });",
         ""
       ].join("\n")
     });
@@ -164,6 +165,7 @@ describe("extension-devkit validate", () => {
     });
 
     const builtRenderer = await Bun.file(join(extensionDir, "dist", "src", "index.js")).text();
+    expect(builtRenderer).toContain('from "/__flmux/runtime/extension-api.js"');
     expect(builtRenderer).toContain('from "./lib/helper.js"');
     expect(builtRenderer).toContain('new URL("./template.html", import.meta.url)');
 

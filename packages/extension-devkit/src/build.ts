@@ -4,6 +4,7 @@ import type { ExtensionManifest } from "../../extension-api/src/manifest";
 import { validateExtensionDirectory } from "./validate";
 
 const extensionBuildTranspiler = new Bun.Transpiler({ loader: "ts" });
+const EXTENSION_API_RUNTIME_URL = "/__flmux/runtime/extension-api.js";
 
 export interface ExtensionBuildResult {
   ok: boolean;
@@ -93,7 +94,7 @@ async function buildExtensionTree(
       const targetPath = join(outDir, replaceTsExtension(relativePath));
       await mkdir(dirname(targetPath), { recursive: true });
       const source = await readFile(sourcePath, "utf8");
-      const code = extensionBuildTranspiler.transformSync(rewriteRelativeTypeScriptImports(source));
+      const code = extensionBuildTranspiler.transformSync(rewriteTypeScriptModuleImports(source));
       await writeFile(targetPath, code, "utf8");
       builtFiles.push(targetPath);
       continue;
@@ -116,7 +117,7 @@ function createRuntimeManifest(sourceManifest: ExtensionManifest): ExtensionMani
   };
 }
 
-function rewriteRelativeTypeScriptImports(source: string) {
+function rewriteTypeScriptModuleImports(source: string) {
   return source
     .replace(
       /((?:import|export)[\s\S]*?\sfrom\s+["'])(\.{1,2}\/[^"']+?)(["'])/g,
@@ -125,7 +126,16 @@ function rewriteRelativeTypeScriptImports(source: string) {
     .replace(
       /(import\(\s*["'])(\.{1,2}\/[^"']+?)(["']\s*\))/g,
       (_match, prefix: string, specifier: string, suffix: string) => `${prefix}${rewriteRelativeSpecifier(specifier)}${suffix}`
-    );
+    )
+    .replace(
+      /(import\s+(?!type\b)[\s\S]*?\sfrom\s+)["']@flmux\/extension-api["']/g,
+      `$1"${EXTENSION_API_RUNTIME_URL}"`
+    )
+    .replace(
+      /(export[\s\S]*?\sfrom\s+)["']@flmux\/extension-api["']/g,
+      `$1"${EXTENSION_API_RUNTIME_URL}"`
+    )
+    .replace(/import\(\s*["']@flmux\/extension-api["']\s*\)/g, `import("${EXTENSION_API_RUNTIME_URL}")`);
 }
 
 function rewriteRelativeSpecifier(specifier: string) {

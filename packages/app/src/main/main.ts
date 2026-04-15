@@ -7,7 +7,11 @@ import { createShellModelRouter } from "./shellModelBridge";
 import { startFlmuxServer } from "./server";
 import { forwardTerminalEventToOwnedClient } from "./terminalEventForwarding";
 import { createTerminalService } from "./terminal-service";
-import { createLocalExtensionLoadEntries, discoverLocalExtensions } from "./localExtensions";
+import {
+  createLocalExtensionLoadEntries,
+  discoverConfiguredLocalExtensions,
+  resolveConfiguredLocalExtensionsRootDir
+} from "./localExtensions";
 
 process.env.BUNITE_REMOTE_DEBUGGING_PORT ??= "9227";
 process.env.FLMUX_DEV_MODE ??= Bun.argv.includes("--dev") ? "1" : "";
@@ -18,13 +22,13 @@ await app.ready;
 
 const rendererDir = app.resolve("../dist/renderer");
 const projectDir = app.resolve("../../..");
-const localExtensionsRootDir = app.resolve("../../../extensions");
+const localExtensionsRootDir = resolveConfiguredLocalExtensionsRootDir(app.resolve("../../../extensions"));
 const clientRegistry = new FlmuxClientRegistry();
 const shellModelRouter = createShellModelRouter(clientRegistry);
 const terminalService = createTerminalService();
 const sessionStore = createSessionStore();
 const paneOwners = new Map<string, number>();
-const localExtensions = await discoverLocalExtensions(localExtensionsRootDir);
+const localExtensions = await discoverConfiguredLocalExtensions(localExtensionsRootDir);
 
 let desktopViewId = -1;
 

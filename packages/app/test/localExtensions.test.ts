@@ -5,7 +5,9 @@ import { dirname, join } from "node:path";
 import type { FlmuxLocalExtensionLoadEntry } from "../src/shared/rendererBridge";
 import {
   createLocalExtensionLoadEntries,
+  discoverConfiguredLocalExtensions,
   discoverLocalExtensions,
+  type LocalExtensionCatalogConfig,
   type DiscoveredLocalExtension
 } from "../src/main/localExtensions";
 import { startFlmuxServer } from "../src/main/server";
@@ -109,6 +111,65 @@ describe("local extension loading", () => {
     expect(discovered).toHaveLength(1);
     expect(discovered[0]?.rendererEntryPath).not.toBeNull();
     expect(discovered[0]!.rendererEntryPath!.replace(/\\/g, "/")).toEndWith("/dist/src/renderer-entry.js");
+  });
+
+  it("passes through local discovery unchanged when catalog.json is absent", async () => {
+    const extensionsRootDir = await createTempExtensionRoot("catalog-absent");
+    await writeExtensionFixture(extensionsRootDir, {
+      id: "sample.cowsay",
+      name: "Cowsay",
+      version: "0.1.0"
+    });
+
+    expect(await discoverConfiguredLocalExtensions(extensionsRootDir)).toEqual(
+      await discoverLocalExtensions(extensionsRootDir)
+    );
+  });
+
+  it("applies catalog additionalRoots and enable/disable selectors", async () => {
+    const extensionsRootDir = await createTempExtensionRoot("catalog-policy");
+    const extraRootDir = await createTempExtensionRoot("catalog-extra");
+    await writeExtensionFixture(extensionsRootDir, {
+      id: "sample.cowsay",
+      name: "Cowsay",
+      version: "0.1.0"
+    });
+    await writeExtensionFixture(extraRootDir, {
+      id: "sample.inspector",
+      name: "Inspector",
+      version: "0.1.0"
+    });
+    await writeExtensionFixture(extraRootDir, {
+      id: "sample.scratchpad",
+      name: "Scratchpad",
+      version: "0.2.0"
+    });
+    await writeCatalogConfig(extensionsRootDir, {
+      additionalRoots: [extraRootDir],
+      enabled: ["sample.cowsay", "sample.scratchpad@0.2.0"],
+      disabled: ["sample.inspector"]
+    });
+
+    const discovered = await discoverConfiguredLocalExtensions(extensionsRootDir);
+    expect(discovered.map((extension) => `${extension.id}@${extension.version}`)).toEqual([
+      "sample.cowsay@0.1.0",
+      "sample.scratchpad@0.2.0"
+    ]);
+  });
+
+  it("lets disabled selectors win over enabled selectors", async () => {
+    const extensionsRootDir = await createTempExtensionRoot("catalog-precedence");
+    await writeExtensionFixture(extensionsRootDir, {
+      id: "sample.cowsay",
+      name: "Cowsay",
+      version: "0.1.0"
+    });
+    await writeCatalogConfig(extensionsRootDir, {
+      enabled: ["sample.cowsay"],
+      disabled: ["sample.cowsay"]
+    });
+
+    expect(await discoverConfiguredLocalExtensions(extensionsRootDir)).toEqual([]);
   });
 
   it("serves built local extension manifest and runtime file tree from same-origin routes", async () => {
@@ -295,6 +356,10 @@ async function createTempExtensionRoot(prefix: string) {
   const dir = await mkdtemp(join(tmpdir(), `flmux-ext-${prefix}-`));
   tempDirs.push(dir);
   return dir;
+}
+
+async function writeCatalogConfig(rootDir: string, config: LocalExtensionCatalogConfig) {
+  await writeFile(join(rootDir, "catalog.json"), JSON.stringify(config, null, 2), "utf8");
 }
 
 async function createTempRendererDir() {

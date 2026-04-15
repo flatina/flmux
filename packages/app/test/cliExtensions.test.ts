@@ -105,8 +105,21 @@ describe("cli extension dispatch", () => {
     expect(handled).toBe(false);
   });
 
+  it("applies catalog disable policy to CLI command discovery", async () => {
+    const rootDir = await createCliExtensionFixture();
+    await writeFile(
+      join(rootDir, "catalog.json"),
+      JSON.stringify({
+        disabled: ["sample.cowsay"]
+      }, null, 2),
+      "utf8"
+    );
+
+    expect(await discoverLocalCliCommands(rootDir)).toEqual([]);
+  });
+
   it("uses FLMUX_EXTENSIONS_ROOT as the default extension root override", () => {
-    process.env.FLMUX_EXTENSIONS_ROOT = "C:\\custom-extensions";
+    process.env.FLMUX_EXTENSIONS_ROOT = "  C:\\custom-extensions  ";
     expect(defaultExtensionsRootDir()).toBe("C:\\custom-extensions");
   });
 });

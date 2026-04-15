@@ -41,9 +41,8 @@ function createBuiltinPaneDescriptors(
         }),
         getTitle: ({ input, params }) =>
           input.title?.trim() || inferBrowserTitle(optionalStringParam(params?.url) ?? "Browser"),
-        createRecord: ({ workspace, panel, params }) => ({
+        createRecord: ({ workspace, params }) => ({
           kind: "browser",
-          panel,
           url: deps.requireBrowserUrl(optionalStringParam(params?.url) ?? deps.fixtureUrl(workspace.defaultFixture))
         }),
         createSnapshot: ({ paneId, title, active, record }) =>
@@ -89,9 +88,8 @@ function createBuiltinPaneDescriptors(
           autoCreate: input.params?.autoCreate === true
         }),
         getTitle: ({ input }) => input.title?.trim() || "Terminal",
-        createRecord: ({ workspace, panel, params }) => ({
+        createRecord: ({ workspace, params }) => ({
           kind: "terminal",
-          panel,
           cwd: deps.resolveTerminalCwd(workspace.rootDir, optionalStringParam(params?.cwd)),
           rootDir: workspace.rootDir,
           rootKey: null,

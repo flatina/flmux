@@ -299,8 +299,7 @@ describe("external pane runtime", () => {
           }
         },
         record: {
-          kind: "sample.stateful",
-          panel: null as never
+          kind: "sample.stateful"
         },
         currentParams: {
           note: "saved"
@@ -413,8 +412,7 @@ describe("external pane runtime", () => {
         }
       },
       record: {
-        kind: "sample.mount",
-        panel: null as never
+        kind: "sample.mount"
       },
       currentParams: {
         note: "seed"
@@ -439,8 +437,7 @@ describe("external pane runtime", () => {
         }
       },
       record: {
-        kind: "sample.mount",
-        panel: null as never
+        kind: "sample.mount"
       },
       currentParams: {
         note: "seed"
@@ -472,8 +469,7 @@ describe("external pane runtime", () => {
         }
       },
       record: {
-        kind: "sample.mount",
-        panel: null as never
+        kind: "sample.mount"
       },
       currentParams: {
         note: "patched"

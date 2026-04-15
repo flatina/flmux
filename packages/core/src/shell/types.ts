@@ -85,7 +85,11 @@ export interface PaneStatusSnapshot extends PaneStateSnapshot {
   terminal?: TerminalPaneStatusSnapshot;
 }
 
-export interface ShellPaneSnapshot extends PaneStatusSnapshot {}
+export interface ShellPaneSnapshot extends PaneStateSnapshot {}
+
+export interface ShellPaneStatusSnapshot extends PaneStatusSnapshot {}
+
+export interface ShellPaneRecordSnapshot extends ShellPaneStatusSnapshot {}
 
 export interface TerminalPaneStateSnapshot {
   cwd: string;
@@ -127,11 +131,11 @@ export interface ShellModelHost {
   getWorkspaceStatus(): Awaitable<WorkspaceStatusSnapshot>;
   setWorkspaceTitle(title: string): Awaitable<WorkspaceStatusSnapshot>;
   hasPaneKind(kind: string): Awaitable<boolean>;
-  listPanes(): Awaitable<ShellPaneSnapshot[]>;
-  getPane(paneId: string): Awaitable<ShellPaneSnapshot | undefined>;
-  createPane(input: NewPaneInput): Awaitable<ShellPaneSnapshot>;
+  listPanes(): Awaitable<ShellPaneRecordSnapshot[]>;
+  getPane(paneId: string): Awaitable<ShellPaneRecordSnapshot | undefined>;
+  createPane(input: NewPaneInput): Awaitable<ShellPaneRecordSnapshot>;
   closePane(paneId: string): Awaitable<{ paneId: string; closed: boolean }>;
-  setPaneTitle(paneId: string, title: string): Awaitable<ShellPaneSnapshot>;
+  setPaneTitle(paneId: string, title: string): Awaitable<ShellPaneRecordSnapshot>;
   getPaneParams(paneId: string): Awaitable<Record<string, unknown> | undefined>;
   setPaneParams(paneId: string, nextParams: Record<string, unknown>): Awaitable<Record<string, unknown>>;
   patchPaneParams(paneId: string, patch: Record<string, unknown>): Awaitable<Record<string, unknown>>;
@@ -148,7 +152,7 @@ export interface ShellTerminalDelegate {
 }
 
 export interface ShellBrowserDelegate {
-  setPaneUrl(paneId: string, url: string): Awaitable<ShellPaneSnapshot>;
+  setPaneUrl(paneId: string, url: string): Awaitable<ShellPaneRecordSnapshot>;
 }
 
 export interface ShellModelAPI {

@@ -11,7 +11,7 @@ import type {
   ShellBrowserDelegate,
   ShellModelAPI,
   ShellModelHost,
-  ShellPaneSnapshot,
+  ShellPaneRecordSnapshot,
   ShellPathEntry,
   ShellTerminalDelegate
 } from "./types";
@@ -909,7 +909,7 @@ class ShellModel implements ShellModelAPI {
     };
   }
 
-  private async resolvePane(paneSegment: string): Promise<ShellPaneSnapshot | undefined> {
+  private async resolvePane(paneSegment: string): Promise<ShellPaneRecordSnapshot | undefined> {
     if (paneSegment === "current") {
       const activePaneId = (await this.host.getWorkspaceStatus()).activePaneId;
       if (!activePaneId) {
@@ -1087,7 +1087,7 @@ function asPositiveInteger(value: unknown, label: string): number {
   return value;
 }
 
-function toPaneStateSnapshot(pane: ShellPaneSnapshot) {
+function toPaneStateSnapshot(pane: ShellPaneRecordSnapshot) {
   return pane.kind === "browser"
     ? { kind: pane.kind, title: pane.title, browser: toBrowserStateSnapshot(pane) }
     : pane.kind === "terminal"
@@ -1099,7 +1099,7 @@ function toPaneStateSnapshot(pane: ShellPaneSnapshot) {
     : { kind: pane.kind, title: pane.title };
 }
 
-function toPaneStatusSnapshot(pane: ShellPaneSnapshot) {
+function toPaneStatusSnapshot(pane: ShellPaneRecordSnapshot) {
   return pane.kind === "browser"
     ? {
         id: pane.id,
@@ -1119,7 +1119,7 @@ function toPaneStatusSnapshot(pane: ShellPaneSnapshot) {
     : { id: pane.id, kind: pane.kind, title: pane.title, active: pane.active };
 }
 
-function paneStateEntries(pane: ShellPaneSnapshot, basePath: string): ShellPathEntry[] {
+function paneStateEntries(pane: ShellPaneRecordSnapshot, basePath: string): ShellPathEntry[] {
   return pane.kind === "browser"
     ? [
         leafEntry("kind", `${basePath}/kind`),
@@ -1141,7 +1141,7 @@ function paneStateEntries(pane: ShellPaneSnapshot, basePath: string): ShellPathE
       ];
 }
 
-function paneStatusEntries(pane: ShellPaneSnapshot, basePath: string): ShellPathEntry[] {
+function paneStatusEntries(pane: ShellPaneRecordSnapshot, basePath: string): ShellPathEntry[] {
   return pane.kind === "browser"
     ? [
         leafEntry("id", `${basePath}/id`),
@@ -1194,29 +1194,29 @@ function isPaneStatusLeaf(value: string): value is keyof ReturnType<typeof toPan
   return isPaneStatusKey(value);
 }
 
-function toBrowserStateSnapshot(pane: ShellPaneSnapshot) {
+function toBrowserStateSnapshot(pane: ShellPaneRecordSnapshot) {
   return {
     url: readBrowserUrl(pane)
   };
 }
 
-function toBrowserStatusSnapshot(pane: ShellPaneSnapshot) {
+function toBrowserStatusSnapshot(pane: ShellPaneRecordSnapshot) {
   return {
     url: readBrowserUrl(pane)
   };
 }
 
-function readBrowserUrl(pane: ShellPaneSnapshot) {
+function readBrowserUrl(pane: ShellPaneRecordSnapshot) {
   return pane.browser?.url ?? "";
 }
 
-function toTerminalStateSnapshot(pane: ShellPaneSnapshot) {
+function toTerminalStateSnapshot(pane: ShellPaneRecordSnapshot) {
   return {
     cwd: readTerminalStatus(pane).cwd
   };
 }
 
-function toTerminalStatusSnapshot(pane: ShellPaneSnapshot) {
+function toTerminalStatusSnapshot(pane: ShellPaneRecordSnapshot) {
   const terminal = readTerminalStatus(pane);
   return {
     attached: terminal.attached,
@@ -1230,7 +1230,7 @@ function toTerminalStatusSnapshot(pane: ShellPaneSnapshot) {
   };
 }
 
-function readTerminalStatus(pane: ShellPaneSnapshot) {
+function readTerminalStatus(pane: ShellPaneRecordSnapshot) {
   return {
     attached: pane.terminal?.attached ?? false,
     rootKey: pane.terminal?.rootKey ?? null,
@@ -1243,7 +1243,7 @@ function readTerminalStatus(pane: ShellPaneSnapshot) {
   };
 }
 
-function readTerminalRuntimeId(pane: ShellPaneSnapshot) {
+function readTerminalRuntimeId(pane: ShellPaneRecordSnapshot) {
   return readTerminalStatus(pane).runtimeId;
 }
 

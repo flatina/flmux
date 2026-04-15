@@ -52,6 +52,19 @@ describe("shell model direct", () => {
       found: true,
       value: "term_live"
     });
+
+    const paneState = await model.pathGet("/panes/pane.term");
+    expect(paneState).toEqual({
+      ok: true,
+      found: true,
+      value: {
+        kind: "terminal",
+        title: "Terminal",
+        terminal: {
+          cwd: WORKSPACE_ROOT_DIR
+        }
+      }
+    });
   });
 
   it("supports writable app, workspace, and browser subtree state paths", async () => {

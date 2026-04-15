@@ -2,8 +2,8 @@ import type {
   NewPaneInput,
   ShellBrowserDelegate,
   ShellModelHost,
+  ShellPaneRecordSnapshot,
   ShellResolvedPanePathMount,
-  ShellPaneSnapshot,
   ShellTerminalDelegate,
   WorkspaceBusEvent,
   WorkspaceStatusSnapshot
@@ -204,11 +204,11 @@ export class TestShellModelHost implements ShellModelHost {
     return this.getWorkspaceStatus();
   }
 
-  listPanes(): ShellPaneSnapshot[] {
+  listPanes(): ShellPaneRecordSnapshot[] {
     return [...this.panes.keys()].map((paneId) => this.toPaneSnapshot(paneId));
   }
 
-  getPane(paneId: string): ShellPaneSnapshot | undefined {
+  getPane(paneId: string): ShellPaneRecordSnapshot | undefined {
     if (!this.panes.has(paneId)) {
       return undefined;
     }
@@ -216,7 +216,7 @@ export class TestShellModelHost implements ShellModelHost {
     return this.toPaneSnapshot(paneId);
   }
 
-  createPane(input: NewPaneInput): ShellPaneSnapshot {
+  createPane(input: NewPaneInput): ShellPaneRecordSnapshot {
     this.calls.createPane.push(input);
     const paneId = `pane_${crypto.randomUUID()}`;
     const pane = this.createStoredPane(paneId, input);
@@ -244,14 +244,14 @@ export class TestShellModelHost implements ShellModelHost {
     return { paneId, closed };
   }
 
-  setPaneTitle(paneId: string, title: string): ShellPaneSnapshot {
+  setPaneTitle(paneId: string, title: string): ShellPaneRecordSnapshot {
     const pane = this.requirePane(paneId);
     pane.title = title;
     this.calls.setPaneTitle.push({ paneId, title });
     return this.toPaneSnapshot(paneId);
   }
 
-  setBrowserPaneUrl(paneId: string, url: string): ShellPaneSnapshot {
+  setBrowserPaneUrl(paneId: string, url: string): ShellPaneRecordSnapshot {
     const pane = this.requirePane(paneId);
     if (pane.kind !== "browser") {
       throw new Error(`Pane '${paneId}' is not a browser pane`);
@@ -599,7 +599,7 @@ export class TestShellModelHost implements ShellModelHost {
     return typeof params?.subscription === "string" && params.subscription.length > 0 ? params.subscription : "*";
   }
 
-  private toPaneSnapshot(paneId: string): ShellPaneSnapshot {
+  private toPaneSnapshot(paneId: string): ShellPaneRecordSnapshot {
     const pane = this.requirePane(paneId);
     const active = this.activePaneId === paneId;
 

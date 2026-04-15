@@ -34,8 +34,8 @@ import type {
   PanePlacement,
   ShellModelAPI,
   ShellModelHost,
+  ShellPaneRecordSnapshot,
   ShellResolvedPanePathMount,
-  ShellPaneSnapshot,
   WorkspaceBus,
   WorkspaceBusEvent
 } from "./types";
@@ -194,12 +194,12 @@ export class FlmuxWorkbench implements ShellModelHost {
     return this.getWorkspaceStatus();
   }
 
-  listPanes(): ShellPaneSnapshot[] {
+  listPanes(): ShellPaneRecordSnapshot[] {
     const workspace = this.getCurrentWorkspace();
     return [...workspace.paneRecords.keys()].map((paneId) => this.mustGetPaneSnapshot(workspace, paneId));
   }
 
-  getPane(paneId: string): ShellPaneSnapshot | undefined {
+  getPane(paneId: string): ShellPaneRecordSnapshot | undefined {
     const workspace = this.getCurrentWorkspace();
     if (!workspace.paneRecords.has(paneId)) {
       return undefined;
@@ -208,7 +208,7 @@ export class FlmuxWorkbench implements ShellModelHost {
     return this.mustGetPaneSnapshot(workspace, paneId);
   }
 
-  createPane(input: NewPaneInput): ShellPaneSnapshot {
+  createPane(input: NewPaneInput): ShellPaneRecordSnapshot {
     const workspace = this.getCurrentWorkspace();
     const pane = this.addPane(workspace, input);
     this.scheduleSessionSave();
@@ -223,7 +223,7 @@ export class FlmuxWorkbench implements ShellModelHost {
     return { paneId, closed: true };
   }
 
-  setPaneTitle(paneId: string, title: string): ShellPaneSnapshot {
+  setPaneTitle(paneId: string, title: string): ShellPaneRecordSnapshot {
     const workspace = this.getCurrentWorkspace();
     const record = this.requirePaneRecord(workspace, paneId);
     record.panel.api.setTitle(title);
@@ -232,7 +232,7 @@ export class FlmuxWorkbench implements ShellModelHost {
     return this.mustGetPaneSnapshot(workspace, paneId);
   }
 
-  private setBrowserPaneUrl(paneId: string, url: string): ShellPaneSnapshot {
+  private setBrowserPaneUrl(paneId: string, url: string): ShellPaneRecordSnapshot {
     const workspace = this.getCurrentWorkspace();
     const record = this.requirePaneRecord(workspace, paneId);
     if (!isBrowserPaneRecord(record)) {
@@ -521,7 +521,7 @@ export class FlmuxWorkbench implements ShellModelHost {
     this.scheduleSessionSave();
   }
 
-  private addPane(workspace: WorkspaceRecord, input: NewPaneInput): ShellPaneSnapshot {
+  private addPane(workspace: WorkspaceRecord, input: NewPaneInput): ShellPaneRecordSnapshot {
     const descriptor = this.requirePaneDescriptor(input.kind);
     const paneId = createPaneId();
     const workspaceContext = this.toPaneWorkspaceContext(workspace);
@@ -608,7 +608,7 @@ export class FlmuxWorkbench implements ShellModelHost {
     return record;
   }
 
-  private mustGetPaneSnapshot(workspace: WorkspaceRecord, paneId: string): ShellPaneSnapshot {
+  private mustGetPaneSnapshot(workspace: WorkspaceRecord, paneId: string): ShellPaneRecordSnapshot {
     const record = this.requirePaneRecord(workspace, paneId);
     const isActive = workspace.api?.activePanel?.id === paneId;
     const title = record.panel.title ?? "Untitled";

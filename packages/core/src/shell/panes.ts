@@ -1,5 +1,5 @@
 import type { TerminalRuntimeSummary } from "../terminal/terminal";
-import type { Awaitable, NewPaneInput, ShellPaneSnapshot, WorkspaceBus } from "./types";
+import type { Awaitable, NewPaneInput, ShellPaneRecordSnapshot, WorkspaceBus } from "./types";
 
 export interface PaneWorkspaceContext {
   id: string;
@@ -42,7 +42,7 @@ export interface PaneLifecycleHooks<TRecord extends PaneStateRecord = PaneStateR
     title: string;
     active: boolean;
     record: TRecord;
-  }): ShellPaneSnapshot;
+  }): ShellPaneRecordSnapshot;
 }
 
 export interface PanePersistenceHooks<TRecord extends PaneStateRecord = PaneStateRecord> {
@@ -155,7 +155,7 @@ export function createPaneSnapshot<TRecord extends PaneStateRecord>(options: {
   title: string;
   active: boolean;
   record: TRecord;
-}): ShellPaneSnapshot {
+}): ShellPaneRecordSnapshot {
   return options.spec.lifecycle?.createSnapshot?.({
     paneId: options.paneId,
     title: options.title,

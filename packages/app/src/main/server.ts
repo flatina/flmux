@@ -1,5 +1,4 @@
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Elysia } from "elysia";
@@ -17,7 +16,6 @@ import type { FlmuxShellModelRouter } from "./shellModelBridge";
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
-  ".ts": "application/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
@@ -30,11 +28,7 @@ export interface FlmuxServerHandle {
   stop(): void;
 }
 
-const EXTENSION_API_RUNTIME_URL = "/__flmux/runtime/extension-api.js";
-const EXTENSION_API_RUNTIME_PREFIX = "/__flmux/runtime/extension-api";
-const EXTENSION_API_RUNTIME_SOURCE_DIR = fileURLToPath(new URL("../../../extension-api/src/", import.meta.url));
 const EXTENSION_API_RUNTIME_DIST_DIR = fileURLToPath(new URL("../../../extension-api/dist-runtime/", import.meta.url));
-const extensionModuleTranspiler = new Bun.Transpiler({ loader: "ts" });
 
 export function startFlmuxServer(options: {
   rendererDir: string;
@@ -238,19 +232,6 @@ function resolveLocalExtension(
   return localExtensions.find((entry) => entry.id === extensionId && entry.version === version) ?? null;
 }
 
-function rewriteExtensionModuleImports(source: string) {
-  return source
-    .replace(
-      /(import\s+(?!type\b)[\s\S]*?\sfrom\s+)["']@flmux\/extension-api["']/g,
-      `$1"${EXTENSION_API_RUNTIME_URL}"`
-    )
-    .replace(
-      /(export[\s\S]*?\sfrom\s+)["']@flmux\/extension-api["']/g,
-      `$1"${EXTENSION_API_RUNTIME_URL}"`
-    )
-    .replace(/import\(\s*["']@flmux\/extension-api["']\s*\)/g, `import("${EXTENSION_API_RUNTIME_URL}")`);
-}
-
 function maybeHandleLocalExtensionRuntimeRequest(
   pathname: string,
   set: { status?: number | string },
@@ -276,10 +257,6 @@ function handleLocalExtensionRuntimeRequest(
 
   const { extension, filePath } = resolved;
   const contentType = MIME_TYPES[extname(filePath)] ?? "application/octet-stream";
-
-  if (contentType === "application/javascript; charset=utf-8" && extension.runtimeMode !== "dist") {
-    return serveLocalExtensionModule(extension.id, filePath, set);
-  }
 
   return new Response(Bun.file(filePath), {
     headers: { "content-type": contentType }
@@ -334,26 +311,6 @@ function resolveExtensionRuntimePath(rootDir: string, relativePath: string) {
   return normalizedFullPath;
 }
 
-function serveLocalExtensionModule(
-  extensionId: string,
-  filePath: string,
-  set: { status?: number | string }
-) {
-  return readFile(filePath, "utf8")
-    .then((source) => {
-      const rewritten = rewriteExtensionModuleImports(source);
-      const code = extensionModuleTranspiler.transformSync(rewritten);
-      return new Response(code, {
-        headers: { "content-type": "application/javascript; charset=utf-8" }
-      });
-    })
-    .catch((error) => {
-      console.warn(`[flmux] failed to serve local extension module: ${extensionId}`, error);
-      set.status = 500;
-      return "Failed to load local extension module";
-    });
-}
-
 async function handleExtensionApiRuntimeModuleRequest(
   moduleName: string,
   set: { status?: number | string }
@@ -365,33 +322,18 @@ async function handleExtensionApiRuntimeModuleRequest(
     });
   }
 
-  const sourcePath = resolveExtensionApiRuntimeSourcePath(moduleName);
-  if (!sourcePath) {
+  if (!/^[A-Za-z0-9_-]+\.js$/.test(moduleName)) {
     set.status = 404;
     return "Not Found";
   }
 
-  try {
-    const source = await readFile(sourcePath, "utf8");
-    const rewritten = rewriteExtensionApiRuntimeImports(source);
-    const code = extensionModuleTranspiler.transformSync(rewritten);
-    return new Response(code, {
-      headers: { "content-type": "application/javascript; charset=utf-8" }
-    });
-  } catch (error) {
-    console.warn(`[flmux] failed to serve extension-api runtime module: ${moduleName}`, error);
+  if (!existsSync(EXTENSION_API_RUNTIME_DIST_DIR)) {
     set.status = 500;
-    return "Failed to load extension-api runtime module";
-  }
-}
-
-function resolveExtensionApiRuntimeSourcePath(moduleName: string) {
-  if (!/^[A-Za-z0-9_-]+\.js$/.test(moduleName)) {
-    return null;
+    return "Missing built extension-api runtime. Run 'bun run build:extension-api-runtime'.";
   }
 
-  const sourcePath = join(EXTENSION_API_RUNTIME_SOURCE_DIR, moduleName.replace(/\.js$/, ".ts"));
-  return existsSync(sourcePath) ? sourcePath : null;
+  set.status = 500;
+  return `Missing built extension-api runtime module '${moduleName}'. Run 'bun run build:extension-api-runtime'.`;
 }
 
 function resolveExtensionApiRuntimeBuiltPath(moduleName: string) {
@@ -404,13 +346,6 @@ function resolveExtensionApiRuntimeBuiltPath(moduleName: string) {
       ? join(EXTENSION_API_RUNTIME_DIST_DIR, "index.js")
       : join(EXTENSION_API_RUNTIME_DIST_DIR, moduleName);
   return existsSync(builtPath) ? builtPath : null;
-}
-
-function rewriteExtensionApiRuntimeImports(source: string) {
-  return source.replace(
-    /(["'])\.\/([A-Za-z0-9_-]+)\1/g,
-    (_, quote: string, moduleName: string) => `${quote}${EXTENSION_API_RUNTIME_PREFIX}/${moduleName}.js${quote}`
-  );
 }
 
 function fixtureHtml(title: string, body: string): Response {

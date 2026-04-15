@@ -7,9 +7,6 @@ export interface DiscoveredLocalExtension {
   id: string;
   name: string;
   rootDir: string;
-  sourceManifestPath: string;
-  sourceManifest: ExtensionManifest;
-  runtimeMode: "source" | "dist";
   runtimeRootDir: string;
   runtimeManifestPath: string;
   runtimeManifest: ExtensionManifest;
@@ -32,56 +29,59 @@ export async function discoverLocalExtensions(rootDir: string): Promise<Discover
       .filter((entry) => entry.isDirectory())
       .map(async (entry) => {
         const extensionRootDir = join(rootDir, entry.name);
-        const sourceManifestPath = join(extensionRootDir, "manifest.json");
+        const runtimeRootDir = join(extensionRootDir, "dist");
+        const runtimeManifestPath = join(runtimeRootDir, "manifest.json");
 
         try {
-          const raw = await readFile(sourceManifestPath, "utf8");
-          const manifestResult = validateExtensionManifest(JSON.parse(raw));
-          if (!manifestResult.ok) {
+          if (!(await Bun.file(runtimeManifestPath).exists())) {
             console.warn(
-              `[flmux] invalid extension manifest: ${sourceManifestPath}\n- ${manifestResult.errors.join("\n- ")}`
+              `[flmux] missing built local extension manifest: ${runtimeManifestPath} (run 'bun run build:extensions')`
             );
             return null;
           }
-          const sourceManifest = manifestResult.manifest;
-          const runtimeManifestRecord = await loadRuntimeManifest(extensionRootDir, sourceManifest);
-          const runtimeManifest = runtimeManifestRecord.manifest;
+
+          const raw = await readFile(runtimeManifestPath, "utf8");
+          const manifestResult = validateExtensionManifest(JSON.parse(raw));
+          if (!manifestResult.ok) {
+            console.warn(
+              `[flmux] invalid built local extension manifest: ${runtimeManifestPath}\n- ${manifestResult.errors.join("\n- ")}`
+            );
+            return null;
+          }
+          const runtimeManifest = manifestResult.manifest;
 
           const rendererEntryPath = await resolveValidatedEntrypoint({
-            extensionRootDir: runtimeManifestRecord.rootDir,
-            manifestPath: runtimeManifestRecord.manifestPath,
+            extensionRootDir: runtimeRootDir,
+            manifestPath: runtimeManifestPath,
             value: runtimeManifest.entrypoints.renderer,
             label: "renderer"
           });
           const cliEntryPath = await resolveValidatedEntrypoint({
-            extensionRootDir: runtimeManifestRecord.rootDir,
-            manifestPath: runtimeManifestRecord.manifestPath,
+            extensionRootDir: runtimeRootDir,
+            manifestPath: runtimeManifestPath,
             value: runtimeManifest.entrypoints.cli,
             label: "cli"
           });
 
           if (!rendererEntryPath && !cliEntryPath) {
-            console.warn(`[flmux] local extension has no usable renderer or cli entrypoint: ${runtimeManifestRecord.manifestPath}`);
+            console.warn(`[flmux] local extension has no usable built renderer or cli entrypoint: ${runtimeManifestPath}`);
             return null;
           }
 
           return {
-            id: sourceManifest.id,
-            name: sourceManifest.name,
+            id: runtimeManifest.id,
+            name: runtimeManifest.name,
             rootDir: extensionRootDir,
-            sourceManifestPath,
-            sourceManifest,
-            runtimeMode: runtimeManifestRecord.mode,
-            runtimeRootDir: runtimeManifestRecord.rootDir,
-            runtimeManifestPath: runtimeManifestRecord.manifestPath,
+            runtimeRootDir,
+            runtimeManifestPath,
             runtimeManifest,
             rendererEntryPath,
             cliEntryPath,
-            version: sourceManifest.version
+            version: runtimeManifest.version
           } satisfies DiscoveredLocalExtension;
         } catch (error) {
           console.warn(
-            `[flmux] failed to read extension manifest: ${sourceManifestPath}`,
+            `[flmux] failed to read built local extension manifest: ${runtimeManifestPath}`,
             error
           );
           return null;
@@ -170,47 +170,4 @@ async function resolveValidatedEntrypoint(options: {
   }
 
   return resolved;
-}
-
-async function loadRuntimeManifest(extensionRootDir: string, sourceManifest: ExtensionManifest) {
-  const distManifestPath = join(extensionRootDir, "dist", "manifest.json");
-  if (!(await Bun.file(distManifestPath).exists())) {
-    return {
-      rootDir: extensionRootDir,
-      mode: "source" as const,
-      manifestPath: join(extensionRootDir, "manifest.json"),
-      manifest: sourceManifest
-    };
-  }
-
-  try {
-    const raw = await readFile(distManifestPath, "utf8");
-    const manifestResult = validateExtensionManifest(JSON.parse(raw));
-    if (!manifestResult.ok) {
-      console.warn(
-        `[flmux] invalid runtime extension manifest: ${distManifestPath}\n- ${manifestResult.errors.join("\n- ")}`
-      );
-      return {
-        rootDir: extensionRootDir,
-        mode: "source" as const,
-        manifestPath: join(extensionRootDir, "manifest.json"),
-        manifest: sourceManifest
-      };
-    }
-
-    return {
-      rootDir: join(extensionRootDir, "dist"),
-      mode: "dist" as const,
-      manifestPath: distManifestPath,
-      manifest: manifestResult.manifest
-    };
-  } catch (error) {
-    console.warn(`[flmux] failed to read runtime extension manifest: ${distManifestPath}`, error);
-    return {
-      rootDir: extensionRootDir,
-      mode: "source" as const,
-      manifestPath: join(extensionRootDir, "manifest.json"),
-      manifest: sourceManifest
-    };
-  }
 }

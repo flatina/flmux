@@ -30,7 +30,11 @@ async function main(command: string | undefined, args: string[]) {
   }
 
   if (command === "tokens") {
-    return printJson(await runTokensCli(args));
+    const result = await runTokensCli(args);
+    if (result !== undefined) {
+      printJson(result);
+    }
+    return;
   }
 
   const { positionals, flags } = parseFlags(args);
@@ -323,6 +327,7 @@ function usage() {
     "  bun src/cli.ts tokens revoke <tokenId> [--auth-dir <dir>]",
     "  bun src/cli.ts tokens list [--auth-dir <dir>]",
     "  bun src/cli.ts tokens users [--auth-dir <dir>]",
+    "  bun src/cli.ts tokens qr --token <plaintext-token> --origin <url>",
     "  note: --client is only required when multiple renderer clients are connected",
     "  note: use --token <token> or FLMUX_TOKEN when the web server has auth enabled",
     "  note: tokens subcommands read/write users.toml and users.tokens.toml directly (FLMUX_AUTH_DIR or --auth-dir)"

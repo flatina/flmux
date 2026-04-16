@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runTokensCli } from "../src/cliTokens";
+import { buildAttachUrl, runTokensCli } from "../src/cliTokens";
 
 const tempDirs: string[] = [];
 
@@ -134,6 +134,22 @@ describe("cli tokens", () => {
       "--auth-dir",
       authDir
     ])).rejects.toThrow(/not a valid ISO timestamp/);
+  });
+
+  it("builds attach urls for tokens qr and rejects non-http origins", () => {
+    expect(buildAttachUrl("http://127.0.0.1:1234", "abc"))
+      .toBe("http://127.0.0.1:1234/?token=abc");
+    expect(buildAttachUrl("http://127.0.0.1:1234/", "abc"))
+      .toBe("http://127.0.0.1:1234/?token=abc");
+    expect(buildAttachUrl("https://example.com/base", "a b/c"))
+      .toBe("https://example.com/base/?token=a%20b%2Fc");
+    expect(() => buildAttachUrl("file:///foo", "t")).toThrow(/must start with http/);
+    expect(() => buildAttachUrl("127.0.0.1", "t")).toThrow(/must start with http/);
+  });
+
+  it("requires --token and --origin for tokens qr", async () => {
+    await expect(runTokensCli(["qr"])).rejects.toThrow(/--token/);
+    await expect(runTokensCli(["qr", "--token", "abc"])).rejects.toThrow(/--origin/);
   });
 
   it("rejects newline injection in user name and label", async () => {

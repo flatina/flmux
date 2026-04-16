@@ -13,7 +13,11 @@ import { stringifyUsersToml } from "./main/auth/tomlWriter";
 export async function runTokensCli(rawArgs: string[]): Promise<unknown> {
   const [subcommand, ...rest] = rawArgs;
   if (!subcommand) {
-    throw new Error("tokens requires a subcommand (bootstrap | issue | revoke | list | users)");
+    throw new Error("tokens requires a subcommand (bootstrap | issue | revoke | list | users | qr)");
+  }
+
+  if (subcommand === "qr") {
+    return renderQr(rest);
   }
 
   const { authDir, argv } = extractAuthDirFlag(rest);
@@ -33,6 +37,38 @@ export async function runTokensCli(rawArgs: string[]): Promise<unknown> {
     default:
       throw new Error(`Unknown tokens subcommand: ${subcommand}`);
   }
+}
+
+export function buildAttachUrl(origin: string, token: string): string {
+  const normalizedOrigin = origin.replace(/\/+$/, "");
+  if (!/^https?:\/\//.test(normalizedOrigin)) {
+    throw new Error(`tokens qr: --origin must start with http:// or https:// (got '${origin}')`);
+  }
+  return `${normalizedOrigin}/?token=${encodeURIComponent(token)}`;
+}
+
+async function renderQr(argv: string[]): Promise<undefined> {
+  const tokenValue = readFlag(argv, "--token");
+  const origin = readFlag(argv, "--origin");
+  if (!tokenValue) {
+    throw new Error("tokens qr: --token <plaintext-token> is required");
+  }
+  if (!origin) {
+    throw new Error("tokens qr: --origin <url> is required");
+  }
+
+  const url = buildAttachUrl(origin, tokenValue);
+  const qrcode = (await import("qrcode-terminal")).default;
+
+  await new Promise<void>((resolve) => {
+    qrcode.generate(url, { small: true }, (rendered: string) => {
+      process.stdout.write(`${rendered}\n`);
+      process.stdout.write(`${url}\n`);
+      resolve();
+    });
+  });
+
+  return undefined;
 }
 
 function bootstrap(paths: FlmuxAuthPaths, argv: string[]) {

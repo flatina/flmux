@@ -9,7 +9,8 @@ import { startFlmuxServer } from "./server";
 import { forwardTerminalEventToOwnedClient } from "./terminalEventForwarding";
 import { createTerminalService } from "./terminal-service";
 import { createFlmuxHostRequestHandlers } from "./hostRequests";
-import { resolveFlmuxWebModeServerAuth } from "./webModeAuth";
+import { createFlmuxWebModeAuthorizer } from "./webModeAuth";
+import { resolveFlmuxAuthDir, resolveFlmuxAuthPaths } from "./auth/authConfig";
 import { resolveFlmuxRuntimeMode } from "./runtimeMode";
 import {
   discoverConfiguredLocalExtensions,
@@ -32,7 +33,8 @@ const terminalService = createTerminalService();
 const sessionStore = runtimeMode === "desktop" ? createSessionStore() : null;
 const paneOwners = new Map<string, number>();
 const localExtensions = await discoverConfiguredLocalExtensions(localExtensionsRootDir);
-const webModeAuth = runtimeMode === "web" ? resolveFlmuxWebModeServerAuth() : null;
+const webModeAuthPaths = runtimeMode === "web" ? resolveFlmuxAuthPaths(resolveFlmuxAuthDir()) : null;
+const webModeAuthorizer = webModeAuthPaths ? createFlmuxWebModeAuthorizer(webModeAuthPaths) : null;
 const webModeShellAuthority = runtimeMode === "web"
   ? await createWebModeShellAuthority({
       projectDir,
@@ -108,11 +110,7 @@ const server = startFlmuxServer({
   shellModelRouter,
   localExtensions,
   saveSession: sessionStore ? (snapshot) => sessionStore.save(snapshot) : undefined,
-  auth: webModeAuth ? {
-    token: webModeAuth.token,
-    cookieName: webModeAuth.cookieName,
-    queryParam: webModeAuth.queryParam
-  } : undefined,
+  authorizer: webModeAuthorizer ?? undefined,
   rpcWebHandler: rendererRpc.webHandler
 });
 serverOrigin = server.origin;
@@ -121,8 +119,10 @@ if (webModeShellAuthority) {
 }
 
 console.log(`[flmux] ${runtimeMode} mode server listening at ${server.origin}`);
-if (webModeAuth) {
-  console.log(`[flmux] web access url: ${server.origin}/?${webModeAuth.queryParam}=${webModeAuth.token}`);
+if (webModeAuthPaths) {
+  console.log(`[flmux] auth dir: ${webModeAuthPaths.authDir}`);
+  console.log(`[flmux] web origin: ${server.origin} (append ?token=<issued-token> on first attach)`);
+  console.log(`[flmux] issue tokens via: bun src/cli.ts tokens issue --user <name> --auth-dir ${webModeAuthPaths.authDir}`);
 }
 
 terminalService.subscribe((event: TerminalRuntimeEvent) => {

@@ -1,4 +1,5 @@
 import { dispatchLocalCliExtensionCommand } from "./cliExtensions";
+import { runTokensCli } from "./cliTokens";
 import type {
   ShellClient,
   ShellPathCallResult,
@@ -26,6 +27,10 @@ void main(command, rest).catch((error) => {
 async function main(command: string | undefined, args: string[]) {
   if (!command) {
     throw new Error(usage());
+  }
+
+  if (command === "tokens") {
+    return printJson(await runTokensCli(args));
   }
 
   const { positionals, flags } = parseFlags(args);
@@ -313,8 +318,14 @@ function usage() {
     "  bun src/cli.ts set /title moo --origin http://127.0.0.1:PORT",
     "  bun src/cli.ts call /panes/new kind=cowsay place=right --origin http://127.0.0.1:PORT",
     "  bun src/cli.ts cowsay hello from cli --origin http://127.0.0.1:PORT",
+    "  bun src/cli.ts tokens bootstrap [--name admin] [--allow-pane-kinds \"*\"] [--auth-dir <dir>]",
+    "  bun src/cli.ts tokens issue --user <name> [--label <label>] [--expires-at <iso>] [--auth-dir <dir>]",
+    "  bun src/cli.ts tokens revoke <tokenId> [--auth-dir <dir>]",
+    "  bun src/cli.ts tokens list [--auth-dir <dir>]",
+    "  bun src/cli.ts tokens users [--auth-dir <dir>]",
     "  note: --client is only required when multiple renderer clients are connected",
-    "  note: use --token <token> or FLMUX_TOKEN when the web server has auth enabled"
+    "  note: use --token <token> or FLMUX_TOKEN when the web server has auth enabled",
+    "  note: tokens subcommands read/write users.toml and users.tokens.toml directly (FLMUX_AUTH_DIR or --auth-dir)"
   ].join("\n");
 }
 

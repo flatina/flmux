@@ -5,22 +5,30 @@ import {
   fetchJson,
   postJson,
   waitFor,
-  waitForWebAccessUrl
+  waitForWebOrigin
 } from "../support/realAppSmokeSupport";
 
-export async function runWebModeBootSmokeScenario(appHandles: AppProcessHandle[]) {
+export interface WebBootSmokeOptions {
+  token: string;
+  authDir: string;
+}
+
+export async function runWebModeBootSmokeScenario(
+  appHandles: AppProcessHandle[],
+  options: WebBootSmokeOptions
+) {
   const handle = appHandles[appHandles.length - 1];
   if (!handle) {
     throw new Error("web app handle is required");
   }
 
-  const access = await waitForWebAccessUrl(handle, "web access url");
-  expect(access.token.length).toBeGreaterThan(0);
+  const { origin } = await waitForWebOrigin(handle, "web origin");
+  const attachUrl = `${origin}/?token=${encodeURIComponent(options.token)}`;
 
-  const attachResponse = await fetch(access.url);
+  const attachResponse = await fetch(attachUrl);
   expect(attachResponse.status).toBe(200);
   const setCookie = attachResponse.headers.get("set-cookie");
-  expect(setCookie).toContain(`flmux_web_token=${access.token}`);
+  expect(setCookie).toContain(`flmux_web_token=${options.token}`);
   const html = await attachResponse.text();
   expect(html).toContain('id="app"');
   expect(html).toContain("<script");
@@ -28,14 +36,12 @@ export async function runWebModeBootSmokeScenario(appHandles: AppProcessHandle[]
   const cookieHeader = cookieFromSetCookie(setCookie);
   const assetPath = extractModuleAssetPath(html);
   expect(assetPath).not.toBeNull();
-  const assetResponse = await fetch(`${access.origin}${assetPath}`, {
-    headers: {
-      cookie: cookieHeader
-    }
+  const assetResponse = await fetch(`${origin}${assetPath}`, {
+    headers: { cookie: cookieHeader }
   });
   expect(assetResponse.status).toBe(200);
 
-  const unauthorizedClients = await fetch(`${access.origin}/api/clients`);
+  const unauthorizedClients = await fetch(`${origin}/api/clients`);
   expect(unauthorizedClients.status).toBe(401);
 
   const clients = await fetchJson<{
@@ -49,10 +55,8 @@ export async function runWebModeBootSmokeScenario(appHandles: AppProcessHandle[]
         paneCount: number;
       } | null;
     }>;
-  }>(`${access.origin}/api/clients`, {
-    headers: {
-      cookie: cookieHeader
-    }
+  }>(`${origin}/api/clients`, {
+    headers: { cookie: cookieHeader }
   });
   expect(clients.ok).toBe(true);
   expect(clients.clients).toHaveLength(1);
@@ -70,7 +74,7 @@ export async function runWebModeBootSmokeScenario(appHandles: AppProcessHandle[]
         };
       };
     };
-  }>(`${access.origin}/api/model/path/call`, {
+  }>(`${origin}/api/model/path/call`, {
     clientId: authorityClientId,
     path: "/panes/new",
     args: {
@@ -79,9 +83,7 @@ export async function runWebModeBootSmokeScenario(appHandles: AppProcessHandle[]
       place: "right"
     }
   }, {
-    headers: {
-      cookie: cookieHeader
-    }
+    headers: { cookie: cookieHeader }
   });
   expect(createdBrowser.result.value.pane.kind).toBe("browser");
 
@@ -91,9 +93,9 @@ export async function runWebModeBootSmokeScenario(appHandles: AppProcessHandle[]
     "kind=terminal",
     "cwd=.",
     "--origin",
-    access.origin,
+    origin,
     "--token",
-    access.token
+    options.token
   ]);
   expect(cliCreatedTerminal).toMatchObject({
     ok: true,
@@ -115,13 +117,11 @@ export async function runWebModeBootSmokeScenario(appHandles: AppProcessHandle[]
         found: true;
         value: Record<string, { kind: string; title: string }>;
       };
-    }>(`${access.origin}/api/model/path/get`, {
+    }>(`${origin}/api/model/path/get`, {
       clientId: authorityClientId,
       path: "/status/panes"
     }, {
-      headers: {
-        cookie: cookieHeader
-      }
+      headers: { cookie: cookieHeader }
     });
 
     const paneKinds = Object.values(panes.result.value).map((pane) => pane.kind);

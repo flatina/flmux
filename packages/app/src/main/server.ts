@@ -12,6 +12,7 @@ import type {
 import type { DiscoveredLocalExtension } from "./localExtensions";
 import { isSessionSnapshot } from "./sessionStore";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
+import type { FlmuxAuthorizationContext, FlmuxWebModeAuthorizer } from "./webModeAuth";
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -28,12 +29,6 @@ export interface FlmuxServerHandle {
   stop(): void;
 }
 
-export interface FlmuxServerAuthOptions {
-  token: string;
-  cookieName?: string;
-  queryParam?: string;
-}
-
 const EXTENSION_API_RUNTIME_DIST_DIR = fileURLToPath(new URL("../../../extension-api/dist-runtime/", import.meta.url));
 
 export function startFlmuxServer(options: {
@@ -41,7 +36,7 @@ export function startFlmuxServer(options: {
   shellModelRouter: FlmuxShellModelRouter;
   localExtensions?: DiscoveredLocalExtension[];
   saveSession?(snapshot: FlmuxSessionSnapshot): Promise<void>;
-  auth?: FlmuxServerAuthOptions;
+  authorizer?: FlmuxWebModeAuthorizer;
   rpcWebHandler?: {
     open(ws: { send(data: Uint8Array | ArrayBuffer): void | number }): void;
     message(ws: { send(data: Uint8Array | ArrayBuffer): void | number }, raw: string | Buffer | ArrayBuffer | Uint8Array): void;
@@ -52,9 +47,9 @@ export function startFlmuxServer(options: {
   const app = new Elysia()
     .get("/health", () => ({ ok: true }))
     .get("/api/clients", async ({ request, set }) => {
-      const authResponse = ensureAuthorizedRequest(request, set, options.auth);
-      if (authResponse) {
-        return authResponse;
+      const auth = authorizeRequest(request, set, options.authorizer);
+      if (!auth.ok) {
+        return "Unauthorized";
       }
 
       return {
@@ -63,65 +58,71 @@ export function startFlmuxServer(options: {
       };
     })
     .get("/__flmux/runtime/extension-api.js", async ({ request, set }) => {
-      const authResponse = ensureAuthorizedRequest(request, set, options.auth);
-      if (authResponse) {
-        return authResponse;
+      const auth = authorizeRequest(request, set, options.authorizer);
+      if (!auth.ok) {
+        return "Unauthorized";
       }
 
       return await handleExtensionApiRuntimeModuleRequest("index.js", set);
     })
     .get("/__flmux/runtime/extension-api/:module", async ({ request, params, set }) => {
-      const authResponse = ensureAuthorizedRequest(request, set, options.auth);
-      if (authResponse) {
-        return authResponse;
+      const auth = authorizeRequest(request, set, options.authorizer);
+      if (!auth.ok) {
+        return "Unauthorized";
       }
 
       return await handleExtensionApiRuntimeModuleRequest(params.module, set);
     })
     .get("/__flmux/ext/:extensionId/:version/manifest.json", ({ request, params, set }) => {
-      const authResponse = ensureAuthorizedRequest(request, set, options.auth);
-      if (authResponse) {
-        return authResponse;
+      const auth = authorizeRequest(request, set, options.authorizer);
+      if (!auth.ok) {
+        return "Unauthorized";
       }
 
       return handleLocalExtensionManifestRequest(params, set, options.localExtensions ?? []);
     })
     .post("/api/model/path/get", async ({ request, set }) => {
-      const authResponse = ensureAuthorizedRequest(request, set, options.auth);
-      if (authResponse) {
-        return authResponse;
+      const auth = authorizeRequest(request, set, options.authorizer);
+      if (!auth.ok) {
+        return "Unauthorized";
       }
 
       return handleJsonRequest<ClientScopedPathGetInput>(request, set, (input) => options.shellModelRouter.pathGet(input));
     })
     .post("/api/model/path/list", async ({ request, set }) => {
-      const authResponse = ensureAuthorizedRequest(request, set, options.auth);
-      if (authResponse) {
-        return authResponse;
+      const auth = authorizeRequest(request, set, options.authorizer);
+      if (!auth.ok) {
+        return "Unauthorized";
       }
 
       return handleJsonRequest<ClientScopedPathListInput>(request, set, (input) => options.shellModelRouter.pathList(input));
     })
     .post("/api/model/path/set", async ({ request, set }) => {
-      const authResponse = ensureAuthorizedRequest(request, set, options.auth);
-      if (authResponse) {
-        return authResponse;
+      const auth = authorizeRequest(request, set, options.authorizer);
+      if (!auth.ok) {
+        return "Unauthorized";
       }
 
       return handleJsonRequest<ClientScopedPathSetInput>(request, set, (input) => options.shellModelRouter.pathSet(input));
     })
     .post("/api/model/path/call", async ({ request, set }) => {
-      const authResponse = ensureAuthorizedRequest(request, set, options.auth);
-      if (authResponse) {
-        return authResponse;
+      const auth = authorizeRequest(request, set, options.authorizer);
+      if (!auth.ok) {
+        return "Unauthorized";
       }
 
-      return handleJsonRequest<ClientScopedPathCallInput>(request, set, (input) => options.shellModelRouter.pathCall(input));
+      return handleJsonRequest<ClientScopedPathCallInput>(request, set, async (input) => {
+        const deniedReason = checkPaneKindAuthz(input, auth.context, options.authorizer);
+        if (deniedReason) {
+          throw new FlmuxAuthzError(deniedReason);
+        }
+        return await options.shellModelRouter.pathCall(input);
+      });
     })
     .post("/api/session/save", async ({ request, set }) => {
-      const authResponse = ensureAuthorizedRequest(request, set, options.auth);
-      if (authResponse) {
-        return authResponse;
+      const auth = authorizeRequest(request, set, options.authorizer);
+      if (!auth.ok) {
+        return "Unauthorized";
       }
 
       return handleJsonRequest<FlmuxSessionSnapshot>(request, set, async (input) => {
@@ -137,17 +138,17 @@ export function startFlmuxServer(options: {
       });
     })
     .get("/__flmux/internal/start", ({ request, set }) => {
-      const authResponse = ensureAuthorizedRequest(request, set, options.auth);
-      if (authResponse) {
-        return authResponse;
+      const auth = authorizeRequest(request, set, options.authorizer);
+      if (!auth.ok) {
+        return "Unauthorized";
       }
 
       return handleInternalStartPageRequest(request);
     })
     .all("*", ({ request, set }) => {
-      const authResponse = ensureAuthorizedRequest(request, set, options.auth);
-      if (authResponse) {
-        return authResponse;
+      const auth = authorizeRequest(request, set, options.authorizer);
+      if (!auth.ok) {
+        return "Unauthorized";
       }
 
       const pathname = decodeURIComponent(new URL(request.url).pathname);
@@ -172,7 +173,10 @@ export function startFlmuxServer(options: {
     const rpcHandler = options.rpcWebHandler;
     app.ws("/rpc", {
       beforeHandle({ request, set }) {
-        return ensureAuthorizedRequest(request, set, options.auth);
+        const auth = authorizeRequest(request, set, options.authorizer);
+        if (!auth.ok) {
+          return "Unauthorized";
+        }
       },
       open(ws) { rpcHandler.open(ws.raw); },
       message(ws, message) { rpcHandler.message(ws.raw, message as string | Buffer); },
@@ -194,35 +198,72 @@ export function startFlmuxServer(options: {
   };
 }
 
-function ensureAuthorizedRequest(
+type AuthResult =
+  | { ok: true; context: FlmuxAuthorizationContext | null }
+  | { ok: false };
+
+function authorizeRequest(
   request: Request,
   set: { status?: number | string; headers?: unknown } & Record<string, unknown>,
-  auth: FlmuxServerAuthOptions | undefined
-) {
-  if (!auth) {
+  authorizer: FlmuxWebModeAuthorizer | undefined
+): AuthResult {
+  if (!authorizer) {
+    return { ok: true, context: null };
+  }
+
+  const url = new URL(request.url);
+  const cookieToken = readCookie(request.headers.get("cookie"), authorizer.cookieName);
+  const bearerToken = readBearerToken(request.headers.get("authorization"));
+  const queryToken = url.searchParams.get(authorizer.queryParam);
+  const presentedToken = cookieToken ?? bearerToken ?? queryToken ?? "";
+
+  if (!presentedToken) {
+    return denyUnauthorized(set);
+  }
+
+  const context = authorizer.authorize(presentedToken);
+  if (!context) {
+    return denyUnauthorized(set);
+  }
+
+  if (queryToken === presentedToken && cookieToken !== presentedToken) {
+    setHeader(set, "set-cookie", serializeCookie(authorizer.cookieName, presentedToken));
+  }
+
+  return { ok: true, context };
+}
+
+function denyUnauthorized(
+  set: { status?: number | string; headers?: unknown } & Record<string, unknown>
+): AuthResult {
+  set.status = 401;
+  setHeader(set, "www-authenticate", 'Bearer realm="flmux-web"');
+  return { ok: false };
+}
+
+function checkPaneKindAuthz(
+  input: ClientScopedPathCallInput,
+  context: FlmuxAuthorizationContext | null,
+  authorizer: FlmuxWebModeAuthorizer | undefined
+): string | null {
+  if (!context || !authorizer) {
     return null;
   }
 
-  const cookieName = auth.cookieName ?? "flmux_web_token";
-  const queryParam = auth.queryParam ?? "token";
-  const token = auth.token;
-  const url = new URL(request.url);
-  const cookieToken = readCookie(request.headers.get("cookie"), cookieName);
-  const bearerToken = readBearerToken(request.headers.get("authorization"));
-  const queryToken = url.searchParams.get(queryParam);
-  const authorized = cookieToken === token || bearerToken === token || queryToken === token;
-
-  if (!authorized) {
-    set.status = 401;
-    setHeader(set, "www-authenticate", 'Bearer realm="flmux-web"');
-    return "Unauthorized";
+  if (input.path !== "/panes/new") {
+    return null;
   }
 
-  if (queryToken === token && cookieToken !== token) {
-    setHeader(set, "set-cookie", serializeCookie(cookieName, token));
+  const kind = typeof input.args?.kind === "string" ? input.args.kind : null;
+  if (!kind) {
+    return null;
   }
 
-  return null;
+  if (authorizer.isPaneKindAllowed(context.user, kind)) {
+    return null;
+  }
+
+  return `User '${context.user.name}' is not allowed to create pane kind '${kind}'`;
 }
 
 function setHeader(
@@ -270,6 +311,15 @@ function serializeCookie(name: string, value: string) {
   return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Strict`;
 }
 
+class FlmuxAuthzError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number = 403) {
+    super(message);
+    this.name = "FlmuxAuthzError";
+    this.status = status;
+  }
+}
+
 async function handleJsonRequest<T>(
   request: Request,
   set: { status?: number | string },
@@ -282,7 +332,7 @@ async function handleJsonRequest<T>(
       result: await handler(body)
     };
   } catch (error) {
-    set.status = 400;
+    set.status = error instanceof FlmuxAuthzError ? error.status : 400;
     return {
       ok: false,
       error: error instanceof Error ? error.message : String(error)

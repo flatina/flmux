@@ -45,14 +45,14 @@ export function launchFlmuxApp(remoteDebuggingPort: number, sessionFile?: string
   return createAppProcessHandle(appProcess);
 }
 
-export function launchFlmuxWebApp(token?: string): AppProcessHandle {
+export function launchFlmuxWebApp(options: { authDir: string }): AppProcessHandle {
   const appProcess = Bun.spawn({
     cmd: [resolveBunCommand(), "run", "dev", "--", "--web"],
     cwd: resolve(import.meta.dir, "..", ".."),
     env: {
       ...process.env,
       FLMUX_DEV_MODE: "1",
-      ...(token ? { FLMUX_WEB_TOKEN: token } : {})
+      FLMUX_AUTH_DIR: options.authDir
     },
     stdout: "pipe",
     stderr: "pipe"
@@ -78,16 +78,10 @@ export async function waitForSingleClientId(origin: string, label: string) {
   }, { timeoutMs: 20_000, intervalMs: 250, label });
 }
 
-export async function waitForWebAccessUrl(handle: AppProcessHandle, label: string) {
+export async function waitForWebOrigin(handle: AppProcessHandle, label: string) {
   const matched = await waitFor(async () => {
-    const match = /\[flmux\] web access url: (http:\/\/127\.0\.0\.1:\d+\/\?token=([^\s]+))/.exec(handle.stdout);
-    return match
-      ? {
-          url: match[1],
-          origin: match[1].replace(/\/\?token=.*$/, ""),
-          token: match[2]
-        }
-      : null;
+    const match = /\[flmux\] web origin: (http:\/\/127\.0\.0\.1:\d+)/.exec(handle.stdout);
+    return match ? { origin: match[1] } : null;
   }, { timeoutMs: 30_000, intervalMs: 100, label });
 
   return matched;

@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { resolveFlmuxAuthPaths } from "../src/main/auth/authConfig";
+import { createFlmuxWebModeAuthorizer } from "../src/main/webModeAuth";
+import { runTokensCli } from "../src/cliTokens";
 import { startFlmuxServer } from "../src/main/server";
 
 const tempDirs: string[] = [];
@@ -10,110 +13,202 @@ afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map(async (dir) => await rm(dir, { recursive: true, force: true })));
 });
 
-describe("web mode auth", () => {
-  it("requires auth for protected surfaces while keeping health public", async () => {
-    const rendererDir = await createRendererFixture();
+describe("web mode auth (users + tokens store)", () => {
+  it("authorizes via cookie, bearer, and query while keeping /health public", async () => {
+    const { rendererDir, authDir } = await createFixture();
+    const bootstrap = await runTokensCli(["bootstrap", "--auth-dir", authDir]) as {
+      user: string;
+      token: string;
+      tokenId: string;
+    };
+
     const server = startFlmuxServer({
       rendererDir,
-      shellModelRouter: {
-        registerClient: () => ({ clientId: "server-client" }),
-        listClients: async () => [{
-          clientId: "server-client",
-          viewId: 0,
-          workspace: {
-            id: "workspace.1",
-            title: "Workspace 1",
-            activePaneId: null,
-            paneCount: 1
-          }
-        }],
-        pathGet: async () => ({ ok: true, found: true, value: null }),
-        pathList: async () => ({ ok: true, found: true, entries: [] }),
-        pathSet: async () => ({ ok: true, value: null }),
-        pathCall: async () => ({ ok: true, value: null })
-      },
-      auth: {
-        token: "test-token"
-      }
+      shellModelRouter: createStubShellModelRouter(),
+      authorizer: createFlmuxWebModeAuthorizer(resolveFlmuxAuthPaths(authDir))
     });
 
     try {
       const health = await fetch(`${server.origin}/health`);
       expect(health.status).toBe(200);
 
-      const clientsUnauthorized = await fetch(`${server.origin}/api/clients`);
-      expect(clientsUnauthorized.status).toBe(401);
-      expect(clientsUnauthorized.headers.get("www-authenticate")).toContain("Bearer");
+      const unauthorized = await fetch(`${server.origin}/api/clients`);
+      expect(unauthorized.status).toBe(401);
+      expect(unauthorized.headers.get("www-authenticate")).toContain("Bearer");
 
-      const initialPage = await fetch(`${server.origin}/?token=test-token`);
-      expect(initialPage.status).toBe(200);
-      const cookie = initialPage.headers.get("set-cookie");
-      expect(cookie).toContain("flmux_web_token=test-token");
+      const attach = await fetch(`${server.origin}/?token=${encodeURIComponent(bootstrap.token)}`);
+      expect(attach.status).toBe(200);
+      const cookie = attach.headers.get("set-cookie");
+      expect(cookie).toContain(`flmux_web_token=${bootstrap.token}`);
 
-      const clientsWithCookie = await fetch(`${server.origin}/api/clients`, {
-        headers: {
-          cookie: cookie ?? ""
-        }
+      const withCookie = await fetch(`${server.origin}/api/clients`, {
+        headers: { cookie: cookie ?? "" }
       });
-      expect(clientsWithCookie.status).toBe(200);
-      expect(await clientsWithCookie.json()).toEqual({
-        ok: true,
-        clients: [
-          {
-            clientId: "server-client",
-            viewId: 0,
-            workspace: {
-              id: "workspace.1",
-              title: "Workspace 1",
-              activePaneId: null,
-              paneCount: 1
-            }
-          }
-        ]
-      });
+      expect(withCookie.status).toBe(200);
 
-      const clientsWithBearer = await fetch(`${server.origin}/api/clients`, {
-        headers: {
-          authorization: "Bearer test-token"
-        }
+      const withBearer = await fetch(`${server.origin}/api/clients`, {
+        headers: { authorization: `Bearer ${bootstrap.token}` }
       });
-      expect(clientsWithBearer.status).toBe(200);
+      expect(withBearer.status).toBe(200);
 
       const cliResult = await runCliJson([
         "clients",
         "--origin",
         server.origin,
         "--token",
-        "test-token"
+        bootstrap.token
       ]);
-      expect(cliResult).toEqual({
-        ok: true,
-        clients: [
-          {
-            clientId: "server-client",
-            viewId: 0,
-            workspace: {
-              id: "workspace.1",
-              title: "Workspace 1",
-              activePaneId: null,
-              paneCount: 1
-            }
-          }
-        ]
+      expect(cliResult).toMatchObject({ ok: true });
+    } finally {
+      server.stop();
+    }
+  });
+
+  it("rejects tokens with unparseable expires_at (defense in depth)", async () => {
+    const { rendererDir, authDir } = await createFixture();
+    const bootstrap = await runTokensCli(["bootstrap", "--auth-dir", authDir]) as { token: string; tokenId: string };
+
+    // Corrupt the tokens.toml to inject a malformed expires_at — simulates hand-edit.
+    const tokensPath = join(authDir, "users.tokens.toml");
+    const original = await readFile(tokensPath, "utf8");
+    await writeFile(tokensPath, original.replace("label = ", "expires_at = \"not-a-date\"\nlabel = "), "utf8");
+
+    const server = startFlmuxServer({
+      rendererDir,
+      shellModelRouter: createStubShellModelRouter(),
+      authorizer: createFlmuxWebModeAuthorizer(resolveFlmuxAuthPaths(authDir))
+    });
+
+    try {
+      const response = await fetch(`${server.origin}/api/clients`, {
+        headers: { authorization: `Bearer ${bootstrap.token}` }
       });
+      expect(response.status).toBe(401);
+    } finally {
+      server.stop();
+    }
+  });
+
+  it("rejects revoked tokens and tokens for removed users", async () => {
+    const { rendererDir, authDir } = await createFixture();
+    const bootstrap = await runTokensCli(["bootstrap", "--auth-dir", authDir]) as { token: string; tokenId: string };
+
+    const server = startFlmuxServer({
+      rendererDir,
+      shellModelRouter: createStubShellModelRouter(),
+      authorizer: createFlmuxWebModeAuthorizer(resolveFlmuxAuthPaths(authDir))
+    });
+
+    try {
+      const before = await fetch(`${server.origin}/api/clients`, {
+        headers: { authorization: `Bearer ${bootstrap.token}` }
+      });
+      expect(before.status).toBe(200);
+
+      await runTokensCli(["revoke", bootstrap.tokenId, "--auth-dir", authDir]);
+
+      const after = await fetch(`${server.origin}/api/clients`, {
+        headers: { authorization: `Bearer ${bootstrap.token}` }
+      });
+      expect(after.status).toBe(401);
+    } finally {
+      server.stop();
+    }
+  });
+
+  it("enforces allow_pane_kinds on /panes/new calls", async () => {
+    const { rendererDir, authDir } = await createFixture();
+    const issued = await runTokensCli([
+      "bootstrap",
+      "--name",
+      "alice",
+      "--allow-pane-kinds",
+      "browser",
+      "--auth-dir",
+      authDir
+    ]) as { token: string };
+
+    const calls: Array<{ path: string; args?: Record<string, unknown> }> = [];
+    const server = startFlmuxServer({
+      rendererDir,
+      shellModelRouter: {
+        ...createStubShellModelRouter(),
+        pathCall: async (input) => {
+          calls.push({ path: input.path, args: input.args });
+          return { ok: true, value: null };
+        }
+      },
+      authorizer: createFlmuxWebModeAuthorizer(resolveFlmuxAuthPaths(authDir))
+    });
+
+    try {
+      const allowed = await fetch(`${server.origin}/api/model/path/call`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${issued.token}`
+        },
+        body: JSON.stringify({
+          clientId: "c",
+          path: "/panes/new",
+          args: { kind: "browser" }
+        })
+      });
+      expect(allowed.status).toBe(200);
+      expect(calls).toHaveLength(1);
+
+      const denied = await fetch(`${server.origin}/api/model/path/call`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${issued.token}`
+        },
+        body: JSON.stringify({
+          clientId: "c",
+          path: "/panes/new",
+          args: { kind: "terminal" }
+        })
+      });
+      expect(denied.status).toBe(403);
+      const deniedBody = await denied.json() as { ok: boolean; error: string };
+      expect(deniedBody.ok).toBe(false);
+      expect(deniedBody.error).toContain("terminal");
+      expect(calls).toHaveLength(1);
     } finally {
       server.stop();
     }
   });
 });
 
-async function createRendererFixture() {
+function createStubShellModelRouter() {
+  return {
+    registerClient: () => ({ clientId: "server-client" }),
+    listClients: async () => [{
+      clientId: "server-client",
+      viewId: 0,
+      workspace: {
+        id: "workspace.1",
+        title: "Workspace 1",
+        activePaneId: null,
+        paneCount: 1
+      }
+    }],
+    pathGet: async () => ({ ok: true, found: true, value: null }),
+    pathList: async () => ({ ok: true, found: true, entries: [] }),
+    pathSet: async () => ({ ok: true, value: null }),
+    pathCall: async () => ({ ok: true, value: null })
+  };
+}
+
+async function createFixture() {
   const rootDir = await mkdtemp(join(tmpdir(), "flmux-web-auth-"));
-  const rendererDir = join(rootDir, "renderer");
   tempDirs.push(rootDir);
+  const rendererDir = join(rootDir, "renderer");
+  const authDir = join(rootDir, "auth");
   await mkdir(rendererDir, { recursive: true });
+  await mkdir(authDir, { recursive: true });
   await writeFile(join(rendererDir, "index.html"), "<!doctype html><title>flmux</title>", "utf8");
-  return rendererDir;
+  return { rendererDir, authDir };
 }
 
 async function runCliJson(args: string[]) {

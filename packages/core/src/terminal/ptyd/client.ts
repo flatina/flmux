@@ -1,6 +1,3 @@
-import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { TerminalRootStatus, TerminalRuntimeSummary } from "../terminal";
 import {
@@ -21,6 +18,18 @@ const START_TIMEOUT_MS = 5_000;
 const PING_TIMEOUT_MS = 800;
 const EVENT_RECONNECT_DELAY_MS = 500;
 
+export interface PtydLaunchPlan {
+  command: string;
+  args: string[];
+  cwd: string;
+  launch(env: Record<string, string | undefined>): void | Promise<void>;
+}
+
+export interface PtydClientOptions {
+  onEvent?: (event: PtydTerminalEvent) => void;
+  launch?: () => PtydLaunchPlan;
+}
+
 export class PtydClient {
   private readonly lockFile: PtydLockFile;
   private controlIpcPath: string;
@@ -28,15 +37,23 @@ export class PtydClient {
   private ensureStartedPromise: Promise<PtydLockEntry> | null = null;
   private eventSocket: ReturnType<typeof createConnection> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly onEvent?: (event: PtydTerminalEvent) => void;
+  private readonly resolveLaunchPlan?: () => PtydLaunchPlan;
 
   constructor(
     readonly rootKey: string,
     readonly rootDir: string,
-    private readonly onEvent?: (event: PtydTerminalEvent) => void
+    onEventOrOptions?: ((event: PtydTerminalEvent) => void) | PtydClientOptions
   ) {
+    const options =
+      typeof onEventOrOptions === "function"
+        ? { onEvent: onEventOrOptions }
+        : (onEventOrOptions ?? {});
     this.lockFile = new PtydLockFile(rootKey);
     this.controlIpcPath = getPtydControlIpcPath(rootKey);
     this.eventsIpcPath = getPtydEventsIpcPath(rootKey);
+    this.onEvent = options.onEvent;
+    this.resolveLaunchPlan = options.launch;
   }
 
   async list() {
@@ -139,12 +156,24 @@ export class PtydClient {
       await this.lockFile.clear();
     }
 
-    const launch = resolvePtydLaunchCommand();
-    launchPtydProcess(launch, {
-      ...process.env,
-      FLMUX_PTYD_ROOT_KEY: this.rootKey,
-      FLMUX_PTYD_ROOT_DIR: this.rootDir
-    });
+    const launch = this.resolveLaunchPlan?.();
+    if (!launch) {
+      throw new Error(`No ptyd launch plan configured for root ${this.rootKey}`);
+    }
+
+    try {
+      await launch.launch({
+        ...process.env,
+        FLMUX_PTYD_ROOT_KEY: this.rootKey,
+        FLMUX_PTYD_ROOT_DIR: this.rootDir
+      });
+    } catch (error) {
+      throw new Error(
+        `Failed to launch flmux ptyd for root ${this.rootKey}\n` +
+        `  launch: ${formatLaunchPlan(launch)}\n` +
+        `  error: ${String(error)}`
+      );
+    }
 
     const deadline = Date.now() + START_TIMEOUT_MS;
     while (Date.now() < deadline) {
@@ -169,7 +198,11 @@ export class PtydClient {
       await delay(100);
     }
 
-    throw new Error(`flmux ptyd did not become ready for root ${this.rootKey}`);
+    throw new Error(
+      `flmux ptyd did not become ready for root ${this.rootKey}\n` +
+      `  launch: ${formatLaunchPlan(launch)}\n` +
+      `  lockFile: ${JSON.stringify(await this.lockFile.load())}`
+    );
   }
 
   private async isReachable(controlIpcPath: string) {
@@ -251,83 +284,6 @@ export class PtydClient {
   }
 }
 
-function resolvePtydLaunchCommand() {
-  const cwd = process.cwd();
-  if (isDevProcess() || isTestProcess()) {
-    return {
-      command: resolveBunCommand(),
-      args: [resolve(cwd, "src", "main", "ptyd", "daemonMain.ts")],
-      cwd
-    };
-  }
-
-  const bundled = resolve(cwd, "dist", "ptyd.js");
-  if (existsSync(bundled)) {
-    return {
-      command: resolveBunCommand(),
-      args: [bundled],
-      cwd
-    };
-  }
-
-  return {
-    command: resolveBunCommand(),
-    args: [resolve(cwd, "src", "main", "ptyd", "daemonMain.ts")],
-    cwd
-  };
-}
-
-function resolveBunCommand() {
-  return Bun.which("bun") ?? process.execPath;
-}
-
-function isDevProcess() {
-  const argv = [...process.argv, ...Bun.argv];
-  return (
-    process.env.FLMUX_DEV_MODE === "1" ||
-    argv.includes("--dev") ||
-    argv.some((arg) => arg.endsWith("src/main.ts") || arg.endsWith("src\\main.ts"))
-  );
-}
-
-function isTestProcess() {
-  return [...process.argv, ...Bun.argv].some((arg) => arg.endsWith(".test.ts") || arg.endsWith(".test.js"));
-}
-
-function launchPtydProcess(
-  launch: { command: string; args: string[]; cwd: string },
-  env: Record<string, string | undefined>
-) {
-  if (process.platform === "win32" && !isDevProcess() && !isTestProcess()) {
-    const powerShell = Bun.which("pwsh.exe") ?? Bun.which("pwsh") ?? Bun.which("powershell.exe") ?? Bun.which("powershell");
-    if (powerShell) {
-      const command = [
-        "Start-Process",
-        "-WindowStyle Hidden",
-        `-FilePath ${quotePowerShell(launch.command)}`,
-        `-ArgumentList @(${launch.args.map((arg) => quotePowerShell(arg)).join(", ")})`
-      ].join(" ");
-
-      spawn(powerShell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command], {
-        cwd: launch.cwd,
-        detached: true,
-        stdio: "ignore",
-        windowsHide: true,
-        env
-      }).unref();
-      return;
-    }
-  }
-
-  spawn(launch.command, launch.args, {
-    cwd: launch.cwd,
-    detached: true,
-    stdio: "ignore",
-    windowsHide: true,
-    env
-  }).unref();
-}
-
-function quotePowerShell(value: string) {
-  return `'${value.replace(/'/g, "''")}'`;
+function formatLaunchPlan(launch: PtydLaunchPlan) {
+  return `${launch.command} ${launch.args.join(" ")} (cwd=${launch.cwd})`;
 }

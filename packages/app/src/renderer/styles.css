@@ -120,16 +120,33 @@ select:focus {
   gap: 6px;
 }
 
+.workspace-chip-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .workspace-chip {
   padding: 5px 10px;
   border-radius: 999px;
   font-size: 12px;
 }
 
+.workspace-chip__close {
+  padding: 5px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .workspace-chip[data-active="true"] {
   border-color: rgba(136, 214, 201, 0.72);
   background: linear-gradient(180deg, rgba(26, 76, 77, 0.92), rgba(15, 46, 52, 0.92));
   color: #e8fffb;
+}
+
+.workspace-chip-group[data-active="true"] .workspace-chip__close {
+  border-color: rgba(136, 214, 201, 0.5);
 }
 
 .browser-nav {

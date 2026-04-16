@@ -47,7 +47,7 @@ import type { TerminalRuntimeSummary } from "../../shared/terminal";
 import { resolveTerminalCwdFromRoot } from "../../shared/terminalPath";
 import { createWorkspaceBus } from "./workspaceBus";
 
-type WorkspaceSeed = {
+type WorkspaceDescriptor = {
   id: string;
   title: string;
 };
@@ -64,17 +64,6 @@ type WorkspaceRecord = {
   api: DockviewApi | null;
 };
 
-const WORKSPACE_SEEDS: WorkspaceSeed[] = [
-  {
-    id: "workspace.alpha",
-    title: "Workspace Alpha"
-  },
-  {
-    id: "workspace.beta",
-    title: "Workspace Beta"
-  }
-];
-
 export class FlmuxWorkbench implements ShellModelHost {
   readonly shellModel: ShellModelAPI;
 
@@ -90,8 +79,9 @@ export class FlmuxWorkbench implements ShellModelHost {
   private readonly paneRegistry = new PaneRegistry();
 
   private readonly workspaces = new Map<string, WorkspaceRecord>();
+  private readonly closingWorkspaceIds = new Set<string>();
 
-  private activeWorkspaceId = WORKSPACE_SEEDS[0].id;
+  private activeWorkspaceId = "";
   private appTitle = "flmux";
   private runtimeLabel = "booting";
   private sessionSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -145,7 +135,7 @@ export class FlmuxWorkbench implements ShellModelHost {
 
   async start() {
     this.runtimeLabel = "local-http preload ok";
-    this.buildWorkspaces();
+    this.initializeWorkspaceShell();
     this.bindTopbar();
     await this.restoreSessionOrDefaults();
     await this.terminalCoordinator.restoreTerminals(this.workspaces.values());
@@ -170,11 +160,10 @@ export class FlmuxWorkbench implements ShellModelHost {
     return [...this.workspaces.values()].map((workspace) => this.toWorkspaceStatus(workspace));
   }
 
-  createWorkspace(input: { title?: string } = {}) {
-    const seed = this.allocateDynamicWorkspaceSeed(input.title);
-    const workspace = this.createWorkspaceRecord(seed);
+  async createWorkspace(input: { title?: string } = {}) {
+    const workspace = this.createWorkspaceRecord(this.allocateWorkspaceDescriptor(input.title));
     this.ensureWorkspaceInitialized(workspace);
-    this.resetWorkspace(workspace);
+    await this.resetWorkspace(workspace);
     this.activateWorkspace(workspace.id);
     return this.toWorkspaceStatus(workspace);
   }
@@ -369,13 +358,14 @@ export class FlmuxWorkbench implements ShellModelHost {
     };
   }
 
-  private buildWorkspaces() {
+  private initializeWorkspaceShell() {
+    for (const workspace of this.workspaces.values()) {
+      workspace.api?.dispose();
+    }
+
     this.shellEl.replaceChildren();
     this.workspaces.clear();
-
-    for (const seed of WORKSPACE_SEEDS) {
-      this.createWorkspaceRecord(seed);
-    }
+    this.activeWorkspaceId = "";
 
     this.renderWorkspaceSwitcher();
   }
@@ -423,7 +413,7 @@ export class FlmuxWorkbench implements ShellModelHost {
     });
 
     document.querySelector<HTMLButtonElement>('[data-action="reset"]')!.addEventListener("click", () => {
-      this.resetWorkspace(this.getCurrentWorkspace());
+      void this.resetWorkspace(this.getCurrentWorkspace());
     });
   }
 
@@ -448,6 +438,43 @@ export class FlmuxWorkbench implements ShellModelHost {
       if (workspace.api && width > 0 && height > 0) {
         workspace.api.layout(width, height, true);
       }
+    });
+  }
+
+  private async closeWorkspace(workspaceId: string) {
+    if (this.workspaces.size <= 1 || this.closingWorkspaceIds.has(workspaceId)) {
+      return false;
+    }
+
+    const workspace = this.requireWorkspace(workspaceId);
+    this.closingWorkspaceIds.add(workspace.id);
+    try {
+      if (workspace.id === this.activeWorkspaceId) {
+        const nextWorkspaceId = this.findNextWorkspaceId(workspace.id);
+        if (!nextWorkspaceId) {
+          return false;
+        }
+
+        this.activateWorkspace(nextWorkspaceId, { persist: false });
+      }
+
+      await this.disposeWorkspace(workspace);
+      this.renderWorkspaceSwitcher();
+      this.renderChrome();
+      this.scheduleSessionSave();
+      return true;
+    } finally {
+      this.closingWorkspaceIds.delete(workspace.id);
+    }
+  }
+
+  private async disposeWorkspace(workspace: WorkspaceRecord) {
+    await this.withSessionPersistenceSuppressed(async () => {
+      await this.disposeWorkspacePanes(workspace);
+      workspace.api?.dispose();
+      workspace.api = null;
+      workspace.surface.remove();
+      this.workspaces.delete(workspace.id);
     });
   }
 
@@ -514,25 +541,26 @@ export class FlmuxWorkbench implements ShellModelHost {
     });
   }
 
-  private resetWorkspace(workspace: WorkspaceRecord) {
+  private async resetWorkspace(workspace: WorkspaceRecord) {
     if (!workspace.api) {
       return;
     }
 
-    workspace.api.clear();
-    workspace.paneRecords.clear();
-    workspace.title = workspace.defaultTitle;
+    await this.withSessionPersistenceSuppressed(async () => {
+      await this.disposeWorkspacePanes(workspace);
+      workspace.title = workspace.defaultTitle;
 
-    const cowsay = this.addPane(workspace, { kind: "cowsay", title: "Cowsay" });
-    this.addPane(workspace, {
-      kind: "browser",
-      title: "Start",
-      url: workspace.defaultBrowserPath,
-      place: "right",
-      referencePaneId: cowsay.id
+      const cowsay = this.addPane(workspace, { kind: "cowsay", title: "Cowsay" });
+      this.addPane(workspace, {
+        kind: "browser",
+        title: "Start",
+        url: workspace.defaultBrowserPath,
+        place: "right",
+        referencePaneId: cowsay.id
+      });
+
+      workspace.api?.getPanel(cowsay.id)?.group.api.setSize({ width: 440 });
     });
-
-    workspace.api.getPanel(cowsay.id)?.group.api.setSize({ width: 440 });
     this.renderWorkspaceSwitcher();
     if (workspace.id === this.activeWorkspaceId) {
       this.renderChrome();
@@ -599,6 +627,13 @@ export class FlmuxWorkbench implements ShellModelHost {
     return this.requireWorkspace(this.activeWorkspaceId);
   }
 
+  private findNextWorkspaceId(excludingWorkspaceId: string) {
+    return [...this.workspaces.keys()].find((workspaceId) => (
+      workspaceId !== excludingWorkspaceId &&
+      !this.closingWorkspaceIds.has(workspaceId)
+    )) ?? null;
+  }
+
   private toWorkspaceStatus(workspace: WorkspaceRecord) {
     return {
       id: workspace.id,
@@ -653,12 +688,35 @@ export class FlmuxWorkbench implements ShellModelHost {
   private renderWorkspaceSwitcher() {
     this.workspaceSwitcherEl.replaceChildren(
       ...[...this.workspaces.values()].map((workspace) => {
+        const group = document.createElement("div");
+        group.className = "workspace-chip-group";
+        group.dataset.active = String(workspace.id === this.activeWorkspaceId);
+
         const button = document.createElement("button");
+        button.type = "button";
         button.className = "workspace-chip";
         button.dataset.active = String(workspace.id === this.activeWorkspaceId);
         button.textContent = workspace.title;
         button.addEventListener("click", () => this.activateWorkspace(workspace.id));
-        return button;
+        group.append(button);
+
+        if (this.workspaces.size > 1) {
+          const closeButton = document.createElement("button");
+          closeButton.type = "button";
+          closeButton.className = "workspace-chip__close";
+          closeButton.dataset.action = "close-workspace";
+          closeButton.dataset.workspaceId = workspace.id;
+          closeButton.ariaLabel = `Close ${workspace.title}`;
+          closeButton.title = `Close ${workspace.title}`;
+          closeButton.textContent = "x";
+          closeButton.disabled = this.closingWorkspaceIds.has(workspace.id);
+          closeButton.addEventListener("click", () => {
+            void this.closeWorkspace(workspace.id);
+          });
+          group.append(closeButton);
+        }
+
+        return group;
       })
     );
   }
@@ -706,15 +764,16 @@ export class FlmuxWorkbench implements ShellModelHost {
     const snapshot = await this.sessionHost.load();
     this.appTitle = snapshot?.appTitle ?? this.appTitle;
 
-    for (const [workspaceId, workspaceSnapshot] of Object.entries(snapshot?.workspaces ?? {})) {
-      if (this.workspaces.has(workspaceId)) {
-        continue;
-      }
+    const restoredWorkspaces = Object.entries(snapshot?.workspaces ?? {});
+    const workspaceDescriptors = restoredWorkspaces.length > 0
+      ? restoredWorkspaces.map(([workspaceId, workspaceSnapshot]) => ({
+          id: workspaceId,
+          title: workspaceSnapshot.defaultTitle?.trim() || defaultWorkspaceTitle(workspaceId)
+        }))
+      : [this.allocateWorkspaceDescriptor()];
 
-      this.createWorkspaceRecord({
-        id: workspaceId,
-        title: workspaceSnapshot.defaultTitle?.trim() || defaultWorkspaceTitle(workspaceId)
-      });
+    for (const descriptor of workspaceDescriptors) {
+      this.createWorkspaceRecord(descriptor);
     }
 
     for (const workspace of this.workspaces.values()) {
@@ -726,24 +785,27 @@ export class FlmuxWorkbench implements ShellModelHost {
       for (const workspace of this.workspaces.values()) {
         const workspaceSnapshot = snapshot?.workspaces[workspace.id];
         if (workspaceSnapshot) {
-          this.restoreWorkspace(workspace, workspaceSnapshot);
+          await this.restoreWorkspace(workspace, workspaceSnapshot);
           continue;
         }
 
-        this.resetWorkspace(workspace);
+        await this.resetWorkspace(workspace);
       }
 
       const activeWorkspaceId =
         snapshot?.activeWorkspaceId && this.workspaces.has(snapshot.activeWorkspaceId)
           ? snapshot.activeWorkspaceId
-          : [...this.workspaces.keys()][0] ?? WORKSPACE_SEEDS[0].id;
+          : workspaceDescriptors[0]?.id;
+      if (!activeWorkspaceId) {
+        throw new Error("Expected at least one workspace to restore");
+      }
       this.activateWorkspace(activeWorkspaceId, { persist: false });
     } finally {
       this.sessionPersistenceSuppressed = false;
     }
   }
 
-  private restoreWorkspace(workspace: WorkspaceRecord, snapshot: FlmuxWorkspaceSessionSnapshot) {
+  private async restoreWorkspace(workspace: WorkspaceRecord, snapshot: FlmuxWorkspaceSessionSnapshot) {
     if (!workspace.api) {
       return;
     }
@@ -762,7 +824,7 @@ export class FlmuxWorkbench implements ShellModelHost {
       this.rehydrateWorkspacePaneRecords(workspace);
     } catch (error) {
       console.warn(`failed to restore workspace '${workspace.id}' from saved session`, error);
-      this.resetWorkspace(workspace);
+      await this.resetWorkspace(workspace);
     }
   }
 
@@ -845,6 +907,23 @@ export class FlmuxWorkbench implements ShellModelHost {
     }
 
     return layout;
+  }
+
+  private async disposeWorkspacePanes(workspace: WorkspaceRecord) {
+    const paneIds = [...workspace.paneRecords.keys()];
+    for (const paneId of paneIds) {
+      await this.closePane(paneId);
+    }
+  }
+
+  private async withSessionPersistenceSuppressed<T>(callback: () => Promise<T> | T) {
+    const previousSuppressed = this.sessionPersistenceSuppressed;
+    this.sessionPersistenceSuppressed = true;
+    try {
+      return await callback();
+    } finally {
+      this.sessionPersistenceSuppressed = previousSuppressed;
+    }
   }
 
   private scheduleSessionSave() {
@@ -945,33 +1024,33 @@ export class FlmuxWorkbench implements ShellModelHost {
     return url;
   }
 
-  private createWorkspaceRecord(seed: WorkspaceSeed) {
-    const existing = this.workspaces.get(seed.id);
+  private createWorkspaceRecord(descriptor: WorkspaceDescriptor) {
+    const existing = this.workspaces.get(descriptor.id);
     if (existing) {
       return existing;
     }
 
     const surface = document.createElement("div");
     surface.className = "workspace-surface";
-    surface.dataset.workspaceId = seed.id;
+    surface.dataset.workspaceId = descriptor.id;
     this.shellEl.append(surface);
 
     const workspace: WorkspaceRecord = {
-      id: seed.id,
-      title: seed.title,
-      defaultTitle: seed.title,
-      defaultBrowserPath: defaultBrowserPath(seed.id),
-      rootDir: joinPath(this.config.projectDir, workspaceRootDirName(seed.id)),
+      id: descriptor.id,
+      title: descriptor.title,
+      defaultTitle: descriptor.title,
+      defaultBrowserPath: defaultBrowserPath(descriptor.id),
+      rootDir: joinPath(this.config.projectDir, workspaceRootDirName(descriptor.id)),
       surface,
-      bus: createWorkspaceBus(seed.id),
+      bus: createWorkspaceBus(descriptor.id),
       paneRecords: new Map(),
       api: null
     };
-    this.workspaces.set(seed.id, workspace);
+    this.workspaces.set(descriptor.id, workspace);
     return workspace;
   }
 
-  private allocateDynamicWorkspaceSeed(inputTitle: string | undefined): WorkspaceSeed {
+  private allocateWorkspaceDescriptor(inputTitle?: string): WorkspaceDescriptor {
     let index = this.workspaces.size + 1;
     while (this.workspaces.has(`workspace.${index}`)) {
       index += 1;
@@ -1015,11 +1094,6 @@ function workspaceRootDirName(workspaceId: string) {
 }
 
 function defaultWorkspaceTitle(workspaceId: string) {
-  const seeded = WORKSPACE_SEEDS.find((seed) => seed.id === workspaceId);
-  if (seeded) {
-    return seeded.title;
-  }
-
   const numbered = /^workspace\.(\d+)$/.exec(workspaceId);
   if (numbered) {
     return `Workspace ${numbered[1]}`;

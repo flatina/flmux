@@ -75,7 +75,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
     }
     const rootKey = created.result.value.rootKey;
     const runtimeId = created.result.value.runtimeId;
-    const rootDir = resolve(import.meta.dir, "..", "..", "..", "..", "workspace-alpha");
+    const rootDir = resolve(import.meta.dir, "..", "..", "..", "..", "workspace-1");
 
     const marker = `flmux-restart-${crypto.randomUUID()}`;
     await postJson<{
@@ -331,7 +331,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
       return state.result.found ? state.result.value : null;
     }, { timeoutMs: 20_000, intervalMs: 250, label: "restored terminal pane state" });
     expect(paneState).toEqual({
-      cwd: expect.stringContaining("workspace-alpha")
+      cwd: expect.stringContaining("workspace-1")
     });
 
     const paneStatus = await postJson<{

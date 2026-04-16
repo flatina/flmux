@@ -2,7 +2,9 @@ import { expect } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { callJsonRpcIpc } from "../../src/main/ptyd/jsonRpcIpc";
 import type { AppProcessHandle } from "../support/realAppSmokeSupport";
+import { findOwnedPtydLocksForRootDir } from "../support/ptydCleanup";
 import {
   connectCdp,
   fetchJson,
@@ -26,14 +28,14 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
   try {
     const mainTarget = await waitForMainTarget(port, "main flmux target");
     const appOrigin = new URL(mainTarget.url).origin;
-    const workspaceAlphaStartPath = "/__flmux/internal/start?workspace=workspace.alpha";
-    const workspaceBetaStartPath = "/__flmux/internal/start?workspace=workspace.beta";
-    const workspaceAlphaStartUrl = `${appOrigin}${workspaceAlphaStartPath}`;
-    const workspaceBetaStartUrl = `${appOrigin}${workspaceBetaStartPath}`;
+    const firstWorkspaceId = "workspace.1";
+    const secondWorkspaceId = "workspace.2";
+    const firstWorkspaceStartUrl = `${appOrigin}/__flmux/internal/start?workspace=${firstWorkspaceId}`;
+    const secondWorkspaceStartUrl = `${appOrigin}/__flmux/internal/start?workspace=${secondWorkspaceId}`;
 
     await waitFor(async () => {
       const targets = await fetchTargets(port);
-      return targets.some((target) => target.url === workspaceAlphaStartUrl) ? true : null;
+      return targets.some((target) => target.url === firstWorkspaceStartUrl) ? true : null;
     }, { timeoutMs: 20_000, intervalMs: 500, label: "default start browser target" });
 
     const session = await connectCdp(mainTarget.webSocketDebuggerUrl!);
@@ -49,9 +51,9 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
         workspaceTitle: document.querySelector('#workspace-title')?.textContent ?? '',
         chipCount: document.querySelectorAll('.workspace-chip').length
       }))()`);
-      return state.chipCount >= 2 && state.workspaceTitle.includes("Workspace Alpha") ? state : null;
+      return state.chipCount === 1 && state.workspaceTitle.includes("Workspace 1") ? state : null;
     }, { timeoutMs: 20_000, intervalMs: 250, label: "initial workbench state" });
-    expect(initialState.title).toContain("Workspace Alpha");
+    expect(initialState.title).toContain("Workspace 1");
 
     const initialClients = await fetchJson<{
       ok: true;
@@ -60,7 +62,8 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
     expect(initialClients.ok).toBe(true);
     expect(initialClients.clients).toHaveLength(1);
     expect(initialClients.clients[0].workspace).toMatchObject({
-      id: "workspace.alpha"
+      id: firstWorkspaceId,
+      title: "Workspace 1"
     });
 
     const initialCowsay = await waitFor(async () => {
@@ -78,23 +81,36 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
     }, { timeoutMs: 20_000, intervalMs: 250, label: "default cowsay panel" });
     expect(initialCowsay.cowsayCount).toBeGreaterThanOrEqual(1);
 
-    const clickedWorkspace = await session.evaluate<boolean>(`(() => {
-      const button = Array.from(document.querySelectorAll('.workspace-chip'))
-        .find((candidate) => candidate.textContent?.includes('Workspace Beta'));
+    const clientId = await waitForSingleClientId(appOrigin, "workspace client id");
+
+    const clickedWorkspaceCreate = await session.evaluate<boolean>(`(() => {
+      const button = document.querySelector('[data-action="new-workspace"]');
       if (!(button instanceof HTMLButtonElement)) {
         return false;
       }
       button.click();
       return true;
     })()`);
-    expect(clickedWorkspace).toBe(true);
+    expect(clickedWorkspaceCreate).toBe(true);
 
-    await waitFor(async () => {
-      const workspaceTitle = await session.evaluate<string>(
-        `document.querySelector('#workspace-title')?.textContent ?? ''`
-      );
-      return workspaceTitle.includes("Workspace Beta") ? workspaceTitle : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace beta title" });
+    const createdWorkspaceState = await waitFor(async () => {
+      const state = await session.evaluate<{
+        workspaceTitle: string;
+        chipCount: number;
+        cowsayCount: number;
+      }>(`(() => {
+        const surface = document.querySelector('.workspace-surface--active');
+        return {
+          workspaceTitle: document.querySelector('#workspace-title')?.textContent ?? '',
+          chipCount: document.querySelectorAll('.workspace-chip').length,
+          cowsayCount: surface?.querySelectorAll('.cowsay-panel').length ?? 0
+        };
+      })()`);
+      return state.chipCount === 2 && state.workspaceTitle.includes("Workspace 2") && state.cowsayCount >= 1
+        ? state
+        : null;
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "created workspace state" });
+    expect(createdWorkspaceState.workspaceTitle).toContain("Workspace 2");
 
     await waitFor(async () => {
       const clients = await fetchJson<{
@@ -102,30 +118,49 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
         clients: Array<{ workspace: { id: string; title: string } | null }>;
       }>(`${appOrigin}/api/clients`);
       const workspace = clients.clients[0]?.workspace;
-      return workspace?.id === "workspace.beta" ? workspace : null;
-    }, { timeoutMs: 20_000, intervalMs: 500, label: "workspace beta client status" });
+      return workspace?.id === secondWorkspaceId ? workspace : null;
+    }, { timeoutMs: 20_000, intervalMs: 500, label: "workspace 2 client status" });
 
-    const clientId = await waitForSingleClientId(appOrigin, "workspace beta client id");
+    await waitFor(async () => {
+      const targets = await fetchTargets(port);
+      return targets.some((target) => target.url === secondWorkspaceStartUrl) ? true : null;
+    }, { timeoutMs: 20_000, intervalMs: 500, label: "workspace 2 start browser target" });
 
-    const clickedCowsay = await session.evaluate<boolean>(`(() => {
-      const button = document.querySelector('[data-action="new-cowsay"]');
+    const switchedBackToOne = await session.evaluate<boolean>(`(() => {
+      const button = Array.from(document.querySelectorAll('.workspace-chip'))
+        .find((candidate) => candidate.textContent?.includes('Workspace 1'));
       if (!(button instanceof HTMLButtonElement)) {
         return false;
       }
       button.click();
       return true;
     })()`);
-    expect(clickedCowsay).toBe(true);
+    expect(switchedBackToOne).toBe(true);
 
     await waitFor(async () => {
-      const state = await session.evaluate<{ cowsayCount: number }>(`(() => {
-        const surface = document.querySelector('.workspace-surface--active');
-        return {
-          cowsayCount: surface?.querySelectorAll('.cowsay-panel').length ?? 0
-        };
-      })()`);
-      return state.cowsayCount >= 2 ? state : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "new cowsay panel on workspace beta" });
+      const workspaceTitle = await session.evaluate<string>(
+        `document.querySelector('#workspace-title')?.textContent ?? ''`
+      );
+      return workspaceTitle.includes("Workspace 1") ? workspaceTitle : null;
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 1 title" });
+
+    const switchedToTwo = await session.evaluate<boolean>(`(() => {
+      const button = Array.from(document.querySelectorAll('.workspace-chip'))
+        .find((candidate) => candidate.textContent?.includes('Workspace 2'));
+      if (!(button instanceof HTMLButtonElement)) {
+        return false;
+      }
+      button.click();
+      return true;
+    })()`);
+    expect(switchedToTwo).toBe(true);
+
+    await waitFor(async () => {
+      const workspaceTitle = await session.evaluate<string>(
+        `document.querySelector('#workspace-title')?.textContent ?? ''`
+      );
+      return workspaceTitle.includes("Workspace 2") ? workspaceTitle : null;
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 title" });
 
     const clickedInspector = await session.evaluate<boolean>(`(() => {
       const button = document.querySelector('[data-action="new-inspector"]');
@@ -154,14 +189,14 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
         };
       })()`);
       return (
-        state.workspaceId === "workspace.beta" &&
+        state.workspaceId === secondWorkspaceId &&
         state.appTitle === "flmux" &&
         state.paneCount.length > 0 &&
         state.subscription === "*"
       )
         ? state
         : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "inspector snapshot on workspace beta" });
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "inspector snapshot on workspace 2" });
 
     const inspectorPaneId = await waitFor(async () => {
       const panes = await postJson<{
@@ -177,7 +212,7 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
       });
 
       return Object.values(panes.result.value).find((pane) => pane.kind === "inspector")?.id ?? null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "inspector pane id on workspace beta" });
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "inspector pane id on workspace 2" });
 
     const inspectorState = await postJson<{
       ok: true;
@@ -212,13 +247,9 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
       path: `/status/panes/${inspectorPaneId}/inspector`
     });
     expect(inspectorStatus.result.value).toMatchObject({
-      workspaceId: "workspace.beta",
-      defaultBrowserPath: workspaceBetaStartPath
+      workspaceId: secondWorkspaceId,
+      defaultBrowserPath: `/__flmux/internal/start?workspace=${secondWorkspaceId}`
     });
-
-    const betaStartTargetCountBefore = (await fetchTargets(port))
-      .filter((target) => target.url === workspaceBetaStartUrl)
-      .length;
 
     const inspectorWriteBlocked = await postJson<{
       ok: true;
@@ -270,6 +301,22 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
     })()`);
     expect(clickedScratchpad).toBe(true);
 
+    const scratchpadPaneId = await waitFor(async () => {
+      const panes = await postJson<{
+        ok: true;
+        result: {
+          ok: true;
+          found: true;
+          value: Record<string, { id: string; kind: string; title: string; active: boolean }>;
+        };
+      }>(`${appOrigin}/api/model/path/get`, {
+        clientId,
+        path: "/status/panes"
+      });
+
+      return Object.values(panes.result.value).find((pane) => pane.kind === "scratchpad")?.id ?? null;
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "scratchpad pane id on workspace 2" });
+
     await waitFor(async () => {
       const state = await session.evaluate<{
         workspaceId: string;
@@ -282,8 +329,41 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
           note: panel?.querySelector('textarea')?.value ?? ''
         };
       })()`);
-      return state.workspaceId === "workspace.beta" && state.note === "" ? state : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "scratchpad panel on workspace beta" });
+      return state.workspaceId === secondWorkspaceId && state.note === "" ? state : null;
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "scratchpad panel on workspace 2" });
+
+    const scratchpadMarker = `scratchpad-${crypto.randomUUID()}`;
+    const updatedScratchpad = await postJson<{
+      ok: true;
+      result: {
+        ok: true;
+        value: string;
+      };
+    }>(`${appOrigin}/api/model/path/set`, {
+      clientId,
+      path: `/panes/${scratchpadPaneId}/scratchpad/note`,
+      value: scratchpadMarker
+    });
+    expect(updatedScratchpad.result.value).toBe(scratchpadMarker);
+
+    await waitFor(async () => {
+      const state = await session.evaluate<{
+        note: string;
+        counter: string;
+      }>(`(() => {
+        const surface = document.querySelector('.workspace-surface--active');
+        const panel = surface?.querySelector('.scratchpad-panel');
+        return {
+          note: panel?.querySelector('textarea')?.value ?? '',
+          counter: panel?.querySelector('[data-role="counter"]')?.textContent ?? ''
+        };
+      })()`);
+      return state.note === scratchpadMarker && state.counter.includes("chars") ? state : null;
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "scratchpad note update" });
+
+    const secondWorkspaceStartTargetCountBefore = (await fetchTargets(port))
+      .filter((target) => target.url === secondWorkspaceStartUrl)
+      .length;
 
     const clickedBrowser = await session.evaluate<boolean>(`(() => {
       const button = document.querySelector('[data-action="new-browser"]');
@@ -297,65 +377,153 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
 
     await waitFor(async () => {
       const targets = await fetchTargets(port);
-      return targets.filter((target) => target.url === workspaceBetaStartUrl).length > betaStartTargetCountBefore
+      return targets.filter((target) => target.url === secondWorkspaceStartUrl).length > secondWorkspaceStartTargetCountBefore
         ? true
         : null;
-    }, { timeoutMs: 20_000, intervalMs: 500, label: "new workspace beta browser target" });
+    }, { timeoutMs: 20_000, intervalMs: 500, label: "new workspace 2 browser target" });
 
-    const clickedWorkspaceCreate = await session.evaluate<boolean>(`(() => {
-      const button = document.querySelector('[data-action="new-workspace"]');
+    const terminalPane = await postJson<{
+      ok: true;
+      result: {
+        ok: true;
+        value: {
+          paneId: string;
+        };
+      };
+    }>(`${appOrigin}/api/model/path/call`, {
+      clientId,
+      path: "/panes/new",
+      args: {
+        kind: "terminal",
+        cwd: ".",
+        place: "right",
+        autoCreate: true
+      }
+    });
+    const terminalPaneId = terminalPane.result.value.paneId;
+
+    await waitFor(async () => {
+      const status = await postJson<{
+        ok: true;
+        result: {
+          ok: true;
+          found: true;
+          value: {
+            attached: boolean;
+            rootKey: string | null;
+            runtimeId: string | null;
+          };
+        };
+      }>(`${appOrigin}/api/model/path/get`, {
+        clientId,
+        path: `/status/panes/${terminalPaneId}/terminal`
+      });
+
+      return status.result.value.attached && status.result.value.rootKey && status.result.value.runtimeId
+        ? status.result.value
+        : null;
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 terminal attach" });
+
+    const closedWorkspace = await session.evaluate<boolean>(`(() => {
+      const button = document.querySelector('[data-action="close-workspace"][data-workspace-id="${secondWorkspaceId}"]');
       if (!(button instanceof HTMLButtonElement)) {
         return false;
       }
       button.click();
       return true;
     })()`);
-    expect(clickedWorkspaceCreate).toBe(true);
+    expect(closedWorkspace).toBe(true);
 
-    const createdWorkspaceState = await waitFor(async () => {
+    await waitFor(async () => {
       const state = await session.evaluate<{
         workspaceTitle: string;
         chipCount: number;
-        cowsayCount: number;
-      }>(`(() => {
-        const surface = document.querySelector('.workspace-surface--active');
-        return {
-          workspaceTitle: document.querySelector('#workspace-title')?.textContent ?? '',
-          chipCount: document.querySelectorAll('.workspace-chip').length,
-          cowsayCount: surface?.querySelectorAll('.cowsay-panel').length ?? 0
-        };
-      })()`);
-      return state.chipCount >= 3 && state.workspaceTitle.includes("Workspace 3") && state.cowsayCount >= 1
+        surfaceCount: number;
+        closedWorkspacePresent: boolean;
+      }>(`(() => ({
+        workspaceTitle: document.querySelector('#workspace-title')?.textContent ?? '',
+        chipCount: document.querySelectorAll('.workspace-chip').length,
+        surfaceCount: document.querySelectorAll('.workspace-surface').length,
+        closedWorkspacePresent: Boolean(document.querySelector('.workspace-surface[data-workspace-id="${secondWorkspaceId}"]'))
+      }))()`);
+      return (
+        state.chipCount === 1 &&
+        state.surfaceCount === 1 &&
+        !state.closedWorkspacePresent &&
+        state.workspaceTitle.includes("Workspace 1")
+      )
         ? state
         : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "created workspace state" });
-    expect(createdWorkspaceState.workspaceTitle).toContain("Workspace 3");
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 close fallback to workspace 1" });
 
-    const createdWorkspace = await waitFor(async () => {
+    await waitFor(async () => {
       const clients = await fetchJson<{
         ok: true;
         clients: Array<{ workspace: { id: string; title: string } | null }>;
       }>(`${appOrigin}/api/clients`);
       const workspace = clients.clients[0]?.workspace;
-      return workspace && workspace.id !== "workspace.alpha" && workspace.id !== "workspace.beta"
-        ? workspace
-        : null;
-    }, { timeoutMs: 20_000, intervalMs: 500, label: "created workspace client status" });
-    expect(createdWorkspace).toMatchObject({
-      id: "workspace.3",
-      title: "Workspace 3"
-    });
+      return workspace?.id === firstWorkspaceId ? workspace : null;
+    }, { timeoutMs: 20_000, intervalMs: 500, label: "workspace 1 client status after close" });
 
     await waitFor(async () => {
-      const targets = await fetchTargets(port);
-      return targets.some(
-        (target) => target.url === `${appOrigin}/__flmux/internal/start?workspace=${createdWorkspace.id}`
-      )
+      try {
+        const saved = (await Bun.file(sessionFile).json()) as {
+          activeWorkspaceId: string;
+          workspaces: Record<string, unknown>;
+        };
+        return (
+          saved.activeWorkspaceId === firstWorkspaceId &&
+          firstWorkspaceId in saved.workspaces &&
+          !(secondWorkspaceId in saved.workspaces)
+        )
+          ? true
+          : null;
+      } catch {
+        return null;
+      }
+    }, { timeoutMs: 10_000, intervalMs: 100, label: "workspace close persisted session file" });
+
+    const secondWorkspaceRootDir = resolve(
+      import.meta.dir,
+      "..",
+      "..",
+      "..",
+      "..",
+      workspaceRootDirName(secondWorkspaceId)
+    );
+
+    await waitFor(async () => {
+      const locks = await findOwnedPtydLocksForRootDir(secondWorkspaceRootDir);
+      if (locks.length === 0) {
+        return true;
+      }
+
+      const rootStatuses = await Promise.all(
+        locks.map(async (lock) => {
+          try {
+            return await callJsonRpcIpc<{ runtimeCount: number }>(
+              lock.controlIpcPath,
+              "root.status",
+              undefined,
+              2_000
+            );
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      return rootStatuses.every((status) => status === null || status.runtimeCount === 0)
         ? true
         : null;
-    }, { timeoutMs: 20_000, intervalMs: 500, label: "created workspace start browser target" });
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 terminal cleanup after close" });
+
     await session.close();
   } finally {
     await rm(sessionDir, { recursive: true, force: true });
   }
+}
+
+function workspaceRootDirName(workspaceId: string) {
+  return workspaceId.replace(/[^A-Za-z0-9_-]+/g, "-");
 }

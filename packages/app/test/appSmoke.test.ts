@@ -2,6 +2,7 @@ import { afterAll, afterEach, describe, it } from "bun:test";
 import { runAppBootSmokeScenario } from "./scenarios/appBootSmokeScenario";
 import { runTerminalRestartAdoptSmokeScenario } from "./scenarios/terminalRestartAdoptSmokeScenario";
 import { runTerminalRestartRecreateSmokeScenario } from "./scenarios/terminalRestartRecreateSmokeScenario";
+import { runWorkspaceResetSmokeScenario } from "./scenarios/workspaceResetSmokeScenario";
 import {
   cleanupAppHandles,
   stopAppWorkspaceDaemons,
@@ -41,5 +42,13 @@ describe("flmux app smoke", () => {
       await runTerminalRestartRecreateSmokeScenario(appHandles);
     },
     90_000
+  );
+
+  it(
+    "resets a workspace through the same cleanup path and kills attached runtimes",
+    async () => {
+      await runWorkspaceResetSmokeScenario(appHandles);
+    },
+    60_000
   );
 });

@@ -5,5 +5,11 @@
   "apiVersion": 2,
   "entrypoints": {
     "renderer": "./index.ts"
-  }
+  },
+  "panes": [
+    {
+      "kind": "inspector",
+      "defaultTitle": "Inspector"
+    }
+  ]
 }

@@ -109,6 +109,27 @@ export async function runWebModeBootSmokeScenario(
     }
   });
 
+  const createdCowsay = await postJson<{
+    ok: true;
+    result: {
+      ok: true;
+      value: {
+        pane: {
+          kind: string;
+          title: string;
+        };
+      };
+    };
+  }>(`${origin}/api/model/path/call`, {
+    clientId: authorityClientId,
+    path: "/panes/new",
+    args: { kind: "cowsay" }
+  }, {
+    headers: { cookie: cookieHeader }
+  });
+  expect(createdCowsay.result.value.pane.kind).toBe("cowsay");
+  expect(createdCowsay.result.value.pane.title).toBe("Cowsay");
+
   await waitFor(async () => {
     const panes = await postJson<{
       ok: true;
@@ -125,7 +146,7 @@ export async function runWebModeBootSmokeScenario(
     });
 
     const paneKinds = Object.values(panes.result.value).map((pane) => pane.kind);
-    return paneKinds.filter((kind) => kind === "browser").length >= 2 && paneKinds.includes("terminal")
+    return paneKinds.filter((kind) => kind === "browser").length >= 2 && paneKinds.includes("terminal") && paneKinds.includes("cowsay")
       ? panes.result.value
       : null;
   }, { timeoutMs: 15_000, intervalMs: 250, label: "web mode pane list after API and CLI calls" });

@@ -12,5 +12,11 @@
       "id": "cowsay",
       "description": "Open a cowsay pane"
     }
+  ],
+  "panes": [
+    {
+      "kind": "cowsay",
+      "defaultTitle": "Cowsay"
+    }
   ]
 }

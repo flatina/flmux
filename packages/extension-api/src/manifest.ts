@@ -10,6 +10,11 @@ export interface ExtensionManifestCommand {
   description?: string;
 }
 
+export interface ExtensionManifestPane {
+  kind: string;
+  defaultTitle?: string;
+}
+
 export interface ExtensionManifest {
   id: string;
   name: string;
@@ -17,6 +22,7 @@ export interface ExtensionManifest {
   apiVersion: number;
   entrypoints: ExtensionManifestEntrypoints;
   commands?: ExtensionManifestCommand[];
+  panes?: ExtensionManifestPane[];
 }
 
 export type ExtensionManifestValidationResult =
@@ -35,6 +41,7 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
   const apiVersion = value.apiVersion;
   const entrypoints = value.entrypoints;
   const commands = value.commands;
+  const panes = value.panes;
 
   if (!id) {
     errors.push("Manifest field 'id' must be a non-empty string");
@@ -59,6 +66,7 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
   const rendererPath = validateManifestEntrypointPath(renderer, "entrypoints.renderer");
   const cliPath = validateManifestEntrypointPath(cli, "entrypoints.cli");
   const commandsResult = validateManifestCommands(commands, Boolean(cli));
+  const panesResult = validateManifestPanes(panes);
 
   if (rendererPath) {
     errors.push(rendererPath);
@@ -68,6 +76,9 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
   }
   if (!commandsResult.ok) {
     errors.push(...commandsResult.errors);
+  }
+  if (!panesResult.ok) {
+    errors.push(...panesResult.errors);
   }
 
   if (!renderer && !cli) {
@@ -89,7 +100,8 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
           renderer: typeof renderer === "string" ? renderer.trim() : undefined,
           cli: typeof cli === "string" ? cli.trim() : undefined
         },
-        commands: commandsResult.ok ? commandsResult.commands : undefined
+        commands: commandsResult.ok ? commandsResult.commands : undefined,
+        panes: panesResult.ok ? panesResult.panes : undefined
       }
     };
 }
@@ -171,6 +183,53 @@ function validateManifestCommands(value: unknown, hasCliEntrypoint: boolean) {
   return errors.length > 0
     ? { ok: false as const, errors }
     : { ok: true as const, commands };
+}
+
+function validateManifestPanes(value: unknown) {
+  if (value === undefined) {
+    return { ok: true as const, panes: undefined };
+  }
+
+  if (!Array.isArray(value) || value.length === 0) {
+    return { ok: false as const, errors: ["Manifest field 'panes' must be a non-empty array when provided"] };
+  }
+
+  const panes: ExtensionManifestPane[] = [];
+  const errors: string[] = [];
+  const seenKinds = new Set<string>();
+
+  value.forEach((entry, index) => {
+    if (!isPlainObject(entry)) {
+      errors.push(`Manifest field 'panes[${index}]' must be an object`);
+      return;
+    }
+
+    const kind = asNonEmptyString(entry.kind);
+    const defaultTitle =
+      entry.defaultTitle === undefined
+        ? undefined
+        : asNonEmptyString(entry.defaultTitle);
+
+    if (!kind) {
+      errors.push(`Manifest field 'panes[${index}].kind' must be a non-empty string`);
+      return;
+    }
+    if (entry.defaultTitle !== undefined && !defaultTitle) {
+      errors.push(`Manifest field 'panes[${index}].defaultTitle' must be a non-empty string when provided`);
+      return;
+    }
+    if (seenKinds.has(kind)) {
+      errors.push(`Manifest field 'panes' contains duplicate pane kind '${kind}'`);
+      return;
+    }
+
+    seenKinds.add(kind);
+    panes.push(defaultTitle ? { kind, defaultTitle } : { kind });
+  });
+
+  return errors.length > 0
+    ? { ok: false as const, errors }
+    : { ok: true as const, panes };
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

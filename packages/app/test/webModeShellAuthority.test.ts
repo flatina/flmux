@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { FlmuxClientRegistry } from "../src/main/clientRegistry";
 import { createInMemoryTerminalBackend, createTerminalService } from "../src/main/terminal-service";
+import type { DiscoveredLocalExtension } from "../src/main/localExtensions";
 import { createWebModeShellAuthority } from "../src/main/webModeShellAuthority";
 import type { FlmuxRendererBridge } from "../src/shared/rendererBridge";
 
@@ -86,4 +87,92 @@ describe("web mode shell authority", () => {
       path: "/status/workspace"
     })).rejects.toThrow(`Unknown flmux client: ${rendererClient.clientId}`);
   });
+
+  it("registers manifest-declared extension pane kinds", async () => {
+    const clientRegistry = new FlmuxClientRegistry();
+    const terminalService = createTerminalService(createInMemoryTerminalBackend());
+    const authority = await createWebModeShellAuthority({
+      projectDir: "C:/project",
+      runtimeLabel: "web server authority",
+      terminalService,
+      clientRegistry,
+      localExtensions: [
+        createFakeDiscoveredExtension({
+          id: "sample.cowsay",
+          version: "0.1.0",
+          panes: [{ kind: "cowsay", defaultTitle: "Cowsay" }]
+        })
+      ]
+    });
+
+    await authority.start("http://127.0.0.1:4322");
+
+    const created = await authority.router.pathCall({
+      clientId: authority.clientId,
+      path: "/panes/new",
+      args: { kind: "cowsay" }
+    });
+    expect(created).toMatchObject({
+      ok: true,
+      value: {
+        pane: {
+          kind: "cowsay",
+          title: "Cowsay"
+        }
+      }
+    });
+
+    const panes = await authority.router.pathGet({
+      clientId: authority.clientId,
+      path: "/status/panes"
+    }) as { ok: true; found: true; value: Record<string, { kind: string }> };
+    const kinds = Object.values(panes.value).map((pane) => pane.kind);
+    expect(kinds).toContain("cowsay");
+  });
+
+  it("rejects /panes/new for pane kinds not declared by any built-in or extension", async () => {
+    const clientRegistry = new FlmuxClientRegistry();
+    const terminalService = createTerminalService(createInMemoryTerminalBackend());
+    const authority = await createWebModeShellAuthority({
+      projectDir: "C:/project",
+      runtimeLabel: "web server authority",
+      terminalService,
+      clientRegistry
+    });
+
+    await authority.start("http://127.0.0.1:4323");
+
+    const result = await authority.router.pathCall({
+      clientId: authority.clientId,
+      path: "/panes/new",
+      args: { kind: "cowsay" }
+    }) as { ok: boolean; error?: string };
+    expect(result.ok).toBe(false);
+    expect(result.error ?? "").toMatch(/pane kind/i);
+  });
 });
+
+function createFakeDiscoveredExtension(options: {
+  id: string;
+  version: string;
+  panes: Array<{ kind: string; defaultTitle?: string }>;
+}): DiscoveredLocalExtension {
+  return {
+    id: options.id,
+    name: options.id,
+    rootDir: `/fake/${options.id}`,
+    runtimeRootDir: `/fake/${options.id}/dist`,
+    runtimeManifestPath: `/fake/${options.id}/dist/manifest.json`,
+    runtimeManifest: {
+      id: options.id,
+      name: options.id,
+      version: options.version,
+      apiVersion: 2,
+      entrypoints: { renderer: "index.js" },
+      panes: options.panes
+    },
+    rendererEntryPath: `/fake/${options.id}/dist/index.js`,
+    cliEntryPath: null,
+    version: options.version
+  };
+}

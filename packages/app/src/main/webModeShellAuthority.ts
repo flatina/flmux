@@ -25,11 +25,13 @@ import {
   type WorkspaceBusEvent,
   type WorkspaceStatusSnapshot
 } from "@flmux/core/shell";
+import type { ExtensionManifestPane } from "@flmux/extension-api";
 import type { TerminalRuntimeEvent } from "../shared/terminal";
 import { resolveTerminalCwdFromRoot } from "../shared/terminalPath";
 import type { TerminalService } from "./terminal-service";
 import { createServerShellModelRouter } from "./serverShellModelRouter";
 import type { FlmuxClientRegistry } from "./clientRegistry";
+import type { DiscoveredLocalExtension } from "./localExtensions";
 
 type WorkspaceRecord = {
   id: string;
@@ -58,9 +60,13 @@ export async function createWebModeShellAuthority(options: {
   runtimeLabel: string;
   terminalService: TerminalService;
   clientRegistry: FlmuxClientRegistry;
+  localExtensions?: readonly DiscoveredLocalExtension[];
 }): Promise<WebModeShellAuthority> {
   const paneRegistry = new PaneRegistry<PaneSpec>();
   for (const spec of createBuiltinPaneSpecs()) {
+    paneRegistry.register(spec);
+  }
+  for (const spec of createExtensionPaneSpecs(options.localExtensions ?? [])) {
     paneRegistry.register(spec);
   }
 
@@ -749,6 +755,30 @@ function createBuiltinPaneSpecs(): PaneSpec[] {
       ]
     }
   ];
+}
+
+function createExtensionPaneSpecs(extensions: readonly DiscoveredLocalExtension[]): PaneSpec[] {
+  const specs: PaneSpec[] = [];
+  for (const extension of extensions) {
+    for (const pane of extension.runtimeManifest.panes ?? []) {
+      specs.push(createExtensionPaneSpec(pane));
+    }
+  }
+  return specs;
+}
+
+function createExtensionPaneSpec(pane: ExtensionManifestPane): PaneSpec {
+  if (!pane.defaultTitle) {
+    return { kind: pane.kind };
+  }
+
+  const defaultTitle = pane.defaultTitle;
+  return {
+    kind: pane.kind,
+    lifecycle: {
+      getTitle: ({ input }) => input.title?.trim() || defaultTitle
+    }
+  };
 }
 
 function workspaceRootDirName(workspaceId: string) {

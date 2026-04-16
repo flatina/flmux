@@ -40,7 +40,8 @@ const webModeShellAuthority = runtimeMode === "web"
       projectDir,
       runtimeLabel: "web server authority",
       terminalService,
-      clientRegistry
+      clientRegistry,
+      localExtensions
     })
   : null;
 const shellModelRouter = webModeShellAuthority?.router ?? createShellModelRouter(clientRegistry);

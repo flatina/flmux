@@ -13,10 +13,13 @@ export function createAppPtydLaunchPlan(): PtydLaunchPlan {
   };
 }
 
-function resolveAppPtydEntry() {
-  const bunCommand = resolveBunCommand();
-  const sourceEntrypoint = resolve(import.meta.dir, "daemonMain.ts");
-  if (existsSync(sourceEntrypoint)) {
+export function resolveAppPtydEntry(
+  baseDir = import.meta.dir,
+  fileExists: (path: string) => boolean = existsSync,
+  bunCommand = resolveBunCommand()
+) {
+  const sourceEntrypoint = resolve(baseDir, "daemonMain.ts");
+  if (fileExists(sourceEntrypoint)) {
     return {
       command: bunCommand,
       args: [sourceEntrypoint],
@@ -24,8 +27,8 @@ function resolveAppPtydEntry() {
     };
   }
 
-  const siblingBundledEntrypoint = resolve(import.meta.dir, "ptyd.js");
-  if (existsSync(siblingBundledEntrypoint)) {
+  const siblingBundledEntrypoint = resolve(baseDir, "ptyd.js");
+  if (fileExists(siblingBundledEntrypoint)) {
     return {
       command: bunCommand,
       args: [siblingBundledEntrypoint],
@@ -33,8 +36,8 @@ function resolveAppPtydEntry() {
     };
   }
 
-  const appDistEntrypoint = resolve(import.meta.dir, "../../../dist/ptyd.js");
-  if (existsSync(appDistEntrypoint)) {
+  const appDistEntrypoint = resolve(baseDir, "../../../dist/ptyd.js");
+  if (fileExists(appDistEntrypoint)) {
     return {
       command: bunCommand,
       args: [appDistEntrypoint],
@@ -42,7 +45,7 @@ function resolveAppPtydEntry() {
     };
   }
 
-  const repoDistEntrypoint = resolve(import.meta.dir, "../../../../dist/ptyd.js");
+  const repoDistEntrypoint = resolve(baseDir, "../../../../../dist/ptyd.js");
   return {
     command: bunCommand,
     args: [repoDistEntrypoint],

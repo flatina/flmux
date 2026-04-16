@@ -12,6 +12,7 @@ type BuiltinCommand = "clients" | "get" | "ls" | "ls-each-get" | "set" | "call";
 interface Flags {
   origin?: string;
   clientId?: string;
+  token?: string;
 }
 
 const argv = process.argv.slice(2);
@@ -32,19 +33,19 @@ async function main(command: string | undefined, args: string[]) {
 
   switch (command as BuiltinCommand) {
     case "clients":
-      return printJson(await apiGet<{ ok: true; clients: unknown[] }>(origin, "/api/clients"));
+      return printJson(await apiGet<{ ok: true; clients: unknown[] }>(origin, "/api/clients", flags));
 
     case "get":
       return printJson(await modelPost(origin, "/api/model/path/get", {
         clientId: await resolveClientId(origin, flags),
         path: requirePositional(positionals, 0, "get <path> requires a path")
-      }));
+      }, flags));
 
     case "ls":
       return printJson(await modelPost(origin, "/api/model/path/list", {
         clientId: await resolveClientId(origin, flags),
         path: requirePositional(positionals, 0, "ls <path> requires a path")
-      }));
+      }, flags));
 
     case "ls-each-get": {
       const clientId = await resolveClientId(origin, flags);
@@ -52,7 +53,8 @@ async function main(command: string | undefined, args: string[]) {
       const listed = await modelPost<{ ok: true; result: { ok: boolean; found?: boolean; entries?: Array<{ path: string }> } }>(
         origin,
         "/api/model/path/list",
-        { clientId, path }
+        { clientId, path },
+        flags
       );
 
       if (!listed.ok || !listed.result.ok || listed.result.found === false || !listed.result.entries) {
@@ -65,7 +67,7 @@ async function main(command: string | undefined, args: string[]) {
             const value = await modelPost(origin, "/api/model/path/get", {
               clientId,
               path: entry.path
-            });
+            }, flags);
             return [entry.path, value];
           })
         )
@@ -82,14 +84,14 @@ async function main(command: string | undefined, args: string[]) {
       }
 
       const value = coerceScalar(positionals.slice(1).join(" "));
-      return printJson(await modelPost(origin, "/api/model/path/set", { clientId, path, value }));
+      return printJson(await modelPost(origin, "/api/model/path/set", { clientId, path, value }, flags));
     }
 
     case "call": {
       const clientId = await resolveClientId(origin, flags);
       const path = requirePositional(positionals, 0, "call <path> requires a path");
       const args = parseNamedArgs(positionals.slice(1));
-      return printJson(await modelPost(origin, "/api/model/path/call", { clientId, path, args }));
+      return printJson(await modelPost(origin, "/api/model/path/call", { clientId, path, args }, flags));
     }
   }
 
@@ -109,27 +111,32 @@ async function main(command: string | undefined, args: string[]) {
   throw new Error(usage());
 }
 
-async function modelPost<T = unknown>(origin: string, pathname: string, body: unknown): Promise<T> {
-  return apiPost<T>(origin, pathname, body);
+async function modelPost<T = unknown>(origin: string, pathname: string, body: unknown, flags: Flags): Promise<T> {
+  return apiPost<T>(origin, pathname, body, flags);
 }
 
-async function modelResultPost<T = unknown>(origin: string, pathname: string, body: unknown): Promise<T> {
-  const payload = await apiPost<{ ok: true; result: T }>(origin, pathname, body);
+async function modelResultPost<T = unknown>(origin: string, pathname: string, body: unknown, flags: Flags): Promise<T> {
+  const payload = await apiPost<{ ok: true; result: T }>(origin, pathname, body, flags);
   return payload.result;
 }
 
-async function apiGet<T>(origin: string, pathname: string): Promise<T> {
-  const response = await fetch(`${origin}${pathname}`);
+async function apiGet<T>(origin: string, pathname: string, flags: Flags): Promise<T> {
+  const response = await fetch(`${origin}${pathname}`, {
+    headers: buildAuthHeaders(flags)
+  });
   if (!response.ok) {
     throw new Error(`GET ${pathname} failed: ${response.status} ${response.statusText}`);
   }
   return response.json() as Promise<T>;
 }
 
-async function apiPost<T>(origin: string, pathname: string, body: unknown): Promise<T> {
+async function apiPost<T>(origin: string, pathname: string, body: unknown, flags: Flags): Promise<T> {
   const response = await fetch(`${origin}${pathname}`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...buildAuthHeaders(flags)
+    },
     body: JSON.stringify(body)
   });
 
@@ -155,6 +162,12 @@ function parseFlags(args: string[]) {
 
     if (token === "--client") {
       flags.clientId = args[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (token === "--token") {
+      flags.token = args[index + 1];
       index += 1;
       continue;
     }
@@ -186,7 +199,7 @@ async function resolveClientId(origin: string, flags: Flags) {
       clientId: string;
       workspace?: { id?: string; title?: string } | null;
     }>;
-  }>(origin, "/api/clients");
+  }>(origin, "/api/clients", flags);
 
   if (payload.clients.length === 1) {
     return payload.clients[0].clientId;
@@ -213,21 +226,21 @@ function createShellClient(origin: string, flags: Flags, explicitClientId?: stri
     get: async (path: string): Promise<ShellPathGetResult> => await modelResultPost(origin, "/api/model/path/get", {
       clientId: await resolveClientId(origin, { ...flags, clientId: explicitClientId ?? flags.clientId }),
       path
-    }),
+    }, flags),
     list: async (path: string): Promise<ShellPathListResult> => await modelResultPost(origin, "/api/model/path/list", {
       clientId: await resolveClientId(origin, { ...flags, clientId: explicitClientId ?? flags.clientId }),
       path
-    }),
+    }, flags),
     set: async (path: string, value: unknown): Promise<ShellPathSetResult> => await modelResultPost(origin, "/api/model/path/set", {
       clientId: await resolveClientId(origin, { ...flags, clientId: explicitClientId ?? flags.clientId }),
       path,
       value
-    }),
+    }, flags),
     call: async (path: string, args?: Record<string, unknown>): Promise<ShellPathCallResult> => await modelResultPost(origin, "/api/model/path/call", {
       clientId: await resolveClientId(origin, { ...flags, clientId: explicitClientId ?? flags.clientId }),
       path,
       args
-    })
+    }, flags)
   };
 }
 
@@ -300,6 +313,16 @@ function usage() {
     "  bun src/cli.ts set /title moo --origin http://127.0.0.1:PORT",
     "  bun src/cli.ts call /panes/new kind=cowsay place=right --origin http://127.0.0.1:PORT",
     "  bun src/cli.ts cowsay hello from cli --origin http://127.0.0.1:PORT",
-    "  note: --client is only required when multiple renderer clients are connected"
+    "  note: --client is only required when multiple renderer clients are connected",
+    "  note: use --token <token> or FLMUX_TOKEN when the web server has auth enabled"
   ].join("\n");
+}
+
+function buildAuthHeaders(flags: Flags) {
+  const token = flags.token ?? process.env.FLMUX_TOKEN;
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers.authorization = `Bearer ${token}`;
+  }
+  return headers;
 }

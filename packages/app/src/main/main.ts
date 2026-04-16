@@ -2,17 +2,21 @@ import { BrowserView, BrowserWindow, AppRuntime } from "bunite-core";
 import type { FlmuxRendererBridgeSchema } from "../shared/rendererBridge";
 import type { TerminalRuntimeEvent } from "../shared/terminal";
 import { FlmuxClientRegistry } from "./clientRegistry";
-import { createSessionStore, isSessionSnapshot } from "./sessionStore";
+import { createSessionStore } from "./sessionStore";
 import { createShellModelRouter } from "./shellModelBridge";
+import { createWebModeShellAuthority } from "./webModeShellAuthority";
 import { startFlmuxServer } from "./server";
 import { forwardTerminalEventToOwnedClient } from "./terminalEventForwarding";
 import { createTerminalService } from "./terminal-service";
+import { createFlmuxHostRequestHandlers } from "./hostRequests";
+import { resolveFlmuxWebModeServerAuth } from "./webModeAuth";
+import { resolveFlmuxRuntimeMode } from "./runtimeMode";
 import {
-  createLocalExtensionLoadEntries,
   discoverConfiguredLocalExtensions,
   resolveConfiguredLocalExtensionsRootDir
 } from "./localExtensions";
 
+const runtimeMode = resolveFlmuxRuntimeMode();
 process.env.BUNITE_REMOTE_DEBUGGING_PORT ??= "9227";
 process.env.FLMUX_DEV_MODE ??= Bun.argv.includes("--dev") ? "1" : "";
 const hiddenWindow = process.env.FLMUX_HIDDEN_WINDOW === "1";
@@ -24,64 +28,46 @@ const rendererDir = app.resolve("../dist/renderer");
 const projectDir = app.resolve("../../..");
 const localExtensionsRootDir = resolveConfiguredLocalExtensionsRootDir(app.resolve("../../../extensions"));
 const clientRegistry = new FlmuxClientRegistry();
-const shellModelRouter = createShellModelRouter(clientRegistry);
 const terminalService = createTerminalService();
-const sessionStore = createSessionStore();
+const sessionStore = runtimeMode === "desktop" ? createSessionStore() : null;
 const paneOwners = new Map<string, number>();
 const localExtensions = await discoverConfiguredLocalExtensions(localExtensionsRootDir);
+const webModeAuth = runtimeMode === "web" ? resolveFlmuxWebModeServerAuth() : null;
+const webModeShellAuthority = runtimeMode === "web"
+  ? await createWebModeShellAuthority({
+      projectDir,
+      runtimeLabel: "web server authority",
+      terminalService,
+      clientRegistry
+    })
+  : null;
+const shellModelRouter = webModeShellAuthority?.router ?? createShellModelRouter(clientRegistry);
 
-let desktopViewId = -1;
+let desktopViewId: number | null = null;
+let serverOrigin = "";
+
+function requireDesktopViewId() {
+  if (desktopViewId == null) {
+    throw new Error("Desktop renderer is not attached");
+  }
+
+  return desktopViewId;
+}
 
 const rendererRpc = BrowserView.defineRPC<FlmuxRendererBridgeSchema>({
   handlers: {
-    requests: {
-      "flmux.getConfig": () => ({
-        appOrigin: server.origin,
-        projectDir,
-        localExtensions: createLocalExtensionLoadEntries(localExtensions, server.origin)
-      }),
-      "flmux.client.register": () => {
-        return shellModelRouter.registerClient(desktopViewId);
-      },
-      "flmux.session.load": () => {
-        return sessionStore.load();
-      },
-      "flmux.session.save": async (params) => {
-        if (!isSessionSnapshot(params)) {
-          throw new Error("Invalid flmux session snapshot");
-        }
-        await sessionStore.save(params);
-        return { ok: true as const };
-      },
-      "flmux.terminal.create": async (params) => {
-        if (params.paneId) {
-          paneOwners.set(params.paneId, desktopViewId);
-        }
-        return terminalService.create(params);
-      },
-      "flmux.terminal.adopt": async (params) => {
-        const result = await terminalService.adoptByPaneId(params);
-        if (result.outcome === "adopted") {
-          paneOwners.set(params.paneId, desktopViewId);
-        }
-        return result;
-      },
-      "flmux.terminal.write": (params) => {
-        return terminalService.write(params);
-      },
-      "flmux.terminal.resize": (params) => {
-        return terminalService.resize(params);
-      },
-      "flmux.terminal.history": (params) => {
-        return terminalService.history(params);
-      },
-      "flmux.terminal.kill": (params) => {
-        return terminalService.kill(params);
-      },
-      "flmux.terminal.listRoots": () => {
-        return terminalService.listRoots();
-      }
-    }
+    requests: createFlmuxHostRequestHandlers({
+      mode: runtimeMode,
+      getAppOrigin: () => serverOrigin,
+      getProjectDir: () => projectDir,
+      getAuthorityClientId: () => webModeShellAuthority?.clientId ?? null,
+      getCallerViewId: requireDesktopViewId,
+      paneOwners,
+      shellModelRouter,
+      terminalService,
+      localExtensions,
+      sessionStore
+    })
   }
 });
 
@@ -93,8 +79,19 @@ const webViewIds = new WeakMap<WebClient, number>();
 rendererRpc.webHandler.onWebClientConnected = (client) => {
   const viewId = nextWebViewId++;
   webViewIds.set(client, viewId);
+  client.rpc.setRequestHandler(createFlmuxHostRequestHandlers({
+    mode: runtimeMode,
+    getAppOrigin: () => serverOrigin,
+    getProjectDir: () => projectDir,
+    getAuthorityClientId: () => webModeShellAuthority?.clientId ?? null,
+    getCallerViewId: () => viewId,
+    paneOwners,
+    shellModelRouter,
+    terminalService,
+    localExtensions,
+    sessionStore
+  }));
   clientRegistry.attachRenderer(viewId, client.rpc);
-  shellModelRouter.registerClient(viewId);
 };
 
 rendererRpc.webHandler.onWebClientDisconnected = (client) => {
@@ -110,13 +107,26 @@ const server = startFlmuxServer({
   rendererDir,
   shellModelRouter,
   localExtensions,
-  saveSession: (snapshot) => sessionStore.save(snapshot),
+  saveSession: sessionStore ? (snapshot) => sessionStore.save(snapshot) : undefined,
+  auth: webModeAuth ? {
+    token: webModeAuth.token,
+    cookieName: webModeAuth.cookieName,
+    queryParam: webModeAuth.queryParam
+  } : undefined,
   rpcWebHandler: rendererRpc.webHandler
 });
+serverOrigin = server.origin;
+if (webModeShellAuthority) {
+  await webModeShellAuthority.start(server.origin);
+}
 
-console.log(`[flmux] server listening at ${server.origin}`);
+console.log(`[flmux] ${runtimeMode} mode server listening at ${server.origin}`);
+if (webModeAuth) {
+  console.log(`[flmux] web access url: ${server.origin}/?${webModeAuth.queryParam}=${webModeAuth.token}`);
+}
 
 terminalService.subscribe((event: TerminalRuntimeEvent) => {
+  webModeShellAuthority?.applyTerminalEvent(event);
   forwardTerminalEventToOwnedClient({
     event,
     paneOwners,
@@ -124,28 +134,41 @@ terminalService.subscribe((event: TerminalRuntimeEvent) => {
   });
 });
 
-const win = new BrowserWindow({
-  title: `flmux skeleton v${app.version} - CEF ${app.cefVersion ?? "unknown"}`,
-  frame: { x: 80, y: 80, width: 1280, height: 860 },
-  url: server.origin,
-  titleBarStyle: "default",
-  hidden: hiddenWindow,
-  preloadOrigins: [server.origin],
-  rpc: rendererRpc
-});
-
-desktopViewId = win.webviewId;
-clientRegistry.attachRenderer(win.webviewId, rendererRpc);
-
-win.on("close", () => {
-  for (const [paneId, viewId] of paneOwners.entries()) {
-    if (viewId === win.webviewId) {
-      paneOwners.delete(paneId);
-    }
-  }
+function stopRuntime() {
   terminalService.dispose?.();
-  clientRegistry.detachRenderer(win.webviewId);
   server.stop();
-});
+}
+
+if (runtimeMode === "desktop") {
+  const win = new BrowserWindow({
+    title: `flmux skeleton v${app.version} - CEF ${app.cefVersion ?? "unknown"}`,
+    frame: { x: 80, y: 80, width: 1280, height: 860 },
+    url: server.origin,
+    titleBarStyle: "default",
+    hidden: hiddenWindow,
+    preloadOrigins: [server.origin],
+    rpc: rendererRpc
+  });
+
+  desktopViewId = win.webviewId;
+  clientRegistry.attachRenderer(win.webviewId, rendererRpc);
+
+  win.on("close", () => {
+    for (const [paneId, viewId] of paneOwners.entries()) {
+      if (viewId === win.webviewId) {
+        paneOwners.delete(paneId);
+      }
+    }
+    clientRegistry.detachRenderer(win.webviewId);
+    stopRuntime();
+  });
+} else {
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.once(signal, () => {
+      stopRuntime();
+      process.exit(0);
+    });
+  }
+}
 
 app.run();

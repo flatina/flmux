@@ -43,6 +43,7 @@ import type {
 } from "./types";
 import type { FlmuxSessionSnapshot, FlmuxWorkspaceSessionSnapshot } from "../../shared/session";
 import type { FlmuxHostRequestProxy, FlmuxRendererBootstrapConfig } from "../../shared/rendererBridge";
+import { getFlmuxRendererLifecyclePolicy } from "../../shared/runtimeMode";
 import type { TerminalRuntimeSummary } from "../../shared/terminal";
 import { resolveTerminalCwdFromRoot } from "../../shared/terminalPath";
 import { createWorkspaceBus } from "./workspaceBus";
@@ -66,6 +67,7 @@ type WorkspaceRecord = {
 
 export class FlmuxWorkbench implements ShellModelHost {
   readonly shellModel: ShellModelAPI;
+  private readonly lifecyclePolicy: ReturnType<typeof getFlmuxRendererLifecyclePolicy>;
 
   private readonly appTitleEl = document.getElementById("app-title")!;
   private readonly workspaceTitleEl = document.getElementById("workspace-title")!;
@@ -89,6 +91,7 @@ export class FlmuxWorkbench implements ShellModelHost {
   private sessionPersistenceSuppressed = false;
 
   constructor(private readonly config: FlmuxRendererBootstrapConfig, hostProxy: FlmuxHostRequestProxy) {
+    this.lifecyclePolicy = getFlmuxRendererLifecyclePolicy(config.mode);
     this.sessionHost = createSessionHost(hostProxy);
     this.terminalHost = createTerminalHost(hostProxy);
     this.terminalCoordinator = new TerminalCoordinator<WorkspaceRecord>({
@@ -134,18 +137,30 @@ export class FlmuxWorkbench implements ShellModelHost {
   }
 
   async start() {
-    this.runtimeLabel = "local-http preload ok";
+    this.runtimeLabel = this.config.mode === "desktop" ? "desktop local-http preload ok" : "web local-http attach";
     this.initializeWorkspaceShell();
     this.bindTopbar();
-    await this.restoreSessionOrDefaults();
-    await this.terminalCoordinator.restoreTerminals(this.workspaces.values());
+
+    if (this.lifecyclePolicy.restoreSession) {
+      await this.restoreSessionOrDefaults();
+    } else {
+      await this.initializeDefaultWorkspaceSet();
+    }
+
+    if (this.lifecyclePolicy.restoreTerminals) {
+      await this.terminalCoordinator.restoreTerminals(this.workspaces.values());
+    }
+
     this.renderChrome();
     setupDropIndicatorMasks();
-    this.sessionPersistenceEnabled = true;
-    window.addEventListener("pagehide", () => {
-      void this.flushSessionSave({ preferBeacon: true });
-    });
-    this.scheduleSessionSave();
+
+    if (this.lifecyclePolicy.persistSession) {
+      this.sessionPersistenceEnabled = true;
+      window.addEventListener("pagehide", () => {
+        void this.flushSessionSave({ preferBeacon: true });
+      });
+      this.scheduleSessionSave();
+    }
   }
 
   getAppStatus(): AppStatusSnapshot {
@@ -800,6 +815,19 @@ export class FlmuxWorkbench implements ShellModelHost {
         throw new Error("Expected at least one workspace to restore");
       }
       this.activateWorkspace(activeWorkspaceId, { persist: false });
+    } finally {
+      this.sessionPersistenceSuppressed = false;
+    }
+  }
+
+  private async initializeDefaultWorkspaceSet() {
+    const workspace = this.createWorkspaceRecord(this.allocateWorkspaceDescriptor());
+    this.ensureWorkspaceInitialized(workspace);
+
+    this.sessionPersistenceSuppressed = true;
+    try {
+      await this.resetWorkspace(workspace);
+      this.activateWorkspace(workspace.id, { persist: false });
     } finally {
       this.sessionPersistenceSuppressed = false;
     }

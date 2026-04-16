@@ -12,6 +12,8 @@ export interface CdpTarget {
 
 export interface AppProcessHandle {
   process: Bun.Subprocess<"ignore", "pipe", "pipe">;
+  stdout: string;
+  stderr: string;
 }
 
 export async function cleanupAppHandles(appHandles: AppProcessHandle[]) {
@@ -40,7 +42,23 @@ export function launchFlmuxApp(remoteDebuggingPort: number, sessionFile?: string
     stderr: "pipe"
   });
 
-  return { process: appProcess };
+  return createAppProcessHandle(appProcess);
+}
+
+export function launchFlmuxWebApp(token?: string): AppProcessHandle {
+  const appProcess = Bun.spawn({
+    cmd: [resolveBunCommand(), "run", "dev", "--", "--web"],
+    cwd: resolve(import.meta.dir, "..", ".."),
+    env: {
+      ...process.env,
+      FLMUX_DEV_MODE: "1",
+      ...(token ? { FLMUX_WEB_TOKEN: token } : {})
+    },
+    stdout: "pipe",
+    stderr: "pipe"
+  });
+
+  return createAppProcessHandle(appProcess);
 }
 
 export async function waitForMainTarget(port: number, label: string) {
@@ -60,6 +78,21 @@ export async function waitForSingleClientId(origin: string, label: string) {
   }, { timeoutMs: 20_000, intervalMs: 250, label });
 }
 
+export async function waitForWebAccessUrl(handle: AppProcessHandle, label: string) {
+  const matched = await waitFor(async () => {
+    const match = /\[flmux\] web access url: (http:\/\/127\.0\.0\.1:\d+\/\?token=([^\s]+))/.exec(handle.stdout);
+    return match
+      ? {
+          url: match[1],
+          origin: match[1].replace(/\/\?token=.*$/, ""),
+          token: match[2]
+        }
+      : null;
+  }, { timeoutMs: 30_000, intervalMs: 100, label });
+
+  return matched;
+}
+
 export async function fetchTargets(port: number): Promise<CdpTarget[]> {
   const response = await fetch(`http://127.0.0.1:${port}/json/list`, {
     signal: AbortSignal.timeout(2_000)
@@ -71,19 +104,21 @@ export async function fetchTargets(port: number): Promise<CdpTarget[]> {
   return response.json() as Promise<CdpTarget[]>;
 }
 
-export async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url);
+export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, init);
   if (!response.ok) {
-    throw new Error(`GET ${url} failed: ${response.status} ${response.statusText}`);
+    throw new Error(`${init?.method ?? "GET"} ${url} failed: ${response.status} ${response.statusText}`);
   }
 
   return response.json() as Promise<T>;
 }
 
-export async function postJson<T>(url: string, body: unknown): Promise<T> {
+export async function postJson<T>(url: string, body: unknown, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
+    ...init,
     method: "POST",
     headers: {
+      ...(init?.headers as Record<string, string> | undefined ?? {}),
       "content-type": "application/json"
     },
     body: JSON.stringify(body)
@@ -235,3 +270,42 @@ function resolveBunCommand() {
 }
 
 export { waitFor };
+
+function createAppProcessHandle(process: Bun.Subprocess<"ignore", "pipe", "pipe">): AppProcessHandle {
+  const handle: AppProcessHandle = {
+    process,
+    stdout: "",
+    stderr: ""
+  };
+
+  void pumpStream(process.stdout, (chunk) => {
+    handle.stdout += chunk;
+  });
+  void pumpStream(process.stderr, (chunk) => {
+    handle.stderr += chunk;
+  });
+
+  return handle;
+}
+
+async function pumpStream(
+  stream: ReadableStream<Uint8Array>,
+  onChunk: (chunk: string) => void
+) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      onChunk(decoder.decode(value, { stream: true }));
+    }
+    const tail = decoder.decode();
+    if (tail) {
+      onChunk(tail);
+    }
+  } catch {}
+}

@@ -4,6 +4,7 @@ import type { TerminalRuntimeEvent } from "../shared/terminal";
 import { registerLocalExternalPaneDescriptors } from "./external/registerLocalExternalPaneDescriptors";
 import { FlmuxWorkbench } from "./shell/workbench";
 import { pushTerminalEvent } from "./terminalHost";
+import { FlmuxWebModeClient } from "./webModeClient";
 
 void bootstrap().catch((error) => {
   document.body.innerHTML = `<pre class="fatal">${String(error)}</pre>`;
@@ -21,6 +22,12 @@ async function bootstrap() {
   });
 
   const config = await rpc.requestProxy["flmux.getConfig"]();
+  if (config.mode === "web") {
+    const webClient = new FlmuxWebModeClient(config);
+    await webClient.start();
+    return;
+  }
+
   const workbench = new FlmuxWorkbench(config, rpc.requestProxy);
   await registerLocalExternalPaneDescriptors(workbench, config.localExtensions);
   await workbench.start();

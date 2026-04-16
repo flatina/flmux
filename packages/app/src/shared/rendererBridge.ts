@@ -6,6 +6,7 @@ import type {
   PathSetResult
 } from "../renderer/shell/types";
 import type { FlmuxSessionSnapshot } from "./session";
+import type { FlmuxRuntimeMode } from "./runtimeMode";
 import type {
   TerminalAdoptResult,
   TerminalCreateInput,
@@ -29,8 +30,10 @@ export interface FlmuxLocalExtensionLoadEntry {
 }
 
 export interface FlmuxRendererBootstrapConfig {
+  mode: FlmuxRuntimeMode;
   appOrigin: string;
   projectDir: string;
+  authorityClientId: string | null;
   localExtensions: FlmuxLocalExtensionLoadEntry[];
 }
 

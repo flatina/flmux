@@ -311,8 +311,8 @@ describe("shell model direct", () => {
       entries: [
         { name: "kind", path: "/panes/current/kind", kind: "leaf", writable: false },
         { name: "title", path: "/panes/current/title", kind: "leaf", writable: true },
-        { name: "terminal", path: "/panes/current/terminal", kind: "object", writable: false },
-        { name: "close", path: "/panes/current/close", kind: "action", writable: false }
+        { name: "close", path: "/panes/current/close", kind: "action", writable: false },
+        { name: "terminal", path: "/panes/current/terminal", kind: "object", writable: false }
       ]
     });
 

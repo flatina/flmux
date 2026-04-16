@@ -546,38 +546,13 @@ class ShellModel implements ShellModelAPI {
       };
     }
 
+    if (segments.length === 3 && segments[1] === "terminal" && pane.kind === "terminal" && isTerminalActionSegment(segments[2])) {
+      return throwPathError("INVALID_PATH", "Action path cannot be read");
+    }
+
     const subtreeMount = await this.resolvePaneSubtreeMount(pane.id, segments[1]);
     if (subtreeMount) {
       return await this.getPaneMountPath(subtreeMount, segments.slice(2), "state");
-    }
-
-    if (segments.length === 2 && segments[1] === "terminal" && pane.kind === "terminal") {
-      return {
-        ok: true,
-        found: true,
-        value: toTerminalStateSnapshot(pane)
-      };
-    }
-
-    if (segments.length === 3 && segments[1] === "terminal" && pane.kind === "terminal") {
-      const terminal = toTerminalStateSnapshot(pane);
-      if (segments[2] === "cwd") {
-        return {
-          ok: true,
-          found: true,
-          value: terminal[segments[2]]
-        };
-      }
-
-      if (
-        segments[2] === "create" ||
-        segments[2] === "write" ||
-        segments[2] === "resize" ||
-        segments[2] === "history" ||
-        segments[2] === "kill"
-      ) {
-        return throwPathError("INVALID_PATH", "Action path cannot be read");
-      }
     }
 
     if (segments.length === 2 && segments[1] === "close") {
@@ -622,24 +597,30 @@ class ShellModel implements ShellModelAPI {
         return throwPathError("INVALID_PATH", "Leaf path cannot be listed");
       }
 
-      const subtreeMount = await this.resolvePaneSubtreeMount(pane.id, segments[1]);
-      if (subtreeMount) {
-        return await this.listPaneMountPath(subtreeMount, [], `/panes/${segments[0]}/${subtreeMount.mountKey}`, "state");
-      }
+      if (pane.kind === "terminal" && segments[1] === "terminal") {
+        const subtreeMount = await this.resolvePaneSubtreeMount(pane.id, segments[1]);
+        if (!subtreeMount) {
+          return notFoundList();
+        }
 
-      if (segments[1] === "terminal" && pane.kind === "terminal") {
+        const listed = await this.listPaneMountPath(subtreeMount, [], `/panes/${segments[0]}/${subtreeMount.mountKey}`, "state");
+        if (!listed.ok || !listed.found) {
+          return listed;
+        }
+
         return {
           ok: true,
           found: true,
           entries: [
-            leafEntry("cwd", `/panes/${segments[0]}/terminal/cwd`),
-            actionEntry("create", `/panes/${segments[0]}/terminal/create`),
-            actionEntry("write", `/panes/${segments[0]}/terminal/write`),
-            actionEntry("resize", `/panes/${segments[0]}/terminal/resize`),
-            actionEntry("history", `/panes/${segments[0]}/terminal/history`),
-            actionEntry("kill", `/panes/${segments[0]}/terminal/kill`)
+            ...listed.entries,
+            ...terminalActionEntries(`/panes/${segments[0]}/terminal`)
           ]
         };
+      }
+
+      const subtreeMount = await this.resolvePaneSubtreeMount(pane.id, segments[1]);
+      if (subtreeMount) {
+        return await this.listPaneMountPath(subtreeMount, [], `/panes/${segments[0]}/${subtreeMount.mountKey}`, "state");
       }
 
       if (segments[1] === "close") {
@@ -807,14 +788,6 @@ class ShellModel implements ShellModelAPI {
       return { ok: true, found: true, value: status };
     }
 
-    if (segments.length === 2 && segments[1] === "terminal" && pane.kind === "terminal") {
-      return {
-        ok: true,
-        found: true,
-        value: toTerminalStatusSnapshot(pane)
-      };
-    }
-
     if (segments.length === 2 && isPaneStatusLeaf(segments[1])) {
       return { ok: true, found: true, value: status[segments[1]] };
     }
@@ -822,26 +795,6 @@ class ShellModel implements ShellModelAPI {
     const subtreeMount = await this.resolvePaneSubtreeMount(pane.id, segments[1]);
     if (subtreeMount) {
       return await this.getPaneMountPath(subtreeMount, segments.slice(2), "status");
-    }
-
-    if (segments.length === 3 && segments[1] === "terminal" && pane.kind === "terminal") {
-      const terminal = toTerminalStatusSnapshot(pane);
-      if (
-        segments[2] === "attached" ||
-        segments[2] === "rootKey" ||
-        segments[2] === "cwd" ||
-        segments[2] === "runtimeId" ||
-        segments[2] === "alive" ||
-        segments[2] === "commandCount" ||
-        segments[2] === "createdAt" ||
-        segments[2] === "updatedAt"
-      ) {
-        return {
-          ok: true,
-          found: true,
-          value: terminal[segments[2]]
-        };
-      }
     }
 
     const mount = await this.host.getPanePathMount(pane.id);
@@ -891,23 +844,6 @@ class ShellModel implements ShellModelAPI {
           "status"
         );
       }
-    }
-
-    if (segments.length === 2 && segments[1] === "terminal" && pane.kind === "terminal") {
-      return {
-        ok: true,
-        found: true,
-        entries: [
-          leafEntry("attached", `/status/panes/${segments[0]}/terminal/attached`),
-          leafEntry("rootKey", `/status/panes/${segments[0]}/terminal/rootKey`),
-          leafEntry("cwd", `/status/panes/${segments[0]}/terminal/cwd`),
-          leafEntry("runtimeId", `/status/panes/${segments[0]}/terminal/runtimeId`),
-          leafEntry("alive", `/status/panes/${segments[0]}/terminal/alive`),
-          leafEntry("commandCount", `/status/panes/${segments[0]}/terminal/commandCount`),
-          leafEntry("createdAt", `/status/panes/${segments[0]}/terminal/createdAt`),
-          leafEntry("updatedAt", `/status/panes/${segments[0]}/terminal/updatedAt`)
-        ]
-      };
     }
 
     if (segments.length === 2 && isPaneStatusLeaf(segments[1])) {
@@ -1334,51 +1270,23 @@ function toPaneStatusSnapshot(pane: ShellPaneRecordSnapshot) {
     : { id: pane.id, kind: pane.kind, title: pane.title, active: pane.active };
 }
 
-function paneStateEntries(pane: ShellPaneRecordSnapshot, basePath: string): ShellPathEntry[] {
+function paneStateEntries(_pane: ShellPaneRecordSnapshot, basePath: string): ShellPathEntry[] {
   const propertyEntries = statePropertyEntries(PANE_STATE_PROPERTIES, basePath);
-  return pane.kind === "browser"
-    ? [
-        leafEntry("kind", `${basePath}/kind`),
-        ...propertyEntries,
-        actionEntry("close", `${basePath}/close`)
-      ]
-    : pane.kind === "terminal"
-      ? [
-          leafEntry("kind", `${basePath}/kind`),
-          ...propertyEntries,
-          objectEntry("terminal", `${basePath}/terminal`),
-          actionEntry("close", `${basePath}/close`)
-        ]
-    : [
-        leafEntry("kind", `${basePath}/kind`),
-        ...propertyEntries,
-        actionEntry("close", `${basePath}/close`)
-      ];
+  return [
+    leafEntry("kind", `${basePath}/kind`),
+    ...propertyEntries,
+    actionEntry("close", `${basePath}/close`)
+  ];
 }
 
-function paneStatusEntries(pane: ShellPaneRecordSnapshot, basePath: string): ShellPathEntry[] {
+function paneStatusEntries(_pane: ShellPaneRecordSnapshot, basePath: string): ShellPathEntry[] {
   const propertyEntries = statePropertyEntries(PANE_STATE_PROPERTIES, basePath, "key", false);
-  return pane.kind === "browser"
-    ? [
-        leafEntry("id", `${basePath}/id`),
-        leafEntry("kind", `${basePath}/kind`),
-        ...propertyEntries,
-        leafEntry("active", `${basePath}/active`),
-      ]
-    : pane.kind === "terminal"
-      ? [
-          leafEntry("id", `${basePath}/id`),
-          leafEntry("kind", `${basePath}/kind`),
-          ...propertyEntries,
-          leafEntry("active", `${basePath}/active`),
-          objectEntry("terminal", `${basePath}/terminal`)
-        ]
-    : [
-        leafEntry("id", `${basePath}/id`),
-        leafEntry("kind", `${basePath}/kind`),
-        ...propertyEntries,
-        leafEntry("active", `${basePath}/active`)
-      ];
+  return [
+    leafEntry("id", `${basePath}/id`),
+    leafEntry("kind", `${basePath}/kind`),
+    ...propertyEntries,
+    leafEntry("active", `${basePath}/active`)
+  ];
 }
 
 function leafEntry(name: string, path: string, writable = false): ShellPathEntry {
@@ -1460,6 +1368,20 @@ function readTerminalStatus(pane: ShellPaneRecordSnapshot) {
 
 function readTerminalRuntimeId(pane: ShellPaneRecordSnapshot) {
   return readTerminalStatus(pane).runtimeId;
+}
+
+function isTerminalActionSegment(segment: string) {
+  return segment === "create" || segment === "write" || segment === "resize" || segment === "history" || segment === "kill";
+}
+
+function terminalActionEntries(basePath: string) {
+  return [
+    actionEntry("create", `${basePath}/create`),
+    actionEntry("write", `${basePath}/write`),
+    actionEntry("resize", `${basePath}/resize`),
+    actionEntry("history", `${basePath}/history`),
+    actionEntry("kill", `${basePath}/kill`)
+  ];
 }
 
 function withMountEntries(

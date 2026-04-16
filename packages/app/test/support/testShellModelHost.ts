@@ -321,33 +321,54 @@ export class TestShellModelHost implements ShellModelHost {
 
   getPaneSubtreeMounts(paneId: string): ShellResolvedPaneSubtreeMount[] {
     const pane = this.requirePane(paneId);
-    if (pane.kind !== "browser") {
-      return [];
+    if (pane.kind === "browser") {
+      return [
+        {
+          mountKey: "browser",
+          getStateSnapshot: () => ({
+            url: pane.url
+          }),
+          canSetStatePath: (relativePath) =>
+            relativePath.length === 1 && relativePath[0] === "url",
+          setState: (relativePath, value) => {
+            if (relativePath.length !== 1 || relativePath[0] !== "url") {
+              throw new Error(`Unsupported browser path '${relativePath.join("/")}'`);
+            }
+
+            const nextUrl = asNonEmptyString(value, "Pane url");
+            pane.url = nextUrl;
+            this.setPaneParams(paneId, { url: nextUrl });
+            return { value: nextUrl };
+          },
+          getStatusSnapshot: () => ({
+            url: pane.url
+          })
+        }
+      ];
     }
 
-    return [
-      {
-        mountKey: "browser",
-        getStateSnapshot: () => ({
-          url: pane.url
-        }),
-        canSetStatePath: (relativePath) =>
-          relativePath.length === 1 && relativePath[0] === "url",
-        setState: (relativePath, value) => {
-          if (relativePath.length !== 1 || relativePath[0] !== "url") {
-            throw new Error(`Unsupported browser path '${relativePath.join("/")}'`);
-          }
+    if (pane.kind === "terminal") {
+      return [
+        {
+          mountKey: "terminal",
+          getStateSnapshot: () => ({
+            cwd: pane.cwd
+          }),
+          getStatusSnapshot: () => ({
+            attached: pane.runtimeId !== null,
+            rootKey: pane.rootKey,
+            cwd: pane.cwd,
+            runtimeId: pane.runtimeId,
+            alive: pane.summary?.alive ?? null,
+            commandCount: pane.summary?.commandCount ?? null,
+            createdAt: pane.summary?.createdAt ?? null,
+            updatedAt: pane.summary?.updatedAt ?? null
+          })
+        }
+      ];
+    }
 
-          const nextUrl = asNonEmptyString(value, "Pane url");
-          pane.url = nextUrl;
-          this.setPaneParams(paneId, { url: nextUrl });
-          return { value: nextUrl };
-        },
-        getStatusSnapshot: () => ({
-          url: pane.url
-        })
-      }
-    ];
+    return [];
   }
 
   getPanePathMount(paneId: string): ShellResolvedPanePathMount | undefined {

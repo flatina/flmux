@@ -153,6 +153,28 @@ function createBuiltinPaneDescriptors(
                 active
               }
       },
+      subtreeMounts: [
+        {
+          mountKey: "terminal",
+          getStateSnapshot: ({ record }) =>
+            isTerminalPaneRecord(record)
+              ? { cwd: record.cwd }
+              : undefined,
+          getStatusSnapshot: ({ record }) =>
+            isTerminalPaneRecord(record)
+              ? {
+                  attached: record.runtimeId !== null,
+                  rootKey: record.rootKey,
+                  cwd: record.cwd,
+                  runtimeId: record.runtimeId,
+                  alive: record.summary?.alive ?? null,
+                  commandCount: record.summary?.commandCount ?? null,
+                  createdAt: record.summary?.createdAt ?? null,
+                  updatedAt: record.summary?.updatedAt ?? null
+                }
+              : undefined
+        }
+      ],
       persistence: {
         normalizeRestoredParams: ({ workspace, params }) => ({
           cwd: deps.resolveTerminalCwd(workspace.rootDir, optionalStringParam(params?.cwd)),

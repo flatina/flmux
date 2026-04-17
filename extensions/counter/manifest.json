@@ -1,0 +1,15 @@
+{
+  "id": "sample.counter",
+  "name": "Counter",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entrypoints": {
+    "renderer": "./index.ts"
+  },
+  "panes": [
+    {
+      "kind": "counter",
+      "defaultTitle": "Counter"
+    }
+  ]
+}

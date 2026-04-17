@@ -5,6 +5,7 @@ export interface PaneWorkspaceContext {
   id: string;
   defaultBrowserPath: string;
   bus: WorkspaceBus;
+  appOrigin: string;
 }
 
 export type BrowserPaneStateRecord = { kind: "browser"; url: string };

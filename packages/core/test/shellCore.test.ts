@@ -317,6 +317,25 @@ describe("ShellCore", () => {
     });
     expect(event.workspaceId).toBe("workspace.2");
   });
+
+  it("exposes a workspace context with id/defaultBrowserPath/bus/appOrigin", async () => {
+    const { core } = buildShellCore();
+    const context = core.getWorkspaceContext("workspace.1");
+    expect(context).toBeDefined();
+    expect(context?.id).toBe("workspace.1");
+    expect(context?.appOrigin).toBe(ORIGIN);
+    expect(context?.defaultBrowserPath).toContain("workspace.1");
+    expect(typeof context?.bus.publish).toBe("function");
+    expect(core.getWorkspaceContext("workspace.missing")).toBeUndefined();
+  });
+
+  it("resolves paneId → workspaceId via getPaneWorkspaceId", async () => {
+    const { core } = buildShellCore();
+    const extra = await core.createWorkspace({ title: "Second" });
+    const paneInSecond = await core.createPane({ kind: "browser", url: "/x" });
+    expect(core.getPaneWorkspaceId(paneInSecond.id)).toBe(extra.id);
+    expect(core.getPaneWorkspaceId("pane_missing")).toBeUndefined();
+  });
 });
 
 describe("normalizeBrowserUrl", () => {

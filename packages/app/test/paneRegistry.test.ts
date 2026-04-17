@@ -48,7 +48,8 @@ describe("pane registry", () => {
             subscribe() {
               return () => {};
             }
-          }
+          },
+          appOrigin: "http://localhost:0"
         },
         params: {
           url: "/__flmux/internal/start?workspace=workspace.beta"
@@ -87,7 +88,8 @@ describe("pane registry", () => {
             subscribe() {
               return () => {};
             }
-          }
+          },
+          appOrigin: "http://localhost:0"
         },
         input: {
           kind: "browser",
@@ -127,7 +129,8 @@ describe("pane registry", () => {
             subscribe() {
               return () => {};
             }
-          }
+          },
+          appOrigin: "http://localhost:0"
         },
         params: {
           url: "https://example.com/fixtures/report"

@@ -429,7 +429,8 @@ export class FlmuxWorkbench implements ShellModelHost {
     return {
       id: workspace.id,
       defaultBrowserPath: workspace.defaultBrowserPath,
-      bus: workspace.bus
+      bus: workspace.bus,
+      appOrigin: this.config.appOrigin
     };
   }
 

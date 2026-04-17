@@ -581,11 +581,21 @@ export class ShellCore implements ShellModelHost {
     };
   }
 
+  getWorkspaceContext(workspaceId: string): PaneWorkspaceContext | undefined {
+    const workspace = this.workspaces.get(workspaceId);
+    return workspace ? this.toWorkspaceContext(workspace) : undefined;
+  }
+
+  getPaneWorkspaceId(paneId: string): string | undefined {
+    return this.paneWorkspaceIds.get(paneId);
+  }
+
   private toWorkspaceContext(workspace: WorkspaceRecord): PaneWorkspaceContext {
     return {
       id: workspace.id,
       defaultBrowserPath: workspace.defaultBrowserPath,
-      bus: workspace.bus
+      bus: workspace.bus,
+      appOrigin: this.appOrigin
     };
   }
 

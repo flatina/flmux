@@ -58,7 +58,8 @@ describe("external pane runtime", () => {
       workspace: {
         id: "workspace.external",
         defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
-        bus: workspaceBus
+        bus: workspaceBus,
+        appOrigin: "http://localhost:0"
       } satisfies PaneWorkspaceContext,
       options: {
         id: "pane.external",
@@ -137,7 +138,8 @@ describe("external pane runtime", () => {
             subscribe() {
               return () => {};
             }
-          }
+          },
+          appOrigin: "http://localhost:0"
         },
         input: {
           kind: "sample.titled",
@@ -179,7 +181,8 @@ describe("external pane runtime", () => {
           subscribe() {
             return () => {};
           }
-        }
+        },
+          appOrigin: "http://localhost:0"
       },
       options: {
         id: "pane.stateful",
@@ -254,7 +257,8 @@ describe("external pane runtime", () => {
             subscribe() {
               return () => {};
             }
-          }
+          },
+          appOrigin: "http://localhost:0"
         },
         input: {
           kind: "sample.stateful",
@@ -277,7 +281,8 @@ describe("external pane runtime", () => {
             subscribe() {
               return () => {};
             }
-          }
+          },
+          appOrigin: "http://localhost:0"
         },
         params: {
           note: 123
@@ -297,7 +302,8 @@ describe("external pane runtime", () => {
             subscribe() {
               return () => {};
             }
-          }
+          },
+          appOrigin: "http://localhost:0"
         },
         record: {
           kind: "sample.stateful"
@@ -338,7 +344,8 @@ describe("external pane runtime", () => {
               unsubscribeCalls += 1;
             };
           }
-        }
+        },
+        appOrigin: "http://localhost:0"
       },
       options: {
         id: "pane.cleanup",
@@ -417,7 +424,8 @@ describe("external pane runtime", () => {
           subscribe() {
             return () => {};
           }
-        }
+        },
+          appOrigin: "http://localhost:0"
       },
       record: {
         kind: "sample.mount"
@@ -441,7 +449,8 @@ describe("external pane runtime", () => {
           subscribe() {
             return () => {};
           }
-        }
+        },
+          appOrigin: "http://localhost:0"
       },
       record: {
         kind: "sample.mount"
@@ -472,7 +481,8 @@ describe("external pane runtime", () => {
           subscribe() {
             return () => {};
           }
-        }
+        },
+          appOrigin: "http://localhost:0"
       },
       record: {
         kind: "sample.mount"

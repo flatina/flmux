@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { FlmuxSessionSnapshot } from "../shared/session";
 
@@ -22,7 +22,9 @@ export function createSessionStore(): FlmuxSessionStore {
 
     async save(snapshot) {
       await mkdir(dirname(filePath), { recursive: true });
-      await Bun.write(filePath, `${JSON.stringify(snapshot, null, 2)}\n`);
+      const tmpPath = `${filePath}.tmp.${process.pid}`;
+      await Bun.write(tmpPath, `${JSON.stringify(snapshot, null, 2)}\n`);
+      await rename(tmpPath, filePath);
     }
   };
 }
@@ -37,15 +39,14 @@ export function isSessionSnapshot(value: unknown): value is FlmuxSessionSnapshot
     snapshot.version !== 4 ||
     typeof snapshot.appTitle !== "string" ||
     !("outerLayout" in snapshot) ||
-    !(snapshot.outerLayout === null || typeof snapshot.outerLayout === "object") ||
-    !snapshot.workspaces ||
-    typeof snapshot.workspaces !== "object"
+    !isPlainObjectOrNull(snapshot.outerLayout) ||
+    !isPlainObject(snapshot.workspaces)
   ) {
     return false;
   }
 
   return Object.values(snapshot.workspaces as Record<string, unknown>).every((workspace) => {
-    if (!workspace || typeof workspace !== "object") {
+    if (!isPlainObject(workspace)) {
       return false;
     }
 
@@ -54,7 +55,15 @@ export function isSessionSnapshot(value: unknown): value is FlmuxSessionSnapshot
       (candidate.defaultTitle === undefined || typeof candidate.defaultTitle === "string") &&
       typeof candidate.title === "string" &&
       "innerLayout" in candidate &&
-      (candidate.innerLayout === null || typeof candidate.innerLayout === "object")
+      isPlainObjectOrNull(candidate.innerLayout)
     );
   });
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isPlainObjectOrNull(value: unknown): value is Record<string, unknown> | null {
+  return value === null || isPlainObject(value);
 }

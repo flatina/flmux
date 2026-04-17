@@ -474,14 +474,21 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
     await waitFor(async () => {
       try {
         const saved = (await Bun.file(sessionFile).json()) as {
+          version: number;
+          outerLayout: { panels?: Record<string, unknown> } | null;
           workspaces: Record<string, unknown>;
         };
-        return (
-          firstWorkspaceId in saved.workspaces &&
-          !(secondWorkspaceId in saved.workspaces)
-        )
-          ? true
-          : null;
+        if (saved.version !== 4) {
+          return null;
+        }
+        if (!(firstWorkspaceId in saved.workspaces) || secondWorkspaceId in saved.workspaces) {
+          return null;
+        }
+        const outerPanels = saved.outerLayout?.panels ?? null;
+        if (!outerPanels || !(firstWorkspaceId in outerPanels) || secondWorkspaceId in outerPanels) {
+          return null;
+        }
+        return true;
       } catch {
         return null;
       }

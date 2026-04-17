@@ -454,7 +454,9 @@ export class FlmuxWorkbench implements ShellModelHost {
       this.scheduleSessionSave();
     });
     this.outerApi.onDidRemovePanel((panel) => {
-      void this.handleWorkspacePanelRemoved(panel.id);
+      this.handleWorkspacePanelRemoved(panel.id).catch((error) => {
+        console.warn("failed to clean up removed workspace panel", panel.id, error);
+      });
     });
 
     const layoutOuter = () => {
@@ -541,6 +543,9 @@ export class FlmuxWorkbench implements ShellModelHost {
   }
 
   private async handleWorkspacePanelRemoved(workspaceId: string) {
+    // UI teardown (inner dockview / ResizeObserver / outerPanelApi) is owned by
+    // WorkspaceOuterPanelRenderer.dispose, which dockview runs synchronously when
+    // the outer panel is removed. This handler owns record + terminal cleanup only.
     const workspace = this.workspaces.get(workspaceId);
     if (workspace) {
       const paneIds = [...workspace.paneRecords.keys()];
@@ -553,7 +558,6 @@ export class FlmuxWorkbench implements ShellModelHost {
         }
       }
       workspace.paneRecords.clear();
-      this.detachInnerDockview(workspace);
       this.workspaces.delete(workspaceId);
     }
 
@@ -777,18 +781,14 @@ export class FlmuxWorkbench implements ShellModelHost {
 
       try {
         this.outerApi!.fromJSON(snapshot.outerLayout as SerializedDockview);
+        if (this.outerApi!.panels.length === 0) {
+          throw new Error("outer layout restored zero panels");
+        }
       } catch (error) {
         console.warn("failed to restore outer workspace layout; falling back to defaults", error);
         this.outerApi!.clear();
         this.workspaces.clear();
         await this.initializeDefaultWorkspaceSet();
-        return;
-      }
-
-      for (const workspace of this.workspaces.values()) {
-        if (workspace.paneRecords.size === 0) {
-          await this.resetWorkspace(workspace);
-        }
       }
     } finally {
       this.sessionPersistenceSuppressed = false;

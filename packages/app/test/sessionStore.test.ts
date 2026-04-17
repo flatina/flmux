@@ -38,6 +38,33 @@ describe("session store", () => {
     })).toBe(false);
   });
 
+  it("rejects array-valued outerLayout and workspaces", () => {
+    expect(isSessionSnapshot({
+      version: 4,
+      appTitle: "flmux",
+      outerLayout: [],
+      workspaces: {
+        "workspace.alpha": { title: "Workspace Alpha", innerLayout: null }
+      }
+    })).toBe(false);
+
+    expect(isSessionSnapshot({
+      version: 4,
+      appTitle: "flmux",
+      outerLayout: null,
+      workspaces: []
+    })).toBe(false);
+
+    expect(isSessionSnapshot({
+      version: 4,
+      appTitle: "flmux",
+      outerLayout: null,
+      workspaces: {
+        "workspace.alpha": { title: "Workspace Alpha", innerLayout: [] }
+      }
+    })).toBe(false);
+  });
+
   it("ignores persisted pre-v4 snapshots on load", async () => {
     const dir = await mkdtemp(join(tmpdir(), "flmux-session-store-"));
     tempDirs.push(dir);

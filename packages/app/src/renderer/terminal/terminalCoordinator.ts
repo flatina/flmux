@@ -30,8 +30,8 @@ export class TerminalCoordinator<W extends TerminalWorkspaceRecord> {
 
     return this.deps.terminalHost.create({
       paneId,
-      rootDir: record.rootDir,
-      cwd: this.deps.resolveTerminalCwd(record.rootDir, input.cwd ?? record.cwd)
+      rootDir: record.installRoot,
+      cwd: this.deps.resolveTerminalCwd(record.installRoot, input.cwd ?? record.cwd)
     });
   }
 
@@ -112,7 +112,7 @@ export class TerminalCoordinator<W extends TerminalWorkspaceRecord> {
 
         try {
           const result = await this.deps.terminalHost.adoptByPaneId({
-            rootDir: record.rootDir,
+            rootDir: record.installRoot,
             paneId
           });
           if (result.outcome === "adopted") {

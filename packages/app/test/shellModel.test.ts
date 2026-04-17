@@ -19,7 +19,7 @@ describe("shell model direct", () => {
           kind: "terminal",
           title: "Terminal",
           cwd: WORKSPACE_ROOT_DIR,
-          rootDir: WORKSPACE_ROOT_DIR,
+          installRoot: WORKSPACE_ROOT_DIR,
           rootKey: WORKSPACE_ROOT_KEY,
           runtimeId: "term_live"
         }
@@ -184,7 +184,7 @@ describe("shell model direct", () => {
           kind: "terminal",
           title: "Terminal",
           cwd: WORKSPACE_ROOT_DIR,
-          rootDir: WORKSPACE_ROOT_DIR,
+          installRoot: WORKSPACE_ROOT_DIR,
           rootKey: WORKSPACE_ROOT_KEY,
           runtimeId: null
         }
@@ -294,7 +294,7 @@ describe("shell model direct", () => {
           kind: "terminal",
           title: "Terminal",
           cwd: WORKSPACE_ROOT_DIR,
-          rootDir: WORKSPACE_ROOT_DIR,
+          installRoot: WORKSPACE_ROOT_DIR,
           rootKey: WORKSPACE_ROOT_KEY,
           runtimeId: "term_live",
           summary: {
@@ -430,7 +430,7 @@ describe("shell model direct", () => {
           kind: "terminal",
           title: "Terminal",
           cwd: WORKSPACE_ROOT_DIR,
-          rootDir: WORKSPACE_ROOT_DIR,
+          installRoot: WORKSPACE_ROOT_DIR,
           rootKey: null,
           runtimeId: null
         }
@@ -549,7 +549,7 @@ describe("shell model direct", () => {
           kind: "terminal",
           title: "Terminal",
           cwd: WORKSPACE_ROOT_DIR,
-          rootDir: WORKSPACE_ROOT_DIR,
+          installRoot: WORKSPACE_ROOT_DIR,
           rootKey: null,
           runtimeId: null
         }
@@ -601,7 +601,7 @@ describe("shell model direct", () => {
           kind: "terminal",
           title: "Terminal",
           cwd: "C:\\workspace",
-          rootDir: "C:\\workspace",
+          installRoot: "C:\\workspace",
           rootKey: WORKSPACE_ROOT_KEY,
           runtimeId: null
         }
@@ -958,7 +958,7 @@ describe("shell model direct", () => {
       found: true,
       value: {
         workspaceId: "workspace.test",
-        rootDir: WORKSPACE_ROOT_DIR,
+        installRoot: WORKSPACE_ROOT_DIR,
         defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.test"
       }
     });
@@ -1038,7 +1038,7 @@ describe("shell model direct", () => {
           kind: "terminal",
           title: "Terminal",
           cwd: WORKSPACE_ROOT_DIR,
-          rootDir: WORKSPACE_ROOT_DIR,
+          installRoot: WORKSPACE_ROOT_DIR,
           rootKey: WORKSPACE_ROOT_KEY,
           runtimeId: "term_live"
         }

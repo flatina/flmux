@@ -115,15 +115,15 @@ function createBuiltinPaneDescriptors(
         }),
       lifecycle: {
         createParams: ({ workspace, input }) => ({
-          cwd: deps.resolveTerminalCwd(workspace.rootDir, input.cwd),
-          rootDir: workspace.rootDir,
+          cwd: deps.resolveTerminalCwd(workspace.installRoot, input.cwd),
+          installRoot: workspace.installRoot,
           autoCreate: input.params?.autoCreate === true
         }),
         getTitle: ({ input }) => input.title?.trim() || "Terminal",
         createRecord: ({ workspace, params }) => ({
           kind: "terminal",
-          cwd: deps.resolveTerminalCwd(workspace.rootDir, optionalStringParam(params?.cwd)),
-          rootDir: workspace.rootDir,
+          cwd: deps.resolveTerminalCwd(workspace.installRoot, optionalStringParam(params?.cwd)),
+          installRoot: workspace.installRoot,
           rootKey: null,
           runtimeId: null,
           summary: null
@@ -177,8 +177,8 @@ function createBuiltinPaneDescriptors(
       ],
       persistence: {
         normalizeRestoredParams: ({ workspace, params }) => ({
-          cwd: deps.resolveTerminalCwd(workspace.rootDir, optionalStringParam(params?.cwd)),
-          rootDir: workspace.rootDir
+          cwd: deps.resolveTerminalCwd(workspace.installRoot, optionalStringParam(params?.cwd)),
+          installRoot: workspace.installRoot
         }),
         serializeParams: ({ record }) =>
           isTerminalPaneRecord(record)

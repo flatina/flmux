@@ -11,6 +11,7 @@ import {
   fetchTargets,
   launchFlmuxApp,
   postJson,
+  resolveAppInstallRoot,
   stopAppWorkspaceDaemons,
   waitFor,
   waitForMainTarget,
@@ -264,7 +265,7 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
         found: true;
         value: {
           workspaceId: string;
-          rootDir: string;
+          installRoot: string;
           defaultBrowserPath: string;
         };
       };
@@ -494,17 +495,14 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
       }
     }, { timeoutMs: 10_000, intervalMs: 100, label: "workspace close persisted session file" });
 
-    const secondWorkspaceRootDir = resolve(
-      import.meta.dir,
-      "..",
-      "..",
-      "..",
-      "..",
-      workspaceRootDirName(secondWorkspaceId)
-    );
+    const installRoot = resolveAppInstallRoot();
 
+    // workspace.1 seeds cowsay + browser only (no terminal), so after
+    // workspace.2 closes its lone terminal pane the shared install-scoped
+    // daemon should hold zero runtimes. If workspace.1 ever gets a default
+    // terminal, narrow this assertion to the specific terminalPaneId's runtimeId.
     await waitFor(async () => {
-      const locks = await findOwnedPtydLocksForRootDir(secondWorkspaceRootDir);
+      const locks = await findOwnedPtydLocksForRootDir(installRoot);
       if (locks.length === 0) {
         return true;
       }
@@ -527,14 +525,10 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
       return rootStatuses.every((status) => status === null || status.runtimeCount === 0)
         ? true
         : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 terminal cleanup after close" });
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "shared install-scoped daemon has 0 runtimes after close" });
 
     await session.close();
   } finally {
     await rm(sessionDir, { recursive: true, force: true });
   }
-}
-
-function workspaceRootDirName(workspaceId: string) {
-  return workspaceId.replace(/[^A-Za-z0-9_-]+/g, "-");
 }

@@ -30,7 +30,7 @@ export interface ExtensionPaneInstance {
 export interface ExtensionPanePathMountSnapshotArgs {
   paneId: string;
   workspaceId: string;
-  rootDir: string;
+  installRoot: string;
   defaultBrowserPath: string;
   currentParams: Record<string, unknown> | undefined;
 }
@@ -59,26 +59,26 @@ export interface ExtensionPaneDefinition {
   mount(host: HTMLElement, context: ExtensionPaneContext): void | ExtensionPaneInstance;
   createParams?(args: {
     workspaceId: string;
-    rootDir: string;
+    installRoot: string;
     defaultBrowserPath: string;
     input: NewPaneInput;
   }): Record<string, unknown> | undefined;
   getTitle?(args: {
     workspaceId: string;
-    rootDir: string;
+    installRoot: string;
     defaultBrowserPath: string;
     input: NewPaneInput;
     params: Record<string, unknown> | undefined;
   }): string;
   normalizeRestoredParams?(args: {
     workspaceId: string;
-    rootDir: string;
+    installRoot: string;
     defaultBrowserPath: string;
     params: Record<string, unknown> | undefined;
   }): Record<string, unknown> | undefined;
   serializeParams?(args: {
     workspaceId: string;
-    rootDir: string;
+    installRoot: string;
     defaultBrowserPath: string;
     currentParams: Record<string, unknown> | undefined;
   }): Record<string, unknown> | undefined;

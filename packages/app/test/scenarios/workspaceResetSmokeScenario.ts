@@ -10,6 +10,7 @@ import {
   fetchTargets,
   launchFlmuxApp,
   postJson,
+  resolveAppInstallRoot,
   stopAppWorkspaceDaemons,
   waitFor,
   waitForMainTarget,
@@ -29,14 +30,7 @@ export async function runWorkspaceResetSmokeScenario(appHandles: AppProcessHandl
     const appOrigin = new URL(mainTarget.url).origin;
     const secondWorkspaceId = "workspace.2";
     const secondWorkspaceStartUrl = `${appOrigin}/__flmux/internal/start?workspace=${secondWorkspaceId}`;
-    const secondWorkspaceRootDir = resolve(
-      import.meta.dir,
-      "..",
-      "..",
-      "..",
-      "..",
-      workspaceRootDirName(secondWorkspaceId)
-    );
+    const installRoot = resolveAppInstallRoot();
 
     const session = await connectCdp(mainTarget.webSocketDebuggerUrl!);
     await session.send("Runtime.enable");
@@ -165,8 +159,11 @@ export async function runWorkspaceResetSmokeScenario(appHandles: AppProcessHandl
       return title.includes("Workspace 2") && !title.includes("Renamed") ? title : null;
     }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace title reset" });
 
+    // Reset fires only on workspace.2, and workspace.1 has no terminal in its
+    // default seed — so the shared install-scoped daemon should hold zero
+    // runtimes after the reset kills workspace.2's attached terminal.
     await waitFor(async () => {
-      const locks = await findOwnedPtydLocksForRootDir(secondWorkspaceRootDir);
+      const locks = await findOwnedPtydLocksForRootDir(installRoot);
       if (locks.length === 0) {
         return true;
       }
@@ -189,14 +186,10 @@ export async function runWorkspaceResetSmokeScenario(appHandles: AppProcessHandl
       return rootStatuses.every((status) => status === null || status.runtimeCount === 0)
         ? true
         : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 runtime cleanup after reset" });
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "shared install-scoped daemon has 0 runtimes after reset" });
 
     await session.close();
   } finally {
     await rm(sessionDir, { recursive: true, force: true });
   }
-}
-
-function workspaceRootDirName(workspaceId: string) {
-  return workspaceId.replace(/[^A-Za-z0-9_-]+/g, "-");
 }

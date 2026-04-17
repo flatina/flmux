@@ -3,7 +3,7 @@ import type { Awaitable, NewPaneInput, ShellPaneRecordSnapshot, WorkspaceBus } f
 
 export interface PaneWorkspaceContext {
   id: string;
-  rootDir: string;
+  installRoot: string;
   defaultBrowserPath: string;
   bus: WorkspaceBus;
 }
@@ -13,7 +13,7 @@ export type BrowserPaneStateRecord = { kind: "browser"; url: string };
 export type TerminalPaneStateRecord = {
   kind: "terminal";
   cwd: string;
-  rootDir: string;
+  installRoot: string;
   rootKey: string | null;
   runtimeId: string | null;
   summary: TerminalRuntimeSummary | null;

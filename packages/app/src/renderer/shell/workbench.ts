@@ -61,7 +61,6 @@ type WorkspaceRecord = {
   title: string;
   defaultTitle: string;
   defaultBrowserPath: string;
-  rootDir: string;
   bus: WorkspaceBus;
   paneRecords: Map<string, PaneRecord>;
   outerPanelApi: DockviewPanelApi | null;
@@ -432,7 +431,7 @@ export class FlmuxWorkbench implements ShellModelHost {
   private toPaneWorkspaceContext(workspace: WorkspaceRecord): PaneWorkspaceContext {
     return {
       id: workspace.id,
-      rootDir: workspace.rootDir,
+      installRoot: this.config.projectDir,
       defaultBrowserPath: workspace.defaultBrowserPath,
       bus: workspace.bus
     };
@@ -1030,7 +1029,6 @@ export class FlmuxWorkbench implements ShellModelHost {
       title: descriptor.title,
       defaultTitle: descriptor.title,
       defaultBrowserPath: defaultBrowserPath(descriptor.id),
-      rootDir: joinPath(this.config.projectDir, workspaceRootDirName(descriptor.id)),
       bus: createWorkspaceBus(descriptor.id),
       paneRecords: new Map(),
       outerPanelApi: null,
@@ -1108,10 +1106,6 @@ function defaultBrowserPath(workspaceId: string) {
   return `/__flmux/internal/start?workspace=${encodeURIComponent(workspaceId)}`;
 }
 
-function workspaceRootDirName(workspaceId: string) {
-  return workspaceId.replace(/[^A-Za-z0-9_-]+/g, "-");
-}
-
 function defaultWorkspaceTitle(workspaceId: string) {
   const numbered = /^workspace\.(\d+)$/.exec(workspaceId);
   if (numbered) {
@@ -1123,11 +1117,6 @@ function defaultWorkspaceTitle(workspaceId: string) {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ") || "Workspace";
-}
-
-function joinPath(basePath: string, childPath: string) {
-  const normalizedBase = basePath.replace(/[\\/]+$/, "");
-  return `${normalizedBase}/${childPath}`;
 }
 
 function cloneJsonObject(value: unknown) {

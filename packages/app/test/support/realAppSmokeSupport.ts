@@ -269,10 +269,12 @@ export async function killMainProcessOnly(processHandle: Bun.Subprocess<"ignore"
   await processHandle.exited;
 }
 
+export function resolveAppInstallRoot() {
+  return resolve(import.meta.dir, "..", "..", "..", "..");
+}
+
 export async function stopAppWorkspaceDaemons() {
-  for (const workspaceDir of ["workspace-1", "workspace-2", "workspace-3", "workspace-4"]) {
-    await stopOwnedPtydDaemonsForRootDir(resolve(import.meta.dir, "..", "..", "..", "..", workspaceDir));
-  }
+  await stopOwnedPtydDaemonsForRootDir(resolveAppInstallRoot());
 }
 
 function resolveBunCommand() {

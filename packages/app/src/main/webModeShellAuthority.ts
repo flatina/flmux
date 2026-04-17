@@ -37,7 +37,6 @@ type WorkspaceRecord = {
   id: string;
   title: string;
   defaultTitle: string;
-  rootDir: string;
   defaultBrowserPath: string;
   bus: ReturnType<typeof createWorkspaceBus>;
   paneOrder: string[];
@@ -184,8 +183,8 @@ class HeadlessShellHost implements ShellModelHost {
 
         const result = await this.deps.terminalService.create({
           paneId,
-          rootDir: pane.rootDir,
-          cwd: resolveTerminalCwdFromRoot(pane.rootDir, input.cwd ?? pane.cwd)
+          rootDir: pane.installRoot,
+          cwd: resolveTerminalCwdFromRoot(pane.installRoot, input.cwd ?? pane.cwd)
         });
         pane.cwd = result.terminal.cwd;
         pane.rootKey = result.rootKey;
@@ -382,7 +381,7 @@ class HeadlessShellHost implements ShellModelHost {
     }
 
     if (isTerminalPaneStateRecord(record) && typeof cloned.cwd === "string") {
-      record.cwd = resolveTerminalCwdFromRoot(workspace.rootDir, cloned.cwd);
+      record.cwd = resolveTerminalCwdFromRoot(this.deps.projectDir, cloned.cwd);
       workspace.paneParams.set(paneId, { cwd: record.cwd });
       return { cwd: record.cwd };
     }
@@ -512,7 +511,7 @@ class HeadlessShellHost implements ShellModelHost {
   private toWorkspaceContext(workspace: WorkspaceRecord): PaneWorkspaceContext {
     return {
       id: workspace.id,
-      rootDir: workspace.rootDir,
+      installRoot: this.deps.projectDir,
       defaultBrowserPath: workspace.defaultBrowserPath,
       bus: workspace.bus
     };
@@ -572,7 +571,6 @@ class HeadlessShellHost implements ShellModelHost {
       id,
       title,
       defaultTitle: title,
-      rootDir: joinPath(this.deps.projectDir, workspaceRootDirName(id)),
       defaultBrowserPath: `/__flmux/internal/start?workspace=${encodeURIComponent(id)}`,
       bus: createWorkspaceBus(id),
       paneOrder: [],
@@ -706,14 +704,14 @@ function createBuiltinPaneSpecs(): PaneSpec[] {
       kind: "terminal",
       lifecycle: {
         createParams: ({ workspace, input }) => ({
-          cwd: resolveTerminalCwdFromRoot(workspace.rootDir, input.cwd),
-          rootDir: workspace.rootDir
+          cwd: resolveTerminalCwdFromRoot(workspace.installRoot, input.cwd),
+          installRoot: workspace.installRoot
         }),
         getTitle: ({ input }) => input.title?.trim() || "Terminal",
         createRecord: ({ workspace, params }) => ({
           kind: "terminal",
-          cwd: resolveTerminalCwdFromRoot(workspace.rootDir, optionalStringParam(params?.cwd)),
-          rootDir: workspace.rootDir,
+          cwd: resolveTerminalCwdFromRoot(workspace.installRoot, optionalStringParam(params?.cwd)),
+          installRoot: workspace.installRoot,
           rootKey: null,
           runtimeId: null,
           summary: null
@@ -789,15 +787,6 @@ function createExtensionPaneSpec(pane: ExtensionManifestPane): PaneSpec {
       getTitle: ({ input }) => input.title?.trim() || defaultTitle
     }
   };
-}
-
-function workspaceRootDirName(workspaceId: string) {
-  return workspaceId.replace(/[^A-Za-z0-9_-]+/g, "-");
-}
-
-function joinPath(basePath: string, childPath: string) {
-  const normalizedBase = basePath.replace(/[\\/]+$/, "");
-  return `${normalizedBase}/${childPath}`;
 }
 
 function humanizePaneKind(kind: string) {

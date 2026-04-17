@@ -41,7 +41,7 @@ describe("pane registry", () => {
       browser?.persistence?.normalizeRestoredParams?.({
         workspace: {
           id: "workspace.test",
-          rootDir: "C:\\workspace",
+          installRoot: "C:\\workspace",
           defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.test",
           bus: {
             publish() {},
@@ -80,7 +80,7 @@ describe("pane registry", () => {
       browser?.lifecycle?.createParams?.({
         workspace: {
           id: "workspace.test",
-          rootDir: "C:\\workspace",
+          installRoot: "C:\\workspace",
           defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.test",
           bus: {
             publish() {},
@@ -120,7 +120,7 @@ describe("pane registry", () => {
       browser?.persistence?.normalizeRestoredParams?.({
         workspace: {
           id: "workspace.test",
-          rootDir: "C:\\workspace",
+          installRoot: "C:\\workspace",
           defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.test",
           bus: {
             publish() {},

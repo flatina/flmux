@@ -239,11 +239,10 @@ export class FlmuxWorkbench implements ShellModelHost {
   }
 
   getPane(paneId: string): ShellPaneRecordSnapshot | undefined {
-    const workspace = this.getCurrentWorkspace();
-    if (!workspace.paneRecords.has(paneId)) {
+    const workspace = this.findWorkspaceByPaneId(paneId);
+    if (!workspace) {
       return undefined;
     }
-
     return this.mustGetPaneSnapshot(workspace, paneId);
   }
 
@@ -255,7 +254,7 @@ export class FlmuxWorkbench implements ShellModelHost {
   }
 
   async closePane(paneId: string) {
-    const workspace = this.findWorkspaceByPaneId(paneId) ?? this.getCurrentWorkspace();
+    const workspace = this.requireWorkspaceForPane(paneId);
     const record = this.requirePaneRecord(workspace, paneId);
     await this.terminalCoordinator.killAttachedRuntime(workspace, paneId, record);
     record.panel.api.close();
@@ -263,13 +262,13 @@ export class FlmuxWorkbench implements ShellModelHost {
   }
 
   getPaneParams(paneId: string) {
-    const workspace = this.getCurrentWorkspace();
+    const workspace = this.requireWorkspaceForPane(paneId);
     const record = this.requirePaneRecord(workspace, paneId);
     return cloneJsonObject(record.panel.toJSON().params);
   }
 
   setPaneParams(paneId: string, nextParams: Record<string, unknown>) {
-    const workspace = this.getCurrentWorkspace();
+    const workspace = this.requireWorkspaceForPane(paneId);
     const record = this.requirePaneRecord(workspace, paneId);
     const clonedParams = cloneJsonObject(nextParams) ?? {};
     record.panel.update({ params: clonedParams });
@@ -285,7 +284,7 @@ export class FlmuxWorkbench implements ShellModelHost {
   }
 
   getPaneSubtreeMounts(paneId: string): ShellResolvedPaneSubtreeMount[] {
-    const workspace = this.getCurrentWorkspace();
+    const workspace = this.requireWorkspaceForPane(paneId);
     const record = this.requirePaneRecord(workspace, paneId);
     const descriptor = this.requirePaneDescriptor(record.kind);
     return (descriptor.subtreeMounts ?? []).map((mount) => {
@@ -313,7 +312,7 @@ export class FlmuxWorkbench implements ShellModelHost {
   }
 
   getPanePathMount(paneId: string): ShellResolvedPanePathMount | undefined {
-    const workspace = this.getCurrentWorkspace();
+    const workspace = this.requireWorkspaceForPane(paneId);
     const record = this.requirePaneRecord(workspace, paneId);
     const descriptor = this.requirePaneDescriptor(record.kind);
     const mount = descriptor.pathMount;
@@ -707,6 +706,14 @@ export class FlmuxWorkbench implements ShellModelHost {
     }
 
     return null;
+  }
+
+  private requireWorkspaceForPane(paneId: string): WorkspaceRecord {
+    const workspace = this.findWorkspaceByPaneId(paneId);
+    if (!workspace) {
+      throw new Error(`Pane '${paneId}' does not belong to a known workspace`);
+    }
+    return workspace;
   }
 
   private requirePaneRecord(workspace: WorkspaceRecord, paneId: string): PaneRecord {

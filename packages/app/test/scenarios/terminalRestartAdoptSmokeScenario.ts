@@ -334,27 +334,32 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
       cwd: expect.stringContaining("project")
     });
 
-    const paneStatus = await postJson<{
-      ok: true;
-      result: {
+    const paneStatus = await waitFor(async () => {
+      const status = await postJson<{
         ok: true;
-        found: true;
-        value: {
-          attached: boolean;
-          rootKey: string | null;
-          cwd: string;
-          runtimeId: string | null;
-          alive: boolean | null;
-          commandCount: number | null;
-          createdAt: string | null;
-          updatedAt: string | null;
+        result: {
+          ok: true;
+          found: true;
+          value: {
+            attached: boolean;
+            rootKey: string | null;
+            cwd: string;
+            runtimeId: string | null;
+            alive: boolean | null;
+            commandCount: number | null;
+            createdAt: string | null;
+            updatedAt: string | null;
+          };
         };
-      };
-    }>(`${secondOrigin}/api/model/path/get`, {
-      clientId: secondClientId,
-      path: `/status/panes/${paneId}/terminal`
-    });
-    expect(paneStatus.result.value).toMatchObject({
+      }>(`${secondOrigin}/api/model/path/get`, {
+        clientId: secondClientId,
+        path: `/status/panes/${paneId}/terminal`
+      });
+      return status.result.value.attached && status.result.value.rootKey === rootKey
+        ? status.result.value
+        : null;
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "restored terminal attach surface" });
+    expect(paneStatus).toMatchObject({
       attached: true,
       rootKey,
       runtimeId,

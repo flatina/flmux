@@ -153,7 +153,8 @@ export interface ShellModelHost {
 }
 
 export interface ShellTerminalDelegate {
-  createRuntime(paneId: string, input: { cwd?: string }): Awaitable<TerminalCreateResult>;
+  /** Try adopt-by-paneId first; fall back to create if no surviving runtime exists. */
+  attachRuntime(paneId: string, input: { cwd?: string }): Awaitable<TerminalCreateResult>;
   writeRuntime(paneId: string, input: { data: string }): Awaitable<TerminalWriteResult>;
   resizeRuntime(paneId: string, input: { cols: number; rows: number }): Awaitable<TerminalResizeResult>;
   readHistory(paneId: string, input: { maxBytes?: number }): Awaitable<TerminalHistoryResult>;

@@ -75,21 +75,7 @@ export async function runWorkspaceResetSmokeScenario(appHandles: AppProcessHandl
     });
     const terminalPaneId = terminalPane.result.value.paneId;
 
-    const createdRuntime = await postJson<{
-      ok: true;
-      result: {
-        ok: true;
-        value: { ok: true; rootKey: string; runtimeId: string };
-      };
-    }>(`${appOrigin}/api/model/path/call`, {
-      clientId,
-      path: `/panes/${terminalPaneId}/terminal/create`,
-      args: { cwd: "." }
-    });
-    const runtimeId = createdRuntime.result.value.runtimeId;
-    expect(runtimeId).toBeTruthy();
-
-    await waitFor(async () => {
+    const attached = await waitFor(async () => {
       const status = await postJson<{
         ok: true;
         result: {
@@ -101,10 +87,12 @@ export async function runWorkspaceResetSmokeScenario(appHandles: AppProcessHandl
         clientId,
         path: `/status/panes/${terminalPaneId}/terminal`
       });
-      return status.result.value.attached && status.result.value.runtimeId === runtimeId
-        ? status.result.value
+      return status.result.value.attached && status.result.value.runtimeId
+        ? { runtimeId: status.result.value.runtimeId }
         : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 terminal attach before reset" });
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 terminal auto-attach before reset" });
+    const runtimeId = attached.runtimeId;
+    expect(runtimeId).toBeTruthy();
 
     const resetClicked = await session.evaluate<boolean>(`(() => {
       const button = document.querySelector('.header-action__btn[title="Reset Active Workspace"]');

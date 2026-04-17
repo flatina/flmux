@@ -125,7 +125,7 @@ export class TestShellModelHost implements ShellModelHost {
 
   createTerminalDelegate(): ShellTerminalDelegate {
     return {
-      createRuntime: (paneId, input) => this.createTerminalRuntime(paneId, input),
+      attachRuntime: (paneId, input) => this.createTerminalRuntime(paneId, input),
       writeRuntime: (paneId, input) => this.writeTerminalRuntime(paneId, input),
       resizeRuntime: (paneId, input) => this.resizeTerminalRuntime(paneId, input),
       readHistory: (paneId, input) => this.readTerminalHistory(paneId, input),

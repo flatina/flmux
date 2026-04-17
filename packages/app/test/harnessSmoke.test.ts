@@ -107,7 +107,7 @@ describe("flmux harness smoke", () => {
           };
         };
       }>
-    >(["call", `/panes/${paneId}/terminal/create`, "cwd=."]);
+    >(["call", `/panes/${paneId}/terminal/attach`, "cwd=."]);
     const runtimeId = createResult.result.value.runtimeId;
     expect(createResult.result.value).toMatchObject({
       ok: true,

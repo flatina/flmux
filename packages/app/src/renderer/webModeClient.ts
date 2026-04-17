@@ -259,12 +259,12 @@ export class FlmuxWebModeClient {
         if (pane.kind === "terminal") {
           const terminalAction = document.createElement("button");
           terminalAction.type = "button";
-          terminalAction.textContent = pane.terminal?.attached ? "Kill Runtime" : "Create Runtime";
+          terminalAction.textContent = pane.terminal?.attached ? "Kill Runtime" : "Attach Runtime";
           terminalAction.addEventListener("click", () => {
             void this.runPathCall(
               pane.terminal?.attached
                 ? `/panes/${pane.id}/terminal/kill`
-                : `/panes/${pane.id}/terminal/create`,
+                : `/panes/${pane.id}/terminal/attach`,
               pane.terminal?.attached ? undefined : { cwd: "." }
             );
           });

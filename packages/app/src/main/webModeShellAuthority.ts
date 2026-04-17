@@ -193,10 +193,29 @@ class HeadlessShellHost implements ShellModelHost {
 
   createTerminalDelegate(): ShellTerminalDelegate {
     return {
-      createRuntime: async (paneId, input) => {
+      attachRuntime: async (paneId, input) => {
         const { workspace, pane } = this.requireTerminalPane(paneId);
         if (pane.runtimeId) {
           throw new Error(`Terminal pane '${paneId}' already has an attached runtime`);
+        }
+
+        const adopt = await this.deps.terminalService.adoptByPaneId({
+          rootDir: this.deps.projectDir,
+          paneId
+        });
+        if (adopt.outcome === "adopted") {
+          pane.cwd = adopt.terminal.cwd;
+          pane.rootKey = adopt.rootKey;
+          pane.runtimeId = adopt.runtimeId;
+          pane.summary = adopt.terminal;
+          workspace.paneParams.set(paneId, { cwd: pane.cwd });
+          return {
+            ok: true,
+            rootKey: adopt.rootKey,
+            runtimeId: adopt.runtimeId,
+            history: adopt.history,
+            terminal: adopt.terminal
+          };
         }
 
         const result = await this.deps.terminalService.create({

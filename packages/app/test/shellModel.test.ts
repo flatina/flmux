@@ -322,7 +322,7 @@ describe("shell model direct", () => {
     if (terminalStateList.ok && terminalStateList.found) {
       expect(terminalStateList.entries.map((entry) => entry.name)).toEqual([
         "cwd",
-        "create",
+        "attach",
         "write",
         "resize",
         "history",
@@ -409,7 +409,7 @@ describe("shell model direct", () => {
       { target: { scope: "pane", paneId: "pane.term" }, key: "title", value: "Renamed Terminal" }
     ]);
 
-    expect(await model.pathCall("/panes/current/terminal/create", { cwd: "." })).toEqual({
+    expect(await model.pathCall("/panes/current/terminal/attach", { cwd: "." })).toEqual({
       ok: false,
       code: "INVALID_VALUE",
       error: "Terminal pane already has an attached runtime"
@@ -434,7 +434,7 @@ describe("shell model direct", () => {
     });
     const model = host.createModel();
 
-    const created = await model.pathCall("/panes/current/terminal/create", { cwd: "." });
+    const created = await model.pathCall("/panes/current/terminal/attach", { cwd: "." });
     expect(created).toMatchObject({
       ok: true,
       value: {
@@ -445,7 +445,7 @@ describe("shell model direct", () => {
     });
     expect(host.calls.createTerminalRuntime).toEqual([{ paneId: "pane.term", input: { cwd: "." } }]);
 
-    expect(await model.pathCall("/panes/current/terminal/create", { cwd: "." })).toEqual({
+    expect(await model.pathCall("/panes/current/terminal/attach", { cwd: "." })).toEqual({
       ok: false,
       code: "INVALID_VALUE",
       error: "Terminal pane already has an attached runtime"
@@ -562,7 +562,7 @@ describe("shell model direct", () => {
     });
     const model = host.createModel();
 
-    expect(await model.pathCall("/panes/current/terminal/create", { cwd: "." })).toMatchObject({
+    expect(await model.pathCall("/panes/current/terminal/attach", { cwd: "." })).toMatchObject({
       ok: true,
       value: {
         ok: true,
@@ -617,7 +617,7 @@ describe("shell model direct", () => {
       ]
     });
     const browserCurrentModel = browserCurrent.createModel();
-    expect(await browserCurrentModel.pathCall("/panes/current/terminal/create", { cwd: "." })).toEqual({
+    expect(await browserCurrentModel.pathCall("/panes/current/terminal/attach", { cwd: "." })).toEqual({
       ok: false,
       code: "NOT_CALLABLE",
       error: "Terminal actions only apply to terminal panes"

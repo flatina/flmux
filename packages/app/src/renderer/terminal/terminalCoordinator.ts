@@ -1,5 +1,5 @@
-import { pushTerminalEvent, type TerminalHostAPI } from "../terminalHost";
-import type { TerminalRuntimeSummary } from "../../shared/terminal";
+import type { TerminalHostAPI } from "../terminalHost";
+import type { TerminalCreateResult, TerminalRuntimeSummary } from "../../shared/terminal";
 import { isTerminalPaneRecord, type PaneRecord, type TerminalPaneRecord } from "../shell/paneRegistry";
 
 export interface TerminalWorkspaceRecord {
@@ -23,10 +23,24 @@ export class TerminalCoordinator<W extends TerminalWorkspaceRecord> {
     onRuntimeStateChange(workspace: W, paneId: string, state: TerminalRuntimeState): void;
   }) {}
 
-  async createRuntime(paneId: string, input: { cwd?: string }) {
+  async attachRuntime(paneId: string, input: { cwd?: string }): Promise<TerminalCreateResult> {
     const { record } = this.requireTerminalPane(paneId);
     if (record.runtimeId) {
       throw new Error(`Terminal pane '${paneId}' already has an attached runtime`);
+    }
+
+    const adopt = await this.deps.terminalHost.adoptByPaneId({
+      rootDir: this.deps.installRoot,
+      paneId
+    });
+    if (adopt.outcome === "adopted") {
+      return {
+        ok: true,
+        rootKey: adopt.rootKey,
+        runtimeId: adopt.runtimeId,
+        history: adopt.history,
+        terminal: adopt.terminal
+      };
     }
 
     return this.deps.terminalHost.create({
@@ -104,50 +118,6 @@ export class TerminalCoordinator<W extends TerminalWorkspaceRecord> {
     this.deps.onRuntimeStateChange(workspace, paneId, state);
   }
 
-  async restoreTerminals(workspaces: Iterable<W>) {
-    for (const workspace of workspaces) {
-      for (const [paneId, record] of workspace.paneRecords.entries()) {
-        if (!isTerminalPaneRecord(record) || record.runtimeId !== null) {
-          continue;
-        }
-
-        try {
-          const result = await this.deps.terminalHost.adoptByPaneId({
-            rootDir: this.deps.installRoot,
-            paneId
-          });
-          if (result.outcome === "adopted") {
-            this.attachRestoredRuntime(workspace, paneId, {
-              cwd: result.terminal.cwd,
-              rootKey: result.rootKey,
-              runtimeId: result.runtimeId,
-              summary: result.terminal,
-              history: result.history
-            });
-            continue;
-          }
-        } catch (error) {
-          console.warn(`failed to adopt restored terminal pane '${paneId}'`, error);
-        }
-
-        try {
-          const created = await this.createRuntime(paneId, {
-            cwd: record.cwd
-          });
-          this.attachRestoredRuntime(workspace, paneId, {
-            cwd: created.terminal.cwd,
-            rootKey: created.rootKey,
-            runtimeId: created.runtimeId,
-            summary: created.terminal,
-            history: created.history
-          });
-        } catch (error) {
-          console.warn(`failed to recreate restored terminal pane '${paneId}'`, error);
-        }
-      }
-    }
-  }
-
   async killAttachedRuntime(workspace: W, paneId: string, record: PaneRecord) {
     if (!isTerminalPaneRecord(record) || !record.rootKey || !record.runtimeId) {
       return;
@@ -186,37 +156,5 @@ export class TerminalCoordinator<W extends TerminalWorkspaceRecord> {
       workspace,
       record: record satisfies TerminalPaneRecord
     };
-  }
-
-  private attachRestoredRuntime(
-    workspace: W,
-    paneId: string,
-    input: {
-      cwd: string;
-      rootKey: string;
-      runtimeId: string;
-      summary: TerminalRuntimeSummary;
-      history: string;
-    }
-  ) {
-    this.deps.onRuntimeStateChange(workspace, paneId, {
-      cwd: input.cwd,
-      rootKey: input.rootKey,
-      runtimeId: input.runtimeId,
-      summary: input.summary
-    });
-    pushTerminalEvent({
-      type: "state",
-      paneId,
-      terminal: input.summary
-    });
-    if (input.history.length > 0) {
-      pushTerminalEvent({
-        type: "output",
-        paneId,
-        runtimeId: input.runtimeId,
-        data: input.history
-      });
-    }
   }
 }

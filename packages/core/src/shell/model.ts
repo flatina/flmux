@@ -327,12 +327,12 @@ class ShellModel implements ShellModelAPI {
         return throwPathError("NOT_CALLABLE", "Terminal actions only apply to terminal panes");
       }
 
-      if (segments.length === 4 && segments[3] === "create") {
+      if (segments.length === 4 && segments[3] === "attach") {
         if (readTerminalRuntimeId(pane) !== null) {
           return throwPathError("INVALID_VALUE", "Terminal pane already has an attached runtime");
         }
 
-        const result = await this.terminal.createRuntime(pane.id, {
+        const result = await this.terminal.attachRuntime(pane.id, {
           cwd: optionalString(args.cwd)
         });
         return { ok: true, value: result };
@@ -1382,12 +1382,12 @@ function readTerminalRuntimeId(pane: ShellPaneRecordSnapshot) {
 }
 
 function isTerminalActionSegment(segment: string) {
-  return segment === "create" || segment === "write" || segment === "resize" || segment === "history" || segment === "kill";
+  return segment === "attach" || segment === "write" || segment === "resize" || segment === "history" || segment === "kill";
 }
 
 function terminalActionEntries(basePath: string) {
   return [
-    actionEntry("create", `${basePath}/create`),
+    actionEntry("attach", `${basePath}/attach`),
     actionEntry("write", `${basePath}/write`),
     actionEntry("resize", `${basePath}/resize`),
     actionEntry("history", `${basePath}/history`),

@@ -22,7 +22,6 @@ export interface TerminalPaneRendererDependencies {
 type TerminalPaneParams = {
   cwd?: string;
   rootDir?: string;
-  autoCreate?: boolean;
 };
 
 const MAX_RENDER_HISTORY_CHARS = 200_000;
@@ -35,7 +34,6 @@ export class TerminalPaneRenderer implements IContentRenderer {
   private rootKey: string | null = null;
   private runtimeId: string | null = null;
   private history = "";
-  private autoCreate = false;
 
   private xterm?: XtermTerminal;
   private fitAddon?: FitAddon;
@@ -53,7 +51,6 @@ export class TerminalPaneRenderer implements IContentRenderer {
     this.paneId = params.api.id;
     const input = params.params as TerminalPaneParams;
     this.cwd = input.cwd ?? input.rootDir ?? ".";
-    this.autoCreate = input.autoCreate === true;
 
     this.element.innerHTML = `<div class="terminal-panel__viewport" data-role="viewport"></div>`;
     this.viewportEl = this.element.querySelector<HTMLElement>('[data-role="viewport"]')!;
@@ -70,8 +67,8 @@ export class TerminalPaneRenderer implements IContentRenderer {
     }
 
     void this.ensureXterm().then(() => {
-      if (this.autoCreate && !this.runtimeId) {
-        void this.createRuntime();
+      if (!this.runtimeId) {
+        void this.attachRuntime();
       }
     });
   }
@@ -134,20 +131,20 @@ export class TerminalPaneRenderer implements IContentRenderer {
     return this.xtermReady;
   }
 
-  private async createRuntime() {
+  private async attachRuntime() {
     if (this.runtimeId) {
       return;
     }
 
     try {
-      const result = await this.deps.shellModel.pathCall(`/panes/${this.paneId}/terminal/create`, {
+      const result = await this.deps.shellModel.pathCall(`/panes/${this.paneId}/terminal/attach`, {
         cwd: this.cwd,
       });
       if (!result.ok) {
         throw new Error(result.error);
       }
 
-      this.applyCreateResult(result.value as TerminalCreateResult);
+      this.applyAttachResult(result.value as TerminalCreateResult);
       await this.ensureXterm();
       this.fitTerminal();
     } catch (error) {
@@ -203,13 +200,12 @@ export class TerminalPaneRenderer implements IContentRenderer {
     }
   }
 
-  private applyCreateResult(result: TerminalCreateResult) {
+  private applyAttachResult(result: TerminalCreateResult) {
     this.rootKey = result.rootKey;
     this.runtimeId = result.runtimeId;
     this.cwd = result.terminal.cwd;
     this.history = clampHistory(result.history);
     this.lastResizeSignature = null;
-    this.autoCreate = false;
     this.deps.onRuntimeStateChange(this.paneId, {
       cwd: this.cwd,
       rootKey: this.rootKey,
@@ -260,7 +256,6 @@ export class TerminalPaneRenderer implements IContentRenderer {
       this.rootKey = event.terminal.rootKey;
       this.runtimeId = event.terminal.runtimeId;
       this.cwd = event.terminal.cwd;
-      this.autoCreate = false;
       this.deps.onRuntimeStateChange(this.paneId, {
         cwd: this.cwd,
         rootKey: this.rootKey,

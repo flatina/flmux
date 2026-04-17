@@ -113,7 +113,7 @@ export class FlmuxWorkbench implements ShellModelHost {
     this.shellModel = createShellModel({
       host: this,
       terminal: {
-        createRuntime: (paneId, input) => this.terminalCoordinator.createRuntime(paneId, input),
+        attachRuntime: (paneId, input) => this.terminalCoordinator.attachRuntime(paneId, input),
         writeRuntime: (paneId, input) => this.terminalCoordinator.writeRuntime(paneId, input),
         resizeRuntime: (paneId, input) => this.terminalCoordinator.resizeRuntime(paneId, input),
         readHistory: (paneId, input) => this.terminalCoordinator.readHistory(paneId, input),
@@ -149,10 +149,6 @@ export class FlmuxWorkbench implements ShellModelHost {
       await this.restoreSessionOrDefaults();
     } else {
       await this.initializeDefaultWorkspaceSet();
-    }
-
-    if (this.lifecyclePolicy.restoreTerminals) {
-      await this.terminalCoordinator.restoreTerminals(this.workspaces.values());
     }
 
     this.updateDocumentTitle();

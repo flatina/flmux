@@ -14,12 +14,10 @@ describe("flmux runtime mode", () => {
   it("keeps renderer recovery desktop-only", () => {
     expect(getFlmuxRendererLifecyclePolicy("desktop")).toEqual({
       restoreSession: true,
-      restoreTerminals: true,
       persistSession: true
     });
     expect(getFlmuxRendererLifecyclePolicy("web")).toEqual({
       restoreSession: false,
-      restoreTerminals: false,
       persistSession: false
     });
   });

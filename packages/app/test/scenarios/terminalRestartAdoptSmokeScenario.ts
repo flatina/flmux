@@ -53,29 +53,28 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
     });
     const paneId = newPane.result.value.paneId;
 
-    const created = await postJson<{
-      ok: true;
-      result: {
+    const attached = await waitFor(async () => {
+      const status = await postJson<{
         ok: true;
-        value: {
+        result: {
           ok: true;
-          rootKey: string;
-          runtimeId: string;
+          found: true;
+          value: {
+            attached: boolean;
+            rootKey: string | null;
+            runtimeId: string | null;
+          };
         };
-      };
-    }>(`${firstOrigin}/api/model/path/call`, {
-      clientId: firstClientId,
-      path: `/panes/${paneId}/terminal/create`,
-      args: {
-        cwd: "."
-      }
-    });
-    expect(created.result).toMatchObject({ ok: true });
-    if (!created.result.ok) {
-      throw new Error(`terminal/create failed: ${JSON.stringify(created.result)}`);
-    }
-    const rootKey = created.result.value.rootKey;
-    const runtimeId = created.result.value.runtimeId;
+      }>(`${firstOrigin}/api/model/path/get`, {
+        clientId: firstClientId,
+        path: `/status/panes/${paneId}/terminal`
+      });
+      return status.result.value.attached && status.result.value.rootKey && status.result.value.runtimeId
+        ? { rootKey: status.result.value.rootKey, runtimeId: status.result.value.runtimeId }
+        : null;
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "initial terminal auto-attach" });
+    const rootKey = attached.rootKey;
+    const runtimeId = attached.runtimeId;
     const rootDir = resolveAppInstallRoot();
 
     const marker = `flmux-restart-${crypto.randomUUID()}`;

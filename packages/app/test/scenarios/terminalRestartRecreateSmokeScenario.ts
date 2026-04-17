@@ -47,25 +47,28 @@ export async function runTerminalRestartRecreateSmokeScenario(appHandles: AppPro
     });
     const paneId = newPane.result.value.paneId;
 
-    const created = await postJson<{
-      ok: true;
-      result: {
+    const attached = await waitFor(async () => {
+      const status = await postJson<{
         ok: true;
-        value: {
+        result: {
           ok: true;
-          rootKey: string;
-          runtimeId: string;
+          found: true;
+          value: {
+            attached: boolean;
+            rootKey: string | null;
+            runtimeId: string | null;
+          };
         };
-      };
-    }>(`${firstOrigin}/api/model/path/call`, {
-      clientId: firstClientId,
-      path: `/panes/${paneId}/terminal/create`,
-      args: {
-        cwd: "."
-      }
-    });
-    const rootKey = created.result.value.rootKey;
-    const firstRuntimeId = created.result.value.runtimeId;
+      }>(`${firstOrigin}/api/model/path/get`, {
+        clientId: firstClientId,
+        path: `/status/panes/${paneId}/terminal`
+      });
+      return status.result.value.attached && status.result.value.rootKey && status.result.value.runtimeId
+        ? { rootKey: status.result.value.rootKey, runtimeId: status.result.value.runtimeId }
+        : null;
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "recreate initial terminal auto-attach" });
+    const rootKey = attached.rootKey;
+    const firstRuntimeId = attached.runtimeId;
 
     await waitFor(async () => {
       try {

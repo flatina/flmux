@@ -46,7 +46,7 @@ export type PaneRecord = BrowserPaneRecord | TerminalPaneRecord | GenericPaneRec
 export interface PaneRendererRuntimeContext {
   shellModel: ShellModelAPI;
   browserPanelTemplate: HTMLTemplateElement;
-  terminalHost: Pick<TerminalHostAPI, "onEvent">;
+  terminalHost: Pick<TerminalHostAPI, "subscribe">;
   normalizeBrowserUrl(value: string): string | null;
   onBrowserUrlChange(paneId: string, url: string): void;
   onTerminalRuntimeStateChange(

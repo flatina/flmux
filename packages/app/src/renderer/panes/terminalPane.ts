@@ -12,7 +12,7 @@ import type {
 
 export interface TerminalPaneRendererDependencies {
   shellModel: ShellModelAPI;
-  terminalEvents: Pick<TerminalHostAPI, "onEvent">;
+  terminalEvents: Pick<TerminalHostAPI, "subscribe">;
   onRuntimeStateChange(
     paneId: string,
     state: { cwd: string; rootKey: string | null; runtimeId: string | null; summary: TerminalRuntimeSummary | null }
@@ -55,7 +55,7 @@ export class TerminalPaneRenderer implements IContentRenderer {
     this.element.innerHTML = `<div class="terminal-panel__viewport" data-role="viewport"></div>`;
     this.viewportEl = this.element.querySelector<HTMLElement>('[data-role="viewport"]')!;
 
-    this.unsubscribeEvent = this.deps.terminalEvents.onEvent((event) => {
+    this.unsubscribeEvent = this.deps.terminalEvents.subscribe((event) => {
       this.handleTerminalEvent(event);
     });
 

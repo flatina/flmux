@@ -73,6 +73,103 @@ export class ShellCore implements ShellModelHost {
     this.seedWorkspace(workspace);
   }
 
+  /**
+   * Create an empty workspace with an explicit id, without seeding default
+   * panes. Used by the desktop workbench during session restore, where
+   * dockview already holds the serialized panels — ShellCore just needs
+   * the logical records rebuilt with the restored ids.
+   */
+  restoreWorkspace(input: { id: string; title: string; defaultTitle?: string; setActive?: boolean }) {
+    const workspace = this.createWorkspaceRecord(input.id, input.title);
+    if (input.defaultTitle) {
+      workspace.defaultTitle = input.defaultTitle;
+    }
+    if (input.setActive || !this.activeWorkspaceId) {
+      this.activeWorkspaceId = workspace.id;
+    }
+    return this.toWorkspaceStatus(workspace);
+  }
+
+  /**
+   * Rebuild a pane state record with an explicit paneId (skipping the usual
+   * UUID generation). Used during session restore to match ids already
+   * materialized in the view layer.
+   */
+  restorePane(
+    workspaceId: string,
+    input: { paneId: string; kind: string; params?: Record<string, unknown>; title?: string }
+  ): ShellPaneRecordSnapshot {
+    const workspace = this.requireWorkspace(workspaceId);
+    const spec = this.options.paneRegistry.get(input.kind);
+    if (!spec) {
+      throw new Error(`Unknown pane kind '${input.kind}'`);
+    }
+    const workspaceContext = this.toWorkspaceContext(workspace);
+    const params = spec.persistence?.normalizeRestoredParams?.({
+      workspace: workspaceContext,
+      params: input.params
+    }) ?? input.params;
+
+    const record = createPaneStateRecord({
+      spec,
+      workspace: workspaceContext,
+      params
+    });
+    const normalizedParams = cloneJsonObject(params) ?? {};
+    if (isBrowserPaneStateRecord(record)) {
+      const nextUrl = normalizeBrowserUrl("", this.appOrigin, record.url, workspace.defaultBrowserPath);
+      record.url = nextUrl;
+      normalizedParams.url = nextUrl;
+    }
+    if (isTerminalPaneStateRecord(record)) {
+      normalizedParams.cwd = record.cwd;
+    }
+
+    const title = input.title?.trim() || humanizePaneKind(input.kind);
+
+    workspace.paneOrder.push(input.paneId);
+    workspace.paneTitles.set(input.paneId, title);
+    workspace.paneStates.set(input.paneId, record);
+    workspace.paneParams.set(input.paneId, Object.keys(normalizedParams).length > 0 ? normalizedParams : params);
+    workspace.activePaneId = input.paneId;
+    this.paneWorkspaceIds.set(input.paneId, workspace.id);
+
+    return this.createPaneSnapshot(workspace, input.paneId, title);
+  }
+
+  setActiveWorkspace(workspaceId: string | null) {
+    if (workspaceId === null) {
+      this.activeWorkspaceId = null;
+      return;
+    }
+    this.requireWorkspace(workspaceId);
+    this.activeWorkspaceId = workspaceId;
+  }
+
+  setActivePane(workspaceId: string, paneId: string | null) {
+    const workspace = this.requireWorkspace(workspaceId);
+    if (paneId !== null && !workspace.paneStates.has(paneId)) {
+      throw new Error(`Pane '${paneId}' not found in workspace '${workspaceId}'`);
+    }
+    workspace.activePaneId = paneId;
+  }
+
+  getActiveWorkspaceId(): string | null {
+    return this.activeWorkspaceId;
+  }
+
+  setAppTitle(title: string) {
+    this.appTitle = title;
+  }
+
+  getAppTitle(): string {
+    return this.appTitle;
+  }
+
+  getWorkspaceIds(): string[] {
+    return [...this.workspaces.keys()];
+  }
+
   setAppOrigin(origin: string) {
     const previousOrigin = this.appOrigin;
     this.appOrigin = origin;

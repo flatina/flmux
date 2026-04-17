@@ -264,6 +264,46 @@ describe("ShellCore", () => {
     expect(await mount?.getStateSnapshot()).toEqual({ count: 42 });
   });
 
+  it("restoreWorkspace creates an empty workspace without seeding default panes", async () => {
+    const { core } = buildShellCore();
+    const status = core.restoreWorkspace({ id: "workspace.99", title: "Restored" });
+    expect(status).toMatchObject({ id: "workspace.99", title: "Restored", paneCount: 0 });
+    expect(core.getWorkspaceIds()).toContain("workspace.99");
+  });
+
+  it("restorePane reuses the given paneId and rebuilds state from persisted params", async () => {
+    const { core } = buildShellCore();
+    core.restoreWorkspace({ id: "workspace.99", title: "Restored", setActive: true });
+    const snapshot = core.restorePane("workspace.99", {
+      paneId: "pane_original",
+      kind: "browser",
+      params: { url: "/saved" },
+      title: "Saved Browser"
+    });
+    expect(snapshot.id).toBe("pane_original");
+    expect(snapshot.browser?.url).toBe(`${ORIGIN}/saved`);
+    expect(snapshot.title).toBe("Saved Browser");
+
+    const fetched = await core.getPane("pane_original");
+    expect(fetched?.browser?.url).toBe(`${ORIGIN}/saved`);
+  });
+
+  it("setActiveWorkspace + setActivePane change cursor without touching other state", async () => {
+    const { core } = buildShellCore();
+    const extra = await core.createWorkspace({ title: "Second" });
+    core.setActiveWorkspace("workspace.1");
+    expect(core.getActiveWorkspaceId()).toBe("workspace.1");
+
+    core.setActiveWorkspace(extra.id);
+    expect(core.getActiveWorkspaceId()).toBe(extra.id);
+
+    const pane = await core.createPane({ kind: "browser", url: "/x" });
+    core.setActivePane(extra.id, null);
+    expect((await core.getWorkspaceStatus()).activePaneId).toBeNull();
+    core.setActivePane(extra.id, pane.id);
+    expect((await core.getWorkspaceStatus()).activePaneId).toBe(pane.id);
+  });
+
   it("creates separate workspaces whose bus is scoped to each id", async () => {
     const { core } = buildShellCore();
     const extra = await core.createWorkspace({ title: "Second" });

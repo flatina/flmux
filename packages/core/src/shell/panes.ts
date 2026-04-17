@@ -86,6 +86,17 @@ export interface PaneSpec<TRecord extends PaneStateRecord = PaneStateRecord> {
   pathMount?: PanePathMount<TRecord>;
 }
 
+/**
+ * Read-only view over a PaneRegistry. Consumers that only need lookup can
+ * accept this narrower type; any `PaneRegistry<T>` with T structurally
+ * compatible with PaneSpec satisfies it via covariant subtyping of the
+ * return values.
+ */
+export interface PaneSpecRegistry {
+  get(kind: string): PaneSpec | undefined;
+  list(): readonly PaneSpec[];
+}
+
 export class PaneRegistry<TDescriptor extends {
   kind: string;
   pathMount?: { mountKey: string } | undefined;

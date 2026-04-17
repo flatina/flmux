@@ -2,7 +2,6 @@ import type { TerminalBackend } from "../terminal/backend";
 import type { TerminalRuntimeEvent } from "../terminal/terminal";
 import { resolveTerminalCwdFromRoot } from "../terminal/terminalPath";
 import {
-  PaneRegistry,
   createPaneSnapshot as createPaneSnapshotHelper,
   createPaneStateRecord,
   isBrowserPaneStateRecord,
@@ -12,6 +11,7 @@ import {
   type PanePathMount,
   type PanePathMountContext,
   type PaneSpec,
+  type PaneSpecRegistry,
   type PaneStateRecord,
   type PaneWorkspaceContext
 } from "./panes";
@@ -44,7 +44,7 @@ interface WorkspaceRecord {
 }
 
 export interface ShellCoreOptions {
-  paneRegistry: PaneRegistry<PaneSpec>;
+  paneRegistry: PaneSpecRegistry;
   runtimeLabel: string;
   /** Install root used to resolve terminal cwd and as the ptyd root. */
   projectDir: string;

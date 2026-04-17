@@ -400,8 +400,7 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
       args: {
         kind: "terminal",
         cwd: ".",
-        place: "right",
-        autoCreate: true
+        place: "right"
       }
     });
     const terminalPaneId = terminalPane.result.value.paneId;

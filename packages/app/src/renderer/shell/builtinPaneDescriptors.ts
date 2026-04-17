@@ -117,7 +117,7 @@ function createBuiltinPaneDescriptors(
       lifecycle: {
         createParams: ({ input }) => ({
           cwd: deps.resolveTerminalCwd(deps.installRoot, input.cwd),
-          autoCreate: input.params?.autoCreate === true
+          autoCreate: input.params?.autoCreate !== false
         }),
         getTitle: ({ input }) => input.title?.trim() || "Terminal",
         createRecord: ({ params }) => ({

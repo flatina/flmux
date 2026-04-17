@@ -4,7 +4,6 @@ import { resolveTerminalCwdFromRoot } from "../terminal/terminalPath";
 import {
   createPaneSnapshot as createPaneSnapshotHelper,
   createPaneStateRecord,
-  isBrowserPaneStateRecord,
   isTerminalPaneStateRecord,
   resolvePaneCreateParams,
   resolvePaneTitle,
@@ -116,11 +115,6 @@ export class ShellCore implements ShellModelHost {
       params
     });
     const normalizedParams = cloneJsonObject(params) ?? {};
-    if (isBrowserPaneStateRecord(record)) {
-      const nextUrl = normalizeBrowserUrl("", this.appOrigin, record.url, workspace.defaultBrowserPath);
-      record.url = nextUrl;
-      normalizedParams.url = nextUrl;
-    }
     if (isTerminalPaneStateRecord(record)) {
       normalizedParams.cwd = record.cwd;
     }
@@ -170,22 +164,14 @@ export class ShellCore implements ShellModelHost {
     return [...this.workspaces.keys()];
   }
 
+  /**
+   * Stores the app origin. Browser-pane URL composition lives in the browser
+   * pane spec's lifecycle hooks (via `workspace.appOrigin`); rewriting existing
+   * panes when the origin changes is a transport-adapter concern and lives
+   * outside core.
+   */
   setAppOrigin(origin: string) {
-    const previousOrigin = this.appOrigin;
     this.appOrigin = origin;
-
-    for (const workspace of this.workspaces.values()) {
-      for (const paneId of workspace.paneOrder) {
-        const pane = workspace.paneStates.get(paneId);
-        if (!pane || !isBrowserPaneStateRecord(pane)) {
-          continue;
-        }
-
-        const normalized = normalizeBrowserUrl(previousOrigin, this.appOrigin, pane.url, workspace.defaultBrowserPath);
-        pane.url = normalized;
-        workspace.paneParams.set(paneId, { url: normalized });
-      }
-    }
   }
 
   applyTerminalEvent(event: TerminalRuntimeEvent) {
@@ -441,12 +427,6 @@ export class ShellCore implements ShellModelHost {
   async setPaneParams(paneId: string, nextParams: Record<string, unknown>): Promise<Record<string, unknown>> {
     const { workspace, record } = this.lookupPane(paneId);
     const cloned = cloneJsonObject(nextParams) ?? {};
-    if (isBrowserPaneStateRecord(record) && typeof cloned.url === "string") {
-      const nextUrl = normalizeBrowserUrl("", this.appOrigin, cloned.url, workspace.defaultBrowserPath);
-      record.url = nextUrl;
-      workspace.paneParams.set(paneId, { ...cloned, url: nextUrl });
-      return { ...cloned, url: nextUrl };
-    }
 
     if (isTerminalPaneStateRecord(record) && typeof cloned.cwd === "string") {
       record.cwd = resolveTerminalCwdFromRoot(this.options.projectDir, cloned.cwd);
@@ -701,11 +681,6 @@ export class ShellCore implements ShellModelHost {
       params
     });
     const normalizedParams = cloneJsonObject(params) ?? {};
-    if (isBrowserPaneStateRecord(record)) {
-      const nextUrl = normalizeBrowserUrl("", this.appOrigin, record.url, workspace.defaultBrowserPath);
-      record.url = nextUrl;
-      normalizedParams.url = nextUrl;
-    }
     if (isTerminalPaneStateRecord(record)) {
       normalizedParams.cwd = record.cwd;
     }

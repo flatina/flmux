@@ -95,13 +95,13 @@ function createBuiltinPaneSpecs(projectDir: string): PaneSpec[] {
       kind: "browser",
       lifecycle: {
         createParams: ({ workspace, input }) => ({
-          url: normalizeBrowserUrl("", "", input.url ?? workspace.defaultBrowserPath, workspace.defaultBrowserPath)
+          url: normalizeBrowserUrl("", workspace.appOrigin, input.url ?? workspace.defaultBrowserPath, workspace.defaultBrowserPath)
         }),
         getTitle: ({ input, params }) =>
           input.title?.trim() || inferBrowserTitle(optionalStringParam(params?.url) ?? "Browser"),
         createRecord: ({ workspace, params }) => ({
           kind: "browser",
-          url: normalizeBrowserUrl("", "", optionalStringParam(params?.url) ?? workspace.defaultBrowserPath, workspace.defaultBrowserPath)
+          url: normalizeBrowserUrl("", workspace.appOrigin, optionalStringParam(params?.url) ?? workspace.defaultBrowserPath, workspace.defaultBrowserPath)
         }),
         createSnapshot: ({ paneId, title, active, record }) =>
           isBrowserPaneStateRecord(record)
@@ -138,7 +138,7 @@ function createBuiltinPaneSpecs(projectDir: string): PaneSpec[] {
               throw new Error(`Unsupported browser path '${relativePath.join("/")}'`);
             }
 
-            const nextUrl = normalizeBrowserUrl("", "", requiredString(value, "Pane url"), workspace.defaultBrowserPath);
+            const nextUrl = normalizeBrowserUrl("", workspace.appOrigin, requiredString(value, "Pane url"), workspace.defaultBrowserPath);
             record.url = nextUrl;
             await setParams({
               ...(currentParams ?? {}),

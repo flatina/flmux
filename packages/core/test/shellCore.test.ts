@@ -131,34 +131,32 @@ describe("ShellCore", () => {
     expect(backend.killCalls.map((call) => call.runtimeId).sort()).toEqual(["rt_1", "rt_2"]);
   });
 
-  it("rewrites browser pane urls when app origin changes", async () => {
+  it("setAppOrigin stores the origin without rewriting existing panes (adapter owns re-normalization)", async () => {
     const { core } = buildShellCore();
     const pane = await core.createPane({ kind: "browser", url: "/foo" });
     expect(pane.browser?.url).toBe(`${ORIGIN}/foo`);
 
     core.setAppOrigin("http://127.0.0.1:8100");
     const updated = await core.getPane(pane.id);
-    expect(updated?.browser?.url).toBe("http://127.0.0.1:8100/foo");
+    expect(updated?.browser?.url).toBe(`${ORIGIN}/foo`);
+    expect((await core.getAppStatus()).origin).toBe("http://127.0.0.1:8100");
   });
 
-  it("normalizes browser url through setPaneParams against the current origin", async () => {
+  it("setPaneParams stores params verbatim; URL normalization flows through the /browser/url subtree", async () => {
     const { core } = buildShellCore();
     const pane = await core.createPane({ kind: "browser", url: "/initial" });
 
-    const result = await core.setPaneParams(pane.id, { url: "/after" });
-    expect(result.url).toBe(`${ORIGIN}/after`);
-
-    const status = await core.getPane(pane.id);
-    expect(status?.browser?.url).toBe(`${ORIGIN}/after`);
+    const raw = await core.setPaneParams(pane.id, { url: "/after" });
+    expect(raw.url).toBe("/after");
   });
 
-  it("patchPaneParams merges a partial update onto the existing params", async () => {
+  it("patchPaneParams merges a partial update onto the existing params verbatim", async () => {
     const { core } = buildShellCore();
     const pane = await core.createPane({ kind: "browser", url: "/home" });
 
     await core.setPaneParams(pane.id, { url: "/home", extra: "keep" });
     const patched = await core.patchPaneParams(pane.id, { url: "/next" });
-    expect(patched).toMatchObject({ url: `${ORIGIN}/next`, extra: "keep" });
+    expect(patched).toMatchObject({ url: "/next", extra: "keep" });
   });
 
   it("applies terminal state events onto matching pane records", async () => {
@@ -362,14 +360,14 @@ function builtinSpecs(): PaneSpec[] {
       kind: "browser",
       lifecycle: {
         createParams: ({ workspace, input }) => ({
-          url: normalizeBrowserUrl("", "", input.url ?? workspace.defaultBrowserPath, workspace.defaultBrowserPath)
+          url: normalizeBrowserUrl("", workspace.appOrigin, input.url ?? workspace.defaultBrowserPath, workspace.defaultBrowserPath)
         }),
         getTitle: ({ input }) => input.title?.trim() || "Browser",
         createRecord: ({ workspace, params }) => ({
           kind: "browser",
           url: normalizeBrowserUrl(
             "",
-            "",
+            workspace.appOrigin,
             typeof params?.url === "string" ? params.url : workspace.defaultBrowserPath,
             workspace.defaultBrowserPath
           )

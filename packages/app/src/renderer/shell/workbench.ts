@@ -4,6 +4,8 @@ import {
   themeAbyss,
   type CreateComponentOptions,
   type DockviewApi,
+  type DockviewPanelApi,
+  type GroupPanelPartInitParameters,
   type IContentRenderer,
   type SerializedDockview
 } from "dockview-core";
@@ -59,20 +61,21 @@ type WorkspaceRecord = {
   defaultTitle: string;
   defaultBrowserPath: string;
   rootDir: string;
-  surface: HTMLElement;
   bus: WorkspaceBus;
   paneRecords: Map<string, PaneRecord>;
-  api: DockviewApi | null;
+  outerPanelApi: DockviewPanelApi | null;
+  innerApi: DockviewApi | null;
+  innerHost: HTMLElement | null;
+  innerResizeObserver: ResizeObserver | null;
+  pendingInnerLayout: SerializedDockview | null;
 };
+
+const OUTER_WORKSPACE_COMPONENT = "workspace";
 
 export class FlmuxWorkbench implements ShellModelHost {
   readonly shellModel: ShellModelAPI;
   private readonly lifecyclePolicy: ReturnType<typeof getFlmuxRendererLifecyclePolicy>;
 
-  private readonly appTitleEl = document.getElementById("app-title")!;
-  private readonly workspaceTitleEl = document.getElementById("workspace-title")!;
-  private readonly runtimeBadgeEl = document.getElementById("runtime-badge")!;
-  private readonly workspaceSwitcherEl = document.getElementById("workspace-switcher")!;
   private readonly shellEl = document.querySelector<HTMLElement>(".dockview-shell")!;
   private readonly browserPanelTemplate = document.getElementById("browser-panel-tpl") as HTMLTemplateElement;
   private readonly sessionHost: ReturnType<typeof createSessionHost>;
@@ -81,14 +84,14 @@ export class FlmuxWorkbench implements ShellModelHost {
   private readonly paneRegistry = new PaneRegistry();
 
   private readonly workspaces = new Map<string, WorkspaceRecord>();
-  private readonly closingWorkspaceIds = new Set<string>();
+  private outerApi: DockviewApi | null = null;
 
-  private activeWorkspaceId = "";
   private appTitle = "flmux";
   private runtimeLabel = "booting";
   private sessionSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private sessionPersistenceEnabled = false;
   private sessionPersistenceSuppressed = false;
+  private reseedingDefault = false;
 
   constructor(private readonly config: FlmuxRendererBootstrapConfig, hostProxy: FlmuxHostRequestProxy) {
     this.lifecyclePolicy = getFlmuxRendererLifecyclePolicy(config.mode);
@@ -138,8 +141,7 @@ export class FlmuxWorkbench implements ShellModelHost {
 
   async start() {
     this.runtimeLabel = this.config.mode === "desktop" ? "desktop local-http preload ok" : "web local-http attach";
-    this.initializeWorkspaceShell();
-    this.bindTopbar();
+    this.initializeOuterShell();
 
     if (this.lifecyclePolicy.restoreSession) {
       await this.restoreSessionOrDefaults();
@@ -151,7 +153,7 @@ export class FlmuxWorkbench implements ShellModelHost {
       await this.terminalCoordinator.restoreTerminals(this.workspaces.values());
     }
 
-    this.renderChrome();
+    this.updateDocumentTitle();
     setupDropIndicatorMasks();
 
     if (this.lifecyclePolicy.persistSession) {
@@ -177,9 +179,8 @@ export class FlmuxWorkbench implements ShellModelHost {
 
   async createWorkspace(input: { title?: string } = {}) {
     const workspace = this.createWorkspaceRecord(this.allocateWorkspaceDescriptor(input.title));
-    this.ensureWorkspaceInitialized(workspace);
+    this.mountOuterPanel(workspace, { focus: true });
     await this.resetWorkspace(workspace);
-    this.activateWorkspace(workspace.id);
     return this.toWorkspaceStatus(workspace);
   }
 
@@ -197,14 +198,16 @@ export class FlmuxWorkbench implements ShellModelHost {
     switch (target.scope) {
       case "app":
         this.appTitle = nextValue;
-        this.renderChrome();
+        this.updateDocumentTitle();
         this.scheduleSessionSave();
         return { value: this.appTitle };
       case "workspace": {
         const workspace = target.workspaceId ? this.requireWorkspace(target.workspaceId) : this.getCurrentWorkspace();
         workspace.title = nextValue;
-        this.renderWorkspaceSwitcher();
-        this.renderChrome();
+        workspace.outerPanelApi?.setTitle(nextValue);
+        if (workspace.id === this.getActiveWorkspaceId()) {
+          this.updateDocumentTitle();
+        }
         this.scheduleSessionSave();
         return { value: workspace.title };
       }
@@ -216,7 +219,6 @@ export class FlmuxWorkbench implements ShellModelHost {
 
         const record = this.requirePaneRecord(workspace, target.paneId);
         record.panel.api.setTitle(nextValue);
-        this.renderChrome();
         this.scheduleSessionSave();
         return { value: record.panel.title ?? nextValue };
       }
@@ -355,6 +357,53 @@ export class FlmuxWorkbench implements ShellModelHost {
     return event;
   }
 
+  attachInnerDockview(workspace: WorkspaceRecord, host: HTMLElement, outerApi: DockviewPanelApi) {
+    workspace.outerPanelApi = outerApi;
+    workspace.innerHost = host;
+
+    const innerApi = createDockview(host, {
+      theme: themeAbyss,
+      disableFloatingGroups: true,
+      createComponent: (options) => this.createInnerPanelRenderer(workspace, options)
+    });
+    workspace.innerApi = innerApi;
+
+    this.bindInnerDockviewEvents(workspace);
+
+    if (workspace.pendingInnerLayout) {
+      try {
+        innerApi.fromJSON(this.prepareWorkspaceLayoutForRestore(workspace, workspace.pendingInnerLayout));
+        this.rehydrateWorkspacePaneRecords(workspace);
+      } catch (error) {
+        console.warn(`failed to restore workspace '${workspace.id}' from saved session`, error);
+        workspace.paneRecords.clear();
+        innerApi.clear();
+      }
+      workspace.pendingInnerLayout = null;
+    }
+
+    const layoutInner = () => {
+      const width = host.clientWidth;
+      const height = host.clientHeight;
+      if (workspace.innerApi && width > 0 && height > 0) {
+        workspace.innerApi.layout(width, height, true);
+      }
+    };
+
+    workspace.innerResizeObserver = new ResizeObserver(() => layoutInner());
+    workspace.innerResizeObserver.observe(host);
+    requestAnimationFrame(layoutInner);
+  }
+
+  detachInnerDockview(workspace: WorkspaceRecord) {
+    workspace.innerResizeObserver?.disconnect();
+    workspace.innerResizeObserver = null;
+    workspace.innerApi?.dispose();
+    workspace.innerApi = null;
+    workspace.innerHost = null;
+    workspace.outerPanelApi = null;
+  }
+
   private requirePaneDescriptor(kind: string) {
     const descriptor = this.paneRegistry.get(kind);
     if (!descriptor) {
@@ -373,174 +422,49 @@ export class FlmuxWorkbench implements ShellModelHost {
     };
   }
 
-  private initializeWorkspaceShell() {
-    for (const workspace of this.workspaces.values()) {
-      workspace.api?.dispose();
-    }
-
+  private initializeOuterShell() {
     this.shellEl.replaceChildren();
     this.workspaces.clear();
-    this.activeWorkspaceId = "";
 
-    this.renderWorkspaceSwitcher();
-  }
-
-  private bindTopbar() {
-    document.querySelector<HTMLButtonElement>('[data-action="new-workspace"]')!.addEventListener("click", () => {
-      void this.shellModel.pathCall("/workspaces/new");
-    });
-
-    document.querySelector<HTMLButtonElement>('[data-action="new-browser"]')!.addEventListener("click", () => {
-      void this.shellModel.pathCall("/panes/new", {
-        kind: "browser",
-        place: "right"
-      });
-    });
-
-    document.querySelector<HTMLButtonElement>('[data-action="new-cowsay"]')!.addEventListener("click", () => {
-      void this.shellModel.pathCall("/panes/new", {
-        kind: "cowsay",
-        place: "right"
-      });
-    });
-
-    document.querySelector<HTMLButtonElement>('[data-action="new-inspector"]')!.addEventListener("click", () => {
-      void this.shellModel.pathCall("/panes/new", {
-        kind: "inspector",
-        place: "right"
-      });
-    });
-
-    document.querySelector<HTMLButtonElement>('[data-action="new-scratchpad"]')!.addEventListener("click", () => {
-      void this.shellModel.pathCall("/panes/new", {
-        kind: "scratchpad",
-        place: "right"
-      });
-    });
-
-    document.querySelector<HTMLButtonElement>('[data-action="new-terminal"]')!.addEventListener("click", () => {
-      void this.shellModel.pathCall("/panes/new", {
-        kind: "terminal",
-        cwd: ".",
-        place: "right",
-        autoCreate: true
-      });
-    });
-
-    document.querySelector<HTMLButtonElement>('[data-action="reset"]')!.addEventListener("click", () => {
-      void this.resetWorkspace(this.getCurrentWorkspace());
-    });
-  }
-
-  private activateWorkspace(workspaceId: string, options: { persist?: boolean } = {}) {
-    const workspace = this.requireWorkspace(workspaceId);
-    this.activeWorkspaceId = workspaceId;
-
-    for (const record of this.workspaces.values()) {
-      record.surface.classList.toggle("workspace-surface--active", record.id === workspaceId);
-    }
-
-    this.ensureWorkspaceInitialized(workspace);
-    this.renderWorkspaceSwitcher();
-    this.renderChrome();
-    if (options.persist !== false) {
-      this.scheduleSessionSave();
-    }
-
-    requestAnimationFrame(() => {
-      const width = workspace.surface.clientWidth;
-      const height = workspace.surface.clientHeight;
-      if (workspace.api && width > 0 && height > 0) {
-        workspace.api.layout(width, height, true);
-      }
-    });
-  }
-
-  private async closeWorkspace(workspaceId: string) {
-    if (this.workspaces.size <= 1 || this.closingWorkspaceIds.has(workspaceId)) {
-      return false;
-    }
-
-    const workspace = this.requireWorkspace(workspaceId);
-    this.closingWorkspaceIds.add(workspace.id);
-    try {
-      if (workspace.id === this.activeWorkspaceId) {
-        const nextWorkspaceId = this.findNextWorkspaceId(workspace.id);
-        if (!nextWorkspaceId) {
-          return false;
-        }
-
-        this.activateWorkspace(nextWorkspaceId, { persist: false });
-      }
-
-      await this.disposeWorkspace(workspace);
-      this.renderWorkspaceSwitcher();
-      this.renderChrome();
-      this.scheduleSessionSave();
-      return true;
-    } finally {
-      this.closingWorkspaceIds.delete(workspace.id);
-    }
-  }
-
-  private async disposeWorkspace(workspace: WorkspaceRecord) {
-    await this.withSessionPersistenceSuppressed(async () => {
-      await this.disposeWorkspacePanes(workspace);
-      workspace.api?.dispose();
-      workspace.api = null;
-      workspace.surface.remove();
-      this.workspaces.delete(workspace.id);
-    });
-  }
-
-  private ensureWorkspaceInitialized(workspace: WorkspaceRecord) {
-    if (workspace.api) {
-      return;
-    }
-
-    workspace.api = createDockview(workspace.surface, {
+    this.outerApi = createDockview(this.shellEl, {
       theme: themeAbyss,
       disableFloatingGroups: true,
-      createComponent: (options) => this.createPanelRenderer(workspace, options)
+      defaultRenderer: "always",
+      createComponent: (options) => this.createOuterPanelRenderer(options)
     });
 
-    this.bindDockviewEvents(workspace);
+    this.outerApi.onDidActivePanelChange(() => {
+      this.updateDocumentTitle();
+      this.scheduleSessionSave();
+    });
+    this.outerApi.onDidLayoutChange(() => {
+      this.scheduleSessionSave();
+    });
+    this.outerApi.onDidRemovePanel((panel) => {
+      void this.handleWorkspacePanelRemoved(panel.id);
+    });
+
+    const layoutOuter = () => {
+      const width = this.shellEl.clientWidth;
+      const height = this.shellEl.clientHeight;
+      if (this.outerApi && width > 0 && height > 0) {
+        this.outerApi.layout(width, height, true);
+      }
+    };
+
+    new ResizeObserver(() => layoutOuter()).observe(this.shellEl);
+    requestAnimationFrame(layoutOuter);
   }
 
-  private bindDockviewEvents(workspace: WorkspaceRecord) {
-    const api = workspace.api!;
+  private createOuterPanelRenderer(options: CreateComponentOptions): IContentRenderer {
+    if (String(options.name) !== OUTER_WORKSPACE_COMPONENT) {
+      throw new Error(`Unknown outer component '${options.name}'`);
+    }
 
-    api.onDidActivePanelChange(() => {
-      if (workspace.id === this.activeWorkspaceId) {
-        this.renderChrome();
-      }
-      this.scheduleSessionSave();
-    });
-
-    api.onDidAddPanel(() => {
-      if (workspace.id === this.activeWorkspaceId) {
-        this.renderChrome();
-      }
-      this.scheduleSessionSave();
-    });
-
-    api.onDidRemovePanel((panel) => {
-      const record = workspace.paneRecords.get(panel.id);
-      if (record) {
-        void this.terminalCoordinator.killAttachedRuntime(workspace, panel.id, record).catch((error) => {
-          console.warn("failed to clean up terminal runtime for removed pane", panel.id, error);
-        });
-      }
-
-      workspace.paneRecords.delete(panel.id);
-      if (workspace.id === this.activeWorkspaceId) {
-        this.renderChrome();
-      }
-      this.scheduleSessionSave();
-    });
+    return new WorkspaceOuterPanelRenderer(options.id, this);
   }
 
-  private createPanelRenderer(workspace: WorkspaceRecord, options: CreateComponentOptions): IContentRenderer {
+  private createInnerPanelRenderer(workspace: WorkspaceRecord, options: CreateComponentOptions): IContentRenderer {
     const descriptor = this.requirePaneDescriptor(String(options.name));
     return descriptor.createRenderer({
       workspace: this.toPaneWorkspaceContext(workspace),
@@ -556,14 +480,92 @@ export class FlmuxWorkbench implements ShellModelHost {
     });
   }
 
+  getWorkspaceForOuterPanel(panelId: string): WorkspaceRecord | null {
+    return this.workspaces.get(panelId) ?? null;
+  }
+
+  private bindInnerDockviewEvents(workspace: WorkspaceRecord) {
+    const api = workspace.innerApi!;
+
+    api.onDidActivePanelChange(() => {
+      this.scheduleSessionSave();
+    });
+    api.onDidAddPanel(() => {
+      this.scheduleSessionSave();
+    });
+    api.onDidRemovePanel((panel) => {
+      const record = workspace.paneRecords.get(panel.id);
+      if (record) {
+        void this.terminalCoordinator.killAttachedRuntime(workspace, panel.id, record).catch((error) => {
+          console.warn("failed to clean up terminal runtime for removed pane", panel.id, error);
+        });
+      }
+
+      workspace.paneRecords.delete(panel.id);
+      this.scheduleSessionSave();
+    });
+    api.onDidLayoutChange(() => {
+      this.scheduleSessionSave();
+    });
+  }
+
+  private mountOuterPanel(workspace: WorkspaceRecord, options: { focus?: boolean } = {}) {
+    if (!this.outerApi) {
+      throw new Error("Outer dockview is not initialized");
+    }
+    if (this.outerApi.getPanel(workspace.id)) {
+      return;
+    }
+
+    const panel = this.outerApi.addPanel({
+      id: workspace.id,
+      component: OUTER_WORKSPACE_COMPONENT,
+      title: workspace.title
+    });
+    if (options.focus) {
+      panel.focus();
+    }
+  }
+
+  private async handleWorkspacePanelRemoved(workspaceId: string) {
+    const workspace = this.workspaces.get(workspaceId);
+    if (workspace) {
+      const paneIds = [...workspace.paneRecords.keys()];
+      for (const paneId of paneIds) {
+        const record = workspace.paneRecords.get(paneId);
+        if (record) {
+          await this.terminalCoordinator.killAttachedRuntime(workspace, paneId, record).catch((error) => {
+            console.warn("failed to clean up terminal runtime for workspace close", paneId, error);
+          });
+        }
+      }
+      workspace.paneRecords.clear();
+      this.detachInnerDockview(workspace);
+      this.workspaces.delete(workspaceId);
+    }
+
+    if (this.outerApi && this.outerApi.panels.length === 0 && !this.reseedingDefault) {
+      this.reseedingDefault = true;
+      try {
+        await this.initializeDefaultWorkspaceSet();
+      } finally {
+        this.reseedingDefault = false;
+      }
+    }
+
+    this.updateDocumentTitle();
+    this.scheduleSessionSave();
+  }
+
   private async resetWorkspace(workspace: WorkspaceRecord) {
-    if (!workspace.api) {
+    if (!workspace.innerApi) {
       return;
     }
 
     await this.withSessionPersistenceSuppressed(async () => {
       await this.disposeWorkspacePanes(workspace);
       workspace.title = workspace.defaultTitle;
+      workspace.outerPanelApi?.setTitle(workspace.defaultTitle);
 
       const cowsay = this.addPane(workspace, { kind: "cowsay", title: "Cowsay" });
       this.addPane(workspace, {
@@ -574,16 +576,19 @@ export class FlmuxWorkbench implements ShellModelHost {
         referencePaneId: cowsay.id
       });
 
-      workspace.api?.getPanel(cowsay.id)?.group.api.setSize({ width: 440 });
+      workspace.innerApi?.getPanel(cowsay.id)?.group.api.setSize({ width: 440 });
     });
-    this.renderWorkspaceSwitcher();
-    if (workspace.id === this.activeWorkspaceId) {
-      this.renderChrome();
+    if (workspace.id === this.getActiveWorkspaceId()) {
+      this.updateDocumentTitle();
     }
     this.scheduleSessionSave();
   }
 
   private addPane(workspace: WorkspaceRecord, input: NewPaneInput): ShellPaneRecordSnapshot {
+    if (!workspace.innerApi) {
+      throw new Error(`Workspace '${workspace.id}' inner dockview is not ready`);
+    }
+
     const descriptor = this.requirePaneDescriptor(input.kind);
     const paneId = createPaneId();
     const workspaceContext = this.toPaneWorkspaceContext(workspace);
@@ -601,7 +606,7 @@ export class FlmuxWorkbench implements ShellModelHost {
       fallbackTitle: input.title?.trim() ?? humanizePaneKind(input.kind)
     });
 
-    const panel = workspace.api!.addPanel({
+    const panel = workspace.innerApi.addPanel({
       id: paneId,
       component: descriptor.kind,
       title,
@@ -617,15 +622,13 @@ export class FlmuxWorkbench implements ShellModelHost {
     });
 
     workspace.paneRecords.set(paneId, record);
-    if (workspace.id === this.activeWorkspaceId) {
-      this.renderChrome();
-    }
     return this.mustGetPaneSnapshot(workspace, paneId);
   }
 
   private resolvePanePosition(workspace: WorkspaceRecord, input: NewPaneInput) {
+    const innerApi = workspace.innerApi!;
     const referencePanel =
-      (input.referencePaneId && workspace.api!.getPanel(input.referencePaneId)) ?? workspace.api!.activePanel;
+      (input.referencePaneId && innerApi.getPanel(input.referencePaneId)) ?? innerApi.activePanel;
     const direction = normalizeDirection(input.place);
 
     if (!referencePanel || !direction) {
@@ -639,21 +642,22 @@ export class FlmuxWorkbench implements ShellModelHost {
   }
 
   private getCurrentWorkspace() {
-    return this.requireWorkspace(this.activeWorkspaceId);
+    const activeId = this.getActiveWorkspaceId();
+    if (!activeId) {
+      throw new Error("No active workspace");
+    }
+    return this.requireWorkspace(activeId);
   }
 
-  private findNextWorkspaceId(excludingWorkspaceId: string) {
-    return [...this.workspaces.keys()].find((workspaceId) => (
-      workspaceId !== excludingWorkspaceId &&
-      !this.closingWorkspaceIds.has(workspaceId)
-    )) ?? null;
+  private getActiveWorkspaceId(): string | null {
+    return this.outerApi?.activePanel?.id ?? null;
   }
 
   private toWorkspaceStatus(workspace: WorkspaceRecord) {
     return {
       id: workspace.id,
       title: workspace.title,
-      activePaneId: workspace.api?.activePanel?.id ?? null,
+      activePaneId: workspace.innerApi?.activePanel?.id ?? null,
       paneCount: workspace.paneRecords.size
     };
   }
@@ -688,7 +692,7 @@ export class FlmuxWorkbench implements ShellModelHost {
 
   private mustGetPaneSnapshot(workspace: WorkspaceRecord, paneId: string): ShellPaneRecordSnapshot {
     const record = this.requirePaneRecord(workspace, paneId);
-    const isActive = workspace.api?.activePanel?.id === paneId;
+    const isActive = workspace.innerApi?.activePanel?.id === paneId;
     const title = record.panel.title ?? "Untitled";
     const descriptor = this.requirePaneDescriptor(record.kind);
     return createPaneSnapshot({
@@ -700,48 +704,10 @@ export class FlmuxWorkbench implements ShellModelHost {
     });
   }
 
-  private renderWorkspaceSwitcher() {
-    this.workspaceSwitcherEl.replaceChildren(
-      ...[...this.workspaces.values()].map((workspace) => {
-        const group = document.createElement("div");
-        group.className = "workspace-chip-group";
-        group.dataset.active = String(workspace.id === this.activeWorkspaceId);
-
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "workspace-chip";
-        button.dataset.active = String(workspace.id === this.activeWorkspaceId);
-        button.textContent = workspace.title;
-        button.addEventListener("click", () => this.activateWorkspace(workspace.id));
-        group.append(button);
-
-        if (this.workspaces.size > 1) {
-          const closeButton = document.createElement("button");
-          closeButton.type = "button";
-          closeButton.className = "workspace-chip__close";
-          closeButton.dataset.action = "close-workspace";
-          closeButton.dataset.workspaceId = workspace.id;
-          closeButton.ariaLabel = `Close ${workspace.title}`;
-          closeButton.title = `Close ${workspace.title}`;
-          closeButton.textContent = "x";
-          closeButton.disabled = this.closingWorkspaceIds.has(workspace.id);
-          closeButton.addEventListener("click", () => {
-            void this.closeWorkspace(workspace.id);
-          });
-          group.append(closeButton);
-        }
-
-        return group;
-      })
-    );
-  }
-
-  private renderChrome() {
-    const workspace = this.getCurrentWorkspace();
-    this.appTitleEl.textContent = this.appTitle;
-    this.workspaceTitleEl.textContent = `${workspace.title} · ${workspace.id} · ${workspace.paneRecords.size} panes`;
-    this.runtimeBadgeEl.textContent = this.runtimeLabel;
-    document.title = `${this.appTitle} / ${workspace.title}`;
+  private updateDocumentTitle() {
+    const activeId = this.getActiveWorkspaceId();
+    const workspace = activeId ? this.workspaces.get(activeId) : null;
+    document.title = workspace ? `${this.appTitle} / ${workspace.title}` : this.appTitle;
   }
 
   private handleBrowserUrlChange(workspace: WorkspaceRecord, paneId: string, url: string) {
@@ -769,9 +735,6 @@ export class FlmuxWorkbench implements ShellModelHost {
     record.rootKey = state.rootKey;
     record.runtimeId = state.runtimeId;
     record.summary = state.summary;
-    if (workspace.id === this.activeWorkspaceId) {
-      this.renderChrome();
-    }
     this.scheduleSessionSave();
   }
 
@@ -787,34 +750,33 @@ export class FlmuxWorkbench implements ShellModelHost {
         }))
       : [this.allocateWorkspaceDescriptor()];
 
-    for (const descriptor of workspaceDescriptors) {
-      this.createWorkspaceRecord(descriptor);
-    }
-
-    for (const workspace of this.workspaces.values()) {
-      this.ensureWorkspaceInitialized(workspace);
-    }
-
     this.sessionPersistenceSuppressed = true;
     try {
-      for (const workspace of this.workspaces.values()) {
-        const workspaceSnapshot = snapshot?.workspaces[workspace.id];
+      for (const descriptor of workspaceDescriptors) {
+        const workspace = this.createWorkspaceRecord(descriptor);
+        const workspaceSnapshot = snapshot?.workspaces[descriptor.id];
         if (workspaceSnapshot) {
-          await this.restoreWorkspace(workspace, workspaceSnapshot);
-          continue;
+          if (workspaceSnapshot.defaultTitle?.trim()) {
+            workspace.defaultTitle = workspaceSnapshot.defaultTitle.trim();
+          }
+          workspace.title = workspaceSnapshot.title.trim() || workspace.defaultTitle;
+          workspace.pendingInnerLayout = (workspaceSnapshot.innerLayout as SerializedDockview | null) ?? null;
         }
-
-        await this.resetWorkspace(workspace);
+        this.mountOuterPanel(workspace);
       }
 
-      const activeWorkspaceId =
-        snapshot?.activeWorkspaceId && this.workspaces.has(snapshot.activeWorkspaceId)
-          ? snapshot.activeWorkspaceId
-          : workspaceDescriptors[0]?.id;
-      if (!activeWorkspaceId) {
-        throw new Error("Expected at least one workspace to restore");
+      const firstDescriptor = workspaceDescriptors[0];
+      if (!firstDescriptor) {
+        throw new Error("Expected at least one workspace descriptor");
       }
-      this.activateWorkspace(activeWorkspaceId, { persist: false });
+      this.outerApi?.getPanel(firstDescriptor.id)?.focus();
+
+      for (const descriptor of workspaceDescriptors) {
+        const workspace = this.requireWorkspace(descriptor.id);
+        if (workspace.paneRecords.size === 0) {
+          await this.resetWorkspace(workspace);
+        }
+      }
     } finally {
       this.sessionPersistenceSuppressed = false;
     }
@@ -822,48 +784,24 @@ export class FlmuxWorkbench implements ShellModelHost {
 
   private async initializeDefaultWorkspaceSet() {
     const workspace = this.createWorkspaceRecord(this.allocateWorkspaceDescriptor());
-    this.ensureWorkspaceInitialized(workspace);
-
     this.sessionPersistenceSuppressed = true;
     try {
+      this.mountOuterPanel(workspace, { focus: true });
       await this.resetWorkspace(workspace);
-      this.activateWorkspace(workspace.id, { persist: false });
     } finally {
       this.sessionPersistenceSuppressed = false;
     }
   }
 
-  private async restoreWorkspace(workspace: WorkspaceRecord, snapshot: FlmuxWorkspaceSessionSnapshot) {
-    if (!workspace.api) {
-      return;
-    }
-
-    workspace.api.clear();
-    workspace.paneRecords.clear();
-    workspace.defaultTitle = snapshot.defaultTitle?.trim() || workspace.defaultTitle;
-    workspace.title = snapshot.title.trim() || workspace.defaultTitle;
-
-    if (!snapshot.layout) {
-      return;
-    }
-
-    try {
-      workspace.api.fromJSON(this.prepareWorkspaceLayoutForRestore(workspace, snapshot.layout as SerializedDockview));
-      this.rehydrateWorkspacePaneRecords(workspace);
-    } catch (error) {
-      console.warn(`failed to restore workspace '${workspace.id}' from saved session`, error);
-      await this.resetWorkspace(workspace);
-    }
-  }
-
   private rehydrateWorkspacePaneRecords(workspace: WorkspaceRecord) {
-    if (!workspace.api) {
+    const innerApi = workspace.innerApi;
+    if (!innerApi) {
       return;
     }
 
     workspace.paneRecords.clear();
     const workspaceContext = this.toPaneWorkspaceContext(workspace);
-    for (const panel of workspace.api.panels) {
+    for (const panel of innerApi.panels) {
       const panelState = panel.toJSON();
       const kind = panelState.contentComponent as string | undefined;
       if (!kind) {
@@ -901,16 +839,15 @@ export class FlmuxWorkbench implements ShellModelHost {
 
   private serializeSessionSnapshot(): FlmuxSessionSnapshot {
     return {
-      version: 2,
+      version: 3,
       appTitle: this.appTitle,
-      activeWorkspaceId: this.activeWorkspaceId,
       workspaces: Object.fromEntries(
         [...this.workspaces.values()].map((workspace) => [
           workspace.id,
           {
             defaultTitle: workspace.defaultTitle,
             title: workspace.title,
-            layout: workspace.api ? this.serializeWorkspaceLayout(workspace) : null
+            innerLayout: workspace.innerApi ? this.serializeWorkspaceLayout(workspace) : null
           } satisfies FlmuxWorkspaceSessionSnapshot
         ])
       )
@@ -918,7 +855,8 @@ export class FlmuxWorkbench implements ShellModelHost {
   }
 
   private serializeWorkspaceLayout(workspace: WorkspaceRecord): SerializedDockview {
-    const layout = cloneLayout(workspace.api!.toJSON());
+    const innerApi = workspace.innerApi!;
+    const layout = cloneLayout(innerApi.toJSON());
     const workspaceContext = this.toPaneWorkspaceContext(workspace);
     for (const [panelId, panelState] of Object.entries(layout.panels ?? {})) {
       const record = workspace.paneRecords.get(panelId);
@@ -1058,21 +996,19 @@ export class FlmuxWorkbench implements ShellModelHost {
       return existing;
     }
 
-    const surface = document.createElement("div");
-    surface.className = "workspace-surface";
-    surface.dataset.workspaceId = descriptor.id;
-    this.shellEl.append(surface);
-
     const workspace: WorkspaceRecord = {
       id: descriptor.id,
       title: descriptor.title,
       defaultTitle: descriptor.title,
       defaultBrowserPath: defaultBrowserPath(descriptor.id),
       rootDir: joinPath(this.config.projectDir, workspaceRootDirName(descriptor.id)),
-      surface,
       bus: createWorkspaceBus(descriptor.id),
       paneRecords: new Map(),
-      api: null
+      outerPanelApi: null,
+      innerApi: null,
+      innerHost: null,
+      innerResizeObserver: null,
+      pendingInnerLayout: null
     };
     this.workspaces.set(descriptor.id, workspace);
     return workspace;
@@ -1089,6 +1025,32 @@ export class FlmuxWorkbench implements ShellModelHost {
       id: `workspace.${index}`,
       title
     };
+  }
+}
+
+class WorkspaceOuterPanelRenderer implements IContentRenderer {
+  readonly element: HTMLElement;
+
+  constructor(private readonly workspaceId: string, private readonly workbench: FlmuxWorkbench) {
+    this.element = document.createElement("div");
+    this.element.className = "workspace-panel";
+    this.element.dataset.workspaceId = workspaceId;
+  }
+
+  init(parameters: GroupPanelPartInitParameters): void {
+    const workspace = this.workbench.getWorkspaceForOuterPanel(this.workspaceId);
+    if (!workspace) {
+      throw new Error(`Workspace record missing for panel '${this.workspaceId}'`);
+    }
+    this.workbench.attachInnerDockview(workspace, this.element, parameters.api);
+  }
+
+  dispose(): void {
+    const workspace = this.workbench.getWorkspaceForOuterPanel(this.workspaceId);
+    if (workspace) {
+      this.workbench.detachInnerDockview(workspace);
+    }
+    this.element.replaceChildren();
   }
 }
 

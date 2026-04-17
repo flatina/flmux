@@ -44,14 +44,12 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
     const initialState = await waitFor(async () => {
       const state = await session.evaluate<{
         title: string;
-        workspaceTitle: string;
-        chipCount: number;
+        workspacePanelCount: number;
       }>(`(() => ({
         title: document.title,
-        workspaceTitle: document.querySelector('#workspace-title')?.textContent ?? '',
-        chipCount: document.querySelectorAll('.workspace-chip').length
+        workspacePanelCount: document.querySelectorAll('.workspace-panel[data-workspace-id="${firstWorkspaceId}"]').length
       }))()`);
-      return state.chipCount === 1 && state.workspaceTitle.includes("Workspace 1") ? state : null;
+      return state.workspacePanelCount === 1 && state.title.includes("Workspace 1") ? state : null;
     }, { timeoutMs: 20_000, intervalMs: 250, label: "initial workbench state" });
     expect(initialState.title).toContain("Workspace 1");
 
@@ -71,10 +69,10 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
         cowsayCount: number;
         probeTitle: string;
       }>(`(() => {
-        const surface = document.querySelector('.workspace-surface--active');
+        const panel = document.querySelector('.workspace-panel[data-workspace-id="${firstWorkspaceId}"]');
         return {
-          cowsayCount: surface?.querySelectorAll('.cowsay-panel').length ?? 0,
-          probeTitle: surface?.querySelector('.cowsay-panel strong')?.textContent ?? ''
+          cowsayCount: panel?.querySelectorAll('.cowsay-panel').length ?? 0,
+          probeTitle: panel?.querySelector('.cowsay-panel strong')?.textContent ?? ''
         };
       })()`);
       return state.cowsayCount >= 1 && state.probeTitle.includes("cowsay probe") ? state : null;
@@ -83,34 +81,43 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
 
     const clientId = await waitForSingleClientId(appOrigin, "workspace client id");
 
-    const clickedWorkspaceCreate = await session.evaluate<boolean>(`(() => {
-      const button = document.querySelector('[data-action="new-workspace"]');
-      if (!(button instanceof HTMLButtonElement)) {
-        return false;
-      }
-      button.click();
-      return true;
-    })()`);
-    expect(clickedWorkspaceCreate).toBe(true);
+    const createdWorkspace = await postJson<{
+      ok: true;
+      result: {
+        ok: true;
+        value: { workspaceId: string };
+      };
+    }>(`${appOrigin}/api/model/path/call`, {
+      clientId,
+      path: "/workspaces/new"
+    });
+    expect(createdWorkspace.result.value.workspaceId).toBe(secondWorkspaceId);
 
     const createdWorkspaceState = await waitFor(async () => {
       const state = await session.evaluate<{
-        workspaceTitle: string;
-        chipCount: number;
+        title: string;
+        workspacePanelCount: number;
+        secondWorkspacePresent: boolean;
         cowsayCount: number;
       }>(`(() => {
-        const surface = document.querySelector('.workspace-surface--active');
+        const second = document.querySelector('.workspace-panel[data-workspace-id="${secondWorkspaceId}"]');
         return {
-          workspaceTitle: document.querySelector('#workspace-title')?.textContent ?? '',
-          chipCount: document.querySelectorAll('.workspace-chip').length,
-          cowsayCount: surface?.querySelectorAll('.cowsay-panel').length ?? 0
+          title: document.title,
+          workspacePanelCount: document.querySelectorAll('.workspace-panel').length,
+          secondWorkspacePresent: Boolean(second),
+          cowsayCount: second?.querySelectorAll('.cowsay-panel').length ?? 0
         };
       })()`);
-      return state.chipCount === 2 && state.workspaceTitle.includes("Workspace 2") && state.cowsayCount >= 1
+      return (
+        state.secondWorkspacePresent &&
+        state.workspacePanelCount === 2 &&
+        state.title.includes("Workspace 2") &&
+        state.cowsayCount >= 1
+      )
         ? state
         : null;
     }, { timeoutMs: 20_000, intervalMs: 250, label: "created workspace state" });
-    expect(createdWorkspaceState.workspaceTitle).toContain("Workspace 2");
+    expect(createdWorkspaceState.title).toContain("Workspace 2");
 
     await waitFor(async () => {
       const clients = await fetchJson<{
@@ -127,50 +134,49 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
     }, { timeoutMs: 20_000, intervalMs: 500, label: "workspace 2 start browser target" });
 
     const switchedBackToOne = await session.evaluate<boolean>(`(() => {
-      const button = Array.from(document.querySelectorAll('.workspace-chip'))
-        .find((candidate) => candidate.textContent?.includes('Workspace 1'));
-      if (!(button instanceof HTMLButtonElement)) {
+      const tab = Array.from(document.querySelectorAll('.dv-tab'))
+        .find((candidate) => !candidate.closest('.workspace-panel') && candidate.textContent?.includes('Workspace 1'));
+      if (!(tab instanceof HTMLElement)) {
         return false;
       }
-      button.click();
+      tab.dispatchEvent(new MouseEvent('pointerdown', { button: 0, bubbles: true, cancelable: true }));
       return true;
     })()`);
     expect(switchedBackToOne).toBe(true);
 
     await waitFor(async () => {
-      const workspaceTitle = await session.evaluate<string>(
-        `document.querySelector('#workspace-title')?.textContent ?? ''`
-      );
-      return workspaceTitle.includes("Workspace 1") ? workspaceTitle : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 1 title" });
+      const title = await session.evaluate<string>(`document.title`);
+      return title.includes("Workspace 1") ? title : null;
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 1 title after switch" });
 
     const switchedToTwo = await session.evaluate<boolean>(`(() => {
-      const button = Array.from(document.querySelectorAll('.workspace-chip'))
-        .find((candidate) => candidate.textContent?.includes('Workspace 2'));
-      if (!(button instanceof HTMLButtonElement)) {
+      const tab = Array.from(document.querySelectorAll('.dv-tab'))
+        .find((candidate) => !candidate.closest('.workspace-panel') && candidate.textContent?.includes('Workspace 2'));
+      if (!(tab instanceof HTMLElement)) {
         return false;
       }
-      button.click();
+      tab.dispatchEvent(new MouseEvent('pointerdown', { button: 0, bubbles: true, cancelable: true }));
       return true;
     })()`);
     expect(switchedToTwo).toBe(true);
 
     await waitFor(async () => {
-      const workspaceTitle = await session.evaluate<string>(
-        `document.querySelector('#workspace-title')?.textContent ?? ''`
-      );
-      return workspaceTitle.includes("Workspace 2") ? workspaceTitle : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 title" });
+      const title = await session.evaluate<string>(`document.title`);
+      return title.includes("Workspace 2") ? title : null;
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 title after switch" });
 
-    const clickedInspector = await session.evaluate<boolean>(`(() => {
-      const button = document.querySelector('[data-action="new-inspector"]');
-      if (!(button instanceof HTMLButtonElement)) {
-        return false;
-      }
-      button.click();
-      return true;
-    })()`);
-    expect(clickedInspector).toBe(true);
+    const inspectorPane = await postJson<{
+      ok: true;
+      result: {
+        ok: true;
+        value: { paneId: string };
+      };
+    }>(`${appOrigin}/api/model/path/call`, {
+      clientId,
+      path: "/panes/new",
+      args: { kind: "inspector", place: "right" }
+    });
+    const inspectorPaneId = inspectorPane.result.value.paneId;
 
     await waitFor(async () => {
       const state = await session.evaluate<{
@@ -179,8 +185,7 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
         paneCount: string;
         subscription: string;
       }>(`(() => {
-        const surface = document.querySelector('.workspace-surface--active');
-        const panel = surface?.querySelector('.inspector-panel');
+        const panel = document.querySelector('.workspace-panel[data-workspace-id="${secondWorkspaceId}"] .inspector-panel');
         return {
           workspaceId: panel?.querySelector('[data-role="workspace-id"]')?.textContent ?? '',
           appTitle: panel?.querySelector('[data-role="app-title"]')?.textContent ?? '',
@@ -198,30 +203,12 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
         : null;
     }, { timeoutMs: 20_000, intervalMs: 250, label: "inspector snapshot on workspace 2" });
 
-    const inspectorPaneId = await waitFor(async () => {
-      const panes = await postJson<{
-        ok: true;
-        result: {
-          ok: true;
-          found: true;
-          value: Record<string, { id: string; kind: string; title: string; active: boolean }>;
-        };
-      }>(`${appOrigin}/api/model/path/get`, {
-        clientId,
-        path: "/status/panes"
-      });
-
-      return Object.values(panes.result.value).find((pane) => pane.kind === "inspector")?.id ?? null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "inspector pane id on workspace 2" });
-
     const inspectorState = await postJson<{
       ok: true;
       result: {
         ok: true;
         found: true;
-        value: {
-          subscription: string;
-        };
+        value: { subscription: string };
       };
     }>(`${appOrigin}/api/model/path/get`, {
       clientId,
@@ -270,8 +257,8 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
     });
 
     const pingedInspector = await session.evaluate<boolean>(`(() => {
-      const surface = document.querySelector('.workspace-surface--active');
-      const button = surface?.querySelector('.inspector-panel [data-action="ping"]');
+      const panel = document.querySelector('.workspace-panel[data-workspace-id="${secondWorkspaceId}"] .inspector-panel');
+      const button = panel?.querySelector('[data-action="ping"]');
       if (!(button instanceof HTMLButtonElement)) {
         return false;
       }
@@ -282,8 +269,7 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
 
     await waitFor(async () => {
       const state = await session.evaluate<{ lastEvent: string }>(`(() => {
-        const surface = document.querySelector('.workspace-surface--active');
-        const panel = surface?.querySelector('.inspector-panel');
+        const panel = document.querySelector('.workspace-panel[data-workspace-id="${secondWorkspaceId}"] .inspector-panel');
         return {
           lastEvent: panel?.querySelector('[data-role="last-event"]')?.textContent ?? ''
         };
@@ -291,39 +277,25 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
       return state.lastEvent === "inspector.ping" ? state : null;
     }, { timeoutMs: 20_000, intervalMs: 250, label: "inspector ping event" });
 
-    const clickedScratchpad = await session.evaluate<boolean>(`(() => {
-      const button = document.querySelector('[data-action="new-scratchpad"]');
-      if (!(button instanceof HTMLButtonElement)) {
-        return false;
-      }
-      button.click();
-      return true;
-    })()`);
-    expect(clickedScratchpad).toBe(true);
-
-    const scratchpadPaneId = await waitFor(async () => {
-      const panes = await postJson<{
+    const scratchpadPane = await postJson<{
+      ok: true;
+      result: {
         ok: true;
-        result: {
-          ok: true;
-          found: true;
-          value: Record<string, { id: string; kind: string; title: string; active: boolean }>;
-        };
-      }>(`${appOrigin}/api/model/path/get`, {
-        clientId,
-        path: "/status/panes"
-      });
-
-      return Object.values(panes.result.value).find((pane) => pane.kind === "scratchpad")?.id ?? null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "scratchpad pane id on workspace 2" });
+        value: { paneId: string };
+      };
+    }>(`${appOrigin}/api/model/path/call`, {
+      clientId,
+      path: "/panes/new",
+      args: { kind: "scratchpad", place: "right" }
+    });
+    const scratchpadPaneId = scratchpadPane.result.value.paneId;
 
     await waitFor(async () => {
       const state = await session.evaluate<{
         workspaceId: string;
         note: string;
       }>(`(() => {
-        const surface = document.querySelector('.workspace-surface--active');
-        const panel = surface?.querySelector('.scratchpad-panel');
+        const panel = document.querySelector('.workspace-panel[data-workspace-id="${secondWorkspaceId}"] .scratchpad-panel');
         return {
           workspaceId: panel?.querySelector('[data-role="workspace-id"]')?.textContent ?? '',
           note: panel?.querySelector('textarea')?.value ?? ''
@@ -351,8 +323,7 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
         note: string;
         counter: string;
       }>(`(() => {
-        const surface = document.querySelector('.workspace-surface--active');
-        const panel = surface?.querySelector('.scratchpad-panel');
+        const panel = document.querySelector('.workspace-panel[data-workspace-id="${secondWorkspaceId}"] .scratchpad-panel');
         return {
           note: panel?.querySelector('textarea')?.value ?? '',
           counter: panel?.querySelector('[data-role="counter"]')?.textContent ?? ''
@@ -365,15 +336,11 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
       .filter((target) => target.url === secondWorkspaceStartUrl)
       .length;
 
-    const clickedBrowser = await session.evaluate<boolean>(`(() => {
-      const button = document.querySelector('[data-action="new-browser"]');
-      if (!(button instanceof HTMLButtonElement)) {
-        return false;
-      }
-      button.click();
-      return true;
-    })()`);
-    expect(clickedBrowser).toBe(true);
+    await postJson(`${appOrigin}/api/model/path/call`, {
+      clientId,
+      path: "/panes/new",
+      args: { kind: "browser", place: "right" }
+    });
 
     await waitFor(async () => {
       const targets = await fetchTargets(port);
@@ -386,9 +353,7 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
       ok: true;
       result: {
         ok: true;
-        value: {
-          paneId: string;
-        };
+        value: { paneId: string };
       };
     }>(`${appOrigin}/api/model/path/call`, {
       clientId,
@@ -425,32 +390,34 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
     }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 terminal attach" });
 
     const closedWorkspace = await session.evaluate<boolean>(`(() => {
-      const button = document.querySelector('[data-action="close-workspace"][data-workspace-id="${secondWorkspaceId}"]');
-      if (!(button instanceof HTMLButtonElement)) {
+      const tab = Array.from(document.querySelectorAll('.dv-tab'))
+        .find((candidate) => !candidate.closest('.workspace-panel') && candidate.textContent?.includes('Workspace 2'));
+      if (!(tab instanceof HTMLElement)) {
         return false;
       }
-      button.click();
+      const close = tab.querySelector('.dv-default-tab-action');
+      if (!(close instanceof HTMLElement)) {
+        return false;
+      }
+      close.click();
       return true;
     })()`);
     expect(closedWorkspace).toBe(true);
 
     await waitFor(async () => {
       const state = await session.evaluate<{
-        workspaceTitle: string;
-        chipCount: number;
-        surfaceCount: number;
-        closedWorkspacePresent: boolean;
+        title: string;
+        workspacePanelCount: number;
+        secondPresent: boolean;
       }>(`(() => ({
-        workspaceTitle: document.querySelector('#workspace-title')?.textContent ?? '',
-        chipCount: document.querySelectorAll('.workspace-chip').length,
-        surfaceCount: document.querySelectorAll('.workspace-surface').length,
-        closedWorkspacePresent: Boolean(document.querySelector('.workspace-surface[data-workspace-id="${secondWorkspaceId}"]'))
+        title: document.title,
+        workspacePanelCount: document.querySelectorAll('.workspace-panel').length,
+        secondPresent: Boolean(document.querySelector('.workspace-panel[data-workspace-id="${secondWorkspaceId}"]'))
       }))()`);
       return (
-        state.chipCount === 1 &&
-        state.surfaceCount === 1 &&
-        !state.closedWorkspacePresent &&
-        state.workspaceTitle.includes("Workspace 1")
+        state.workspacePanelCount === 1 &&
+        !state.secondPresent &&
+        state.title.includes("Workspace 1")
       )
         ? state
         : null;
@@ -468,11 +435,9 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
     await waitFor(async () => {
       try {
         const saved = (await Bun.file(sessionFile).json()) as {
-          activeWorkspaceId: string;
           workspaces: Record<string, unknown>;
         };
         return (
-          saved.activeWorkspaceId === firstWorkspaceId &&
           firstWorkspaceId in saved.workspaces &&
           !(secondWorkspaceId in saved.workspaces)
         )

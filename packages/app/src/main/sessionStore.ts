@@ -34,9 +34,8 @@ export function isSessionSnapshot(value: unknown): value is FlmuxSessionSnapshot
 
   const snapshot = value as Record<string, unknown>;
   if (
-    snapshot.version !== 2 ||
+    snapshot.version !== 3 ||
     typeof snapshot.appTitle !== "string" ||
-    typeof snapshot.activeWorkspaceId !== "string" ||
     !snapshot.workspaces ||
     typeof snapshot.workspaces !== "object"
   ) {
@@ -52,8 +51,8 @@ export function isSessionSnapshot(value: unknown): value is FlmuxSessionSnapshot
     return (
       (candidate.defaultTitle === undefined || typeof candidate.defaultTitle === "string") &&
       typeof candidate.title === "string" &&
-      "layout" in candidate &&
-      (candidate.layout === null || typeof candidate.layout === "object")
+      "innerLayout" in candidate &&
+      (candidate.innerLayout === null || typeof candidate.innerLayout === "object")
     );
   });
 }

@@ -12,22 +12,21 @@ afterEach(async () => {
 });
 
 describe("session store", () => {
-  it("accepts only version 2 session snapshots", () => {
+  it("accepts only version 3 session snapshots", () => {
     expect(isSessionSnapshot({
-      version: 2,
+      version: 3,
       appTitle: "flmux",
-      activeWorkspaceId: "workspace.alpha",
       workspaces: {
         "workspace.alpha": {
           defaultTitle: "Workspace Alpha",
           title: "Workspace Alpha",
-          layout: null
+          innerLayout: null
         }
       }
     })).toBe(true);
 
     expect(isSessionSnapshot({
-      version: 1,
+      version: 2,
       appTitle: "flmux",
       activeWorkspaceId: "workspace.alpha",
       workspaces: {
@@ -39,14 +38,14 @@ describe("session store", () => {
     })).toBe(false);
   });
 
-  it("ignores persisted v1 snapshots on load", async () => {
+  it("ignores persisted pre-v3 snapshots on load", async () => {
     const dir = await mkdtemp(join(tmpdir(), "flmux-session-store-"));
     tempDirs.push(dir);
     const sessionFile = join(dir, "session.json");
     process.env.FLMUX_SESSION_FILE = sessionFile;
 
     await writeFile(sessionFile, JSON.stringify({
-      version: 1,
+      version: 2,
       appTitle: "legacy flmux",
       activeWorkspaceId: "workspace.alpha",
       workspaces: {

@@ -273,7 +273,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
       try {
         const saved = await Bun.file(sessionFile).text();
         return (
-          saved.includes("\"version\": 2") &&
+          saved.includes("\"version\": 3") &&
           saved.includes(paneId) &&
           saved.includes(browserPaneId) &&
           saved.includes(cowsayPaneId) &&
@@ -486,7 +486,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
         cowsayCount: number;
         probeTitle: string;
       }>(`(() => {
-        const surface = document.querySelector('.workspace-surface--active');
+        const surface = document.querySelector('.workspace-panel');
         return {
           cowsayCount: surface?.querySelectorAll('.cowsay-panel').length ?? 0,
           probeTitle: surface?.querySelector('.cowsay-panel strong')?.textContent ?? ''
@@ -501,7 +501,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
         note: string;
         counter: string;
       }>(`(() => {
-        const surface = document.querySelector('.workspace-surface--active');
+        const surface = document.querySelector('.workspace-panel');
         const panel = surface?.querySelector('.scratchpad-panel');
         return {
           note: panel?.querySelector('textarea')?.value ?? '',

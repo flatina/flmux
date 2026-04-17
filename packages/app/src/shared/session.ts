@@ -1,12 +1,11 @@
 export interface FlmuxWorkspaceSessionSnapshot {
   defaultTitle?: string;
   title: string;
-  layout: unknown | null;
+  innerLayout: unknown | null;
 }
 
 export interface FlmuxSessionSnapshot {
-  version: 2;
+  version: 3;
   appTitle: string;
-  activeWorkspaceId: string;
   workspaces: Record<string, FlmuxWorkspaceSessionSnapshot>;
 }

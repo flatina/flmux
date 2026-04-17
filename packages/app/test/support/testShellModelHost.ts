@@ -207,6 +207,18 @@ export class TestShellModelHost implements ShellModelHost {
     return this.getWorkspaceStatus();
   }
 
+  resetWorkspace(workspaceId: string): WorkspaceStatusSnapshot {
+    if (workspaceId !== this.workspaceId) {
+      throw new Error(`Test host can only reset the current workspace '${this.workspaceId}'`);
+    }
+    this.activePaneId = null;
+    this.panes.clear();
+    this.paneParams.clear();
+    this.workspaceTitle = this.workspaceTitles.get(workspaceId) ?? `Workspace`;
+    this.seedDefaultWorkspaceLayout();
+    return this.getWorkspaceStatus();
+  }
+
   getWorkspaceStatus(): WorkspaceStatusSnapshot {
     this.syncCurrentWorkspaceSnapshot();
     return {

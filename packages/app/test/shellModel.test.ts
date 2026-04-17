@@ -144,6 +144,34 @@ describe("shell model direct", () => {
     }
   });
 
+  it("resets a workspace through /workspaces/{id}/reset", async () => {
+    const host = new TestShellModelHost({
+      workspaceId: "workspace.test",
+      workspaceTitle: "Workspace Test",
+      activePaneId: null,
+      panes: []
+    });
+    const model = host.createModel();
+
+    const browserPane = await model.pathCall("/panes/new", { kind: "browser", place: "right" });
+    expect(browserPane.ok).toBe(true);
+
+    const reset = await model.pathCall("/workspaces/workspace.test/reset");
+    if (!reset.ok) {
+      throw new Error("expected /workspaces/{id}/reset to succeed");
+    }
+    expect(reset.value).toMatchObject({
+      workspaceId: "workspace.test",
+      workspace: {
+        id: "workspace.test",
+        paneCount: 2
+      }
+    });
+
+    const status = await model.pathGet("/status/workspace");
+    expect(status).toMatchObject({ ok: true, found: true, value: { id: "workspace.test", paneCount: 2 } });
+  });
+
   it("supports writable app, workspace, and browser subtree state paths", async () => {
     const host = new TestShellModelHost({
       workspaceId: "workspace.test",

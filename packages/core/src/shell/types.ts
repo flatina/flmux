@@ -136,6 +136,7 @@ export interface ShellModelHost {
   getAppStatus(): Awaitable<AppStatusSnapshot>;
   listWorkspaces(): Awaitable<WorkspaceStatusSnapshot[]>;
   createWorkspace(input?: { title?: string }): Awaitable<WorkspaceStatusSnapshot>;
+  resetWorkspace(workspaceId: string): Awaitable<WorkspaceStatusSnapshot>;
   getWorkspaceStatus(): Awaitable<WorkspaceStatusSnapshot>;
   hasPaneKind(kind: string): Awaitable<boolean>;
   listPanes(): Awaitable<ShellPaneRecordSnapshot[]>;

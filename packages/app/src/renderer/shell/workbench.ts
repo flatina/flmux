@@ -30,7 +30,7 @@ import {
   serializePaneParams
 } from "./paneRegistry";
 import { registerBuiltinPaneDescriptors } from "./builtinPaneDescriptors";
-import { NewPaneHeaderAction, NewWorkspaceHeaderAction, humanizePaneKind } from "./headerActions";
+import { NewPaneHeaderAction, WorkspaceHeaderActions, humanizePaneKind } from "./headerActions";
 import type {
   AppStatusSnapshot,
   NewPaneInput,
@@ -181,7 +181,13 @@ export class FlmuxWorkbench implements ShellModelHost {
   async createWorkspace(input: { title?: string } = {}) {
     const workspace = this.createWorkspaceRecord(this.allocateWorkspaceDescriptor(input.title));
     this.mountOuterPanel(workspace, { focus: true });
-    await this.resetWorkspace(workspace);
+    await this.reseedWorkspaceDefaults(workspace);
+    return this.toWorkspaceStatus(workspace);
+  }
+
+  async resetWorkspace(workspaceId: string) {
+    const workspace = this.requireWorkspace(workspaceId);
+    await this.reseedWorkspaceDefaults(workspace);
     return this.toWorkspaceStatus(workspace);
   }
 
@@ -441,8 +447,17 @@ export class FlmuxWorkbench implements ShellModelHost {
       disableFloatingGroups: true,
       defaultRenderer: "always",
       createComponent: (options) => this.createOuterPanelRenderer(options),
-      createRightHeaderActionComponent: (group) => new NewWorkspaceHeaderAction(group, () => {
-        void this.shellModel.pathCall("/workspaces/new");
+      createRightHeaderActionComponent: (group) => new WorkspaceHeaderActions(group, {
+        onAdd: () => {
+          void this.shellModel.pathCall("/workspaces/new");
+        },
+        onResetActive: () => {
+          const activeId = this.getActiveWorkspaceId();
+          if (!activeId) {
+            return;
+          }
+          void this.shellModel.pathCall(`/workspaces/${activeId}/reset`);
+        }
       })
     });
 
@@ -574,7 +589,7 @@ export class FlmuxWorkbench implements ShellModelHost {
     this.scheduleSessionSave();
   }
 
-  private async resetWorkspace(workspace: WorkspaceRecord) {
+  private async reseedWorkspaceDefaults(workspace: WorkspaceRecord) {
     if (!workspace.innerApi) {
       return;
     }
@@ -800,7 +815,7 @@ export class FlmuxWorkbench implements ShellModelHost {
     this.sessionPersistenceSuppressed = true;
     try {
       this.mountOuterPanel(workspace, { focus: true });
-      await this.resetWorkspace(workspace);
+      await this.reseedWorkspaceDefaults(workspace);
     } finally {
       this.sessionPersistenceSuppressed = false;
     }

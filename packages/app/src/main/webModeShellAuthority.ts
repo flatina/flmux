@@ -278,6 +278,16 @@ class HeadlessShellHost implements ShellModelHost {
     return this.toWorkspaceStatus(workspace);
   }
 
+  async resetWorkspace(workspaceId: string): Promise<WorkspaceStatusSnapshot> {
+    const workspace = this.requireWorkspace(workspaceId);
+    for (const paneId of [...workspace.paneOrder]) {
+      await this.closePane(paneId);
+    }
+    workspace.title = workspace.defaultTitle;
+    this.seedWorkspace(workspace);
+    return this.toWorkspaceStatus(workspace);
+  }
+
   async getWorkspaceStatus(): Promise<WorkspaceStatusSnapshot> {
     return this.toWorkspaceStatus(this.requireCurrentWorkspace());
   }

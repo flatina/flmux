@@ -28,19 +28,52 @@ class HeaderActionButton {
   }
 }
 
-export class NewWorkspaceHeaderAction extends HeaderActionButton implements IHeaderActionsRenderer {
-  constructor(_group: DockviewGroupPanel, private readonly onAdd: () => void) {
-    super("+", "New Workspace");
+export class WorkspaceHeaderActions implements IHeaderActionsRenderer {
+  readonly element = document.createElement("div");
+  private readonly resetButton = document.createElement("button");
+  private readonly addButton = document.createElement("button");
+  private disposers: Array<() => void> = [];
+
+  constructor(
+    _group: DockviewGroupPanel,
+    private readonly handlers: { onAdd: () => void; onResetActive: () => void }
+  ) {
+    this.element.className = "header-action";
+    this.resetButton.type = "button";
+    this.resetButton.className = "header-action__btn";
+    this.resetButton.textContent = "\u21BB";
+    this.resetButton.title = "Reset Active Workspace";
+    this.addButton.type = "button";
+    this.addButton.className = "header-action__btn";
+    this.addButton.textContent = "+";
+    this.addButton.title = "New Workspace";
+    this.element.append(this.resetButton, this.addButton);
   }
 
   init(_params: IGroupHeaderProps) {
-    const listener = (event: Event) => {
+    const addListener = (event: Event) => {
       event.preventDefault();
       event.stopPropagation();
-      this.onAdd();
+      this.handlers.onAdd();
     };
-    this.button.addEventListener("click", listener);
-    this.addDisposer(() => this.button.removeEventListener("click", listener));
+    const resetListener = (event: Event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.handlers.onResetActive();
+    };
+    this.addButton.addEventListener("click", addListener);
+    this.resetButton.addEventListener("click", resetListener);
+    this.disposers.push(
+      () => this.addButton.removeEventListener("click", addListener),
+      () => this.resetButton.removeEventListener("click", resetListener)
+    );
+  }
+
+  dispose() {
+    for (const dispose of this.disposers.splice(0)) {
+      dispose();
+    }
+    this.element.replaceChildren();
   }
 }
 

@@ -87,7 +87,7 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
         if (container.closest('.workspace-panel')) {
           continue;
         }
-        const button = container.querySelector('.header-action__btn');
+        const button = container.querySelector('.header-action__btn[title="New Workspace"]');
         if (button instanceof HTMLButtonElement) {
           button.click();
           return true;

@@ -277,6 +277,17 @@ class ShellModel implements ShellModelAPI {
         };
       }
 
+      if (segments.length === 3 && segments[2] === "reset") {
+        const resetWorkspace = await this.host.resetWorkspace(segments[1]);
+        return {
+          ok: true,
+          value: {
+            workspaceId: resetWorkspace.id,
+            workspace: resetWorkspace
+          }
+        };
+      }
+
       return throwPathError("NOT_CALLABLE", "Path is not callable");
     }
 

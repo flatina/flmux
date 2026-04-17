@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { resolve } from "node:path";
 import { FlmuxClientRegistry } from "../src/main/clientRegistry";
 import { createInMemoryTerminalBackend, createTerminalService } from "../src/main/terminal-service";
 import type { DiscoveredLocalExtension } from "../src/main/localExtensions";
@@ -130,6 +131,75 @@ describe("web mode shell authority", () => {
     expect(kinds).toContain("cowsay");
   });
 
+  it("forwards extension pathMount hooks to the server authority", async () => {
+    // Points at the real built counter headless bundle — exercises the default
+    // production importer end-to-end (pathToFileURL + dynamic import + @flmux/extension-api resolution).
+    const counterDistRoot = resolve(__dirname, "../../../extensions/counter/dist");
+    const counterExtension: DiscoveredLocalExtension = {
+      id: "sample.counter",
+      name: "sample.counter",
+      rootDir: resolve(counterDistRoot, ".."),
+      runtimeRootDir: counterDistRoot,
+      runtimeManifestPath: resolve(counterDistRoot, "manifest.json"),
+      runtimeManifest: {
+        id: "sample.counter",
+        name: "sample.counter",
+        version: "0.1.0",
+        apiVersion: 2,
+        entrypoints: { renderer: "index.js" },
+        panes: [{ kind: "counter", defaultTitle: "Counter" }]
+      },
+      rendererEntryPath: resolve(counterDistRoot, "index.js"),
+      headlessEntryPath: resolve(counterDistRoot, "index.server.js"),
+      cliEntryPath: null,
+      version: "0.1.0"
+    };
+
+    const clientRegistry = new FlmuxClientRegistry();
+    const terminalService = createTerminalService(createInMemoryTerminalBackend());
+    const authority = await createWebModeShellAuthority({
+      projectDir: "C:/project",
+      runtimeLabel: "web server authority",
+      terminalService,
+      clientRegistry,
+      localExtensions: [counterExtension]
+    });
+
+    await authority.start("http://127.0.0.1:4324");
+
+    const created = await authority.router.pathCall({
+      clientId: authority.clientId,
+      path: "/panes/new",
+      args: { kind: "counter", count: 7 }
+    }) as { ok: true; value: { pane: { id: string } } };
+    const paneId = created.value.pane.id;
+
+    const initialState = await authority.router.pathGet({
+      clientId: authority.clientId,
+      path: `/panes/${paneId}/counter/count`
+    });
+    expect(initialState).toEqual({ ok: true, found: true, value: 7 });
+
+    const setResult = await authority.router.pathSet({
+      clientId: authority.clientId,
+      path: `/panes/${paneId}/counter/count`,
+      value: 42
+    });
+    expect(setResult).toEqual({ ok: true, value: 42 });
+
+    const afterSet = await authority.router.pathGet({
+      clientId: authority.clientId,
+      path: `/panes/${paneId}/counter/count`
+    });
+    expect(afterSet).toEqual({ ok: true, found: true, value: 42 });
+
+    const status = await authority.router.pathGet({
+      clientId: authority.clientId,
+      path: `/status/panes/${paneId}/counter/count`
+    });
+    expect(status).toEqual({ ok: true, found: true, value: 42 });
+  });
+
   it("rejects /panes/new for pane kinds not declared by any built-in or extension", async () => {
     const clientRegistry = new FlmuxClientRegistry();
     const terminalService = createTerminalService(createInMemoryTerminalBackend());
@@ -156,6 +226,7 @@ function createFakeDiscoveredExtension(options: {
   id: string;
   version: string;
   panes: Array<{ kind: string; defaultTitle?: string }>;
+  headless?: boolean;
 }): DiscoveredLocalExtension {
   return {
     id: options.id,
@@ -172,6 +243,7 @@ function createFakeDiscoveredExtension(options: {
       panes: options.panes
     },
     rendererEntryPath: `/fake/${options.id}/dist/index.js`,
+    headlessEntryPath: options.headless === false ? null : `/fake/${options.id}/dist/index.server.js`,
     cliEntryPath: null,
     version: options.version
   };

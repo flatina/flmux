@@ -91,12 +91,23 @@ async function buildExtensionTree(
     }
 
     if (entry.name.endsWith(".ts")) {
-      const targetPath = join(outDir, replaceTsExtension(relativePath));
-      await mkdir(dirname(targetPath), { recursive: true });
       const source = await readFile(sourcePath, "utf8");
-      const code = extensionBuildTranspiler.transformSync(rewriteTypeScriptModuleImports(source));
-      await writeFile(targetPath, code, "utf8");
-      builtFiles.push(targetPath);
+
+      const browserTarget = join(outDir, replaceTsExtension(relativePath));
+      await mkdir(dirname(browserTarget), { recursive: true });
+      const browserCode = extensionBuildTranspiler.transformSync(
+        rewriteTypeScriptModuleImports(source, "browser")
+      );
+      await writeFile(browserTarget, browserCode, "utf8");
+      builtFiles.push(browserTarget);
+
+      const serverTarget = join(outDir, replaceTsExtensionWithServer(relativePath));
+      await mkdir(dirname(serverTarget), { recursive: true });
+      const serverCode = extensionBuildTranspiler.transformSync(
+        rewriteTypeScriptModuleImports(source, "server")
+      );
+      await writeFile(serverTarget, serverCode, "utf8");
+      builtFiles.push(serverTarget);
       continue;
     }
 
@@ -117,16 +128,22 @@ function createRuntimeManifest(sourceManifest: ExtensionManifest): ExtensionMani
   };
 }
 
-function rewriteTypeScriptModuleImports(source: string) {
-  return source
+function rewriteTypeScriptModuleImports(source: string, target: "browser" | "server") {
+  const rewritten = source
     .replace(
       /((?:import|export)[\s\S]*?\sfrom\s+["'])(\.{1,2}\/[^"']+?)(["'])/g,
-      (_match, prefix: string, specifier: string, suffix: string) => `${prefix}${rewriteRelativeSpecifier(specifier)}${suffix}`
+      (_match, prefix: string, specifier: string, suffix: string) => `${prefix}${rewriteRelativeSpecifier(specifier, target)}${suffix}`
     )
     .replace(
       /(import\(\s*["'])(\.{1,2}\/[^"']+?)(["']\s*\))/g,
-      (_match, prefix: string, specifier: string, suffix: string) => `${prefix}${rewriteRelativeSpecifier(specifier)}${suffix}`
-    )
+      (_match, prefix: string, specifier: string, suffix: string) => `${prefix}${rewriteRelativeSpecifier(specifier, target)}${suffix}`
+    );
+
+  if (target === "server") {
+    return rewritten;
+  }
+
+  return rewritten
     .replace(
       /(import\s+(?!type\b)[\s\S]*?\sfrom\s+)["']@flmux\/extension-api["']/g,
       `$1"${EXTENSION_API_RUNTIME_URL}"`
@@ -138,12 +155,19 @@ function rewriteTypeScriptModuleImports(source: string) {
     .replace(/import\(\s*["']@flmux\/extension-api["']\s*\)/g, `import("${EXTENSION_API_RUNTIME_URL}")`);
 }
 
-function rewriteRelativeSpecifier(specifier: string) {
-  return specifier.endsWith(".ts") ? replaceTsExtension(specifier) : specifier;
+function rewriteRelativeSpecifier(specifier: string, target: "browser" | "server") {
+  if (!specifier.endsWith(".ts")) {
+    return specifier;
+  }
+  return target === "server" ? replaceTsExtensionWithServer(specifier) : replaceTsExtension(specifier);
 }
 
 function replaceTsExtension(path: string) {
   return path.replace(/\.ts$/, ".js");
+}
+
+function replaceTsExtensionWithServer(path: string) {
+  return path.replace(/\.ts$/, ".server.js");
 }
 
 function stripRelativePrefix(path: string) {

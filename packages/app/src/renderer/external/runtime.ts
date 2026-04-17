@@ -2,7 +2,6 @@ import type {
   ExtensionPaneContext,
   ExtensionPaneDefinition,
   ExtensionPaneInstance,
-  ExtensionPanePathMount,
   PaneStateStore,
   WorkspaceBusEvent
 } from "@flmux/extension-api";
@@ -14,110 +13,25 @@ import type {
 } from "dockview-core";
 import type {
   PaneDescriptor,
-  PanePathMount,
   PaneRendererRuntimeContext,
   PaneWorkspaceContext
 } from "../shell/paneRegistry";
+import {
+  adaptExtensionLifecycle,
+  adaptExtensionPanePathMount,
+  adaptExtensionPersistence
+} from "../../shared/extensionPaneAdapter";
 
 export function createExternalPaneDescriptor(options: ExtensionPaneDefinition): PaneDescriptor {
-  const pathMount = options.pathMount ? createExternalPanePathMount(options.pathMount) : undefined;
   return {
     kind: options.kind,
     createRenderer(args) {
       const state = createExternalPaneState();
       return wrapExternalPaneRenderer(options, args, state);
     },
-    lifecycle:
-      options.createParams || options.getTitle
-        ? {
-            createParams: options.createParams
-              ? ({ workspace, input }) =>
-                  options.createParams!({
-                    workspaceId: workspace.id,
-                    defaultBrowserPath: workspace.defaultBrowserPath,
-                    input
-                  })
-              : undefined,
-            getTitle: options.getTitle
-              ? ({ workspace, input, params }) =>
-                  options.getTitle!({
-                    workspaceId: workspace.id,
-                    defaultBrowserPath: workspace.defaultBrowserPath,
-                    input,
-                    params
-                  })
-              : undefined
-          }
-        : undefined,
-    persistence:
-      options.normalizeRestoredParams || options.serializeParams
-        ? {
-            normalizeRestoredParams: options.normalizeRestoredParams
-              ? ({ workspace, params }) =>
-                  options.normalizeRestoredParams!({
-                    workspaceId: workspace.id,
-                    defaultBrowserPath: workspace.defaultBrowserPath,
-                    params
-                  })
-              : undefined,
-            serializeParams: options.serializeParams
-              ? ({ workspace, currentParams }) =>
-                  options.serializeParams!({
-                    workspaceId: workspace.id,
-                    defaultBrowserPath: workspace.defaultBrowserPath,
-                    currentParams
-                  })
-              : undefined
-          }
-        : undefined,
-    pathMount
-  };
-}
-
-function createExternalPanePathMount(options: ExtensionPanePathMount): PanePathMount {
-  return {
-    mountKey: options.mountKey,
-    getStateSnapshot: options.getStateSnapshot
-      ? ({ paneId, workspace, currentParams }) =>
-          options.getStateSnapshot!({
-            paneId,
-            workspaceId: workspace.id,
-            defaultBrowserPath: workspace.defaultBrowserPath,
-            currentParams
-          })
-      : undefined,
-    canSetStatePath: options.canSetStatePath
-      ? ({ paneId, workspace, currentParams }, relativePath) =>
-          options.canSetStatePath!({
-            paneId,
-            workspaceId: workspace.id,
-            defaultBrowserPath: workspace.defaultBrowserPath,
-            currentParams,
-            relativePath
-          })
-      : undefined,
-    setState: options.setState
-      ? ({ paneId, workspace, currentParams, setParams, patchParams }, relativePath, value) =>
-          options.setState!({
-            paneId,
-            workspaceId: workspace.id,
-            defaultBrowserPath: workspace.defaultBrowserPath,
-            currentParams,
-            relativePath,
-            value,
-            setParams: async (nextParams) => await setParams(nextParams),
-            patchParams: async (patch) => await patchParams(patch)
-          })
-      : undefined,
-    getStatusSnapshot: options.getStatusSnapshot
-      ? ({ paneId, workspace, currentParams }) =>
-          options.getStatusSnapshot!({
-            paneId,
-            workspaceId: workspace.id,
-            defaultBrowserPath: workspace.defaultBrowserPath,
-            currentParams
-          })
-      : undefined
+    lifecycle: adaptExtensionLifecycle(options),
+    persistence: adaptExtensionPersistence(options),
+    pathMount: options.pathMount ? adaptExtensionPanePathMount(options.pathMount) : undefined
   };
 }
 

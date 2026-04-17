@@ -13,6 +13,7 @@ export interface DiscoveredLocalExtension {
   runtimeManifestPath: string;
   runtimeManifest: ExtensionManifest;
   rendererEntryPath: string | null;
+  headlessEntryPath: string | null;
   cliEntryPath: string | null;
   version: string;
 }
@@ -71,6 +72,7 @@ export async function discoverLocalExtensions(rootDir: string): Promise<Discover
             value: runtimeManifest.entrypoints.renderer,
             label: "renderer"
           });
+          const headlessEntryPath = await resolveHeadlessCompanion(rendererEntryPath);
           const cliEntryPath = await resolveValidatedEntrypoint({
             extensionRootDir: runtimeRootDir,
             manifestPath: runtimeManifestPath,
@@ -91,6 +93,7 @@ export async function discoverLocalExtensions(rootDir: string): Promise<Discover
             runtimeManifestPath,
             runtimeManifest,
             rendererEntryPath,
+            headlessEntryPath,
             cliEntryPath,
             version: runtimeManifest.version
           } satisfies DiscoveredLocalExtension;
@@ -317,6 +320,17 @@ function isExtensionEnabledByPolicy(extension: DiscoveredLocalExtension, policy:
 
 function toServedExtensionPath(relativePath: string) {
   return relativePath.replace(/^\.\/+/, "");
+}
+
+async function resolveHeadlessCompanion(rendererEntryPath: string | null): Promise<string | null> {
+  if (!rendererEntryPath) {
+    return null;
+  }
+  const candidate = rendererEntryPath.replace(/\.js$/, ".server.js");
+  if (candidate === rendererEntryPath) {
+    return null;
+  }
+  return (await Bun.file(candidate).exists()) ? candidate : null;
 }
 
 async function resolveValidatedEntrypoint(options: {

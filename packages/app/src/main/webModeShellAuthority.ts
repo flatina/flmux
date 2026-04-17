@@ -25,13 +25,26 @@ import {
   type WorkspaceBusEvent,
   type WorkspaceStatusSnapshot
 } from "@flmux/core/shell";
-import type { ExtensionManifestPane } from "@flmux/extension-api";
+import type {
+  ExtensionDefinition,
+  ExtensionManifestPane,
+  ExtensionPaneDefinition
+} from "@flmux/extension-api";
+import { pathToFileURL } from "node:url";
 import type { TerminalRuntimeEvent } from "../shared/terminal";
 import { resolveTerminalCwdFromRoot } from "../shared/terminalPath";
+import {
+  adaptExtensionLifecycle,
+  adaptExtensionPanePathMount,
+  adaptExtensionPersistence
+} from "../shared/extensionPaneAdapter";
 import type { TerminalService } from "./terminal-service";
 import { createServerShellModelRouter } from "./serverShellModelRouter";
 import type { FlmuxClientRegistry } from "./clientRegistry";
 import type { DiscoveredLocalExtension } from "./localExtensions";
+
+type ExtensionModule = { default?: ExtensionDefinition };
+export type ExtensionModuleImporter = (entryPath: string) => Promise<ExtensionModule>;
 
 type WorkspaceRecord = {
   id: string;
@@ -60,12 +73,17 @@ export async function createWebModeShellAuthority(options: {
   terminalService: TerminalService;
   clientRegistry: FlmuxClientRegistry;
   localExtensions?: readonly DiscoveredLocalExtension[];
+  extensionModuleImporter?: ExtensionModuleImporter;
 }): Promise<WebModeShellAuthority> {
   const paneRegistry = new PaneRegistry<PaneSpec>();
   for (const spec of createBuiltinPaneSpecs(options.projectDir)) {
     paneRegistry.register(spec);
   }
-  for (const spec of createExtensionPaneSpecs(options.localExtensions ?? [])) {
+  const extensionPaneSpecs = await createExtensionPaneSpecs(
+    options.localExtensions ?? [],
+    options.extensionModuleImporter ?? defaultImportExtensionModule
+  );
+  for (const spec of extensionPaneSpecs) {
     paneRegistry.register(spec);
   }
 
@@ -762,28 +780,86 @@ function createBuiltinPaneSpecs(projectDir: string): PaneSpec[] {
   ];
 }
 
-function createExtensionPaneSpecs(extensions: readonly DiscoveredLocalExtension[]): PaneSpec[] {
+async function createExtensionPaneSpecs(
+  extensions: readonly DiscoveredLocalExtension[],
+  importer: ExtensionModuleImporter
+): Promise<PaneSpec[]> {
   const specs: PaneSpec[] = [];
   for (const extension of extensions) {
-    for (const pane of extension.runtimeManifest.panes ?? []) {
-      specs.push(createExtensionPaneSpec(pane));
+    const definitionByKind = await loadExtensionPaneDefinitions(extension, importer);
+    for (const manifestPane of extension.runtimeManifest.panes ?? []) {
+      specs.push(createExtensionPaneSpec(manifestPane, definitionByKind.get(manifestPane.kind)));
     }
   }
   return specs;
 }
 
-function createExtensionPaneSpec(pane: ExtensionManifestPane): PaneSpec {
-  if (!pane.defaultTitle) {
-    return { kind: pane.kind };
+async function loadExtensionPaneDefinitions(
+  extension: DiscoveredLocalExtension,
+  importer: ExtensionModuleImporter
+): Promise<Map<string, ExtensionPaneDefinition>> {
+  const byKind = new Map<string, ExtensionPaneDefinition>();
+  const entryPath = extension.headlessEntryPath;
+  if (!entryPath) {
+    if (extension.rendererEntryPath) {
+      console.warn(
+        `[flmux] extension '${extension.id}' has no headless (.server.js) entry; pathMount / lifecycle hooks unavailable in web mode`
+      );
+    }
+    return byKind;
+  }
+  try {
+    const module = await importer(entryPath);
+    for (const pane of module.default?.panes ?? []) {
+      byKind.set(pane.kind, pane);
+    }
+  } catch (error) {
+    console.warn(
+      `[flmux] failed to load extension '${extension.id}' headless entry for server authority — pathMount / lifecycle hooks unavailable`,
+      error
+    );
+  }
+  return byKind;
+}
+
+function createExtensionPaneSpec(
+  manifestPane: ExtensionManifestPane,
+  definition: ExtensionPaneDefinition | undefined
+): PaneSpec {
+  const defaultTitle = manifestPane.defaultTitle;
+
+  if (!definition) {
+    if (!defaultTitle) {
+      return { kind: manifestPane.kind };
+    }
+    return {
+      kind: manifestPane.kind,
+      lifecycle: {
+        getTitle: ({ input }) => input.title?.trim() || defaultTitle
+      }
+    };
   }
 
-  const defaultTitle = pane.defaultTitle;
+  const lifecycle = adaptExtensionLifecycle(definition);
+  const hasFallbackTitle = Boolean(defaultTitle);
+  const mergedLifecycle = hasFallbackTitle && !lifecycle?.getTitle
+    ? {
+        ...(lifecycle ?? {}),
+        getTitle: ({ input }: { input: NewPaneInput }) => input.title?.trim() || defaultTitle!
+      }
+    : lifecycle;
+
   return {
-    kind: pane.kind,
-    lifecycle: {
-      getTitle: ({ input }) => input.title?.trim() || defaultTitle
-    }
+    kind: manifestPane.kind,
+    lifecycle: mergedLifecycle,
+    persistence: adaptExtensionPersistence(definition),
+    pathMount: definition.pathMount ? adaptExtensionPanePathMount(definition.pathMount) : undefined
   };
+}
+
+async function defaultImportExtensionModule(entryPath: string): Promise<ExtensionModule> {
+  const fileUrl = pathToFileURL(entryPath).href;
+  return await import(fileUrl);
 }
 
 function humanizePaneKind(kind: string) {

@@ -81,17 +81,21 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
 
     const clientId = await waitForSingleClientId(appOrigin, "workspace client id");
 
-    const createdWorkspace = await postJson<{
-      ok: true;
-      result: {
-        ok: true;
-        value: { workspaceId: string };
-      };
-    }>(`${appOrigin}/api/model/path/call`, {
-      clientId,
-      path: "/workspaces/new"
-    });
-    expect(createdWorkspace.result.value.workspaceId).toBe(secondWorkspaceId);
+    const outerAddClicked = await session.evaluate<boolean>(`(() => {
+      const tabs = document.querySelectorAll('.dv-tabs-and-actions-container');
+      for (const container of tabs) {
+        if (container.closest('.workspace-panel')) {
+          continue;
+        }
+        const button = container.querySelector('.header-action__btn');
+        if (button instanceof HTMLButtonElement) {
+          button.click();
+          return true;
+        }
+      }
+      return false;
+    })()`);
+    expect(outerAddClicked).toBe(true);
 
     const createdWorkspaceState = await waitFor(async () => {
       const state = await session.evaluate<{
@@ -165,18 +169,53 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
       return title.includes("Workspace 2") ? title : null;
     }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 title after switch" });
 
-    const inspectorPane = await postJson<{
-      ok: true;
-      result: {
+    const innerAddClicked = await session.evaluate<boolean>(`(() => {
+      const panel = document.querySelector('.workspace-panel[data-workspace-id="${secondWorkspaceId}"]');
+      const container = panel?.querySelector('.dv-tabs-and-actions-container');
+      const button = container?.querySelector('.header-action__btn');
+      if (button instanceof HTMLButtonElement) {
+        button.click();
+        return true;
+      }
+      return false;
+    })()`);
+    expect(innerAddClicked).toBe(true);
+
+    const popupKinds = await session.evaluate<string[]>(`(() => {
+      const popup = document.querySelector('.header-action-popup');
+      return popup
+        ? Array.from(popup.querySelectorAll('.header-action-popup__item')).map((el) => el.getAttribute('data-kind') ?? '')
+        : [];
+    })()`);
+    for (const expected of ["browser", "terminal", "cowsay", "inspector", "scratchpad"]) {
+      expect(popupKinds).toContain(expected);
+    }
+
+    const inspectorPicked = await session.evaluate<boolean>(`(() => {
+      const popup = document.querySelector('.header-action-popup');
+      const item = popup?.querySelector('[data-kind="inspector"]');
+      if (item instanceof HTMLButtonElement) {
+        item.click();
+        return true;
+      }
+      return false;
+    })()`);
+    expect(inspectorPicked).toBe(true);
+
+    const inspectorPaneId = await waitFor(async () => {
+      const panes = await postJson<{
         ok: true;
-        value: { paneId: string };
-      };
-    }>(`${appOrigin}/api/model/path/call`, {
-      clientId,
-      path: "/panes/new",
-      args: { kind: "inspector", place: "right" }
-    });
-    const inspectorPaneId = inspectorPane.result.value.paneId;
+        result: {
+          ok: true;
+          found: true;
+          value: Record<string, { id: string; kind: string }>;
+        };
+      }>(`${appOrigin}/api/model/path/get`, {
+        clientId,
+        path: "/status/panes"
+      });
+      return Object.values(panes.result.value).find((pane) => pane.kind === "inspector")?.id ?? null;
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "inspector pane id after popup pick" });
 
     await waitFor(async () => {
       const state = await session.evaluate<{

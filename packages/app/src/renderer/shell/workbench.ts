@@ -30,6 +30,7 @@ import {
   serializePaneParams
 } from "./paneRegistry";
 import { registerBuiltinPaneDescriptors } from "./builtinPaneDescriptors";
+import { NewPaneHeaderAction, NewWorkspaceHeaderAction, humanizePaneKind } from "./headerActions";
 import type {
   AppStatusSnapshot,
   NewPaneInput,
@@ -364,7 +365,16 @@ export class FlmuxWorkbench implements ShellModelHost {
     const innerApi = createDockview(host, {
       theme: themeAbyss,
       disableFloatingGroups: true,
-      createComponent: (options) => this.createInnerPanelRenderer(workspace, options)
+      createComponent: (options) => this.createInnerPanelRenderer(workspace, options),
+      createRightHeaderActionComponent: (group) => new NewPaneHeaderAction(group, {
+        listKinds: () => this.paneRegistry.list().map((descriptor) => ({
+          kind: descriptor.kind,
+          label: humanizePaneKind(descriptor.kind)
+        })),
+        onSelect: (kind) => {
+          void this.shellModel.pathCall("/panes/new", { kind, place: "right" });
+        }
+      })
     });
     workspace.innerApi = innerApi;
 
@@ -430,7 +440,10 @@ export class FlmuxWorkbench implements ShellModelHost {
       theme: themeAbyss,
       disableFloatingGroups: true,
       defaultRenderer: "always",
-      createComponent: (options) => this.createOuterPanelRenderer(options)
+      createComponent: (options) => this.createOuterPanelRenderer(options),
+      createRightHeaderActionComponent: (group) => new NewWorkspaceHeaderAction(group, () => {
+        void this.shellModel.pathCall("/workspaces/new");
+      })
     });
 
     this.outerApi.onDidActivePanelChange(() => {
@@ -1110,14 +1123,6 @@ function cloneJsonObject(value: unknown) {
 
 function cloneLayout<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function humanizePaneKind(kind: string) {
-  return kind
-    .split(/[./_-]/g)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ") || "Pane";
 }
 
 function prefersHttpScheme(value: string) {

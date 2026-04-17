@@ -115,6 +115,68 @@ select:focus {
   position: relative;
 }
 
+.header-action {
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+}
+
+.header-action__btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 4px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.header-action__btn:hover {
+  border-color: var(--line);
+  color: var(--text);
+  background: rgba(40, 63, 97, 0.6);
+}
+
+.header-action-popup {
+  position: fixed;
+  z-index: 1000;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  gap: 2px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.header-action-popup__item {
+  padding: 6px 10px;
+  border-radius: 5px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+}
+
+.header-action-popup__item:hover {
+  background: rgba(40, 63, 97, 0.85);
+  border-color: var(--line);
+}
+
+.header-action-popup__empty {
+  padding: 6px 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .web-mode-shell {
   flex: 1;
   min-height: 0;

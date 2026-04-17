@@ -107,6 +107,10 @@ export class PaneRegistry<TDescriptor extends {
   get(kind: string) {
     return this.descriptors.get(kind);
   }
+
+  list(): readonly TDescriptor[] {
+    return [...this.descriptors.values()];
+  }
 }
 
 export function isBrowserPaneStateRecord(record: PaneStateRecord): record is BrowserPaneStateRecord {

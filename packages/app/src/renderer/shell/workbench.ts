@@ -743,36 +743,36 @@ export class FlmuxWorkbench implements ShellModelHost {
     this.appTitle = snapshot?.appTitle ?? this.appTitle;
 
     const restoredWorkspaces = Object.entries(snapshot?.workspaces ?? {});
-    const workspaceDescriptors = restoredWorkspaces.length > 0
-      ? restoredWorkspaces.map(([workspaceId, workspaceSnapshot]) => ({
-          id: workspaceId,
-          title: workspaceSnapshot.defaultTitle?.trim() || defaultWorkspaceTitle(workspaceId)
-        }))
-      : [this.allocateWorkspaceDescriptor()];
+    if (restoredWorkspaces.length === 0 || !snapshot?.outerLayout) {
+      await this.initializeDefaultWorkspaceSet();
+      return;
+    }
 
     this.sessionPersistenceSuppressed = true;
     try {
-      for (const descriptor of workspaceDescriptors) {
-        const workspace = this.createWorkspaceRecord(descriptor);
-        const workspaceSnapshot = snapshot?.workspaces[descriptor.id];
-        if (workspaceSnapshot) {
-          if (workspaceSnapshot.defaultTitle?.trim()) {
-            workspace.defaultTitle = workspaceSnapshot.defaultTitle.trim();
-          }
-          workspace.title = workspaceSnapshot.title.trim() || workspace.defaultTitle;
-          workspace.pendingInnerLayout = (workspaceSnapshot.innerLayout as SerializedDockview | null) ?? null;
+      for (const [workspaceId, workspaceSnapshot] of restoredWorkspaces) {
+        const workspace = this.createWorkspaceRecord({
+          id: workspaceId,
+          title: workspaceSnapshot.defaultTitle?.trim() || defaultWorkspaceTitle(workspaceId)
+        });
+        if (workspaceSnapshot.defaultTitle?.trim()) {
+          workspace.defaultTitle = workspaceSnapshot.defaultTitle.trim();
         }
-        this.mountOuterPanel(workspace);
+        workspace.title = workspaceSnapshot.title.trim() || workspace.defaultTitle;
+        workspace.pendingInnerLayout = (workspaceSnapshot.innerLayout as SerializedDockview | null) ?? null;
       }
 
-      const firstDescriptor = workspaceDescriptors[0];
-      if (!firstDescriptor) {
-        throw new Error("Expected at least one workspace descriptor");
+      try {
+        this.outerApi!.fromJSON(snapshot.outerLayout as SerializedDockview);
+      } catch (error) {
+        console.warn("failed to restore outer workspace layout; falling back to defaults", error);
+        this.outerApi!.clear();
+        this.workspaces.clear();
+        await this.initializeDefaultWorkspaceSet();
+        return;
       }
-      this.outerApi?.getPanel(firstDescriptor.id)?.focus();
 
-      for (const descriptor of workspaceDescriptors) {
-        const workspace = this.requireWorkspace(descriptor.id);
+      for (const workspace of this.workspaces.values()) {
         if (workspace.paneRecords.size === 0) {
           await this.resetWorkspace(workspace);
         }
@@ -839,8 +839,9 @@ export class FlmuxWorkbench implements ShellModelHost {
 
   private serializeSessionSnapshot(): FlmuxSessionSnapshot {
     return {
-      version: 3,
+      version: 4,
       appTitle: this.appTitle,
+      outerLayout: this.outerApi?.toJSON() ?? null,
       workspaces: Object.fromEntries(
         [...this.workspaces.values()].map((workspace) => [
           workspace.id,

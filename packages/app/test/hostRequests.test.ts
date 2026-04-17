@@ -134,8 +134,9 @@ describe("flmux host requests", () => {
     });
 
     const snapshot: FlmuxSessionSnapshot = {
-      version: 3,
+      version: 4,
       appTitle: "flmux",
+      outerLayout: null,
       workspaces: {
         "workspace.1": {
           title: "Workspace 1",

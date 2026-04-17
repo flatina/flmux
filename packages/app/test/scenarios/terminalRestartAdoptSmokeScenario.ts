@@ -273,7 +273,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
       try {
         const saved = await Bun.file(sessionFile).text();
         return (
-          saved.includes("\"version\": 3") &&
+          saved.includes("\"version\": 4") &&
           saved.includes(paneId) &&
           saved.includes(browserPaneId) &&
           saved.includes(cowsayPaneId) &&

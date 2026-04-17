@@ -11,6 +11,7 @@ import type {
 } from "./terminal";
 
 export interface TerminalBackend {
+  /** `rootDir` is the daemon scope dir (= install root). */
   adoptByPaneId(input: { rootDir: string; paneId: string }): Promise<TerminalAdoptResult>;
   create(input: TerminalCreateInput): Promise<TerminalCreateResult>;
   write(input: { rootKey: string; runtimeId: string; data: string }): Promise<TerminalWriteResult>;

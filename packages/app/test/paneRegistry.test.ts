@@ -23,6 +23,7 @@ describe("pane registry", () => {
   it("preserves restored same-origin browser urls", () => {
     const registry = new PaneRegistry();
     registerBuiltinPaneDescriptors(registry, {
+      installRoot: "C:\\workspace",
       requireBrowserUrl(value) {
         return value.startsWith("/")
           ? `http://127.0.0.1:4321${value}`
@@ -41,7 +42,6 @@ describe("pane registry", () => {
       browser?.persistence?.normalizeRestoredParams?.({
         workspace: {
           id: "workspace.test",
-          installRoot: "C:\\workspace",
           defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.test",
           bus: {
             publish() {},
@@ -62,6 +62,7 @@ describe("pane registry", () => {
   it("preserves explicit non-app fixture-looking urls for new browser panes", () => {
     const registry = new PaneRegistry();
     registerBuiltinPaneDescriptors(registry, {
+      installRoot: "C:\\workspace",
       requireBrowserUrl(value) {
         return value.startsWith("/")
           ? `http://127.0.0.1:4321${value}`
@@ -80,7 +81,6 @@ describe("pane registry", () => {
       browser?.lifecycle?.createParams?.({
         workspace: {
           id: "workspace.test",
-          installRoot: "C:\\workspace",
           defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.test",
           bus: {
             publish() {},
@@ -102,6 +102,7 @@ describe("pane registry", () => {
   it("preserves restored cross-origin fixture-looking urls", () => {
     const registry = new PaneRegistry();
     registerBuiltinPaneDescriptors(registry, {
+      installRoot: "C:\\workspace",
       requireBrowserUrl(value) {
         return value.startsWith("/")
           ? `http://127.0.0.1:4321${value}`
@@ -120,7 +121,6 @@ describe("pane registry", () => {
       browser?.persistence?.normalizeRestoredParams?.({
         workspace: {
           id: "workspace.test",
-          installRoot: "C:\\workspace",
           defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.test",
           bus: {
             publish() {},

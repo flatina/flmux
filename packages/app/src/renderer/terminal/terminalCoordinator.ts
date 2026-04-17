@@ -16,6 +16,7 @@ export interface TerminalRuntimeState {
 
 export class TerminalCoordinator<W extends TerminalWorkspaceRecord> {
   constructor(private readonly deps: {
+    installRoot: string;
     terminalHost: Pick<TerminalHostAPI, "adoptByPaneId" | "create" | "write" | "resize" | "history" | "kill">;
     resolveTerminalCwd(rootDir: string, inputCwd: string | undefined): string;
     findWorkspaceByPaneId(paneId: string): W | null;
@@ -30,8 +31,8 @@ export class TerminalCoordinator<W extends TerminalWorkspaceRecord> {
 
     return this.deps.terminalHost.create({
       paneId,
-      rootDir: record.installRoot,
-      cwd: this.deps.resolveTerminalCwd(record.installRoot, input.cwd ?? record.cwd)
+      rootDir: this.deps.installRoot,
+      cwd: this.deps.resolveTerminalCwd(this.deps.installRoot, input.cwd ?? record.cwd)
     });
   }
 
@@ -112,7 +113,7 @@ export class TerminalCoordinator<W extends TerminalWorkspaceRecord> {
 
         try {
           const result = await this.deps.terminalHost.adoptByPaneId({
-            rootDir: record.installRoot,
+            rootDir: this.deps.installRoot,
             paneId
           });
           if (result.outcome === "adopted") {

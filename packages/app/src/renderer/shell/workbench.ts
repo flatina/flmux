@@ -98,12 +98,14 @@ export class FlmuxWorkbench implements ShellModelHost {
     this.sessionHost = createSessionHost(hostProxy);
     this.terminalHost = createTerminalHost(hostProxy);
     this.terminalCoordinator = new TerminalCoordinator<WorkspaceRecord>({
+      installRoot: config.projectDir,
       terminalHost: this.terminalHost,
       resolveTerminalCwd: resolveTerminalCwdFromRoot,
       findWorkspaceByPaneId: (paneId) => this.findWorkspaceByPaneId(paneId),
       onRuntimeStateChange: (workspace, paneId, state) => this.applyTerminalRuntimeStateChange(workspace, paneId, state)
     });
     registerBuiltinPaneDescriptors(this.paneRegistry, {
+      installRoot: config.projectDir,
       requireBrowserUrl: (value) => this.requireBrowserUrl(value),
       resolveTerminalCwd: resolveTerminalCwdFromRoot,
       serializeBrowserUrl: (url) => this.serializeBrowserUrl(url)
@@ -431,7 +433,6 @@ export class FlmuxWorkbench implements ShellModelHost {
   private toPaneWorkspaceContext(workspace: WorkspaceRecord): PaneWorkspaceContext {
     return {
       id: workspace.id,
-      installRoot: this.config.projectDir,
       defaultBrowserPath: workspace.defaultBrowserPath,
       bus: workspace.bus
     };

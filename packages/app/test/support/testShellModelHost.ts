@@ -32,7 +32,6 @@ export type StoredPane =
       kind: "terminal";
       title: string;
       cwd: string;
-      installRoot: string;
       rootKey: string | null;
       runtimeId: string | null;
       summary?: {
@@ -393,7 +392,6 @@ export class TestShellModelHost implements ShellModelHost {
         }),
         getStatusSnapshot: () => ({
           workspaceId: this.workspaceId,
-          installRoot: this.workspaceRootDir,
           defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.test"
         })
       };
@@ -438,8 +436,8 @@ export class TestShellModelHost implements ShellModelHost {
 
     const result = await this.terminalService.create({
       paneId,
-      rootDir: pane.installRoot,
-      cwd: resolveTerminalCwdFromRoot(pane.installRoot, input.cwd ?? pane.cwd)
+      rootDir: this.workspaceRootDir,
+      cwd: resolveTerminalCwdFromRoot(this.workspaceRootDir, input.cwd ?? pane.cwd)
     });
 
     pane.runtimeId = result.runtimeId;
@@ -603,7 +601,6 @@ export class TestShellModelHost implements ShellModelHost {
           kind: "terminal",
           title: input.title?.trim() || "Terminal",
           cwd: resolveTerminalCwdFromRoot(this.workspaceRootDir, input.cwd),
-          installRoot: this.workspaceRootDir,
           rootKey: null,
           runtimeId: null
         };
@@ -637,8 +634,7 @@ export class TestShellModelHost implements ShellModelHost {
 
     if (pane.kind === "terminal") {
       return {
-        cwd: pane.cwd,
-        installRoot: pane.installRoot
+        cwd: pane.cwd
       };
     }
 
@@ -666,8 +662,7 @@ export class TestShellModelHost implements ShellModelHost {
 
     if (pane.kind === "terminal") {
       return {
-        cwd: pane.cwd,
-        installRoot: pane.installRoot
+        cwd: pane.cwd
       };
     }
 

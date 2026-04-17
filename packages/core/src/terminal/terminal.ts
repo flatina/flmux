@@ -1,4 +1,5 @@
 export interface TerminalCreateInput {
+  /** Daemon scope dir (= install root). Selects which ptyd daemon owns the runtime. */
   rootDir: string;
   cwd?: string;
   paneId?: string;

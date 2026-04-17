@@ -8,6 +8,7 @@ import {
 } from "./paneRegistry";
 
 export interface BuiltinPaneDescriptorDependencies {
+  installRoot: string;
   requireBrowserUrl(value: string): string;
   resolveTerminalCwd(rootDir: string, inputCwd: string | undefined): string;
   serializeBrowserUrl(url: string): string;
@@ -114,16 +115,14 @@ function createBuiltinPaneDescriptors(
           onRuntimeStateChange: runtime.onTerminalRuntimeStateChange
         }),
       lifecycle: {
-        createParams: ({ workspace, input }) => ({
-          cwd: deps.resolveTerminalCwd(workspace.installRoot, input.cwd),
-          installRoot: workspace.installRoot,
+        createParams: ({ input }) => ({
+          cwd: deps.resolveTerminalCwd(deps.installRoot, input.cwd),
           autoCreate: input.params?.autoCreate === true
         }),
         getTitle: ({ input }) => input.title?.trim() || "Terminal",
-        createRecord: ({ workspace, params }) => ({
+        createRecord: ({ params }) => ({
           kind: "terminal",
-          cwd: deps.resolveTerminalCwd(workspace.installRoot, optionalStringParam(params?.cwd)),
-          installRoot: workspace.installRoot,
+          cwd: deps.resolveTerminalCwd(deps.installRoot, optionalStringParam(params?.cwd)),
           rootKey: null,
           runtimeId: null,
           summary: null
@@ -176,9 +175,8 @@ function createBuiltinPaneDescriptors(
         }
       ],
       persistence: {
-        normalizeRestoredParams: ({ workspace, params }) => ({
-          cwd: deps.resolveTerminalCwd(workspace.installRoot, optionalStringParam(params?.cwd)),
-          installRoot: workspace.installRoot
+        normalizeRestoredParams: ({ params }) => ({
+          cwd: deps.resolveTerminalCwd(deps.installRoot, optionalStringParam(params?.cwd))
         }),
         serializeParams: ({ record }) =>
           isTerminalPaneRecord(record)

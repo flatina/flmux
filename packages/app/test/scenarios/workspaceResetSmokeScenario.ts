@@ -159,21 +159,21 @@ export async function runWorkspaceResetSmokeScenario(appHandles: AppProcessHandl
       return title.includes("Workspace 2") && !title.includes("Renamed") ? title : null;
     }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace title reset" });
 
-    // Reset fires only on workspace.2, and workspace.1 has no terminal in its
-    // default seed — so the shared install-scoped daemon should hold zero
-    // runtimes after the reset kills workspace.2's attached terminal.
+    // Reset must leave no runtime owned by the workspace.2 terminal pane we
+    // just killed. Filter by ownerPaneId rather than checking total runtime
+    // count so sibling workspace terminals (if any) don't mask a leak.
     await waitFor(async () => {
       const locks = await findOwnedPtydLocksForRootDir(installRoot);
       if (locks.length === 0) {
         return true;
       }
 
-      const rootStatuses = await Promise.all(
+      const terminalLists = await Promise.all(
         locks.map(async (lock) => {
           try {
-            return await callJsonRpcIpc<{ runtimeCount: number }>(
+            return await callJsonRpcIpc<{ terminals: Array<{ ownerPaneId: string | null }> }>(
               lock.controlIpcPath,
-              "root.status",
+              "terminal.list",
               undefined,
               2_000
             );
@@ -183,10 +183,13 @@ export async function runWorkspaceResetSmokeScenario(appHandles: AppProcessHandl
         })
       );
 
-      return rootStatuses.every((status) => status === null || status.runtimeCount === 0)
+      return terminalLists.every((listing) =>
+        listing === null ||
+        listing.terminals.every((terminal) => terminal.ownerPaneId !== terminalPaneId)
+      )
         ? true
         : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "shared install-scoped daemon has 0 runtimes after reset" });
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 terminal runtime cleared from install-scoped daemon" });
 
     await session.close();
   } finally {

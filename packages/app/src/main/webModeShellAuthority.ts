@@ -62,7 +62,7 @@ export async function createWebModeShellAuthority(options: {
   localExtensions?: readonly DiscoveredLocalExtension[];
 }): Promise<WebModeShellAuthority> {
   const paneRegistry = new PaneRegistry<PaneSpec>();
-  for (const spec of createBuiltinPaneSpecs()) {
+  for (const spec of createBuiltinPaneSpecs(options.projectDir)) {
     paneRegistry.register(spec);
   }
   for (const spec of createExtensionPaneSpecs(options.localExtensions ?? [])) {
@@ -183,8 +183,8 @@ class HeadlessShellHost implements ShellModelHost {
 
         const result = await this.deps.terminalService.create({
           paneId,
-          rootDir: pane.installRoot,
-          cwd: resolveTerminalCwdFromRoot(pane.installRoot, input.cwd ?? pane.cwd)
+          rootDir: this.deps.projectDir,
+          cwd: resolveTerminalCwdFromRoot(this.deps.projectDir, input.cwd ?? pane.cwd)
         });
         pane.cwd = result.terminal.cwd;
         pane.rootKey = result.rootKey;
@@ -511,7 +511,6 @@ class HeadlessShellHost implements ShellModelHost {
   private toWorkspaceContext(workspace: WorkspaceRecord): PaneWorkspaceContext {
     return {
       id: workspace.id,
-      installRoot: this.deps.projectDir,
       defaultBrowserPath: workspace.defaultBrowserPath,
       bus: workspace.bus
     };
@@ -638,7 +637,7 @@ class HeadlessShellHost implements ShellModelHost {
   }
 }
 
-function createBuiltinPaneSpecs(): PaneSpec[] {
+function createBuiltinPaneSpecs(projectDir: string): PaneSpec[] {
   return [
     {
       kind: "browser",
@@ -703,15 +702,13 @@ function createBuiltinPaneSpecs(): PaneSpec[] {
     {
       kind: "terminal",
       lifecycle: {
-        createParams: ({ workspace, input }) => ({
-          cwd: resolveTerminalCwdFromRoot(workspace.installRoot, input.cwd),
-          installRoot: workspace.installRoot
+        createParams: ({ input }) => ({
+          cwd: resolveTerminalCwdFromRoot(projectDir, input.cwd)
         }),
         getTitle: ({ input }) => input.title?.trim() || "Terminal",
-        createRecord: ({ workspace, params }) => ({
+        createRecord: ({ params }) => ({
           kind: "terminal",
-          cwd: resolveTerminalCwdFromRoot(workspace.installRoot, optionalStringParam(params?.cwd)),
-          installRoot: workspace.installRoot,
+          cwd: resolveTerminalCwdFromRoot(projectDir, optionalStringParam(params?.cwd)),
           rootKey: null,
           runtimeId: null,
           summary: null

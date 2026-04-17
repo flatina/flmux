@@ -57,7 +57,6 @@ describe("external pane runtime", () => {
     const renderer = descriptor.createRenderer({
       workspace: {
         id: "workspace.external",
-        installRoot: "C:\\workspace",
         defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
         bus: workspaceBus
       } satisfies PaneWorkspaceContext,
@@ -132,8 +131,7 @@ describe("external pane runtime", () => {
       descriptor.lifecycle?.getTitle?.({
         workspace: {
           id: "workspace.external",
-          installRoot: "C:\\workspace",
-          defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
+            defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
           bus: {
             publish() {},
             subscribe() {
@@ -175,7 +173,6 @@ describe("external pane runtime", () => {
     const renderer = descriptor.createRenderer({
       workspace: {
         id: "workspace.external",
-        installRoot: "C:\\workspace",
         defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
         bus: {
           publish() {},
@@ -251,8 +248,7 @@ describe("external pane runtime", () => {
       descriptor.lifecycle?.createParams?.({
         workspace: {
           id: "workspace.external",
-          installRoot: "C:\\workspace",
-          defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
+            defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
           bus: {
             publish() {},
             subscribe() {
@@ -275,8 +271,7 @@ describe("external pane runtime", () => {
       descriptor.persistence?.normalizeRestoredParams?.({
         workspace: {
           id: "workspace.external",
-          installRoot: "C:\\workspace",
-          defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
+            defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
           bus: {
             publish() {},
             subscribe() {
@@ -296,8 +291,7 @@ describe("external pane runtime", () => {
       descriptor.persistence?.serializeParams?.({
         workspace: {
           id: "workspace.external",
-          installRoot: "C:\\workspace",
-          defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
+            defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
           bus: {
             publish() {},
             subscribe() {
@@ -336,7 +330,6 @@ describe("external pane runtime", () => {
     const renderer = descriptor.createRenderer({
       workspace: {
         id: "workspace.external",
-        installRoot: "C:\\workspace",
         defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
         bus: {
           publish() {},
@@ -418,7 +411,6 @@ describe("external pane runtime", () => {
       paneId: "pane.mount",
       workspace: {
         id: "workspace.external",
-        installRoot: "C:\\workspace",
         defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
         bus: {
           publish() {},
@@ -443,7 +435,6 @@ describe("external pane runtime", () => {
       paneId: "pane.mount",
       workspace: {
         id: "workspace.external",
-        installRoot: "C:\\workspace",
         defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
         bus: {
           publish() {},
@@ -475,7 +466,6 @@ describe("external pane runtime", () => {
       paneId: "pane.mount",
       workspace: {
         id: "workspace.external",
-        installRoot: "C:\\workspace",
         defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
         bus: {
           publish() {},

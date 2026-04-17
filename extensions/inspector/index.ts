@@ -245,9 +245,8 @@ const inspectorPane = definePane({
         ? currentParams.subscription
         : "*"
     }),
-    getStatusSnapshot: ({ workspaceId, installRoot, defaultBrowserPath }) => ({
+    getStatusSnapshot: ({ workspaceId, defaultBrowserPath }) => ({
       workspaceId,
-      installRoot,
       defaultBrowserPath
     })
   }

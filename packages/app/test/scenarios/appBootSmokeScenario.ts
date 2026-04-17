@@ -265,7 +265,6 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
         found: true;
         value: {
           workspaceId: string;
-          installRoot: string;
           defaultBrowserPath: string;
         };
       };
@@ -497,22 +496,22 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
 
     const installRoot = resolveAppInstallRoot();
 
-    // workspace.1 seeds cowsay + browser only (no terminal), so after
-    // workspace.2 closes its lone terminal pane the shared install-scoped
-    // daemon should hold zero runtimes. If workspace.1 ever gets a default
-    // terminal, narrow this assertion to the specific terminalPaneId's runtimeId.
+    // Closing workspace.2 kills its terminal pane; verify no runtime owned by
+    // that pane remains on the install-scoped daemon. Filter by ownerPaneId
+    // instead of total runtime count so sibling workspace terminals cannot
+    // mask a leak of this specific runtime.
     await waitFor(async () => {
       const locks = await findOwnedPtydLocksForRootDir(installRoot);
       if (locks.length === 0) {
         return true;
       }
 
-      const rootStatuses = await Promise.all(
+      const terminalLists = await Promise.all(
         locks.map(async (lock) => {
           try {
-            return await callJsonRpcIpc<{ runtimeCount: number }>(
+            return await callJsonRpcIpc<{ terminals: Array<{ ownerPaneId: string | null }> }>(
               lock.controlIpcPath,
-              "root.status",
+              "terminal.list",
               undefined,
               2_000
             );
@@ -522,10 +521,13 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
         })
       );
 
-      return rootStatuses.every((status) => status === null || status.runtimeCount === 0)
+      return terminalLists.every((listing) =>
+        listing === null ||
+        listing.terminals.every((terminal) => terminal.ownerPaneId !== terminalPaneId)
+      )
         ? true
         : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "shared install-scoped daemon has 0 runtimes after close" });
+    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 terminal runtime cleared from install-scoped daemon" });
 
     await session.close();
   } finally {

@@ -799,13 +799,8 @@ async function loadExtensionPaneDefinitions(
   importer: ExtensionModuleImporter
 ): Promise<Map<string, ExtensionPaneDefinition>> {
   const byKind = new Map<string, ExtensionPaneDefinition>();
-  const entryPath = extension.headlessEntryPath;
+  const entryPath = extension.rendererEntryPath;
   if (!entryPath) {
-    if (extension.rendererEntryPath) {
-      console.warn(
-        `[flmux] extension '${extension.id}' has no headless (.server.js) entry; pathMount / lifecycle hooks unavailable in web mode`
-      );
-    }
     return byKind;
   }
   try {
@@ -815,7 +810,7 @@ async function loadExtensionPaneDefinitions(
     }
   } catch (error) {
     console.warn(
-      `[flmux] failed to load extension '${extension.id}' headless entry for server authority — pathMount / lifecycle hooks unavailable`,
+      `[flmux] failed to load extension '${extension.id}' for server authority — pathMount / lifecycle hooks unavailable`,
       error
     );
   }

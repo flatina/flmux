@@ -165,7 +165,9 @@ describe("extension-devkit validate", () => {
     });
 
     const builtRenderer = await Bun.file(join(extensionDir, "dist", "src", "index.js")).text();
-    expect(builtRenderer).toContain('from "/__flmux/runtime/extension-api.js"');
+    // Bare specifier is preserved; browser resolves via <script type="importmap"> in index.html,
+    // server resolves via Bun workspace. Only relative .ts imports get rewritten to .js.
+    expect(builtRenderer).toContain('from "@flmux/extension-api"');
     expect(builtRenderer).toContain('from "./lib/helper.js"');
     expect(builtRenderer).toContain('new URL("./template.html", import.meta.url)');
 

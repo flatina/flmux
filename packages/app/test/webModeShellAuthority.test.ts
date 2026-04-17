@@ -132,8 +132,9 @@ describe("web mode shell authority", () => {
   });
 
   it("forwards extension pathMount hooks to the server authority", async () => {
-    // Points at the real built counter headless bundle — exercises the default
-    // production importer end-to-end (pathToFileURL + dynamic import + @flmux/extension-api resolution).
+    // Points at the real built counter bundle — exercises the default production
+    // importer end-to-end (pathToFileURL + dynamic import + @flmux/extension-api
+    // bare specifier resolution via Bun workspace).
     const counterDistRoot = resolve(__dirname, "../../../extensions/counter/dist");
     const counterExtension: DiscoveredLocalExtension = {
       id: "sample.counter",
@@ -150,7 +151,6 @@ describe("web mode shell authority", () => {
         panes: [{ kind: "counter", defaultTitle: "Counter" }]
       },
       rendererEntryPath: resolve(counterDistRoot, "index.js"),
-      headlessEntryPath: resolve(counterDistRoot, "index.server.js"),
       cliEntryPath: null,
       version: "0.1.0"
     };
@@ -226,7 +226,6 @@ function createFakeDiscoveredExtension(options: {
   id: string;
   version: string;
   panes: Array<{ kind: string; defaultTitle?: string }>;
-  headless?: boolean;
 }): DiscoveredLocalExtension {
   return {
     id: options.id,
@@ -243,7 +242,6 @@ function createFakeDiscoveredExtension(options: {
       panes: options.panes
     },
     rendererEntryPath: `/fake/${options.id}/dist/index.js`,
-    headlessEntryPath: options.headless === false ? null : `/fake/${options.id}/dist/index.server.js`,
     cliEntryPath: null,
     version: options.version
   };

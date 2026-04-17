@@ -1,3 +1,5 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { stopOwnedPtydDaemonsForRootDir } from "./ptydCleanup";
 import { waitFor } from "./waitFor";
@@ -14,6 +16,7 @@ export interface AppProcessHandle {
   process: Bun.Subprocess<"ignore", "pipe", "pipe">;
   stdout: string;
   stderr: string;
+  userDataDir: string;
 }
 
 export async function cleanupAppHandles(appHandles: AppProcessHandle[]) {
@@ -24,16 +27,27 @@ export async function cleanupAppHandles(appHandles: AppProcessHandle[]) {
     }
 
     await killProcessTree(handle.process);
+    try {
+      rmSync(handle.userDataDir, { recursive: true, force: true });
+    } catch {
+      // CEF may still be releasing handles at kill; best-effort cleanup.
+    }
   }
 }
 
+function allocateUserDataDir(label: string): string {
+  return mkdtempSync(resolve(tmpdir(), `flmux-${label}-`));
+}
+
 export function launchFlmuxApp(remoteDebuggingPort: number, sessionFile?: string): AppProcessHandle {
+  const userDataDir = allocateUserDataDir("cef");
   const appProcess = Bun.spawn({
     cmd: [resolveBunCommand(), "run", "dev"],
     cwd: resolve(import.meta.dir, "..", ".."),
     env: {
       ...process.env,
       BUNITE_REMOTE_DEBUGGING_PORT: String(remoteDebuggingPort),
+      BUNITE_USER_DATA_DIR: userDataDir,
       FLMUX_DEV_MODE: "1",
       FLMUX_HIDDEN_WINDOW: "1",
       ...(sessionFile ? { FLMUX_SESSION_FILE: sessionFile } : {})
@@ -42,15 +56,17 @@ export function launchFlmuxApp(remoteDebuggingPort: number, sessionFile?: string
     stderr: "pipe"
   });
 
-  return createAppProcessHandle(appProcess);
+  return createAppProcessHandle(appProcess, userDataDir);
 }
 
 export function launchFlmuxWebApp(options: { authDir: string }): AppProcessHandle {
+  const userDataDir = allocateUserDataDir("cef-web");
   const appProcess = Bun.spawn({
     cmd: [resolveBunCommand(), "run", "dev", "--", "--web"],
     cwd: resolve(import.meta.dir, "..", ".."),
     env: {
       ...process.env,
+      BUNITE_USER_DATA_DIR: userDataDir,
       FLMUX_DEV_MODE: "1",
       FLMUX_AUTH_DIR: options.authDir
     },
@@ -58,7 +74,7 @@ export function launchFlmuxWebApp(options: { authDir: string }): AppProcessHandl
     stderr: "pipe"
   });
 
-  return createAppProcessHandle(appProcess);
+  return createAppProcessHandle(appProcess, userDataDir);
 }
 
 export async function waitForMainTarget(port: number, label: string) {
@@ -265,11 +281,15 @@ function resolveBunCommand() {
 
 export { waitFor };
 
-function createAppProcessHandle(process: Bun.Subprocess<"ignore", "pipe", "pipe">): AppProcessHandle {
+function createAppProcessHandle(
+  process: Bun.Subprocess<"ignore", "pipe", "pipe">,
+  userDataDir: string
+): AppProcessHandle {
   const handle: AppProcessHandle = {
     process,
     stdout: "",
-    stderr: ""
+    stderr: "",
+    userDataDir
   };
 
   void pumpStream(process.stdout, (chunk) => {

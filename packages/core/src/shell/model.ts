@@ -392,6 +392,14 @@ class ShellModel implements ShellModelAPI {
       };
     }
 
+    if (segments.length === 3 && segments[2] === "params:patch") {
+      const patched = await this.host.patchPaneParams(pane.id, args);
+      return {
+        ok: true,
+        value: patched
+      };
+    }
+
     return throwPathError("NOT_CALLABLE", "Path is not callable");
   }
 

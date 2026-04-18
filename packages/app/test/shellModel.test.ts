@@ -1113,4 +1113,54 @@ describe("shell model direct", () => {
       terminal: null
     });
   });
+
+  it("merges /panes/{id}/params:patch args into existing params via patchPaneParams", async () => {
+    const host = new TestShellModelHost({
+      workspaceId: "workspace.test",
+      workspaceTitle: "Workspace Test",
+      activePaneId: "pane.scratchpad",
+      panes: [
+        {
+          id: "pane.scratchpad",
+          kind: "scratchpad",
+          title: "Scratchpad",
+          note: "seed"
+        }
+      ]
+    });
+    const model = host.createModel();
+
+    expect(await model.pathCall("/panes/pane.scratchpad/params:patch", { note: "patched", extra: "keep" })).toEqual({
+      ok: true,
+      value: {
+        note: "patched",
+        extra: "keep"
+      }
+    });
+    expect(host.calls.patchPaneParams).toEqual([
+      { paneId: "pane.scratchpad", patch: { note: "patched", extra: "keep" } }
+    ]);
+  });
+
+  it("rejects /panes/{id}/params:patch on unknown pane id", async () => {
+    const host = new TestShellModelHost({
+      workspaceId: "workspace.test",
+      workspaceTitle: "Workspace Test",
+      activePaneId: "pane.scratchpad",
+      panes: [
+        {
+          id: "pane.scratchpad",
+          kind: "scratchpad",
+          title: "Scratchpad",
+          note: "seed"
+        }
+      ]
+    });
+    const model = host.createModel();
+
+    expect(await model.pathCall("/panes/pane.missing/params:patch", { note: "x" })).toMatchObject({
+      ok: false,
+      code: "NOT_FOUND"
+    });
+  });
 });

@@ -164,12 +164,7 @@ export class ShellCore implements ShellModelHost {
     return [...this.workspaces.keys()];
   }
 
-  /**
-   * Stores the app origin. Browser-pane URL composition lives in the browser
-   * pane spec's lifecycle hooks (via `workspace.appOrigin`); rewriting existing
-   * panes when the origin changes is a transport-adapter concern and lives
-   * outside core.
-   */
+  /** Existing-pane URL re-normalization on origin change is an adapter concern; core only records the value. */
   setAppOrigin(origin: string) {
     this.appOrigin = origin;
   }

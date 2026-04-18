@@ -1,8 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import type { ExtensionPaneContext } from "@flmux/extension-api";
 import { createExternalPaneDescriptor } from "../src/renderer/external/runtime";
-import { PaneRegistry, type PaneRendererRuntimeContext, type PaneWorkspaceContext } from "../src/renderer/shell/paneRegistry";
+import { PaneRegistry, type PaneRendererRuntimeContext } from "../src/renderer/shell/paneRegistry";
 import type { PathCallerContext, ShellModelAPI, WorkspaceBus, WorkspaceBusEvent } from "../src/renderer/shell/types";
+import { makePaneWorkspaceContext } from "./support/paneWorkspaceContext";
+
+const EXTERNAL_ID = "workspace.external";
 
 describe("external pane runtime", () => {
   it("adapts shell paths and bus publish with pane-scoped caller context", async () => {
@@ -55,12 +58,7 @@ describe("external pane runtime", () => {
     });
 
     const renderer = descriptor.createRenderer({
-      workspace: {
-        id: "workspace.external",
-        defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
-        bus: workspaceBus,
-        appOrigin: "http://localhost:0"
-      } satisfies PaneWorkspaceContext,
+      workspace: makePaneWorkspaceContext({ id: EXTERNAL_ID, bus: workspaceBus }),
       options: {
         id: "pane.external",
         name: "sample.external"
@@ -130,17 +128,7 @@ describe("external pane runtime", () => {
 
     expect(
       descriptor.lifecycle?.getTitle?.({
-        workspace: {
-          id: "workspace.external",
-            defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
-          bus: {
-            publish() {},
-            subscribe() {
-              return () => {};
-            }
-          },
-          appOrigin: "http://localhost:0"
-        },
+        workspace: makePaneWorkspaceContext({ id: EXTERNAL_ID }),
         input: {
           kind: "sample.titled",
           title: "Probe"
@@ -173,17 +161,7 @@ describe("external pane runtime", () => {
     });
 
     const renderer = descriptor.createRenderer({
-      workspace: {
-        id: "workspace.external",
-        defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
-        bus: {
-          publish() {},
-          subscribe() {
-            return () => {};
-          }
-        },
-          appOrigin: "http://localhost:0"
-      },
+      workspace: makePaneWorkspaceContext({ id: EXTERNAL_ID }),
       options: {
         id: "pane.stateful",
         name: "sample.stateful"
@@ -249,17 +227,7 @@ describe("external pane runtime", () => {
 
     expect(
       descriptor.lifecycle?.createParams?.({
-        workspace: {
-          id: "workspace.external",
-            defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
-          bus: {
-            publish() {},
-            subscribe() {
-              return () => {};
-            }
-          },
-          appOrigin: "http://localhost:0"
-        },
+        workspace: makePaneWorkspaceContext({ id: EXTERNAL_ID }),
         input: {
           kind: "sample.stateful",
           params: {
@@ -273,17 +241,7 @@ describe("external pane runtime", () => {
 
     expect(
       descriptor.persistence?.normalizeRestoredParams?.({
-        workspace: {
-          id: "workspace.external",
-            defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
-          bus: {
-            publish() {},
-            subscribe() {
-              return () => {};
-            }
-          },
-          appOrigin: "http://localhost:0"
-        },
+        workspace: makePaneWorkspaceContext({ id: EXTERNAL_ID }),
         params: {
           note: 123
         } as never
@@ -294,17 +252,7 @@ describe("external pane runtime", () => {
 
     expect(
       descriptor.persistence?.serializeParams?.({
-        workspace: {
-          id: "workspace.external",
-            defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
-          bus: {
-            publish() {},
-            subscribe() {
-              return () => {};
-            }
-          },
-          appOrigin: "http://localhost:0"
-        },
+        workspace: makePaneWorkspaceContext({ id: EXTERNAL_ID }),
         record: {
           kind: "sample.stateful"
         },
@@ -334,9 +282,8 @@ describe("external pane runtime", () => {
     });
 
     const renderer = descriptor.createRenderer({
-      workspace: {
-        id: "workspace.external",
-        defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
+      workspace: makePaneWorkspaceContext({
+        id: EXTERNAL_ID,
         bus: {
           publish() {},
           subscribe() {
@@ -344,9 +291,8 @@ describe("external pane runtime", () => {
               unsubscribeCalls += 1;
             };
           }
-        },
-        appOrigin: "http://localhost:0"
-      },
+        }
+      }),
       options: {
         id: "pane.cleanup",
         name: "sample.bus-cleanup"
@@ -416,17 +362,7 @@ describe("external pane runtime", () => {
     expect(pathMount.mountKey).toBe("sample-mount");
     expect(await pathMount.getStateSnapshot?.({
       paneId: "pane.mount",
-      workspace: {
-        id: "workspace.external",
-        defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
-        bus: {
-          publish() {},
-          subscribe() {
-            return () => {};
-          }
-        },
-          appOrigin: "http://localhost:0"
-      },
+      workspace: makePaneWorkspaceContext({ id: EXTERNAL_ID }),
       record: {
         kind: "sample.mount"
       },
@@ -441,17 +377,7 @@ describe("external pane runtime", () => {
     });
     expect(await pathMount.setState?.({
       paneId: "pane.mount",
-      workspace: {
-        id: "workspace.external",
-        defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
-        bus: {
-          publish() {},
-          subscribe() {
-            return () => {};
-          }
-        },
-          appOrigin: "http://localhost:0"
-      },
+      workspace: makePaneWorkspaceContext({ id: EXTERNAL_ID }),
       record: {
         kind: "sample.mount"
       },
@@ -473,17 +399,7 @@ describe("external pane runtime", () => {
     ]);
     expect(await pathMount.getStatusSnapshot?.({
       paneId: "pane.mount",
-      workspace: {
-        id: "workspace.external",
-        defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.external",
-        bus: {
-          publish() {},
-          subscribe() {
-            return () => {};
-          }
-        },
-          appOrigin: "http://localhost:0"
-      },
+      workspace: makePaneWorkspaceContext({ id: EXTERNAL_ID }),
       record: {
         kind: "sample.mount"
       },

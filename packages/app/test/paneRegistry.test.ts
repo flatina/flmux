@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { registerBuiltinPaneDescriptors } from "../src/renderer/shell/builtinPaneDescriptors";
 import { PaneRegistry, type PaneDescriptor } from "../src/renderer/shell/paneRegistry";
+import { makePaneWorkspaceContext } from "./support/paneWorkspaceContext";
 
 function createDescriptor(kind: string): PaneDescriptor {
   return {
@@ -40,17 +41,7 @@ describe("pane registry", () => {
     const browser = registry.get("browser");
     expect(
       browser?.persistence?.normalizeRestoredParams?.({
-        workspace: {
-          id: "workspace.test",
-          defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.test",
-          bus: {
-            publish() {},
-            subscribe() {
-              return () => {};
-            }
-          },
-          appOrigin: "http://localhost:0"
-        },
+        workspace: makePaneWorkspaceContext(),
         params: {
           url: "/__flmux/internal/start?workspace=workspace.beta"
         }
@@ -80,17 +71,7 @@ describe("pane registry", () => {
     const browser = registry.get("browser");
     expect(
       browser?.lifecycle?.createParams?.({
-        workspace: {
-          id: "workspace.test",
-          defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.test",
-          bus: {
-            publish() {},
-            subscribe() {
-              return () => {};
-            }
-          },
-          appOrigin: "http://localhost:0"
-        },
+        workspace: makePaneWorkspaceContext(),
         input: {
           kind: "browser",
           url: "https://example.com/fixtures/report"
@@ -121,17 +102,7 @@ describe("pane registry", () => {
     const browser = registry.get("browser");
     expect(
       browser?.persistence?.normalizeRestoredParams?.({
-        workspace: {
-          id: "workspace.test",
-          defaultBrowserPath: "/__flmux/internal/start?workspace=workspace.test",
-          bus: {
-            publish() {},
-            subscribe() {
-              return () => {};
-            }
-          },
-          appOrigin: "http://localhost:0"
-        },
+        workspace: makePaneWorkspaceContext(),
         params: {
           url: "https://example.com/fixtures/report"
         }

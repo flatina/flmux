@@ -27,7 +27,8 @@ describe("web mode shell authority", () => {
         "shellModel.path.call": async () => ({ ok: false, code: "NOT_CALLABLE", error: "unused" })
       },
       sendProxy: {
-        "terminal.event": () => {}
+        "terminal.event": () => {},
+        "shellCore.event": () => {}
       }
     };
     clientRegistry.attachRenderer(101, rendererBridge);

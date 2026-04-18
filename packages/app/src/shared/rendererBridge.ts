@@ -1,9 +1,13 @@
 import type { RPCSchema } from "bunite-core";
 import type {
+  AppStatusSnapshot,
   PathCallResult,
   PathGetResult,
   PathListResult,
-  PathSetResult
+  PathSetResult,
+  SequencedShellCoreEvent,
+  ShellPaneRecordSnapshot,
+  WorkspaceStatusSnapshot
 } from "../renderer/shell/types";
 import type { FlmuxSessionSnapshot } from "./session";
 import type { FlmuxRuntimeMode } from "./runtimeMode";
@@ -18,6 +22,21 @@ import type {
   TerminalRuntimeEvent,
   TerminalWriteResult
 } from "./terminal";
+
+export interface FlmuxShellSnapshot {
+  app: AppStatusSnapshot;
+  workspaces: WorkspaceStatusSnapshot[];
+  panes: Record<string, ShellPaneRecordSnapshot[]>;
+  paneParams: Record<string, Record<string, unknown> | undefined>;
+  activeWorkspaceId: string | null;
+}
+
+export interface FlmuxShellBootstrapResponse {
+  snapshot: FlmuxShellSnapshot;
+  outerLayout: unknown | null;
+  innerLayouts: Record<string, unknown | null>;
+  seqStart: number;
+}
 
 // ── Host requests (renderer calls main) ──
 
@@ -82,12 +101,33 @@ export type FlmuxHostRequests = {
     params: undefined;
     response: TerminalRootStatus[];
   };
+  "flmux.shellBootstrap": {
+    params: undefined;
+    response: FlmuxShellBootstrapResponse;
+  };
+  "shellModel.path.get": {
+    params: { path: string };
+    response: PathGetResult;
+  };
+  "shellModel.path.list": {
+    params: { path: string };
+    response: PathListResult;
+  };
+  "shellModel.path.set": {
+    params: { path: string; value: unknown };
+    response: PathSetResult;
+  };
+  "shellModel.path.call": {
+    params: { path: string; args?: Record<string, unknown> };
+    response: PathCallResult;
+  };
 };
 
 // ── Host messages (main pushes to renderer) ──
 
 export type FlmuxHostMessages = {
   "terminal.event": TerminalRuntimeEvent;
+  "shellCore.event": SequencedShellCoreEvent;
 };
 
 // ── Shell model requests (main calls renderer) ──
@@ -138,6 +178,7 @@ export type FlmuxHostRequestProxy = {
 export interface FlmuxRendererBridge {
   sendProxy: {
     "terminal.event": (payload: TerminalRuntimeEvent) => void;
+    "shellCore.event": (payload: SequencedShellCoreEvent) => void;
   };
   requestProxy: {
     [K in keyof FlmuxRendererRequests]: (

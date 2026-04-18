@@ -113,7 +113,8 @@ function createLocalRendererBridge(
     sendProxy: {
       "terminal.event": (payload: TerminalRuntimeEvent) => {
         onTerminalEvent(payload);
-      }
+      },
+      "shellCore.event": () => {}
     }
   };
 }

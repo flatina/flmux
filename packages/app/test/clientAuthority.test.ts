@@ -21,7 +21,8 @@ function createLocalBridge(
         shellModel.pathCall(params.path, params.args)
     },
     sendProxy: {
-      "terminal.event": (payload: TerminalRuntimeEvent) => onTerminalEvent?.(payload)
+      "terminal.event": (payload: TerminalRuntimeEvent) => onTerminalEvent?.(payload),
+      "shellCore.event": () => {}
     }
   };
 }

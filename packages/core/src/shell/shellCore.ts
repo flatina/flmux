@@ -247,16 +247,26 @@ export class ShellCore implements ShellModelHost {
     this.emit({ topic: "workspace.activeChanged", payload: { id: next } });
   }
 
-  setActivePane(workspaceId: string, paneId: string | null) {
-    const workspace = this.requireWorkspace(workspaceId);
-    if (paneId !== null && !workspace.paneStates.has(paneId)) {
-      throw new Error(`Pane '${paneId}' not found in workspace '${workspaceId}'`);
+  setActivePane(paneId: string) {
+    const workspaceId = this.paneWorkspaceIds.get(paneId);
+    if (!workspaceId) {
+      return;
     }
+    const workspace = this.workspaces.get(workspaceId)!;
     if (workspace.activePaneId === paneId) {
       return;
     }
     workspace.activePaneId = paneId;
     this.emit({ topic: "pane.activeChanged", payload: { workspaceId, paneId } });
+  }
+
+  clearActivePane(workspaceId: string) {
+    const workspace = this.workspaces.get(workspaceId);
+    if (!workspace || workspace.activePaneId === null) {
+      return;
+    }
+    workspace.activePaneId = null;
+    this.emit({ topic: "pane.activeChanged", payload: { workspaceId, paneId: null } });
   }
 
   getActiveWorkspaceId(): string | null {

@@ -298,9 +298,9 @@ describe("ShellCore", () => {
     expect(core.getActiveWorkspaceId()).toBe(extra.id);
 
     const pane = await core.createPane({ kind: "browser", url: "/x" });
-    core.setActivePane(extra.id, null);
+    core.clearActivePane(extra.id);
     expect((await core.getWorkspaceStatus()).activePaneId).toBeNull();
-    core.setActivePane(extra.id, pane.id);
+    core.setActivePane(pane.id);
     expect((await core.getWorkspaceStatus()).activePaneId).toBe(pane.id);
   });
 

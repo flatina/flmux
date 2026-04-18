@@ -219,6 +219,35 @@ export class TestShellModelHost implements ShellModelHost {
     return this.getWorkspaceStatus();
   }
 
+  deleteWorkspace(workspaceId: string): void {
+    this.workspaceTitles.delete(workspaceId);
+    this.workspacePaneCounts.delete(workspaceId);
+    const index = this.workspaceOrder.indexOf(workspaceId);
+    if (index >= 0) {
+      this.workspaceOrder.splice(index, 1);
+    }
+    if (this.workspaceId === workspaceId) {
+      this.panes.clear();
+      this.paneParams.clear();
+      this.activePaneId = null;
+      this.workspaceId = this.workspaceOrder[0] ?? "";
+      this.workspaceTitle = this.workspaceTitles.get(this.workspaceId) ?? "";
+    }
+  }
+
+  setActiveWorkspace(workspaceId: string): void {
+    if (this.workspaceOrder.includes(workspaceId)) {
+      this.workspaceId = workspaceId;
+      this.workspaceTitle = this.workspaceTitles.get(workspaceId) ?? this.workspaceTitle;
+    }
+  }
+
+  setActivePane(paneId: string): void {
+    if (this.panes.has(paneId)) {
+      this.activePaneId = paneId;
+    }
+  }
+
   getWorkspaceStatus(): WorkspaceStatusSnapshot {
     this.syncCurrentWorkspaceSnapshot();
     return {

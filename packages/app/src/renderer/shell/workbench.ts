@@ -158,6 +158,38 @@ export class FlmuxWorkbench implements ShellModelHost {
     return status;
   }
 
+  async deleteWorkspace(workspaceId: string): Promise<void> {
+    await this.shellCore.deleteWorkspace(workspaceId);
+    const panel = this.outerApi?.getPanel(workspaceId);
+    if (panel) {
+      this.disposingWorkspace.add(workspaceId);
+      try {
+        panel.api.close();
+      } finally {
+        this.disposingWorkspace.delete(workspaceId);
+      }
+    }
+    this.workspaces.delete(workspaceId);
+    this.scheduleSessionSave();
+  }
+
+  async setActiveWorkspace(workspaceId: string): Promise<void> {
+    this.shellCore.setActiveWorkspace(workspaceId);
+    if (this.shellCore.getActiveWorkspaceId() === workspaceId) {
+      this.outerApi?.getPanel(workspaceId)?.api.setActive();
+      this.updateDocumentTitle();
+    }
+    this.scheduleSessionSave();
+  }
+
+  async setActivePane(paneId: string): Promise<void> {
+    this.shellCore.setActivePane(paneId);
+    const wsId = this.shellCore.getPaneWorkspaceId(paneId);
+    const record = wsId ? this.workspaces.get(wsId) : null;
+    record?.innerApi?.getPanel(paneId)?.api.setActive();
+    this.scheduleSessionSave();
+  }
+
   async resetWorkspace(workspaceId: string): Promise<WorkspaceStatusSnapshot> {
     const record = this.requireWorkspace(workspaceId);
     if (!record.innerApi) {
@@ -533,7 +565,11 @@ export class FlmuxWorkbench implements ShellModelHost {
     const api = record.innerApi!;
 
     api.onDidActivePanelChange((panel) => {
-      this.shellCore.setActivePane(record.id, panel?.id ?? null);
+      if (panel) {
+        this.shellCore.setActivePane(panel.id);
+      } else {
+        this.shellCore.clearActivePane(record.id);
+      }
       this.scheduleSessionSave();
     });
     api.onDidAddPanel(() => {

@@ -138,12 +138,15 @@ export interface ShellModelHost {
   listWorkspaces(): Awaitable<WorkspaceStatusSnapshot[]>;
   createWorkspace(input?: { title?: string }): Awaitable<WorkspaceStatusSnapshot>;
   resetWorkspace(workspaceId: string): Awaitable<WorkspaceStatusSnapshot>;
+  deleteWorkspace(workspaceId: string): Awaitable<void>;
+  setActiveWorkspace(workspaceId: string): Awaitable<void>;
   getWorkspaceStatus(): Awaitable<WorkspaceStatusSnapshot>;
   hasPaneKind(kind: string): Awaitable<boolean>;
   listPanes(): Awaitable<ShellPaneRecordSnapshot[]>;
   getPane(paneId: string): Awaitable<ShellPaneRecordSnapshot | undefined>;
   createPane(input: NewPaneInput): Awaitable<ShellPaneRecordSnapshot>;
   closePane(paneId: string): Awaitable<{ paneId: string; closed: boolean }>;
+  setActivePane(paneId: string): Awaitable<void>;
   setScopedProperty(target: ScopedPropertyTarget, key: string, value: unknown): Awaitable<{ value: unknown }>;
   getPaneParams(paneId: string): Awaitable<Record<string, unknown> | undefined>;
   setPaneParams(paneId: string, nextParams: Record<string, unknown>): Awaitable<Record<string, unknown>>;

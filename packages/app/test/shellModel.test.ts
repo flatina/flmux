@@ -1164,4 +1164,67 @@ describe("shell model direct", () => {
       code: "NOT_FOUND"
     });
   });
+
+  it("routes /workspaces/{id}/setActive through host.setActiveWorkspace", async () => {
+    const host = new TestShellModelHost({
+      workspaceId: "workspace.test",
+      workspaceTitle: "Workspace Test",
+      activePaneId: null,
+      panes: []
+    });
+    const model = host.createModel();
+
+    expect(await model.pathCall("/workspaces/workspace.other/setActive")).toEqual({
+      ok: true,
+      value: { workspaceId: "workspace.other" }
+    });
+  });
+
+  it("routes /workspaces/{id}/delete through host.deleteWorkspace", async () => {
+    const host = new TestShellModelHost({
+      workspaceId: "workspace.test",
+      workspaceTitle: "Workspace Test",
+      activePaneId: null,
+      panes: []
+    });
+    const model = host.createModel();
+
+    expect(await model.pathCall("/workspaces/workspace.test/delete")).toEqual({
+      ok: true,
+      value: { workspaceId: "workspace.test", deleted: true }
+    });
+  });
+
+  it("routes /panes/{id}/setActive through host.setActivePane", async () => {
+    const host = new TestShellModelHost({
+      workspaceId: "workspace.test",
+      workspaceTitle: "Workspace Test",
+      activePaneId: "pane.a",
+      panes: [
+        { id: "pane.a", kind: "browser", title: "A", url: "/a" },
+        { id: "pane.b", kind: "browser", title: "B", url: "/b" }
+      ]
+    });
+    const model = host.createModel();
+
+    expect(await model.pathCall("/panes/pane.b/setActive")).toEqual({
+      ok: true,
+      value: { paneId: "pane.b" }
+    });
+  });
+
+  it("rejects /panes/{id}/setActive on unknown pane id", async () => {
+    const host = new TestShellModelHost({
+      workspaceId: "workspace.test",
+      workspaceTitle: "Workspace Test",
+      activePaneId: null,
+      panes: []
+    });
+    const model = host.createModel();
+
+    expect(await model.pathCall("/panes/pane.missing/setActive")).toMatchObject({
+      ok: false,
+      code: "NOT_FOUND"
+    });
+  });
 });

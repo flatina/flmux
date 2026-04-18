@@ -288,6 +288,16 @@ class ShellModel implements ShellModelAPI {
         };
       }
 
+      if (segments.length === 3 && segments[2] === "setActive") {
+        await this.host.setActiveWorkspace(segments[1]!);
+        return { ok: true, value: { workspaceId: segments[1] } };
+      }
+
+      if (segments.length === 3 && segments[2] === "delete") {
+        await this.host.deleteWorkspace(segments[1]!);
+        return { ok: true, value: { workspaceId: segments[1], deleted: true } };
+      }
+
       return throwPathError("NOT_CALLABLE", "Path is not callable");
     }
 
@@ -390,6 +400,11 @@ class ShellModel implements ShellModelAPI {
         ok: true,
         value: await this.host.closePane(pane.id)
       };
+    }
+
+    if (segments.length === 3 && segments[2] === "setActive") {
+      await this.host.setActivePane(pane.id);
+      return { ok: true, value: { paneId: pane.id } };
     }
 
     if (segments.length === 3 && segments[2] === "params:patch") {

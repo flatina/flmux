@@ -67,6 +67,20 @@ describe("desktop shell authority bridge", () => {
     }
   });
 
+  it("registerClient returns only {clientId} over the wire (no Proxy leakage)", async () => {
+    const { authority, clientRegistry } = await createTestAuthority();
+    const viewId = 77;
+    clientRegistry.attachRenderer(viewId, {
+      sendProxy: {
+        "terminal.event": () => {},
+        "shellCore.event": () => {}
+      }
+    });
+    const registration = authority.router.registerClient(viewId);
+    expect(Object.keys(registration).sort()).toEqual(["clientId"]);
+    expect(typeof registration.clientId).toBe("string");
+  });
+
   it("shellBootstrap returns synchronously (not a Promise) — preflight #1 §S3", async () => {
     const { authority } = await createTestAuthority();
     const result = authority.shellBootstrap();

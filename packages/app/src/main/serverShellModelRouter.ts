@@ -20,7 +20,13 @@ export function createServerShellModelRouter(options: {
 
   return {
     registerClient(viewId: number): ClientRegistrationResult {
-      return options.clientRegistry.registerRenderer(viewId);
+      // Return only {clientId}. The full registry record carries `bridge`, a
+      // Proxy whose Proxy-get returns functions for every key — if it crosses
+      // the preload wire msgpackr's `value.toJSON` check succeeds, invokes
+      // toJSON as a nested RPC request, and the resulting unhandled rejection
+      // crashes Bun.
+      const { clientId } = options.clientRegistry.registerRenderer(viewId);
+      return { clientId };
     },
 
     async listClients(): Promise<FlmuxClientSummary[]> {

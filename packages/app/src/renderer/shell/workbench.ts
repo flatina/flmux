@@ -14,7 +14,6 @@ import { setupDropIndicatorMasks } from "../maskHelper";
 import { createTerminalHost } from "../terminalHost";
 import {
   createWorkspaceBus,
-  type NewPaneInput,
   type PaneWorkspaceContext,
   type SequencedShellCoreEvent,
   type ShellModelAPI,
@@ -68,7 +67,9 @@ export class FlmuxWorkbench {
   private readonly paneRegistry = new PaneRegistry();
 
   private readonly workspaces = new Map<string, WorkspaceRecord>();
-  private readonly closingFromCore = new Set<string>();
+  // disposingWorkspace covers the user-originated outer-panel-close path where
+  // applyingCoreState is false but dockview's synchronous inner-disposal
+  // cascade needs inner onDidRemovePanel handlers to skip /panes/{id}/close.
   private readonly disposingWorkspace = new Set<string>();
   private outerApi: DockviewApi | null = null;
 
@@ -272,15 +273,10 @@ export class FlmuxWorkbench {
   }
 
   private applyWorkspaceRemoved(payload: { id: string; newActiveWorkspaceId: string | null }) {
-    const panel = this.outerApi?.getPanel(payload.id);
-    if (panel) {
-      this.disposingWorkspace.add(payload.id);
-      try {
-        panel.api.close();
-      } finally {
-        this.disposingWorkspace.delete(payload.id);
-      }
-    }
+    // applyingCoreState is already true, so outer/inner onDidRemovePanel
+    // callbacks fired by dockview's disposal cascade short-circuit before
+    // the pathCall branch — no extra guard needed here.
+    this.outerApi?.getPanel(payload.id)?.api.close();
     this.workspaces.delete(payload.id);
     if (payload.newActiveWorkspaceId) {
       this.outerApi?.getPanel(payload.newActiveWorkspaceId)?.api.setActive();
@@ -340,15 +336,7 @@ export class FlmuxWorkbench {
     newActivePaneId: string | null;
   }) {
     const record = this.workspaces.get(payload.workspaceId);
-    const panel = record?.innerApi?.getPanel(payload.paneId);
-    if (panel) {
-      this.closingFromCore.add(payload.paneId);
-      try {
-        panel.api.close();
-      } finally {
-        this.closingFromCore.delete(payload.paneId);
-      }
-    }
+    record?.innerApi?.getPanel(payload.paneId)?.api.close();
     if (payload.newActivePaneId) {
       record?.innerApi?.getPanel(payload.newActivePaneId)?.api.setActive();
     }
@@ -613,7 +601,7 @@ export class FlmuxWorkbench {
       this.scheduleSessionSave();
     });
     api.onDidRemovePanel((panel) => {
-      if (this.applyingCoreState || this.closingFromCore.has(panel.id) || this.disposingWorkspace.has(record.id)) {
+      if (this.applyingCoreState || this.disposingWorkspace.has(record.id)) {
         return;
       }
       void this.shellModel.pathCall(`/panes/${panel.id}/close`).catch((error) => {

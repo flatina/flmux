@@ -9,6 +9,7 @@ import {
   type ShellModelAPI
 } from "@flmux/core/shell";
 import type {
+  FlmuxSessionSaveLayouts,
   FlmuxShellBootstrapResponse,
   FlmuxShellSnapshot
 } from "../shared/rendererBridge";
@@ -25,11 +26,6 @@ import {
 import type { FlmuxSessionStore } from "./sessionStore";
 import type { TerminalService } from "./terminal-service";
 
-export interface DesktopShellAuthorityLayouts {
-  outerLayout: unknown | null;
-  innerLayouts: Record<string, unknown | null>;
-}
-
 export interface DesktopShellAuthority {
   readonly clientId: string;
   readonly shellModel: ShellModelAPI;
@@ -39,7 +35,7 @@ export interface DesktopShellAuthority {
   start(origin: string): Promise<void>;
   applyTerminalEvent(event: TerminalRuntimeEvent): void;
   shellBootstrap(): FlmuxShellBootstrapResponse;
-  persistSession(layouts: DesktopShellAuthorityLayouts): Promise<void>;
+  persistSession(layouts: FlmuxSessionSaveLayouts): Promise<void>;
 }
 
 export async function createDesktopShellAuthority(options: {
@@ -115,7 +111,7 @@ export async function createDesktopShellAuthority(options: {
 function restoreFromSession(
   shellCore: ShellCore,
   snapshot: FlmuxSessionSnapshot
-): DesktopShellAuthorityLayouts | null {
+): FlmuxSessionSaveLayouts | null {
   if (!snapshot.outerLayout) {
     return null;
   }
@@ -226,7 +222,7 @@ function buildBootstrapResponse(options: {
 
 function composeSessionSnapshot(
   shellCore: ShellCore,
-  layouts: DesktopShellAuthorityLayouts
+  layouts: FlmuxSessionSaveLayouts
 ): FlmuxSessionSnapshot {
   const outerPanelIds = extractOuterPanelIds(layouts.outerLayout);
   const workspaces: Record<string, FlmuxWorkspaceSessionSnapshot> = {};

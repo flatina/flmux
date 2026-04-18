@@ -138,10 +138,11 @@ describe("external pane runtime", () => {
     ).toBe("workspace.external:Probe");
   });
 
-  it("maps external params hooks and state updates onto the internal renderer contract", () => {
+  it("maps external params hooks and state updates onto the internal renderer contract", async () => {
     let capturedContext!: ExtensionPaneContext;
     let updatedParameters: Record<string, unknown> | undefined;
     let updatedTitle: string | undefined;
+    const pathSetCalls: Array<{ path: string; value: unknown }> = [];
 
     const descriptor = createExternalPaneDescriptor({
       kind: "sample.stateful",
@@ -170,7 +171,10 @@ describe("external pane runtime", () => {
         shellModel: {
           pathGet: async () => ({ ok: true, found: true, value: null }),
           pathList: async () => ({ ok: true, found: true, entries: [] }),
-          pathSet: async (_path, value) => ({ ok: true, value }),
+          pathSet: async (path, value) => {
+            pathSetCalls.push({ path, value });
+            return { ok: true, value };
+          },
           pathCall: async () => ({ ok: true, value: null })
         },
         browserPanelTemplate: null as never,
@@ -223,7 +227,9 @@ describe("external pane runtime", () => {
     });
 
     capturedContext.state.setTitle("Updated Title");
-    expect(updatedTitle).toBe("Updated Title");
+    await Promise.resolve();
+    expect(pathSetCalls).toContainEqual({ path: "/panes/pane.stateful/title", value: "Updated Title" });
+    expect(updatedTitle).toBeUndefined();
 
     expect(
       descriptor.lifecycle?.createParams?.({

@@ -16,6 +16,7 @@ import type {
   PaneRendererRuntimeContext,
   PaneWorkspaceContext
 } from "../shell/paneRegistry";
+import type { ShellModelAPI } from "../shell/types";
 import {
   adaptExtensionLifecycle,
   adaptExtensionPanePathMount,
@@ -26,7 +27,7 @@ export function createExternalPaneDescriptor(options: ExtensionPaneDefinition): 
   return {
     kind: options.kind,
     createRenderer(args) {
-      const state = createExternalPaneState();
+      const state = new ExternalPaneStateController(args.options.id, args.runtime.shellModel);
       return wrapExternalPaneRenderer(options, args, state);
     },
     lifecycle: adaptExtensionLifecycle(options),
@@ -74,10 +75,6 @@ function createExternalPaneContext(args: {
     },
     state
   };
-}
-
-function createExternalPaneState(): PaneStateStore {
-  return new ExternalPaneStateController();
 }
 
 function wrapExternalPaneRenderer(
@@ -168,6 +165,11 @@ class ExternalPaneStateController implements PaneStateStore {
   private panelApi: GroupPanelPartInitParameters["api"] | null = null;
   private readonly cleanups = new Set<() => void>();
 
+  constructor(
+    private readonly paneId: string,
+    private readonly shellModel: ShellModelAPI
+  ) {}
+
   getParams<T extends Record<string, unknown> = Record<string, unknown>>() {
     return cloneParams(this.params) as T;
   }
@@ -190,7 +192,9 @@ class ExternalPaneStateController implements PaneStateStore {
   }
 
   setTitle(title: string) {
-    this.panelApi?.setTitle(title);
+    void this.shellModel.pathSet(`/panes/${this.paneId}/title`, title).catch((error) => {
+      console.warn(`failed to set title for pane '${this.paneId}'`, error);
+    });
   }
 
   synchronize(panelApi: GroupPanelPartInitParameters["api"] | null, nextParams: Record<string, unknown>) {

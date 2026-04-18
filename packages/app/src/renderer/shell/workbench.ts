@@ -22,7 +22,6 @@ import {
   type PaneWorkspaceContext,
   createPaneRecord,
   createPaneSnapshot,
-  isBrowserPaneRecord,
   isTerminalPaneRecord,
   normalizeRestoredPaneParams,
   resolvePaneCreateParams,
@@ -746,15 +745,10 @@ export class FlmuxWorkbench implements ShellModelHost {
     document.title = workspace ? `${this.appTitle} / ${workspace.title}` : this.appTitle;
   }
 
-  private handleBrowserUrlChange(workspace: WorkspaceRecord, paneId: string, url: string) {
-    const record = workspace.paneRecords.get(paneId);
-    if (!record || !isBrowserPaneRecord(record)) {
-      return;
-    }
-
-    record.url = url;
-    record.panel.update({ params: { url } });
-    this.scheduleSessionSave();
+  private handleBrowserUrlChange(_workspace: WorkspaceRecord, paneId: string, url: string) {
+    void this.shellModel.pathSet(`/panes/${paneId}/browser/url`, url).catch((error) => {
+      console.warn(`failed to propagate browser url change for pane '${paneId}'`, error);
+    });
   }
 
   private applyTerminalRuntimeStateChange(

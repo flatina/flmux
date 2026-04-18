@@ -1,11 +1,10 @@
 import {
   PaneRegistry,
   ShellCore,
+  createBrowserPaneSpec,
   createPlaceholderPaneSpec,
   createShellModel,
-  isBrowserPaneStateRecord,
   isTerminalPaneStateRecord,
-  normalizeBrowserUrl,
   type NewPaneInput,
   type PaneSpec,
   type ShellModelAPI
@@ -93,66 +92,7 @@ export async function createWebModeShellAuthority(options: {
 
 function createBuiltinPaneSpecs(projectDir: string): PaneSpec[] {
   return [
-    {
-      kind: "browser",
-      lifecycle: {
-        createParams: ({ workspace, input }) => ({
-          url: normalizeBrowserUrl("", workspace.appOrigin, input.url ?? workspace.defaultBrowserPath, workspace.defaultBrowserPath)
-        }),
-        getTitle: ({ input, params }) =>
-          input.title?.trim() || inferBrowserTitle(optionalStringParam(params?.url) ?? "Browser"),
-        createRecord: ({ workspace, params }) => ({
-          kind: "browser",
-          url: normalizeBrowserUrl("", workspace.appOrigin, optionalStringParam(params?.url) ?? workspace.defaultBrowserPath, workspace.defaultBrowserPath)
-        }),
-        createSnapshot: ({ paneId, title, active, record }) =>
-          isBrowserPaneStateRecord(record)
-            ? {
-                id: paneId,
-                kind: "browser",
-                title,
-                active,
-                browser: {
-                  url: record.url
-                }
-              }
-            : {
-                id: paneId,
-                kind: record.kind,
-                title,
-                active
-              }
-      },
-      subtreeMounts: [
-        {
-          mountKey: "browser",
-          getStateSnapshot: ({ record }) =>
-            isBrowserPaneStateRecord(record) ? { url: record.url } : undefined,
-          canSetStatePath: ({ record }, relativePath) =>
-            isBrowserPaneStateRecord(record) &&
-            relativePath.length === 1 &&
-            relativePath[0] === "url",
-          setState: async ({ record, currentParams, setParams, workspace }, relativePath, value) => {
-            if (!isBrowserPaneStateRecord(record)) {
-              throw new Error("browser subtree only applies to browser panes");
-            }
-            if (relativePath.length !== 1 || relativePath[0] !== "url") {
-              throw new Error(`Unsupported browser path '${relativePath.join("/")}'`);
-            }
-
-            const nextUrl = normalizeBrowserUrl("", workspace.appOrigin, requiredString(value, "Pane url"), workspace.defaultBrowserPath);
-            record.url = nextUrl;
-            await setParams({
-              ...(currentParams ?? {}),
-              url: nextUrl
-            });
-            return { value: nextUrl };
-          },
-          getStatusSnapshot: ({ record }) =>
-            isBrowserPaneStateRecord(record) ? { url: record.url } : undefined
-        }
-      ]
-    },
+    createBrowserPaneSpec(),
     {
       kind: "terminal",
       lifecycle: {
@@ -295,27 +235,4 @@ async function defaultImportExtensionModule(entryPath: string): Promise<Extensio
 
 function optionalStringParam(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function requiredString(value: unknown, label: string) {
-  if (typeof value !== "string") {
-    throw new Error(`${label} must be a string`);
-  }
-
-  const trimmed = value.trim();
-  if (!trimmed) {
-    throw new Error(`${label} cannot be empty`);
-  }
-
-  return trimmed;
-}
-
-function inferBrowserTitle(url: string) {
-  try {
-    const parsed = new URL(url);
-    const lastPath = parsed.pathname.split("/").filter(Boolean).pop();
-    return lastPath ? lastPath.charAt(0).toUpperCase() + lastPath.slice(1) : parsed.host || "Browser";
-  } catch {
-    return "Browser";
-  }
 }

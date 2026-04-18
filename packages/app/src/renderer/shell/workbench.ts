@@ -105,9 +105,7 @@ export class FlmuxWorkbench implements ShellModelHost {
     });
     registerBuiltinPaneDescriptors(this.paneRegistry, {
       installRoot: config.projectDir,
-      requireBrowserUrl: (value) => this.requireBrowserUrl(value),
-      resolveTerminalCwd: resolveTerminalCwdFromRoot,
-      serializeBrowserUrl: (url) => this.serializeBrowserUrl(url)
+      resolveTerminalCwd: resolveTerminalCwdFromRoot
     });
     this.shellModel = createShellModel({
       host: this,
@@ -951,15 +949,6 @@ export class FlmuxWorkbench implements ShellModelHost {
     return `${prefersHttpScheme(trimmed) ? "http" : "https"}://${trimmed}`;
   }
 
-  private requireBrowserUrl(value: string): string {
-    const normalized = this.normalizeBrowserUrl(value);
-    if (!normalized) {
-      throw new Error("Browser url is required");
-    }
-
-    return normalized;
-  }
-
   private async flushSessionSave(options: { preferBeacon?: boolean } = {}) {
     if (!this.sessionPersistenceEnabled || this.sessionPersistenceSuppressed) {
       return;
@@ -1002,17 +991,6 @@ export class FlmuxWorkbench implements ShellModelHost {
     } catch {
       return false;
     }
-  }
-
-  private serializeBrowserUrl(url: string) {
-    try {
-      const parsed = new URL(url);
-      if (parsed.origin === this.config.appOrigin) {
-        return `${parsed.pathname}${parsed.search}${parsed.hash}`;
-      }
-    } catch {}
-
-    return url;
   }
 
   private createWorkspaceRecord(descriptor: WorkspaceDescriptor) {

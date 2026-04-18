@@ -1,6 +1,7 @@
 import type { RPCSchema } from "bunite-core";
 import type {
   AppStatusSnapshot,
+  PathCallerContext,
   PathCallResult,
   PathGetResult,
   PathListResult,
@@ -9,7 +10,6 @@ import type {
   ShellPaneRecordSnapshot,
   WorkspaceStatusSnapshot
 } from "../renderer/shell/types";
-import type { FlmuxSessionSnapshot } from "./session";
 import type { FlmuxRuntimeMode } from "./runtimeMode";
 import type {
   TerminalAdoptResult,
@@ -36,6 +36,11 @@ export interface FlmuxShellBootstrapResponse {
   outerLayout: unknown | null;
   innerLayouts: Record<string, unknown | null>;
   seqStart: number;
+}
+
+export interface FlmuxSessionSaveLayouts {
+  outerLayout: unknown | null;
+  innerLayouts: Record<string, unknown | null>;
 }
 
 // ── Host requests (renderer calls main) ──
@@ -65,12 +70,8 @@ export type FlmuxHostRequests = {
     params: undefined;
     response: ClientRegistrationResult;
   };
-  "flmux.session.load": {
-    params: undefined;
-    response: FlmuxSessionSnapshot | null;
-  };
   "flmux.session.save": {
-    params: FlmuxSessionSnapshot;
+    params: FlmuxSessionSaveLayouts;
     response: { ok: true };
   };
   "flmux.terminal.create": {
@@ -118,7 +119,7 @@ export type FlmuxHostRequests = {
     response: PathSetResult;
   };
   "shellModel.path.call": {
-    params: { path: string; args?: Record<string, unknown> };
+    params: { path: string; args?: Record<string, unknown>; caller?: PathCallerContext };
     response: PathCallResult;
   };
 };
@@ -130,27 +131,6 @@ export type FlmuxHostMessages = {
   "shellCore.event": SequencedShellCoreEvent;
 };
 
-// ── Shell model requests (main calls renderer) ──
-
-export type FlmuxRendererRequests = {
-  "shellModel.path.get": {
-    params: { path: string };
-    response: PathGetResult;
-  };
-  "shellModel.path.list": {
-    params: { path: string };
-    response: PathListResult;
-  };
-  "shellModel.path.set": {
-    params: { path: string; value: unknown };
-    response: PathSetResult;
-  };
-  "shellModel.path.call": {
-    params: { path: string; args?: Record<string, unknown> };
-    response: PathCallResult;
-  };
-};
-
 // ── RPC schema ──
 
 export type FlmuxRendererBridgeSchema = {
@@ -158,9 +138,7 @@ export type FlmuxRendererBridgeSchema = {
     requests: FlmuxHostRequests;
     messages: FlmuxHostMessages;
   }>;
-  webview: RPCSchema<{
-    requests: FlmuxRendererRequests;
-  }>;
+  webview: RPCSchema<{}>;
 };
 
 // ── Host request proxy (used by renderer to call main) ──
@@ -173,17 +151,12 @@ export type FlmuxHostRequestProxy = {
   ) => Promise<FlmuxHostRequests[K]["response"]>;
 };
 
-// ── Bridge interface (used by main to interact with renderer) ──
+// ── Bridge interface (used by main to push messages to renderer) ──
 
 export interface FlmuxRendererBridge {
   sendProxy: {
     "terminal.event": (payload: TerminalRuntimeEvent) => void;
     "shellCore.event": (payload: SequencedShellCoreEvent) => void;
-  };
-  requestProxy: {
-    [K in keyof FlmuxRendererRequests]: (
-      params: FlmuxRendererRequests[K]["params"]
-    ) => Promise<FlmuxRendererRequests[K]["response"]>;
   };
 }
 

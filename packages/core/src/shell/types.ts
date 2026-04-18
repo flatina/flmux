@@ -191,7 +191,7 @@ export type ShellCoreEvent =
   | { topic: "workspace.removed"; payload: { id: string; newActiveWorkspaceId: string | null } }
   | { topic: "workspace.titleChanged"; payload: { id: string; title: string } }
   | { topic: "workspace.activeChanged"; payload: { id: string | null } }
-  | { topic: "pane.added"; payload: { paneId: string; workspaceId: string; snapshot: ShellPaneRecordSnapshot; params: Record<string, unknown> | undefined } }
+  | { topic: "pane.added"; payload: { paneId: string; workspaceId: string; snapshot: ShellPaneRecordSnapshot; params: Record<string, unknown> | undefined; place?: PanePlacement; referencePaneId?: string } }
   | { topic: "pane.removed"; payload: { paneId: string; workspaceId: string; newActivePaneId: string | null } }
   | { topic: "pane.titleChanged"; payload: { paneId: string; workspaceId: string; title: string } }
   | { topic: "pane.paramsChanged"; payload: { paneId: string; workspaceId: string; params: Record<string, unknown> | undefined; snapshot: ShellPaneRecordSnapshot } }

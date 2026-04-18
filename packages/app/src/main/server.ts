@@ -2,15 +2,14 @@ import { existsSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Elysia } from "elysia";
-import type { FlmuxSessionSnapshot } from "../shared/session";
 import type {
   ClientScopedPathCallInput,
   ClientScopedPathGetInput,
   ClientScopedPathListInput,
-  ClientScopedPathSetInput
+  ClientScopedPathSetInput,
+  FlmuxSessionSaveLayouts
 } from "../shared/rendererBridge";
 import type { DiscoveredLocalExtension } from "./localExtensions";
-import { isSessionSnapshot } from "./sessionStore";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
 import type { FlmuxAuthorizationContext, FlmuxWebModeAuthorizer } from "./webModeAuth";
 
@@ -35,7 +34,7 @@ export function startFlmuxServer(options: {
   rendererDir: string;
   shellModelRouter: FlmuxShellModelRouter;
   localExtensions?: DiscoveredLocalExtension[];
-  saveSession?(snapshot: FlmuxSessionSnapshot): Promise<void>;
+  saveSession?(layouts: FlmuxSessionSaveLayouts): Promise<void>;
   authorizer?: FlmuxWebModeAuthorizer;
   rpcWebHandler?: {
     open(ws: { send(data: Uint8Array | ArrayBuffer): void | number }): void;
@@ -125,12 +124,12 @@ export function startFlmuxServer(options: {
         return "Unauthorized";
       }
 
-      return handleJsonRequest<FlmuxSessionSnapshot>(request, set, async (input) => {
+      return handleJsonRequest<FlmuxSessionSaveLayouts>(request, set, async (input) => {
         if (!options.saveSession) {
           throw new Error("Session persistence is not configured");
         }
-        if (!isSessionSnapshot(input)) {
-          throw new Error("Invalid flmux session snapshot");
+        if (!isSessionSaveLayouts(input)) {
+          throw new Error("Invalid flmux session save layouts");
         }
 
         await options.saveSession(input);
@@ -527,6 +526,20 @@ function handleInternalStartPageRequest(request: Request): Response {
       headers: { "content-type": "text/html; charset=utf-8" }
     }
   );
+}
+
+function isSessionSaveLayouts(value: unknown): value is FlmuxSessionSaveLayouts {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  if (!("outerLayout" in candidate) || !("innerLayouts" in candidate)) {
+    return false;
+  }
+  if (candidate.innerLayouts === null || typeof candidate.innerLayouts !== "object" || Array.isArray(candidate.innerLayouts)) {
+    return false;
+  }
+  return true;
 }
 
 function escapeHtml(value: string) {

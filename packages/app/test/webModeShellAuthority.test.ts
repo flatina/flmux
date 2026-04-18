@@ -20,12 +20,6 @@ describe("web mode shell authority", () => {
     await authority.start("http://127.0.0.1:4321");
 
     const rendererBridge: FlmuxRendererBridge = {
-      requestProxy: {
-        "shellModel.path.get": async () => ({ ok: true, found: false, value: null }),
-        "shellModel.path.list": async () => ({ ok: true, found: false, entries: [] }),
-        "shellModel.path.set": async () => ({ ok: false, code: "NOT_WRITABLE", error: "unused" }),
-        "shellModel.path.call": async () => ({ ok: false, code: "NOT_CALLABLE", error: "unused" })
-      },
       sendProxy: {
         "terminal.event": () => {},
         "shellCore.event": () => {}

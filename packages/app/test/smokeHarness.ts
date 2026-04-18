@@ -3,10 +3,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { FlmuxClientRegistry } from "../src/main/clientRegistry";
 import { startFlmuxServer } from "../src/main/server";
-import { createShellModelRouter } from "../src/main/shellModelBridge";
+import { createServerShellModelRouter } from "../src/main/serverShellModelRouter";
 import { forwardTerminalEventToOwnedClient } from "../src/main/terminalEventForwarding";
 import { createTerminalService } from "../src/main/terminal-service";
-import type { ShellModelAPI } from "../src/renderer/shell/types";
 import type { FlmuxRendererBridge } from "../src/shared/rendererBridge";
 import type { TerminalRuntimeEvent } from "../src/shared/terminal";
 import { stopOwnedPtydDaemonsForRootDir } from "./support/ptydCleanup";
@@ -49,11 +48,16 @@ export async function createSmokeHarness(): Promise<SmokeHarness> {
   });
   const shellModel = host.createModel();
   const registry = new FlmuxClientRegistry();
-  const router = createShellModelRouter(registry);
-  const bridge = createLocalRendererBridge(shellModel, (event) => host.applyTerminalEvent(event));
+  const authorityClientId = `smoke_${crypto.randomUUID()}`;
+  const router = createServerShellModelRouter({
+    authorityClientId,
+    shellModel,
+    getWorkspace: async () => host.getWorkspaceStatus(),
+    clientRegistry: registry
+  });
 
-  registry.attachRenderer(viewId, bridge);
-  const { clientId } = router.registerClient(viewId);
+  registry.attachRenderer(viewId, createHarnessBridge((event) => host.applyTerminalEvent(event)));
+
   const server = startFlmuxServer({
     rendererDir,
     shellModelRouter: router
@@ -70,7 +74,7 @@ export async function createSmokeHarness(): Promise<SmokeHarness> {
 
   return {
     origin: server.origin,
-    clientId,
+    clientId: authorityClientId,
     workspaceId: host.workspaceId,
     workspaceRootDir,
     fetchJson(pathname, init) {
@@ -78,7 +82,7 @@ export async function createSmokeHarness(): Promise<SmokeHarness> {
     },
     async runCliJson(args, options) {
       return runCliJson(args, {
-        clientId,
+        clientId: authorityClientId,
         origin: server.origin,
         withClient: options?.withClient ?? true
       });
@@ -97,23 +101,12 @@ export async function createSmokeHarness(): Promise<SmokeHarness> {
   };
 }
 
-function createLocalRendererBridge(
-  shellModel: ShellModelAPI,
+function createHarnessBridge(
   onTerminalEvent: (event: TerminalRuntimeEvent) => void
 ): FlmuxRendererBridge {
   return {
-    requestProxy: {
-      "shellModel.path.get": (params: { path: string }) => shellModel.pathGet(params.path),
-      "shellModel.path.list": (params: { path: string }) => shellModel.pathList(params.path),
-      "shellModel.path.set": (params: { path: string; value: unknown }) =>
-        shellModel.pathSet(params.path, params.value),
-      "shellModel.path.call": (params: { path: string; args?: Record<string, unknown> }) =>
-        shellModel.pathCall(params.path, params.args)
-    },
     sendProxy: {
-      "terminal.event": (payload: TerminalRuntimeEvent) => {
-        onTerminalEvent(payload);
-      },
+      "terminal.event": (payload) => onTerminalEvent(payload),
       "shellCore.event": () => {}
     }
   };

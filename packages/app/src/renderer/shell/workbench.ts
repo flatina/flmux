@@ -11,23 +11,13 @@ import {
 } from "dockview-core";
 import "../styles.css";
 import { setupDropIndicatorMasks } from "../maskHelper";
-import { createSessionHost } from "../sessionHost";
 import { createTerminalHost } from "../terminalHost";
 import {
-  PLACEHOLDER_PANE_KIND,
-  ShellCore,
-  createShellModel,
-  type AppStatusSnapshot,
   type NewPaneInput,
   type PaneWorkspaceContext,
-  type ScopedPropertyTarget,
+  type SequencedShellCoreEvent,
   type ShellModelAPI,
-  type ShellModelHost,
-  type ShellPaneRecordSnapshot,
-  type ShellResolvedPanePathMount,
-  type ShellResolvedPaneSubtreeMount,
-  type WorkspaceBusEvent,
-  type WorkspaceStatusSnapshot
+  type ShellPaneRecordSnapshot
 } from "@flmux/core/shell";
 import {
   PaneRegistry,
@@ -35,10 +25,23 @@ import {
 } from "./paneRegistry";
 import { registerBuiltinPaneDescriptors } from "./builtinPaneDescriptors";
 import { NewPaneHeaderAction, WorkspaceHeaderActions, humanizePaneKind } from "./headerActions";
-import type { FlmuxSessionSnapshot, FlmuxWorkspaceSessionSnapshot } from "../../shared/session";
-import type { FlmuxHostRequestProxy, FlmuxRendererBootstrapConfig } from "../../shared/rendererBridge";
+import type {
+  FlmuxHostRequestProxy,
+  FlmuxRendererBootstrapConfig,
+  FlmuxSessionSaveLayouts,
+  FlmuxShellBootstrapResponse
+} from "../../shared/rendererBridge";
 import { getFlmuxRendererLifecyclePolicy } from "../../shared/runtimeMode";
 import { resolveTerminalCwdFromRoot } from "../../shared/terminalPath";
+import { createShellModelClientOverPreload } from "./shellModelClient";
+import { subscribeShellCoreEvents } from "./shellEventBus";
+
+type PendingPane = {
+  id: string;
+  kind: string;
+  title: string;
+  params: Record<string, unknown> | undefined;
+};
 
 type WorkspaceRecord = {
   id: string;
@@ -47,19 +50,18 @@ type WorkspaceRecord = {
   innerHost: HTMLElement | null;
   innerResizeObserver: ResizeObserver | null;
   pendingInnerLayout: SerializedDockview | null;
+  pendingPanes: PendingPane[] | null;
 };
 
 const OUTER_WORKSPACE_COMPONENT = "workspace";
 
-export class FlmuxWorkbench implements ShellModelHost {
+export class FlmuxWorkbench {
   readonly shellModel: ShellModelAPI;
   private readonly lifecyclePolicy: ReturnType<typeof getFlmuxRendererLifecyclePolicy>;
 
   private readonly shellEl = document.querySelector<HTMLElement>(".dockview-shell")!;
   private readonly browserPanelTemplate = document.getElementById("browser-panel-tpl") as HTMLTemplateElement;
-  private readonly sessionHost: ReturnType<typeof createSessionHost>;
   private readonly terminalHost: ReturnType<typeof createTerminalHost>;
-  private readonly shellCore: ShellCore;
   private readonly paneRegistry = new PaneRegistry();
 
   private readonly workspaces = new Map<string, WorkspaceRecord>();
@@ -67,65 +69,50 @@ export class FlmuxWorkbench implements ShellModelHost {
   private readonly disposingWorkspace = new Set<string>();
   private outerApi: DockviewApi | null = null;
 
+  // Bootstrap + seq gate
+  private bootstrapped = false;
+  private lastAppliedSeq = 0;
+  private eventBuffer: SequencedShellCoreEvent[] = [];
+  private unsubscribeCoreEvents: (() => void) | null = null;
+
+  // Mirrored app-level state (needed to render document title; core is authoritative)
+  private appTitle = "flmux";
+  private activeWorkspaceId: string | null = null;
+
+  // Suppresses dockview→pathCall while we are applying core-driven state to dockview
+  private applyingCoreState = false;
+
+  // Save throttling
   private sessionSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private sessionPersistenceEnabled = false;
   private sessionPersistenceSuppressed = false;
-  private reseedingDefault = false;
 
-  constructor(private readonly config: FlmuxRendererBootstrapConfig, hostProxy: FlmuxHostRequestProxy) {
+  constructor(
+    private readonly config: FlmuxRendererBootstrapConfig,
+    private readonly hostProxy: FlmuxHostRequestProxy
+  ) {
     this.lifecyclePolicy = getFlmuxRendererLifecyclePolicy(config.mode);
-    this.sessionHost = createSessionHost(hostProxy);
     this.terminalHost = createTerminalHost(hostProxy);
     registerBuiltinPaneDescriptors(this.paneRegistry, {
       installRoot: config.projectDir,
       resolveTerminalCwd: resolveTerminalCwdFromRoot
     });
-    this.shellCore = new ShellCore({
-      paneRegistry: this.paneRegistry,
-      runtimeLabel: resolveRuntimeLabel(config.mode),
-      projectDir: config.projectDir,
-      terminalBackend: this.terminalHost,
-      initialAppOrigin: config.appOrigin
-    });
-    this.terminalHost.subscribe((event) => {
-      this.shellCore.applyTerminalEvent(event);
-      if (event.type === "state" || event.type === "removed") {
-        this.scheduleSessionSave();
-      }
-    });
-    this.shellModel = createShellModel({
-      host: this,
-      terminal: this.shellCore.createTerminalDelegate()
-    });
+    this.shellModel = createShellModelClientOverPreload(hostProxy);
+    this.unsubscribeCoreEvents = subscribeShellCoreEvents((event) => this.handleCoreEvent(event));
   }
 
   registerExternalPane(descriptor: PaneDescriptor) {
-    const rawDescriptor = descriptor as unknown as Record<string, unknown>;
-    const legacyHookKeys = [
-      "createParams",
-      "getTitle",
-      "normalizeRestoredParams",
-      "createRecord",
-      "serializeParams",
-      "createSnapshot"
-    ].filter((key) => key in rawDescriptor);
-    if (legacyHookKeys.length > 0) {
-      console.warn(
-        `pane descriptor '${descriptor.kind}' uses legacy flat hooks (${legacyHookKeys.join(", ")}); move them under lifecycle/persistence`
-      );
-    }
-
     this.paneRegistry.register(descriptor);
   }
 
   async start() {
     this.initializeOuterShell();
 
-    if (this.lifecyclePolicy.restoreSession) {
-      await this.restoreSessionOrDefaults();
-    } else {
-      await this.initializeDefaultWorkspaceSet();
-    }
+    const bootstrap = await this.hostProxy["flmux.shellBootstrap"]();
+    this.applyBootstrap(bootstrap);
+    this.lastAppliedSeq = bootstrap.seqStart;
+    this.bootstrapped = true;
+    this.drainBufferedEvents();
 
     this.updateDocumentTitle();
     setupDropIndicatorMasks();
@@ -135,245 +122,255 @@ export class FlmuxWorkbench implements ShellModelHost {
       window.addEventListener("pagehide", () => {
         void this.flushSessionSave({ preferBeacon: true });
       });
-      this.scheduleSessionSave();
     }
   }
 
-  // ── ShellModelHost implementation (all state reads/writes go through shellCore) ──
+  // ── Bootstrap ──
 
-  async getAppStatus(): Promise<AppStatusSnapshot> {
-    return this.shellCore.getAppStatus();
+  private applyBootstrap(bootstrap: FlmuxShellBootstrapResponse) {
+    const priorApplying = this.applyingCoreState;
+    this.applyingCoreState = true;
+    this.sessionPersistenceSuppressed = true;
+    try {
+      this.appTitle = bootstrap.snapshot.app.title;
+      this.activeWorkspaceId = bootstrap.snapshot.activeWorkspaceId;
+
+      for (const workspace of bootstrap.snapshot.workspaces) {
+        const record = this.createWorkspaceRecord(workspace.id);
+        const innerLayout = bootstrap.innerLayouts[workspace.id] as SerializedDockview | null | undefined;
+        if (innerLayout) {
+          record.pendingInnerLayout = innerLayout;
+        } else {
+          record.pendingPanes = (bootstrap.snapshot.panes[workspace.id] ?? []).map((pane) => ({
+            id: pane.id,
+            kind: pane.kind,
+            title: pane.title,
+            params: bootstrap.snapshot.paneParams[pane.id]
+          }));
+        }
+      }
+
+      if (bootstrap.outerLayout) {
+        try {
+          this.outerApi!.fromJSON(bootstrap.outerLayout as SerializedDockview);
+        } catch (error) {
+          console.warn("failed to restore outer workspace layout; falling back to addPanel loop", error);
+          this.rebuildOuterFromSnapshot(bootstrap);
+        }
+      } else {
+        this.rebuildOuterFromSnapshot(bootstrap);
+      }
+
+      if (this.activeWorkspaceId) {
+        this.outerApi!.getPanel(this.activeWorkspaceId)?.api.setActive();
+      }
+    } finally {
+      this.sessionPersistenceSuppressed = false;
+      this.applyingCoreState = priorApplying;
+    }
   }
 
-  async listWorkspaces(): Promise<WorkspaceStatusSnapshot[]> {
-    return this.shellCore.listWorkspaces();
+  private rebuildOuterFromSnapshot(bootstrap: FlmuxShellBootstrapResponse) {
+    this.outerApi!.clear();
+    for (const workspace of bootstrap.snapshot.workspaces) {
+      this.outerApi!.addPanel({
+        id: workspace.id,
+        component: OUTER_WORKSPACE_COMPONENT,
+        title: workspace.title
+      });
+    }
   }
 
-  async createWorkspace(input: { title?: string } = {}): Promise<WorkspaceStatusSnapshot> {
-    const status = await this.shellCore.createWorkspace(input);
-    const record = this.createWorkspaceRecord(status.id);
-    this.mountOuterPanel(record, { focus: true });
-    this.mountWorkspacePanes(record);
+  // ── Core event handling ──
+
+  private handleCoreEvent(event: SequencedShellCoreEvent) {
+    if (!this.bootstrapped) {
+      this.eventBuffer.push(event);
+      return;
+    }
+    if (event.seq <= this.lastAppliedSeq) {
+      return;
+    }
+    this.applyEvent(event);
+    this.lastAppliedSeq = event.seq;
+  }
+
+  private drainBufferedEvents() {
+    const pending = this.eventBuffer;
+    this.eventBuffer = [];
+    for (const event of pending) {
+      if (event.seq <= this.lastAppliedSeq) {
+        continue;
+      }
+      this.applyEvent(event);
+      this.lastAppliedSeq = event.seq;
+    }
+  }
+
+  private applyEvent(event: SequencedShellCoreEvent) {
+    const priorApplying = this.applyingCoreState;
+    this.applyingCoreState = true;
+    try {
+      switch (event.topic) {
+        case "app.titleChanged":
+          this.appTitle = event.payload.title;
+          this.updateDocumentTitle();
+          break;
+        case "workspace.added":
+          this.applyWorkspaceAdded(event.payload);
+          break;
+        case "workspace.removed":
+          this.applyWorkspaceRemoved(event.payload);
+          break;
+        case "workspace.titleChanged":
+          this.applyWorkspaceTitleChanged(event.payload);
+          break;
+        case "workspace.activeChanged":
+          this.applyWorkspaceActiveChanged(event.payload);
+          break;
+        case "pane.added":
+          this.applyPaneAdded(event.payload);
+          break;
+        case "pane.removed":
+          this.applyPaneRemoved(event.payload);
+          break;
+        case "pane.titleChanged":
+          this.applyPaneTitleChanged(event.payload);
+          break;
+        case "pane.paramsChanged":
+          this.applyPaneParamsChanged(event.payload);
+          break;
+        case "pane.activeChanged":
+          this.applyPaneActiveChanged(event.payload);
+          break;
+      }
+    } finally {
+      this.applyingCoreState = priorApplying;
+    }
     this.scheduleSessionSave();
-    return status;
   }
 
-  async deleteWorkspace(workspaceId: string): Promise<void> {
-    await this.shellCore.deleteWorkspace(workspaceId);
-    const panel = this.outerApi?.getPanel(workspaceId);
+  private applyWorkspaceAdded(payload: {
+    id: string;
+    title: string;
+    defaultTitle: string;
+  }) {
+    if (this.workspaces.has(payload.id)) {
+      return;
+    }
+    this.createWorkspaceRecord(payload.id);
+    if (!this.outerApi?.getPanel(payload.id)) {
+      this.outerApi?.addPanel({
+        id: payload.id,
+        component: OUTER_WORKSPACE_COMPONENT,
+        title: payload.title
+      });
+    }
+  }
+
+  private applyWorkspaceRemoved(payload: { id: string; newActiveWorkspaceId: string | null }) {
+    const panel = this.outerApi?.getPanel(payload.id);
     if (panel) {
-      this.disposingWorkspace.add(workspaceId);
+      this.disposingWorkspace.add(payload.id);
       try {
         panel.api.close();
       } finally {
-        this.disposingWorkspace.delete(workspaceId);
+        this.disposingWorkspace.delete(payload.id);
       }
     }
-    this.workspaces.delete(workspaceId);
-    this.scheduleSessionSave();
+    this.workspaces.delete(payload.id);
+    if (payload.newActiveWorkspaceId) {
+      this.outerApi?.getPanel(payload.newActiveWorkspaceId)?.api.setActive();
+    }
   }
 
-  async setActiveWorkspace(workspaceId: string): Promise<void> {
-    this.shellCore.setActiveWorkspace(workspaceId);
-    if (this.shellCore.getActiveWorkspaceId() === workspaceId) {
-      this.outerApi?.getPanel(workspaceId)?.api.setActive();
+  private applyWorkspaceTitleChanged(payload: { id: string; title: string }) {
+    this.outerApi?.getPanel(payload.id)?.api.setTitle(payload.title);
+    if (payload.id === this.activeWorkspaceId) {
       this.updateDocumentTitle();
     }
-    this.scheduleSessionSave();
   }
 
-  async setActivePane(paneId: string): Promise<void> {
-    this.shellCore.setActivePane(paneId);
-    const wsId = this.shellCore.getPaneWorkspaceId(paneId);
-    const record = wsId ? this.workspaces.get(wsId) : null;
-    record?.innerApi?.getPanel(paneId)?.api.setActive();
-    this.scheduleSessionSave();
-  }
-
-  async resetWorkspace(workspaceId: string): Promise<WorkspaceStatusSnapshot> {
-    const record = this.requireWorkspace(workspaceId);
-    if (!record.innerApi) {
-      throw new Error(`Workspace '${workspaceId}' inner dockview is not ready`);
+  private applyWorkspaceActiveChanged(payload: { id: string | null }) {
+    this.activeWorkspaceId = payload.id;
+    if (payload.id) {
+      this.outerApi?.getPanel(payload.id)?.api.setActive();
     }
-
-    // Guard the inner-remove handler so its per-panel shellCore.closePane fire
-    // doesn't double up with shellCore.resetWorkspace's own internal close loop.
-    // Suppress session save across the whole teardown/reseed so we don't
-    // persist an intermediate empty state.
-    this.disposingWorkspace.add(workspaceId);
-    this.sessionPersistenceSuppressed = true;
-    let status: WorkspaceStatusSnapshot;
-    try {
-      const panelIds = record.innerApi.panels.map((panel) => panel.id);
-      for (const id of panelIds) {
-        record.innerApi.getPanel(id)?.api.close();
-      }
-
-      status = await this.shellCore.resetWorkspace(workspaceId);
-      record.outerPanelApi?.setTitle(status.title);
-      this.mountWorkspacePanes(record);
-    } finally {
-      this.disposingWorkspace.delete(workspaceId);
-      this.sessionPersistenceSuppressed = false;
-    }
-
-    if (workspaceId === this.shellCore.getActiveWorkspaceId()) {
-      this.updateDocumentTitle();
-    }
-    this.scheduleSessionSave();
-    return status;
+    this.updateDocumentTitle();
   }
 
-  async getWorkspaceStatus(): Promise<WorkspaceStatusSnapshot> {
-    return this.shellCore.getWorkspaceStatus();
-  }
-
-  async setScopedProperty(target: ScopedPropertyTarget, key: string, value: unknown) {
-    const result = await this.shellCore.setScopedProperty(target, key, value);
-    if (key === "title") {
-      const title = String(result.value);
-      switch (target.scope) {
-        case "app":
-          this.updateDocumentTitle();
-          break;
-        case "workspace": {
-          const activeId = this.shellCore.getActiveWorkspaceId();
-          const wsId = target.workspaceId ?? activeId;
-          if (wsId) {
-            this.workspaces.get(wsId)?.outerPanelApi?.setTitle(title);
-            if (wsId === activeId) {
-              this.updateDocumentTitle();
-            }
-          }
-          break;
-        }
-        case "pane": {
-          const wsId = this.shellCore.getPaneWorkspaceId(target.paneId);
-          const record = wsId ? this.workspaces.get(wsId) : null;
-          record?.innerApi?.getPanel(target.paneId)?.api.setTitle(title);
-          break;
-        }
-      }
-    }
-    this.scheduleSessionSave();
-    return result;
-  }
-
-  async hasPaneKind(kind: string): Promise<boolean> {
-    return this.shellCore.hasPaneKind(kind);
-  }
-
-  async listPanes(): Promise<ShellPaneRecordSnapshot[]> {
-    return this.shellCore.listPanes();
-  }
-
-  async getPane(paneId: string): Promise<ShellPaneRecordSnapshot | undefined> {
-    return this.shellCore.getPane(paneId);
-  }
-
-  async createPane(input: NewPaneInput): Promise<ShellPaneRecordSnapshot> {
-    const snapshot = await this.shellCore.createPane(input);
-    const wsId = this.shellCore.getPaneWorkspaceId(snapshot.id);
-    if (!wsId) {
-      throw new Error(`Created pane '${snapshot.id}' has no workspace`);
-    }
-    const record = this.requireWorkspace(wsId);
-    if (!record.innerApi) {
-      throw new Error(`Workspace '${wsId}' inner dockview is not ready`);
-    }
-    record.innerApi.addPanel({
-      id: snapshot.id,
-      component: snapshot.kind,
-      title: snapshot.title,
-      params: this.shellCore.peekPaneParams(snapshot.id),
-      position: this.resolvePanePosition(record, input)
-    });
-    this.scheduleSessionSave();
-    return snapshot;
-  }
-
-  async closePane(paneId: string): Promise<{ paneId: string; closed: boolean }> {
-    if (this.closingFromCore.has(paneId)) {
-      return { paneId, closed: false };
-    }
-    this.closingFromCore.add(paneId);
-    try {
-      const result = await this.shellCore.closePane(paneId);
-      const panel = this.findPanelByPaneId(paneId);
-      panel?.api.close();
-      this.scheduleSessionSave();
-      return result;
-    } finally {
-      this.closingFromCore.delete(paneId);
-    }
-  }
-
-  async getPaneParams(paneId: string) {
-    return this.shellCore.getPaneParams(paneId);
-  }
-
-  async setPaneParams(paneId: string, nextParams: Record<string, unknown>) {
-    const result = await this.shellCore.setPaneParams(paneId, nextParams);
-    this.notifyPanelParamsChanged(paneId);
-    this.scheduleSessionSave();
-    return result;
-  }
-
-  async patchPaneParams(paneId: string, patch: Record<string, unknown>) {
-    const result = await this.shellCore.patchPaneParams(paneId, patch);
-    this.notifyPanelParamsChanged(paneId);
-    this.scheduleSessionSave();
-    return result;
-  }
-
-  /**
-   * Core is the authority for params. This just fans the new value onto
-   * dockview's panel.update() so renderers that listen to PanelUpdateEvent
-   * (extension panes, browser pane url mirror) see the change. Save continues
-   * to read from core, not dockview.
-   */
-  private notifyPanelParamsChanged(paneId: string) {
-    const panel = this.findPanelByPaneId(paneId);
-    if (!panel) {
+  private applyPaneAdded(payload: {
+    paneId: string;
+    workspaceId: string;
+    snapshot: ShellPaneRecordSnapshot;
+    params: Record<string, unknown> | undefined;
+    place?: "within" | "left" | "right" | "above" | "below";
+    referencePaneId?: string;
+  }) {
+    const record = this.workspaces.get(payload.workspaceId);
+    // innerApi is attached synchronously during WorkspaceOuterPanelRenderer.init;
+    // if it is missing here, the outer panel for this workspace hasn't been
+    // materialized yet — drop silently (pane re-materializes on later mount).
+    if (!record || !record.innerApi) {
       return;
     }
-    const params = this.shellCore.peekPaneParams(paneId);
-    panel.api.updateParameters(params ?? {});
-  }
-
-  async getPaneSubtreeMounts(paneId: string): Promise<ShellResolvedPaneSubtreeMount[]> {
-    const mounts = await this.shellCore.getPaneSubtreeMounts(paneId);
-    return mounts.map((mount) => this.wrapPaneMount(paneId, mount));
-  }
-
-  async getPanePathMount(paneId: string): Promise<ShellResolvedPanePathMount | undefined> {
-    const mount = await this.shellCore.getPanePathMount(paneId);
-    return mount ? this.wrapPaneMount(paneId, mount) : undefined;
-  }
-
-  /**
-   * Mount setState routes update through shellCore (core-authoritative); the wrapper
-   * additionally fires panel.updateParameters so dockview-based renderers (browser,
-   * extension panes) receive the PanelUpdateEvent they rely on for re-rendering.
-   */
-  private wrapPaneMount(paneId: string, mount: ShellResolvedPanePathMount): ShellResolvedPanePathMount {
-    if (!mount.setState) {
-      return mount;
+    if (record.innerApi.getPanel(payload.paneId)) {
+      return;
     }
-    const setState = mount.setState;
-    return {
-      ...mount,
-      setState: async (relativePath, value) => {
-        const result = await setState(relativePath, value);
-        this.notifyPanelParamsChanged(paneId);
-        this.scheduleSessionSave();
-        return result;
-      }
-    };
+    const referencePanel =
+      (payload.referencePaneId && record.innerApi.getPanel(payload.referencePaneId)) ?? record.innerApi.activePanel;
+    const position = referencePanel && payload.place
+      ? { referencePanel, direction: payload.place }
+      : undefined;
+    record.innerApi.addPanel({
+      id: payload.paneId,
+      component: payload.snapshot.kind,
+      title: payload.snapshot.title,
+      params: payload.params,
+      position
+    });
   }
 
-  async publishWorkspaceEvent(input: { topic: string; sourcePaneId: string; payload: unknown }): Promise<WorkspaceBusEvent> {
-    return this.shellCore.publishWorkspaceEvent(input);
+  private applyPaneRemoved(payload: {
+    paneId: string;
+    workspaceId: string;
+    newActivePaneId: string | null;
+  }) {
+    const record = this.workspaces.get(payload.workspaceId);
+    const panel = record?.innerApi?.getPanel(payload.paneId);
+    if (panel) {
+      this.closingFromCore.add(payload.paneId);
+      try {
+        panel.api.close();
+      } finally {
+        this.closingFromCore.delete(payload.paneId);
+      }
+    }
+    if (payload.newActivePaneId) {
+      record?.innerApi?.getPanel(payload.newActivePaneId)?.api.setActive();
+    }
+  }
+
+  private applyPaneTitleChanged(payload: { paneId: string; workspaceId: string; title: string }) {
+    const record = this.workspaces.get(payload.workspaceId);
+    record?.innerApi?.getPanel(payload.paneId)?.api.setTitle(payload.title);
+  }
+
+  private applyPaneParamsChanged(payload: {
+    paneId: string;
+    workspaceId: string;
+    params: Record<string, unknown> | undefined;
+  }) {
+    const record = this.workspaces.get(payload.workspaceId);
+    record?.innerApi?.getPanel(payload.paneId)?.api.updateParameters(payload.params ?? {});
+  }
+
+  private applyPaneActiveChanged(payload: { workspaceId: string; paneId: string | null }) {
+    if (!payload.paneId) {
+      return;
+    }
+    const record = this.workspaces.get(payload.workspaceId);
+    record?.innerApi?.getPanel(payload.paneId)?.api.setActive();
   }
 
   // ── Outer-panel renderer helpers (called by WorkspaceOuterPanelRenderer) ──
@@ -399,26 +396,7 @@ export class FlmuxWorkbench implements ShellModelHost {
     record.innerApi = innerApi;
 
     this.bindInnerDockviewEvents(record);
-
-    if (record.pendingInnerLayout) {
-      try {
-        innerApi.fromJSON(record.pendingInnerLayout);
-      } catch (error) {
-        console.warn(`failed to restore workspace '${record.id}' inner layout`, error);
-        this.disposingWorkspace.add(record.id);
-        try {
-          innerApi.clear();
-        } catch (clearError) {
-          console.warn(`inner-layout clear failed for '${record.id}'`, clearError);
-        }
-        this.reseedWorkspaceAfterInnerFailure(record).catch((err) => {
-          console.warn(`inner-layout fallback reseed failed for '${record.id}'`, err);
-        }).finally(() => {
-          this.disposingWorkspace.delete(record.id);
-        });
-      }
-      record.pendingInnerLayout = null;
-    }
+    this.mountPendingInner(record);
 
     const layoutInner = () => {
       const width = host.clientWidth;
@@ -431,6 +409,59 @@ export class FlmuxWorkbench implements ShellModelHost {
     record.innerResizeObserver = new ResizeObserver(() => layoutInner());
     record.innerResizeObserver.observe(host);
     requestAnimationFrame(layoutInner);
+  }
+
+  private mountPendingInner(record: WorkspaceRecord) {
+    if (!record.innerApi) {
+      return;
+    }
+    const priorApplying = this.applyingCoreState;
+    this.applyingCoreState = true;
+    try {
+      if (record.pendingInnerLayout) {
+        try {
+          record.innerApi.fromJSON(record.pendingInnerLayout);
+        } catch (error) {
+          console.warn(`failed to restore workspace '${record.id}' inner layout; falling back to reset`, error);
+          this.disposingWorkspace.add(record.id);
+          try {
+            record.innerApi.clear();
+            void this.shellModel.pathCall(`/workspaces/${record.id}/reset`).catch((err) => {
+              console.warn(`reset fallback failed for '${record.id}'`, err);
+            });
+          } finally {
+            this.disposingWorkspace.delete(record.id);
+          }
+        }
+        record.pendingInnerLayout = null;
+      } else if (record.pendingPanes) {
+        const innerApi = record.innerApi;
+        let firstPanelId: string | null = null;
+        for (const pane of record.pendingPanes) {
+          innerApi.addPanel({
+            id: pane.id,
+            component: pane.kind,
+            title: pane.title,
+            params: pane.params,
+            position: firstPanelId
+              ? {
+                  referencePanel: innerApi.getPanel(firstPanelId)!,
+                  direction: "right"
+                }
+              : undefined
+          });
+          if (firstPanelId === null) {
+            firstPanelId = pane.id;
+          }
+        }
+        if (firstPanelId && record.pendingPanes[0]?.kind === "cowsay") {
+          innerApi.getPanel(firstPanelId)?.group.api.setSize({ width: 440 });
+        }
+        record.pendingPanes = null;
+      }
+    } finally {
+      this.applyingCoreState = priorApplying;
+    }
   }
 
   detachInnerDockview(record: WorkspaceRecord) {
@@ -457,11 +488,15 @@ export class FlmuxWorkbench implements ShellModelHost {
   }
 
   private toWorkspaceContext(workspaceId: string): PaneWorkspaceContext {
-    const context = this.shellCore.getWorkspaceContext(workspaceId);
-    if (!context) {
-      throw new Error(`Unknown workspace '${workspaceId}'`);
-    }
-    return context;
+    return {
+      id: workspaceId,
+      defaultBrowserPath: `/__flmux/internal/start?workspace=${encodeURIComponent(workspaceId)}`,
+      bus: {
+        publish: () => {},
+        subscribe: () => () => {}
+      },
+      appOrigin: this.config.appOrigin
+    };
   }
 
   private initializeOuterShell() {
@@ -478,25 +513,46 @@ export class FlmuxWorkbench implements ShellModelHost {
           void this.shellModel.pathCall("/workspaces/new");
         },
         onResetActive: () => {
-          const activeId = this.shellCore.getActiveWorkspaceId();
-          if (!activeId) {
+          if (!this.activeWorkspaceId) {
             return;
           }
-          void this.shellModel.pathCall(`/workspaces/${activeId}/reset`);
+          void this.shellModel.pathCall(`/workspaces/${this.activeWorkspaceId}/reset`);
         }
       })
     });
 
     this.outerApi.onDidActivePanelChange((panel) => {
-      this.shellCore.setActiveWorkspace(panel?.id ?? null);
-      this.updateDocumentTitle();
+      if (this.applyingCoreState) {
+        return;
+      }
+      if (panel) {
+        void this.shellModel.pathCall(`/workspaces/${panel.id}/setActive`);
+      }
       this.scheduleSessionSave();
     });
     this.outerApi.onDidLayoutChange(() => {
       this.scheduleSessionSave();
     });
     this.outerApi.onDidRemovePanel((panel) => {
-      void this.handleOuterPanelRemoved(panel.id);
+      if (this.applyingCoreState || this.disposingWorkspace.has(panel.id)) {
+        return;
+      }
+      // Hold the guard across the pathCall Promise: dockview's synchronous
+      // disposal cascade (WorkspaceOuterPanelRenderer.dispose → innerApi.dispose
+      // → per-pane onDidRemovePanel) fires AFTER this callback returns but
+      // before the pathCall resolves. Inner handler checks disposingWorkspace
+      // to skip re-issuing /panes/{id}/close for panes being torn down by the
+      // parent workspace delete.
+      this.disposingWorkspace.add(panel.id);
+      void this.shellModel
+        .pathCall(`/workspaces/${panel.id}/delete`)
+        .catch((error) => {
+          console.warn(`failed to delete workspace '${panel.id}' via shellModel`, error);
+        })
+        .finally(() => {
+          this.disposingWorkspace.delete(panel.id);
+        });
+      this.scheduleSessionSave();
     });
 
     const layoutOuter = () => {
@@ -509,30 +565,6 @@ export class FlmuxWorkbench implements ShellModelHost {
 
     new ResizeObserver(() => layoutOuter()).observe(this.shellEl);
     requestAnimationFrame(layoutOuter);
-  }
-
-  // The guard lives set across the await microtask boundary, during which
-  // dockview synchronously runs WorkspaceOuterPanelRenderer.dispose → innerApi.dispose
-  // and fans out per-pane onDidRemovePanel. Inner handler sees the guard and skips
-  // shellCore.closePane (core records are already dropped by deleteWorkspace).
-  private async handleOuterPanelRemoved(workspaceId: string) {
-    this.disposingWorkspace.add(workspaceId);
-    try {
-      await this.shellCore.deleteWorkspace(workspaceId);
-      this.workspaces.delete(workspaceId);
-      this.updateDocumentTitle();
-      this.scheduleSessionSave();
-      if (this.outerApi && this.outerApi.panels.length === 0 && !this.reseedingDefault) {
-        this.reseedingDefault = true;
-        try {
-          await this.initializeDefaultWorkspaceSet();
-        } finally {
-          this.reseedingDefault = false;
-        }
-      }
-    } finally {
-      this.disposingWorkspace.delete(workspaceId);
-    }
   }
 
   private createOuterPanelRenderer(options: CreateComponentOptions): IContentRenderer {
@@ -565,10 +597,11 @@ export class FlmuxWorkbench implements ShellModelHost {
     const api = record.innerApi!;
 
     api.onDidActivePanelChange((panel) => {
+      if (this.applyingCoreState) {
+        return;
+      }
       if (panel) {
-        this.shellCore.setActivePane(panel.id);
-      } else {
-        this.shellCore.clearActivePane(record.id);
+        void this.shellModel.pathCall(`/panes/${panel.id}/setActive`);
       }
       this.scheduleSessionSave();
     });
@@ -576,11 +609,11 @@ export class FlmuxWorkbench implements ShellModelHost {
       this.scheduleSessionSave();
     });
     api.onDidRemovePanel((panel) => {
-      if (this.closingFromCore.has(panel.id) || this.disposingWorkspace.has(record.id)) {
+      if (this.applyingCoreState || this.closingFromCore.has(panel.id) || this.disposingWorkspace.has(record.id)) {
         return;
       }
-      void this.shellCore.closePane(panel.id).catch((error) => {
-        console.warn(`failed to close pane '${panel.id}' in shellCore`, error);
+      void this.shellModel.pathCall(`/panes/${panel.id}/close`).catch((error) => {
+        console.warn(`failed to close pane '${panel.id}' via shellModel`, error);
       });
       this.scheduleSessionSave();
     });
@@ -589,304 +622,11 @@ export class FlmuxWorkbench implements ShellModelHost {
     });
   }
 
-  private mountOuterPanel(record: WorkspaceRecord, options: { focus?: boolean } = {}) {
-    if (!this.outerApi) {
-      throw new Error("Outer dockview is not initialized");
-    }
-    if (this.outerApi.getPanel(record.id)) {
-      return;
-    }
-
-    const status = this.shellCore.getWorkspaceSnapshot(record.id);
-    const panel = this.outerApi.addPanel({
-      id: record.id,
-      component: OUTER_WORKSPACE_COMPONENT,
-      title: status?.title ?? record.id
-    });
-    if (options.focus) {
-      panel.focus();
-    }
-  }
-
-  private mountWorkspacePanes(record: WorkspaceRecord) {
-    if (!record.innerApi) {
-      throw new Error(`Workspace '${record.id}' inner dockview is not ready`);
-    }
-    const panes = this.shellCore.listPanesByWorkspace(record.id);
-    let firstPaneId: string | null = null;
-    for (const pane of panes) {
-      record.innerApi.addPanel({
-        id: pane.id,
-        component: pane.kind,
-        title: pane.title,
-        params: this.shellCore.peekPaneParams(pane.id),
-        position: firstPaneId
-          ? {
-              referencePanel: record.innerApi.getPanel(firstPaneId)!,
-              direction: "right"
-            }
-          : undefined
-      });
-      if (firstPaneId === null) {
-        firstPaneId = pane.id;
-      }
-    }
-    if (firstPaneId && panes[0]?.kind === "cowsay") {
-      record.innerApi.getPanel(firstPaneId)?.group.api.setSize({ width: 440 });
-    }
-  }
-
-  private resolvePanePosition(record: WorkspaceRecord, input: NewPaneInput) {
-    const innerApi = record.innerApi!;
-    const referencePanel =
-      (input.referencePaneId && innerApi.getPanel(input.referencePaneId)) ?? innerApi.activePanel;
-    const direction = input.place ?? "within";
-    if (!referencePanel) {
-      return undefined;
-    }
-    return { referencePanel, direction };
-  }
-
-  private findPanelByPaneId(paneId: string) {
-    const wsId = this.shellCore.getPaneWorkspaceId(paneId);
-    if (!wsId) {
-      return null;
-    }
-    return this.workspaces.get(wsId)?.innerApi?.getPanel(paneId) ?? null;
-  }
-
-  private requireWorkspace(workspaceId: string): WorkspaceRecord {
-    const record = this.workspaces.get(workspaceId);
-    if (!record) {
-      throw new Error(`Unknown workspace '${workspaceId}'`);
-    }
-    return record;
-  }
-
   private updateDocumentTitle() {
-    const activeId = this.shellCore.getActiveWorkspaceId();
-    const status = activeId ? this.shellCore.getWorkspaceSnapshot(activeId) : undefined;
-    const appTitle = this.shellCore.getAppTitle();
-    document.title = status ? `${appTitle} / ${status.title}` : appTitle;
-  }
-
-  private async restoreSessionOrDefaults() {
-    const snapshot = await this.sessionHost.load();
-    if (snapshot?.appTitle) {
-      this.shellCore.setAppTitle(snapshot.appTitle);
-    }
-
-    const restoredWorkspaces = Object.entries(snapshot?.workspaces ?? {});
-    if (restoredWorkspaces.length === 0 || !snapshot?.outerLayout) {
-      await this.initializeDefaultWorkspaceSet();
-      return;
-    }
-
-    this.sessionPersistenceSuppressed = true;
-    try {
-      const outerPanelIds = extractOuterPanelIds(snapshot.outerLayout);
-      for (const [workspaceId, workspaceSnapshot] of restoredWorkspaces) {
-        // Drop workspaces that the outer layout doesn't reference — they'd
-        // become invisible core-only records.
-        if (!outerPanelIds.has(workspaceId)) {
-          continue;
-        }
-        const defaultTitle = workspaceSnapshot.defaultTitle?.trim() || defaultWorkspaceTitle(workspaceId);
-        const title = workspaceSnapshot.title.trim() || defaultTitle;
-        this.shellCore.restoreWorkspace({ id: workspaceId, title, defaultTitle });
-
-        const record = this.createWorkspaceRecord(workspaceId);
-        const innerLayout = workspaceSnapshot.innerLayout as SerializedDockview | null;
-        record.pendingInnerLayout = innerLayout
-          ? this.rebuildPaneRecordsFromLayout(workspaceId, innerLayout)
-          : null;
-      }
-
-      try {
-        this.outerApi!.fromJSON(snapshot.outerLayout as SerializedDockview);
-        if (this.outerApi!.panels.length === 0) {
-          throw new Error("outer layout restored zero panels");
-        }
-      } catch (error) {
-        console.warn("failed to restore outer workspace layout; falling back to defaults", error);
-        await this.fallbackToDefaultWorkspaceSet();
-      }
-    } finally {
-      this.sessionPersistenceSuppressed = false;
-    }
-  }
-
-  /**
-   * Outer-layout restore failed. Wipe core + view atomically and re-seed a
-   * fresh default workspace. `reseedingDefault` is set for the whole span so
-   * the per-panel `onDidRemovePanel` handler that fires during outerApi.clear()
-   * doesn't race with our explicit initializeDefaultWorkspaceSet().
-   */
-  private async fallbackToDefaultWorkspaceSet() {
-    this.reseedingDefault = true;
-    try {
-      await this.shellCore.clearAll();
-      this.outerApi!.clear();
-      this.workspaces.clear();
-      await this.initializeDefaultWorkspaceSet();
-    } finally {
-      this.reseedingDefault = false;
-    }
-  }
-
-  /**
-   * Parse the persisted inner layout JSON and restore each pane into shellCore,
-   * rewriting the JSON's contentComponent to "placeholder" for panes that core
-   * substituted (unknown kind, normalize/create hook throw). Also overlays the
-   * normalized params from core back onto the layout JSON so innerApi.fromJSON
-   * hands each pane renderer the same params core holds (e.g. browser URLs
-   * get the current app-origin prefix restored, not the stripped save form).
-   */
-  private rebuildPaneRecordsFromLayout(workspaceId: string, layout: SerializedDockview): SerializedDockview {
-    const next = cloneLayout(layout);
-    for (const [paneId, panelState] of Object.entries(next.panels ?? {})) {
-      const kind = typeof panelState.contentComponent === "string" ? panelState.contentComponent : "";
-      if (!kind) {
-        throw new Error(`Persisted panel '${paneId}' missing contentComponent`);
-      }
-      const params = cloneJsonObject(panelState.params);
-      const title = typeof panelState.title === "string" ? panelState.title : undefined;
-      const snapshot = this.shellCore.restorePane(workspaceId, {
-        paneId,
-        kind,
-        params,
-        title
-      });
-      const normalizedParams = this.shellCore.peekPaneParams(paneId);
-      if (snapshot.kind !== kind) {
-        panelState.contentComponent = PLACEHOLDER_PANE_KIND;
-        panelState.title = snapshot.title;
-        panelState.params = normalizedParams ?? { originalKind: kind };
-      } else if (normalizedParams !== undefined) {
-        panelState.params = normalizedParams;
-      }
-    }
-    return next;
-  }
-
-  private async initializeDefaultWorkspaceSet() {
-    const status = await this.shellCore.createWorkspace();
-    const record = this.createWorkspaceRecord(status.id);
-    this.sessionPersistenceSuppressed = true;
-    try {
-      this.mountOuterPanel(record, { focus: true });
-      this.mountWorkspacePanes(record);
-    } finally {
-      this.sessionPersistenceSuppressed = false;
-    }
-  }
-
-  private async reseedWorkspaceAfterInnerFailure(record: WorkspaceRecord) {
-    const status = await this.shellCore.resetWorkspace(record.id);
-    record.outerPanelApi?.setTitle(status.title);
-    this.mountWorkspacePanes(record);
-  }
-
-  private serializeSessionSnapshot(): FlmuxSessionSnapshot {
-    return {
-      version: 4,
-      appTitle: this.shellCore.getAppTitle(),
-      outerLayout: this.outerApi?.toJSON() ?? null,
-      workspaces: Object.fromEntries(
-        this.shellCore.getWorkspaceIds().map((workspaceId) => {
-          const status = this.shellCore.getWorkspaceSnapshot(workspaceId)!;
-          const record = this.workspaces.get(workspaceId);
-          const innerLayout = record?.innerApi ? this.serializeWorkspaceLayout(workspaceId, record) : null;
-          return [
-            workspaceId,
-            {
-              defaultTitle: status.defaultTitle,
-              title: status.title,
-              innerLayout
-            } satisfies FlmuxWorkspaceSessionSnapshot
-          ];
-        })
-      )
-    };
-  }
-
-  private serializeWorkspaceLayout(workspaceId: string, record: WorkspaceRecord): SerializedDockview {
-    const innerApi = record.innerApi!;
-    const layout = cloneLayout(innerApi.toJSON());
-    for (const [panelId, panelState] of Object.entries(layout.panels ?? {})) {
-      if (this.shellCore.getPaneWorkspaceId(panelId) !== workspaceId) {
-        continue;
-      }
-      const params = this.shellCore.serializePaneParams(panelId);
-      if (params !== undefined) {
-        panelState.params = params;
-      }
-    }
-    return layout;
-  }
-
-  private async flushSessionSave(options: { preferBeacon?: boolean } = {}) {
-    if (!this.sessionPersistenceEnabled || this.sessionPersistenceSuppressed) {
-      return;
-    }
-
-    if (this.sessionSaveTimer) {
-      clearTimeout(this.sessionSaveTimer);
-      this.sessionSaveTimer = null;
-    }
-
-    const snapshot = this.serializeSessionSnapshot();
-    if (options.preferBeacon && this.saveSnapshotViaBeacon(snapshot)) {
-      return;
-    }
-
-    await this.sessionHost.save(snapshot);
-  }
-
-  private saveSnapshotViaBeacon(snapshot: FlmuxSessionSnapshot) {
-    try {
-      const payload = JSON.stringify(snapshot);
-      const endpoint = `${this.config.appOrigin}/api/session/save`;
-      const body = new Blob([payload], {
-        type: "application/json"
-      });
-
-      if (typeof navigator.sendBeacon === "function") {
-        return navigator.sendBeacon(endpoint, body);
-      }
-
-      void fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json"
-        },
-        body: payload,
-        keepalive: true
-      });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private scheduleSessionSave() {
-    if (!this.sessionPersistenceEnabled || this.sessionPersistenceSuppressed) {
-      return;
-    }
-
-    if (this.sessionSaveTimer) {
-      clearTimeout(this.sessionSaveTimer);
-    }
-
-    this.sessionSaveTimer = setTimeout(() => {
-      this.sessionSaveTimer = null;
-      if (!this.sessionPersistenceEnabled || this.sessionPersistenceSuppressed) {
-        return;
-      }
-      void this.sessionHost.save(this.serializeSessionSnapshot()).catch((error) => {
-        console.warn("failed to persist flmux session snapshot", error);
-      });
-    }, 250);
+    const activeId = this.activeWorkspaceId;
+    const activePanel = activeId ? this.outerApi?.getPanel(activeId) : null;
+    const workspaceTitle = activePanel?.title ?? null;
+    document.title = workspaceTitle ? `${this.appTitle} / ${workspaceTitle}` : this.appTitle;
   }
 
   private normalizeBrowserUrlFromInput(value: string): string | null {
@@ -908,17 +648,85 @@ export class FlmuxWorkbench implements ShellModelHost {
     if (existing) {
       return existing;
     }
-
     const record: WorkspaceRecord = {
       id: workspaceId,
       outerPanelApi: null,
       innerApi: null,
       innerHost: null,
       innerResizeObserver: null,
-      pendingInnerLayout: null
+      pendingInnerLayout: null,
+      pendingPanes: null
     };
     this.workspaces.set(workspaceId, record);
     return record;
+  }
+
+  // ── Save path ──
+
+  private serializeSessionLayouts(): FlmuxSessionSaveLayouts {
+    const innerLayouts: Record<string, unknown | null> = {};
+    for (const [workspaceId, record] of this.workspaces) {
+      innerLayouts[workspaceId] = record.innerApi ? record.innerApi.toJSON() : null;
+    }
+    return {
+      outerLayout: this.outerApi?.toJSON() ?? null,
+      innerLayouts
+    };
+  }
+
+  private scheduleSessionSave() {
+    if (!this.sessionPersistenceEnabled || this.sessionPersistenceSuppressed) {
+      return;
+    }
+    if (this.sessionSaveTimer) {
+      clearTimeout(this.sessionSaveTimer);
+    }
+    this.sessionSaveTimer = setTimeout(() => {
+      this.sessionSaveTimer = null;
+      if (!this.sessionPersistenceEnabled || this.sessionPersistenceSuppressed) {
+        return;
+      }
+      const layouts = this.serializeSessionLayouts();
+      void this.hostProxy["flmux.session.save"](layouts).catch((error) => {
+        console.warn("failed to persist flmux session layouts", error);
+      });
+    }, 250);
+  }
+
+  private async flushSessionSave(options: { preferBeacon?: boolean } = {}) {
+    if (!this.sessionPersistenceEnabled || this.sessionPersistenceSuppressed) {
+      return;
+    }
+    if (this.sessionSaveTimer) {
+      clearTimeout(this.sessionSaveTimer);
+      this.sessionSaveTimer = null;
+    }
+    const layouts = this.serializeSessionLayouts();
+    if (options.preferBeacon && this.saveLayoutsViaBeacon(layouts)) {
+      return;
+    }
+    await this.hostProxy["flmux.session.save"](layouts);
+  }
+
+  private saveLayoutsViaBeacon(layouts: FlmuxSessionSaveLayouts): boolean {
+    try {
+      const payload = JSON.stringify(layouts);
+      const endpoint = `${this.config.appOrigin}/api/session/save`;
+      const body = new Blob([payload], { type: "application/json" });
+
+      if (typeof navigator.sendBeacon === "function") {
+        return navigator.sendBeacon(endpoint, body);
+      }
+      void fetch(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: payload,
+        keepalive: true
+      });
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 
@@ -946,47 +754,6 @@ class WorkspaceOuterPanelRenderer implements IContentRenderer {
     }
     this.element.replaceChildren();
   }
-}
-
-function resolveRuntimeLabel(mode: string) {
-  return mode === "desktop" ? "desktop local-http preload ok" : "web local-http attach";
-}
-
-function extractOuterPanelIds(outerLayout: unknown): Set<string> {
-  const ids = new Set<string>();
-  if (!outerLayout || typeof outerLayout !== "object") {
-    return ids;
-  }
-  const panels = (outerLayout as { panels?: Record<string, unknown> }).panels;
-  if (panels && typeof panels === "object") {
-    for (const id of Object.keys(panels)) {
-      ids.add(id);
-    }
-  }
-  return ids;
-}
-
-function defaultWorkspaceTitle(workspaceId: string) {
-  const numbered = /^workspace\.(\d+)$/.exec(workspaceId);
-  if (numbered) {
-    return `Workspace ${numbered[1]}`;
-  }
-
-  return workspaceId
-    .split(/[./_-]/g)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ") || "Workspace";
-}
-
-function cloneJsonObject(value: unknown) {
-  return value && typeof value === "object"
-    ? JSON.parse(JSON.stringify(value)) as Record<string, unknown>
-    : undefined;
-}
-
-function cloneLayout<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function prefersHttpScheme(value: string) {

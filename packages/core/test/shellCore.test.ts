@@ -377,15 +377,16 @@ describe("ShellCore", () => {
     expect(core.getWorkspaceIds()).toEqual(["workspace.1"]);
   });
 
-  it("clearAll wipes every workspace and pane record and resets active pointer", async () => {
+  it("deleting the last workspace auto-reseeds a default workspace", async () => {
     const { core } = buildShellCore();
-    await core.createWorkspace({ title: "Second" });
-    await core.createPane({ kind: "browser", url: "/x" });
+    expect(core.getWorkspaceIds()).toEqual(["workspace.1"]);
 
-    await core.clearAll();
+    await core.deleteWorkspace("workspace.1");
 
-    expect(core.getWorkspaceIds()).toEqual([]);
-    expect(core.getActiveWorkspaceId()).toBeNull();
+    const ids = core.getWorkspaceIds();
+    expect(ids).toHaveLength(1);
+    expect(ids[0]).toBe("workspace.1");
+    expect(core.getActiveWorkspaceId()).toBe("workspace.1");
   });
 
   it("listPanesByWorkspace is workspace-scoped and safe for inactive workspaces", async () => {

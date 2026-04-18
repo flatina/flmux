@@ -285,6 +285,15 @@ export class ShellCore implements ShellModelHost {
     return this.appTitle;
   }
 
+  /** Sync equivalent of getAppStatus for callers that need {title, origin, runtimeLabel} without crossing an await. */
+  getAppSnapshot(): AppStatusSnapshot {
+    return {
+      title: this.appTitle,
+      origin: this.appOrigin,
+      runtimeLabel: this.options.runtimeLabel
+    };
+  }
+
   getWorkspaceIds(): string[] {
     return [...this.workspaces.keys()];
   }
@@ -317,12 +326,12 @@ export class ShellCore implements ShellModelHost {
     if (wasActive) {
       this.emit({ topic: "workspace.activeChanged", payload: { id: newActiveWorkspaceId } });
     }
-  }
-
-  async clearAll(): Promise<void> {
-    await Promise.all(
-      [...this.workspaces.keys()].map((workspaceId) => this.deleteWorkspace(workspaceId))
-    );
+    // ≥1 workspace invariant: closing the last workspace immediately re-seeds
+    // a default so callers (/status/workspace, /api/clients, external model
+    // reads) never observe a no-current-workspace state.
+    if (this.workspaces.size === 0) {
+      this.initialize();
+    }
   }
 
   /**
@@ -857,12 +866,17 @@ export class ShellCore implements ShellModelHost {
     workspace.paneParams.clear();
     workspace.activePaneId = null;
 
+    let firstPaneId: string | null = null;
     for (const kind of kinds) {
       const pane = this.addPane(workspace, {
         kind,
         title: kind === "browser" ? "Start" : humanizePaneKind(kind),
-        ...(kind === "browser" ? { url: workspace.defaultBrowserPath } : {})
+        ...(kind === "browser" ? { url: workspace.defaultBrowserPath } : {}),
+        ...(firstPaneId ? { place: "right", referencePaneId: firstPaneId } : {})
       });
+      if (!firstPaneId) {
+        firstPaneId = pane.id;
+      }
       if (kind === "browser") {
         workspace.activePaneId = pane.id;
       }
@@ -944,7 +958,14 @@ export class ShellCore implements ShellModelHost {
     const snapshot = this.createPaneSnapshot(workspace, paneId, title);
     this.emit({
       topic: "pane.added",
-      payload: { paneId, workspaceId: workspace.id, snapshot, params: storedParams }
+      payload: {
+        paneId,
+        workspaceId: workspace.id,
+        snapshot,
+        params: storedParams,
+        place: input.place,
+        referencePaneId: input.referencePaneId
+      }
     });
     if (previousActivePaneId !== paneId) {
       this.emit({

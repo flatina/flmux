@@ -1,8 +1,10 @@
 import { BuniteView } from "bunite-core/view";
 import type { FlmuxRendererBridgeSchema } from "../shared/rendererBridge";
 import type { TerminalRuntimeEvent } from "../shared/terminal";
+import type { SequencedShellCoreEvent } from "@flmux/core/shell";
 import { registerLocalExternalPaneDescriptors } from "./external/registerLocalExternalPaneDescriptors";
 import { FlmuxWorkbench } from "./shell/workbench";
+import { pushShellCoreEvent } from "./shell/shellEventBus";
 import { pushTerminalEvent } from "./terminalHost";
 import { FlmuxWebModeClient } from "./webModeClient";
 
@@ -16,6 +18,9 @@ async function bootstrap() {
       messages: {
         "terminal.event": (event: TerminalRuntimeEvent) => {
           pushTerminalEvent(event);
+        },
+        "shellCore.event": (event: SequencedShellCoreEvent) => {
+          pushShellCoreEvent(event);
         }
       }
     }
@@ -30,13 +35,6 @@ async function bootstrap() {
 
   const workbench = new FlmuxWorkbench(config, rpc.requestProxy);
   await registerLocalExternalPaneDescriptors(workbench, config.localExtensions);
-
-  rpc.setRequestHandler({
-    "shellModel.path.get": (params) => workbench.shellModel.pathGet(params.path),
-    "shellModel.path.list": (params) => workbench.shellModel.pathList(params.path),
-    "shellModel.path.set": (params) => workbench.shellModel.pathSet(params.path, params.value),
-    "shellModel.path.call": (params) => workbench.shellModel.pathCall(params.path, params.args)
-  });
 
   await rpc.requestProxy["flmux.client.register"]();
   await workbench.start();

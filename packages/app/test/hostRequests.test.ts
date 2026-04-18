@@ -1,11 +1,12 @@
 import { describe, expect, it, mock } from "bun:test";
-import type { FlmuxSessionSnapshot } from "../src/shared/session";
+import type { FlmuxSessionSaveLayouts } from "../src/shared/rendererBridge";
 import { createFlmuxHostRequestHandlers } from "../src/main/hostRequests";
 
 describe("flmux host requests", () => {
   it("binds registration and terminal ownership to the caller view", async () => {
     const paneOwners = new Map<string, number>();
     const registerClient = mock((viewId: number) => ({ clientId: `client-${viewId}` }));
+    const onClientRegister = mock((_viewId: number) => {});
     const create = mock(async (input: { paneId?: string }) => ({
       ok: true as const,
       rootKey: "root_123",
@@ -67,10 +68,8 @@ describe("flmux host requests", () => {
         dispose: () => {}
       },
       localExtensions: [],
-      sessionStore: {
-        load: async () => null,
-        save: async () => {}
-      }
+      desktopAuthority: null,
+      onClientRegister
     });
 
     expect(handlers["flmux.getConfig"]()).toMatchObject({
@@ -82,6 +81,7 @@ describe("flmux host requests", () => {
     expect(handlers["flmux.client.register"]()).toEqual({
       clientId: "client-77"
     });
+    expect(onClientRegister).toHaveBeenCalledWith(77);
 
     await handlers["flmux.terminal.create"]({
       paneId: "pane.alpha",
@@ -100,7 +100,7 @@ describe("flmux host requests", () => {
     expect(adoptByPaneId).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps session persistence out of web mode", async () => {
+  it("rejects desktop-only paths when no desktop authority is configured", async () => {
     const handlers = createFlmuxHostRequestHandlers({
       mode: "web",
       getAppOrigin: () => "http://127.0.0.1:4321",
@@ -130,24 +130,22 @@ describe("flmux host requests", () => {
         dispose: () => {}
       },
       localExtensions: [],
-      sessionStore: null
+      desktopAuthority: null
     });
 
-    const snapshot: FlmuxSessionSnapshot = {
-      version: 4,
-      appTitle: "flmux",
+    const layouts: FlmuxSessionSaveLayouts = {
       outerLayout: null,
-      workspaces: {
-        "workspace.1": {
-          title: "Workspace 1",
-          innerLayout: null
-        }
-      }
+      innerLayouts: {}
     };
 
-    expect(await handlers["flmux.session.load"]()).toBeNull();
-    await expect(handlers["flmux.session.save"](snapshot)).rejects.toThrow(
-      "Session persistence is only available in desktop mode"
+    expect(() => handlers["flmux.shellBootstrap"]()).toThrow(
+      "flmux.shellBootstrap is only available in desktop mode"
+    );
+    await expect(handlers["flmux.session.save"](layouts)).rejects.toThrow(
+      "flmux.session.save is only available in desktop mode"
+    );
+    expect(() => handlers["shellModel.path.get"]({ path: "/title" })).toThrow(
+      "shellModel.path.get is only available in desktop mode"
     );
   });
 });

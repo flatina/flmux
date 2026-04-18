@@ -3,7 +3,7 @@ import type { FlmuxRendererBridgeSchema } from "../shared/rendererBridge";
 import type { TerminalRuntimeEvent } from "../shared/terminal";
 import { FlmuxClientRegistry } from "./clientRegistry";
 import { createSessionStore } from "./sessionStore";
-import { createShellModelRouter } from "./shellModelBridge";
+import { createDesktopShellAuthority, type DesktopShellAuthority } from "./desktopShellAuthority";
 import { createWebModeShellAuthority } from "./webModeShellAuthority";
 import { startFlmuxServer } from "./server";
 import { forwardTerminalEventToOwnedClient } from "./terminalEventForwarding";
@@ -35,6 +35,18 @@ const paneOwners = new Map<string, number>();
 const localExtensions = await discoverConfiguredLocalExtensions(localExtensionsRootDir);
 const webModeAuthPaths = runtimeMode === "web" ? resolveFlmuxAuthPaths(resolveFlmuxAuthDir()) : null;
 const webModeAuthorizer = webModeAuthPaths ? createFlmuxWebModeAuthorizer(webModeAuthPaths) : null;
+
+const desktopAuthority: DesktopShellAuthority | null = runtimeMode === "desktop" && sessionStore
+  ? await createDesktopShellAuthority({
+      projectDir,
+      runtimeLabel: "desktop local-http preload ok",
+      terminalService,
+      sessionStore,
+      clientRegistry,
+      localExtensions
+    })
+  : null;
+
 const webModeShellAuthority = runtimeMode === "web"
   ? await createWebModeShellAuthority({
       projectDir,
@@ -44,7 +56,45 @@ const webModeShellAuthority = runtimeMode === "web"
       localExtensions
     })
   : null;
-const shellModelRouter = webModeShellAuthority?.router ?? createShellModelRouter(clientRegistry);
+
+const shellModelRouter = desktopAuthority?.router ?? webModeShellAuthority?.router;
+if (!shellModelRouter) {
+  throw new Error(`No shell model authority configured for runtime mode '${runtimeMode}'`);
+}
+
+const authorityClientId = desktopAuthority?.clientId ?? webModeShellAuthority?.clientId ?? null;
+
+const coreEventUnsubscribers = new Map<number, () => void>();
+
+function installCoreEventForwarder(viewId: number) {
+  if (!desktopAuthority) {
+    return;
+  }
+  const existing = coreEventUnsubscribers.get(viewId);
+  if (existing) {
+    existing();
+  }
+  const client = clientRegistry.resolveByViewId(viewId);
+  if (!client) {
+    return;
+  }
+  const unsubscribe = desktopAuthority.subscribe((event) => {
+    client.bridge.sendProxy["shellCore.event"](event);
+  });
+  coreEventUnsubscribers.set(viewId, unsubscribe);
+}
+
+function releaseView(viewId: number) {
+  const unsubscribe = coreEventUnsubscribers.get(viewId);
+  if (unsubscribe) {
+    unsubscribe();
+    coreEventUnsubscribers.delete(viewId);
+  }
+  for (const [paneId, owner] of paneOwners.entries()) {
+    if (owner === viewId) paneOwners.delete(paneId);
+  }
+  clientRegistry.detachRenderer(viewId);
+}
 
 let desktopViewId: number | null = null;
 let serverOrigin = "";
@@ -53,7 +103,6 @@ function requireDesktopViewId() {
   if (desktopViewId == null) {
     throw new Error("Desktop renderer is not attached");
   }
-
   return desktopViewId;
 }
 
@@ -63,13 +112,14 @@ const rendererRpc = BrowserView.defineRPC<FlmuxRendererBridgeSchema>({
       mode: runtimeMode,
       getAppOrigin: () => serverOrigin,
       getProjectDir: () => projectDir,
-      getAuthorityClientId: () => webModeShellAuthority?.clientId ?? null,
+      getAuthorityClientId: () => authorityClientId,
       getCallerViewId: requireDesktopViewId,
       paneOwners,
       shellModelRouter,
       terminalService,
       localExtensions,
-      sessionStore
+      desktopAuthority,
+      onClientRegister: installCoreEventForwarder
     })
   }
 });
@@ -86,13 +136,14 @@ rendererRpc.webHandler.onWebClientConnected = (client) => {
     mode: runtimeMode,
     getAppOrigin: () => serverOrigin,
     getProjectDir: () => projectDir,
-    getAuthorityClientId: () => webModeShellAuthority?.clientId ?? null,
+    getAuthorityClientId: () => authorityClientId,
     getCallerViewId: () => viewId,
     paneOwners,
     shellModelRouter,
     terminalService,
     localExtensions,
-    sessionStore
+    desktopAuthority,
+    onClientRegister: installCoreEventForwarder
   }));
   clientRegistry.attachRenderer(viewId, client.rpc);
 };
@@ -100,21 +151,23 @@ rendererRpc.webHandler.onWebClientConnected = (client) => {
 rendererRpc.webHandler.onWebClientDisconnected = (client) => {
   const viewId = webViewIds.get(client);
   if (viewId == null) return;
-  for (const [paneId, owner] of paneOwners.entries()) {
-    if (owner === viewId) paneOwners.delete(paneId);
-  }
-  clientRegistry.detachRenderer(viewId);
+  releaseView(viewId);
 };
 
 const server = startFlmuxServer({
   rendererDir,
   shellModelRouter,
   localExtensions,
-  saveSession: sessionStore ? (snapshot) => sessionStore.save(snapshot) : undefined,
+  saveSession: desktopAuthority
+    ? (layouts) => desktopAuthority.persistSession(layouts)
+    : undefined,
   authorizer: webModeAuthorizer ?? undefined,
   rpcWebHandler: rendererRpc.webHandler
 });
 serverOrigin = server.origin;
+if (desktopAuthority) {
+  await desktopAuthority.start(server.origin);
+}
 if (webModeShellAuthority) {
   await webModeShellAuthority.start(server.origin);
 }
@@ -127,6 +180,7 @@ if (webModeAuthPaths) {
 }
 
 terminalService.subscribe((event: TerminalRuntimeEvent) => {
+  desktopAuthority?.applyTerminalEvent(event);
   webModeShellAuthority?.applyTerminalEvent(event);
   forwardTerminalEventToOwnedClient({
     event,
@@ -155,12 +209,7 @@ if (runtimeMode === "desktop") {
   clientRegistry.attachRenderer(win.webviewId, rendererRpc);
 
   win.on("close", () => {
-    for (const [paneId, viewId] of paneOwners.entries()) {
-      if (viewId === win.webviewId) {
-        paneOwners.delete(paneId);
-      }
-    }
-    clientRegistry.detachRenderer(win.webviewId);
+    releaseView(win.webviewId);
     stopRuntime();
   });
 } else {

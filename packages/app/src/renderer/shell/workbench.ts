@@ -844,6 +844,9 @@ export class FlmuxWorkbench implements ShellModelHost {
 
     this.sessionSaveTimer = setTimeout(() => {
       this.sessionSaveTimer = null;
+      if (!this.sessionPersistenceEnabled || this.sessionPersistenceSuppressed) {
+        return;
+      }
       void this.sessionHost.save(this.serializeSessionSnapshot()).catch((error) => {
         console.warn("failed to persist flmux session snapshot", error);
       });

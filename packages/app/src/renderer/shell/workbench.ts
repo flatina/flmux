@@ -499,7 +499,11 @@ export class FlmuxWorkbench implements ShellModelHost {
         browserPanelTemplate: this.browserPanelTemplate,
         terminalHost: this.terminalHost,
         normalizeBrowserUrl: (value) => this.normalizeBrowserUrl(value),
-        onBrowserUrlChange: (paneId, url) => this.handleBrowserUrlChange(workspace, paneId, url),
+        onBrowserUrlChange: (paneId, url) => {
+          void this.shellModel.pathSet(`/panes/${paneId}/browser/url`, url).catch((error) => {
+            console.warn(`failed to propagate browser url change for pane '${paneId}'`, error);
+          });
+        },
         onTerminalRuntimeStateChange: (paneId, state) => this.terminalCoordinator.applyRuntimeStateChange(paneId, state)
       }
     });
@@ -743,12 +747,6 @@ export class FlmuxWorkbench implements ShellModelHost {
     const activeId = this.getActiveWorkspaceId();
     const workspace = activeId ? this.workspaces.get(activeId) : null;
     document.title = workspace ? `${this.appTitle} / ${workspace.title}` : this.appTitle;
-  }
-
-  private handleBrowserUrlChange(_workspace: WorkspaceRecord, paneId: string, url: string) {
-    void this.shellModel.pathSet(`/panes/${paneId}/browser/url`, url).catch((error) => {
-      console.warn(`failed to propagate browser url change for pane '${paneId}'`, error);
-    });
   }
 
   private applyTerminalRuntimeStateChange(

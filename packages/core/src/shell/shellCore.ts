@@ -21,6 +21,8 @@ import type {
   AppStatusSnapshot,
   NewPaneInput,
   ScopedPropertyTarget,
+  SequencedShellCoreEvent,
+  ShellCoreEvent,
   ShellModelHost,
   ShellPaneRecordSnapshot,
   ShellResolvedPanePathMount,
@@ -56,12 +58,36 @@ export interface ShellCoreOptions {
 export class ShellCore implements ShellModelHost {
   private readonly workspaces = new Map<string, WorkspaceRecord>();
   private readonly paneWorkspaceIds = new Map<string, string>();
+  private readonly eventSubscribers = new Set<(event: SequencedShellCoreEvent) => void>();
   private appTitle = "flmux";
   private appOrigin: string;
   private activeWorkspaceId: string | null = null;
+  private seq = 0;
 
   constructor(private readonly options: ShellCoreOptions) {
     this.appOrigin = options.initialAppOrigin ?? "http://127.0.0.1:0";
+  }
+
+  /**
+   * Subscribe to mutation events. Returns an unsubscribe fn. Events carry
+   * a monotonic `seq`; consumers doing bootstrap + stream should filter by
+   * `seq > seqStart` where seqStart came from the bootstrap snapshot.
+   */
+  subscribe(handler: (event: SequencedShellCoreEvent) => void): () => void {
+    this.eventSubscribers.add(handler);
+    return () => this.eventSubscribers.delete(handler);
+  }
+
+  get currentSeq(): number {
+    return this.seq;
+  }
+
+  private emit(event: ShellCoreEvent) {
+    this.seq += 1;
+    const sequenced = { ...event, seq: this.seq } as SequencedShellCoreEvent;
+    for (const handler of this.eventSubscribers) {
+      handler(sequenced);
+    }
   }
 
   initialize() {
@@ -81,12 +107,23 @@ export class ShellCore implements ShellModelHost {
    * the logical records rebuilt with the restored ids.
    */
   restoreWorkspace(input: { id: string; title: string; defaultTitle?: string; setActive?: boolean }) {
+    const existed = this.workspaces.has(input.id);
     const workspace = this.createWorkspaceRecord(input.id, input.title);
     if (input.defaultTitle) {
       workspace.defaultTitle = input.defaultTitle;
     }
+    const previousActive = this.activeWorkspaceId;
     if (input.setActive || !this.activeWorkspaceId) {
       this.activeWorkspaceId = workspace.id;
+    }
+    if (!existed) {
+      this.emit({
+        topic: "workspace.added",
+        payload: { id: workspace.id, title: workspace.title, defaultTitle: workspace.defaultTitle }
+      });
+    }
+    if (previousActive !== this.activeWorkspaceId) {
+      this.emit({ topic: "workspace.activeChanged", payload: { id: this.activeWorkspaceId } });
     }
     return this.toWorkspaceStatus(workspace);
   }
@@ -173,6 +210,7 @@ export class ShellCore implements ShellModelHost {
     fallbackParams: Record<string, unknown> | undefined,
     title: string
   ) {
+    const previousActivePaneId = workspace.activePaneId;
     workspace.paneOrder.push(paneId);
     workspace.paneTitles.set(paneId, title);
     workspace.paneStates.set(paneId, record);
@@ -182,10 +220,31 @@ export class ShellCore implements ShellModelHost {
     );
     workspace.activePaneId = paneId;
     this.paneWorkspaceIds.set(paneId, workspace.id);
+    const snapshot = this.createPaneSnapshot(workspace, paneId, title);
+    this.emit({
+      topic: "pane.added",
+      payload: {
+        paneId,
+        workspaceId: workspace.id,
+        snapshot,
+        params: workspace.paneParams.get(paneId)
+      }
+    });
+    if (previousActivePaneId !== paneId) {
+      this.emit({
+        topic: "pane.activeChanged",
+        payload: { workspaceId: workspace.id, paneId }
+      });
+    }
   }
 
   setActiveWorkspace(workspaceId: string | null) {
-    this.activeWorkspaceId = workspaceId && this.workspaces.has(workspaceId) ? workspaceId : null;
+    const next = workspaceId && this.workspaces.has(workspaceId) ? workspaceId : null;
+    if (next === this.activeWorkspaceId) {
+      return;
+    }
+    this.activeWorkspaceId = next;
+    this.emit({ topic: "workspace.activeChanged", payload: { id: next } });
   }
 
   setActivePane(workspaceId: string, paneId: string | null) {
@@ -193,7 +252,11 @@ export class ShellCore implements ShellModelHost {
     if (paneId !== null && !workspace.paneStates.has(paneId)) {
       throw new Error(`Pane '${paneId}' not found in workspace '${workspaceId}'`);
     }
+    if (workspace.activePaneId === paneId) {
+      return;
+    }
     workspace.activePaneId = paneId;
+    this.emit({ topic: "pane.activeChanged", payload: { workspaceId, paneId } });
   }
 
   getActiveWorkspaceId(): string | null {
@@ -201,7 +264,11 @@ export class ShellCore implements ShellModelHost {
   }
 
   setAppTitle(title: string) {
+    if (this.appTitle === title) {
+      return;
+    }
     this.appTitle = title;
+    this.emit({ topic: "app.titleChanged", payload: { title } });
   }
 
   getAppTitle(): string {
@@ -226,8 +293,19 @@ export class ShellCore implements ShellModelHost {
       [...workspace.paneOrder].map((paneId) => this.closePane(paneId))
     );
     this.workspaces.delete(workspaceId);
-    if (this.activeWorkspaceId === workspaceId) {
-      this.activeWorkspaceId = this.workspaces.keys().next().value ?? null;
+    const wasActive = this.activeWorkspaceId === workspaceId;
+    const newActiveWorkspaceId = wasActive
+      ? (this.workspaces.keys().next().value ?? null)
+      : this.activeWorkspaceId;
+    if (wasActive) {
+      this.activeWorkspaceId = newActiveWorkspaceId;
+    }
+    this.emit({
+      topic: "workspace.removed",
+      payload: { id: workspaceId, newActiveWorkspaceId }
+    });
+    if (wasActive) {
+      this.emit({ topic: "workspace.activeChanged", payload: { id: newActiveWorkspaceId } });
     }
   }
 
@@ -404,8 +482,16 @@ export class ShellCore implements ShellModelHost {
 
   async createWorkspace(input: { title?: string } = {}): Promise<WorkspaceStatusSnapshot> {
     const descriptor = this.allocateWorkspaceDescriptor(input.title);
+    const previousActive = this.activeWorkspaceId;
     const workspace = this.createWorkspaceRecord(descriptor.id, descriptor.title);
     this.activeWorkspaceId = workspace.id;
+    this.emit({
+      topic: "workspace.added",
+      payload: { id: workspace.id, title: workspace.title, defaultTitle: workspace.defaultTitle }
+    });
+    if (previousActive !== this.activeWorkspaceId) {
+      this.emit({ topic: "workspace.activeChanged", payload: { id: this.activeWorkspaceId } });
+    }
     this.seedWorkspace(workspace);
     return this.toWorkspaceStatus(workspace);
   }
@@ -415,7 +501,13 @@ export class ShellCore implements ShellModelHost {
     for (const paneId of [...workspace.paneOrder]) {
       await this.closePane(paneId);
     }
-    workspace.title = workspace.defaultTitle;
+    if (workspace.title !== workspace.defaultTitle) {
+      workspace.title = workspace.defaultTitle;
+      this.emit({
+        topic: "workspace.titleChanged",
+        payload: { id: workspace.id, title: workspace.title }
+      });
+    }
     this.seedWorkspace(workspace);
     return this.toWorkspaceStatus(workspace);
   }
@@ -465,8 +557,22 @@ export class ShellCore implements ShellModelHost {
     workspace.paneTitles.delete(paneId);
     workspace.paneOrder = workspace.paneOrder.filter((candidate) => candidate !== paneId);
     this.paneWorkspaceIds.delete(paneId);
-    if (workspace.activePaneId === paneId) {
-      workspace.activePaneId = workspace.paneOrder.at(-1) ?? null;
+    const wasActive = workspace.activePaneId === paneId;
+    const newActivePaneId = wasActive ? (workspace.paneOrder.at(-1) ?? null) : workspace.activePaneId;
+    if (wasActive) {
+      workspace.activePaneId = newActivePaneId;
+    }
+    if (closed) {
+      this.emit({
+        topic: "pane.removed",
+        payload: { paneId, workspaceId: workspace.id, newActivePaneId }
+      });
+      if (wasActive) {
+        this.emit({
+          topic: "pane.activeChanged",
+          payload: { workspaceId: workspace.id, paneId: newActivePaneId }
+        });
+      }
     }
 
     return { paneId, closed };
@@ -479,13 +585,16 @@ export class ShellCore implements ShellModelHost {
 
     const nextValue = requiredString(value, `${target.scope} property '${key}'`);
     if (target.scope === "app") {
-      this.appTitle = nextValue;
+      this.setAppTitle(nextValue);
       return { value: nextValue };
     }
 
     if (target.scope === "workspace") {
       const workspace = target.workspaceId ? this.requireWorkspace(target.workspaceId) : this.requireCurrentWorkspace();
-      workspace.title = nextValue;
+      if (workspace.title !== nextValue) {
+        workspace.title = nextValue;
+        this.emit({ topic: "workspace.titleChanged", payload: { id: workspace.id, title: nextValue } });
+      }
       return { value: nextValue };
     }
 
@@ -493,7 +602,13 @@ export class ShellCore implements ShellModelHost {
     if (!workspace) {
       throw new Error(`Pane '${target.paneId}' not found`);
     }
-    workspace.paneTitles.set(target.paneId, nextValue);
+    if (workspace.paneTitles.get(target.paneId) !== nextValue) {
+      workspace.paneTitles.set(target.paneId, nextValue);
+      this.emit({
+        topic: "pane.titleChanged",
+        payload: { paneId: target.paneId, workspaceId: workspace.id, title: nextValue }
+      });
+    }
     return { value: nextValue };
   }
 
@@ -538,14 +653,20 @@ export class ShellCore implements ShellModelHost {
     const { workspace, record } = this.lookupPane(paneId);
     const cloned = cloneJsonObject(nextParams) ?? {};
 
+    let stored: Record<string, unknown>;
     if (isTerminalPaneStateRecord(record) && typeof cloned.cwd === "string") {
       record.cwd = resolveTerminalCwdFromRoot(this.options.projectDir, cloned.cwd);
-      workspace.paneParams.set(paneId, { cwd: record.cwd });
-      return { cwd: record.cwd };
+      stored = { cwd: record.cwd };
+    } else {
+      stored = cloned;
     }
-
-    workspace.paneParams.set(paneId, cloned);
-    return cloned;
+    workspace.paneParams.set(paneId, stored);
+    const snapshot = this.createPaneSnapshot(workspace, paneId);
+    this.emit({
+      topic: "pane.paramsChanged",
+      payload: { paneId, workspaceId: workspace.id, params: stored, snapshot }
+    });
+    return stored;
   }
 
   async patchPaneParams(paneId: string, patch: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -802,14 +923,26 @@ export class ShellCore implements ShellModelHost {
       normalizedParams.cwd = record.cwd;
     }
 
+    const storedParams = Object.keys(normalizedParams).length > 0 ? normalizedParams : params;
+    const previousActivePaneId = workspace.activePaneId;
     workspace.paneOrder.push(paneId);
     workspace.paneTitles.set(paneId, title);
     workspace.paneStates.set(paneId, record);
-    workspace.paneParams.set(paneId, Object.keys(normalizedParams).length > 0 ? normalizedParams : params);
+    workspace.paneParams.set(paneId, storedParams);
     workspace.activePaneId = paneId;
     this.paneWorkspaceIds.set(paneId, workspace.id);
-
-    return this.createPaneSnapshot(workspace, paneId, title);
+    const snapshot = this.createPaneSnapshot(workspace, paneId, title);
+    this.emit({
+      topic: "pane.added",
+      payload: { paneId, workspaceId: workspace.id, snapshot, params: storedParams }
+    });
+    if (previousActivePaneId !== paneId) {
+      this.emit({
+        topic: "pane.activeChanged",
+        payload: { workspaceId: workspace.id, paneId }
+      });
+    }
+    return snapshot;
   }
 }
 

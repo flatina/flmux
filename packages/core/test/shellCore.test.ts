@@ -443,6 +443,90 @@ describe("ShellCore", () => {
     });
   });
 
+  it("emitter subscribes, fires on mutation, and unsubscribes", async () => {
+    const { core } = buildShellCore();
+    const events: Array<{ seq: number; topic: string }> = [];
+    const unsubscribe = core.subscribe((event) => {
+      events.push({ seq: event.seq, topic: event.topic });
+    });
+
+    await core.setScopedProperty({ scope: "app" }, "title", "flmux-test");
+    expect(events.map((e) => e.topic)).toEqual(["app.titleChanged"]);
+    expect(events[0]!.seq).toBeGreaterThan(0);
+
+    unsubscribe();
+    await core.setScopedProperty({ scope: "app" }, "title", "flmux-ignored");
+    expect(events).toHaveLength(1);
+  });
+
+  it("emitter seq numbers are monotonic", async () => {
+    const { core } = buildShellCore();
+    const seqs: number[] = [];
+    core.subscribe((event) => {
+      seqs.push(event.seq);
+    });
+    await core.createWorkspace({ title: "Second" });
+    await core.closePane((await core.listPanes())[0]!.id);
+    for (let i = 1; i < seqs.length; i++) {
+      expect(seqs[i]).toBeGreaterThan(seqs[i - 1]!);
+    }
+  });
+
+  it("emit suppresses no-op mutations (same value)", async () => {
+    const { core } = buildShellCore();
+    const events: string[] = [];
+    core.subscribe((event) => events.push(event.topic));
+
+    await core.setScopedProperty({ scope: "app" }, "title", "flmux-once");
+    await core.setScopedProperty({ scope: "app" }, "title", "flmux-once");
+    expect(events.filter((t) => t === "app.titleChanged")).toHaveLength(1);
+
+    core.setActiveWorkspace("workspace.1");
+    expect(events.filter((t) => t === "workspace.activeChanged")).toHaveLength(0);
+  });
+
+  it("pane.removed payload includes newActivePaneId when closing active pane", async () => {
+    const { core } = buildShellCore();
+    const second = await core.createPane({ kind: "browser", url: "/s" });
+    const first = (await core.listPanes()).find((p) => p.id !== second.id)!;
+
+    const captured: Array<{ topic: string; payload: any }> = [];
+    core.subscribe((event) => captured.push({ topic: event.topic, payload: event.payload }));
+
+    await core.closePane(second.id);
+    const removed = captured.find((e) => e.topic === "pane.removed")!;
+    expect(removed.payload).toMatchObject({ paneId: second.id, newActivePaneId: first.id });
+  });
+
+  it("terminal.applyTerminalEvent does not emit shellCore.event topics", async () => {
+    const { core } = buildShellCore();
+    const pane = await core.createPane({ kind: "terminal", cwd: "." });
+    const delegate = core.createTerminalDelegate();
+    await delegate.attachRuntime(pane.id, { cwd: "." });
+
+    const events: string[] = [];
+    core.subscribe((event) => events.push(event.topic));
+
+    core.applyTerminalEvent({
+      type: "state",
+      paneId: pane.id,
+      terminal: {
+        rootKey: "root_test",
+        runtimeId: "rt_1",
+        ownerPaneId: pane.id,
+        cwd: "/other",
+        alive: true,
+        commandCount: 1,
+        createdAt: "2026-04-18T00:00:00Z",
+        updatedAt: "2026-04-18T00:00:00Z"
+      }
+    });
+    core.applyTerminalEvent({ type: "output", paneId: pane.id, data: "hello" });
+    core.applyTerminalEvent({ type: "removed", paneId: pane.id });
+
+    expect(events).toEqual([]);
+  });
+
   it("substitutes placeholder when a pane spec's lifecycle/persistence hook throws", async () => {
     const hostileSpec: PaneSpec = {
       kind: "hostile",

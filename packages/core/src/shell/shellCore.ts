@@ -213,43 +213,28 @@ export class ShellCore implements ShellModelHost {
   }
 
   /**
-   * Drop a workspace and every pane record owned by it (including
-   * paneWorkspaceIds entries). Kills any attached terminal runtimes first so
-   * the install-scoped ptyd daemon doesn't leak runtimes owned by the closed
-   * workspace's panes. No last-workspace invariant enforced — the caller owns
-   * re-seeding. After this returns, `closePane(ghostId)` for any previously-
-   * owned paneId is a safe `{closed: false}` no-op.
+   * Drop a workspace. Uses `closePane` per pane so terminal runtimes are
+   * killed through the single existing cleanup path; no last-workspace
+   * invariant is enforced (the caller owns re-seeding).
    */
   async deleteWorkspace(workspaceId: string): Promise<void> {
     const workspace = this.workspaces.get(workspaceId);
     if (!workspace) {
       return;
     }
-    for (const paneId of [...workspace.paneOrder]) {
-      const record = workspace.paneStates.get(paneId);
-      if (record && isTerminalPaneStateRecord(record) && record.rootKey && record.runtimeId) {
-        try {
-          await this.options.terminalBackend.kill({
-            rootKey: record.rootKey,
-            runtimeId: record.runtimeId
-          });
-        } catch {
-          // Best-effort; even if the kill fails we still drop core state.
-        }
-      }
-      this.paneWorkspaceIds.delete(paneId);
-    }
+    await Promise.all(
+      [...workspace.paneOrder].map((paneId) => this.closePane(paneId))
+    );
     this.workspaces.delete(workspaceId);
     if (this.activeWorkspaceId === workspaceId) {
       this.activeWorkspaceId = this.workspaces.keys().next().value ?? null;
     }
   }
 
-  /** Drop every workspace + pane record. Fallback for outer-layout restore failure. */
   async clearAll(): Promise<void> {
-    for (const workspaceId of [...this.workspaces.keys()]) {
-      await this.deleteWorkspace(workspaceId);
-    }
+    await Promise.all(
+      [...this.workspaces.keys()].map((workspaceId) => this.deleteWorkspace(workspaceId))
+    );
   }
 
   /**

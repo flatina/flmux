@@ -59,7 +59,6 @@ export class FlmuxWorkbench implements ShellModelHost {
   private readonly browserPanelTemplate = document.getElementById("browser-panel-tpl") as HTMLTemplateElement;
   private readonly sessionHost: ReturnType<typeof createSessionHost>;
   private readonly terminalHost: ReturnType<typeof createTerminalHost>;
-  private readonly terminalUnsubscribe: () => void;
   private readonly shellCore: ShellCore;
   private readonly paneRegistry = new PaneRegistry();
 
@@ -88,9 +87,11 @@ export class FlmuxWorkbench implements ShellModelHost {
       terminalBackend: this.terminalHost,
       initialAppOrigin: config.appOrigin
     });
-    this.terminalUnsubscribe = this.terminalHost.subscribe((event) => {
+    this.terminalHost.subscribe((event) => {
       this.shellCore.applyTerminalEvent(event);
-      this.scheduleSessionSave();
+      if (event.type === "state" || event.type === "removed") {
+        this.scheduleSessionSave();
+      }
     });
     this.shellModel = createShellModel({
       host: this,
@@ -204,10 +205,11 @@ export class FlmuxWorkbench implements ShellModelHost {
           this.updateDocumentTitle();
           break;
         case "workspace": {
-          const wsId = target.workspaceId ?? this.shellCore.getActiveWorkspaceId();
+          const activeId = this.shellCore.getActiveWorkspaceId();
+          const wsId = target.workspaceId ?? activeId;
           if (wsId) {
             this.workspaces.get(wsId)?.outerPanelApi?.setTitle(title);
-            if (wsId === this.shellCore.getActiveWorkspaceId()) {
+            if (wsId === activeId) {
               this.updateDocumentTitle();
             }
           }
@@ -374,7 +376,9 @@ export class FlmuxWorkbench implements ShellModelHost {
         this.disposingWorkspace.add(record.id);
         try {
           innerApi.clear();
-        } catch {}
+        } catch (clearError) {
+          console.warn(`inner-layout clear failed for '${record.id}'`, clearError);
+        }
         this.reseedWorkspaceAfterInnerFailure(record).catch((err) => {
           console.warn(`inner-layout fallback reseed failed for '${record.id}'`, err);
         }).finally(() => {
@@ -536,10 +540,7 @@ export class FlmuxWorkbench implements ShellModelHost {
       this.scheduleSessionSave();
     });
     api.onDidRemovePanel((panel) => {
-      if (this.closingFromCore.has(panel.id)) {
-        return;
-      }
-      if (this.disposingWorkspace.has(record.id)) {
+      if (this.closingFromCore.has(panel.id) || this.disposingWorkspace.has(record.id)) {
         return;
       }
       void this.shellCore.closePane(panel.id).catch((error) => {
@@ -611,13 +612,11 @@ export class FlmuxWorkbench implements ShellModelHost {
   }
 
   private findPanelByPaneId(paneId: string) {
-    for (const record of this.workspaces.values()) {
-      const panel = record.innerApi?.getPanel(paneId);
-      if (panel) {
-        return panel;
-      }
+    const wsId = this.shellCore.getPaneWorkspaceId(paneId);
+    if (!wsId) {
+      return null;
     }
-    return null;
+    return this.workspaces.get(wsId)?.innerApi?.getPanel(paneId) ?? null;
   }
 
   private requireWorkspace(workspaceId: string): WorkspaceRecord {
@@ -747,11 +746,6 @@ export class FlmuxWorkbench implements ShellModelHost {
   }
 
   private async reseedWorkspaceAfterInnerFailure(record: WorkspaceRecord) {
-    // Inner fromJSON threw. Drop the core records for this workspace, re-seed
-    // fresh defaults (same id), and mount them. Outer layout is preserved.
-    await this.shellCore.deleteWorkspace(record.id);
-    const title = defaultWorkspaceTitle(record.id);
-    this.shellCore.restoreWorkspace({ id: record.id, title, defaultTitle: title });
     const status = await this.shellCore.resetWorkspace(record.id);
     record.outerPanelApi?.setTitle(status.title);
     this.mountWorkspacePanes(record);

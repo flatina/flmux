@@ -1,30 +1,21 @@
-import type { CreateComponentOptions, IDockviewPanel, IContentRenderer } from "dockview-core";
+import type { CreateComponentOptions, IContentRenderer } from "dockview-core";
 import type {
-  BrowserPaneStateRecord,
-  GenericPaneStateRecord,
   PaneLifecycleHooks,
   PanePathMount,
   PanePathMountContext,
   PanePersistenceHooks,
-  PaneSubtreeMount,
   PaneSpec,
   PaneStateRecord,
-  PaneWorkspaceContext,
-  TerminalPaneStateRecord
+  PaneSubtreeMount,
+  PaneWorkspaceContext
 } from "@flmux/core/shell";
 import {
   PaneRegistry as CorePaneRegistry,
-  createPaneSnapshot as createCorePaneSnapshot,
-  createPaneStateRecord,
   isBrowserPaneStateRecord,
-  isTerminalPaneStateRecord,
-  normalizeRestoredPaneParams as normalizeCoreRestoredPaneParams,
-  resolvePaneCreateParams as resolveCorePaneCreateParams,
-  resolvePaneTitle as resolveCorePaneTitle,
-  serializePaneParams as serializeCorePaneParams
+  isTerminalPaneStateRecord
 } from "@flmux/core/shell";
 import type { TerminalHostAPI } from "../terminalHost";
-import type { NewPaneInput, ShellModelAPI } from "./types";
+import type { ShellModelAPI } from "./types";
 
 export type {
   PaneWorkspaceContext,
@@ -34,13 +25,6 @@ export type {
   PanePathMount,
   PaneSubtreeMount
 };
-
-export type PaneRecordOf<TStateRecord extends PaneStateRecord = PaneStateRecord> = TStateRecord & { panel: IDockviewPanel };
-
-export type BrowserPaneRecord = PaneRecordOf<BrowserPaneStateRecord>;
-export type TerminalPaneRecord = PaneRecordOf<TerminalPaneStateRecord>;
-export type GenericPaneRecord = PaneRecordOf<GenericPaneStateRecord>;
-export type PaneRecord = BrowserPaneRecord | TerminalPaneRecord | GenericPaneRecord;
 
 export interface PaneRendererRuntimeContext {
   shellModel: ShellModelAPI;
@@ -60,99 +44,5 @@ export interface PaneDescriptor<TStateRecord extends PaneStateRecord = PaneState
 
 export class PaneRegistry extends CorePaneRegistry<PaneDescriptor> {}
 
-export function isBrowserPaneRecord(record: PaneStateRecord): record is BrowserPaneStateRecord {
-  return isBrowserPaneStateRecord(record);
-}
-
-export function isTerminalPaneRecord(record: PaneStateRecord): record is TerminalPaneStateRecord {
-  return isTerminalPaneStateRecord(record);
-}
-
-export function resolvePaneCreateParams<TStateRecord extends PaneStateRecord>(options: {
-  descriptor: PaneDescriptor<TStateRecord>;
-  workspace: PaneWorkspaceContext;
-  input: NewPaneInput;
-  fallbackParams: Record<string, unknown> | undefined;
-}): Record<string, unknown> | undefined {
-  return resolveCorePaneCreateParams({
-    spec: options.descriptor,
-    workspace: options.workspace,
-    input: options.input,
-    fallbackParams: options.fallbackParams
-  });
-}
-
-export function resolvePaneTitle<TStateRecord extends PaneStateRecord>(options: {
-  descriptor: PaneDescriptor<TStateRecord>;
-  workspace: PaneWorkspaceContext;
-  input: NewPaneInput;
-  params: Record<string, unknown> | undefined;
-  fallbackTitle: string;
-}): string {
-  return resolveCorePaneTitle({
-    spec: options.descriptor,
-    workspace: options.workspace,
-    input: options.input,
-    params: options.params,
-    fallbackTitle: options.fallbackTitle
-  });
-}
-
-export function createPaneRecord<TStateRecord extends PaneStateRecord>(options: {
-  descriptor: PaneDescriptor<TStateRecord>;
-  workspace: PaneWorkspaceContext;
-  panel: IDockviewPanel;
-  params: Record<string, unknown> | undefined;
-}): PaneRecordOf<TStateRecord> {
-  const state = createPaneStateRecord({
-    spec: options.descriptor,
-    workspace: options.workspace,
-    params: options.params
-  });
-  return {
-    ...state,
-    panel: options.panel
-  };
-}
-
-export function createPaneSnapshot<TStateRecord extends PaneStateRecord>(options: {
-  descriptor: PaneDescriptor<TStateRecord>;
-  paneId: string;
-  title: string;
-  active: boolean;
-  record: PaneRecordOf<TStateRecord>;
-}) {
-  return createCorePaneSnapshot({
-    spec: options.descriptor,
-    paneId: options.paneId,
-    title: options.title,
-    active: options.active,
-    record: options.record
-  });
-}
-
-export function normalizeRestoredPaneParams<TStateRecord extends PaneStateRecord>(options: {
-  descriptor: PaneDescriptor<TStateRecord>;
-  workspace: PaneWorkspaceContext;
-  params: Record<string, unknown> | undefined;
-}): Record<string, unknown> | undefined {
-  return normalizeCoreRestoredPaneParams({
-    spec: options.descriptor,
-    workspace: options.workspace,
-    params: options.params
-  });
-}
-
-export function serializePaneParams<TStateRecord extends PaneStateRecord>(options: {
-  descriptor: PaneDescriptor<TStateRecord>;
-  workspace: PaneWorkspaceContext;
-  record: PaneRecordOf<TStateRecord>;
-  currentParams: Record<string, unknown> | undefined;
-}): Record<string, unknown> | undefined {
-  return serializeCorePaneParams({
-    spec: options.descriptor,
-    workspace: options.workspace,
-    record: options.record,
-    currentParams: options.currentParams
-  });
-}
+export const isBrowserPaneRecord = isBrowserPaneStateRecord;
+export const isTerminalPaneRecord = isTerminalPaneStateRecord;

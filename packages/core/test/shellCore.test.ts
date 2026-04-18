@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   PaneRegistry,
   ShellCore,
+  createPlaceholderPaneSpec,
   createShellModel,
   isBrowserPaneStateRecord,
   isTerminalPaneStateRecord,
@@ -62,6 +63,7 @@ function recordingTerminalBackend(): RecordingBackend {
 
 function buildShellCore(extraSpecs: PaneSpec[] = []) {
   const paneRegistry = new PaneRegistry<PaneSpec>();
+  paneRegistry.register(createPlaceholderPaneSpec());
   for (const spec of [...builtinSpecs(), ...extraSpecs]) {
     paneRegistry.register(spec);
   }
@@ -333,6 +335,43 @@ describe("ShellCore", () => {
     const paneInSecond = await core.createPane({ kind: "browser", url: "/x" });
     expect(core.getPaneWorkspaceId(paneInSecond.id)).toBe(extra.id);
     expect(core.getPaneWorkspaceId("pane_missing")).toBeUndefined();
+  });
+
+  it("substitutes placeholder when restorePane sees an unknown kind", async () => {
+    const { core } = buildShellCore();
+    const snapshot = core.restorePane("workspace.1", {
+      paneId: "pane_ghost",
+      kind: "unknown-kind",
+      params: { seed: 42 },
+      title: "Ghost"
+    });
+    expect(snapshot.id).toBe("pane_ghost");
+    expect(snapshot.kind).toBe("placeholder");
+    expect(snapshot.title).toBe("Missing: unknown-kind");
+
+    const params = await core.getPaneParams("pane_ghost");
+    expect(params).toEqual({ originalKind: "unknown-kind", error: expect.stringContaining("unknown-kind") });
+  });
+
+  it("substitutes placeholder when a pane spec's lifecycle/persistence hook throws", async () => {
+    const hostileSpec: PaneSpec = {
+      kind: "hostile",
+      persistence: {
+        normalizeRestoredParams: () => {
+          throw new Error("boom");
+        }
+      }
+    };
+    const { core } = buildShellCore([hostileSpec]);
+
+    const snapshot = core.restorePane("workspace.1", {
+      paneId: "pane_hostile",
+      kind: "hostile",
+      params: { seed: 42 }
+    });
+    expect(snapshot.kind).toBe("placeholder");
+    const params = await core.getPaneParams("pane_hostile");
+    expect(params).toEqual({ originalKind: "hostile", error: "boom" });
   });
 });
 

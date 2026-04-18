@@ -93,6 +93,17 @@ export interface PaneSpecRegistry {
   list(): readonly PaneSpec[];
 }
 
+export const PLACEHOLDER_PANE_KIND = "placeholder";
+
+/**
+ * Substituted into workspaces when a pane's original kind is unavailable at
+ * restore time (missing extension, normalize/create hook throws). Callers are
+ * expected to register it before handing ShellCore a registry.
+ */
+export function createPlaceholderPaneSpec(): PaneSpec {
+  return { kind: PLACEHOLDER_PANE_KIND };
+}
+
 export class PaneRegistry<TDescriptor extends {
   kind: string;
   pathMount?: { mountKey: string } | undefined;

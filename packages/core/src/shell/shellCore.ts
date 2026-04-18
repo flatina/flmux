@@ -2,6 +2,7 @@ import type { TerminalBackend } from "../terminal/backend";
 import type { TerminalRuntimeEvent } from "../terminal/terminal";
 import { resolveTerminalCwdFromRoot } from "../terminal/terminalPath";
 import {
+  PLACEHOLDER_PANE_KIND,
   createPaneSnapshot as createPaneSnapshotHelper,
   createPaneStateRecord,
   isTerminalPaneStateRecord,
@@ -92,13 +93,26 @@ export class ShellCore implements ShellModelHost {
   /**
    * Rebuild a pane state record with an explicit paneId (skipping the usual
    * UUID generation). Used during session restore to match ids already
-   * materialized in the view layer.
+   * materialized in the view layer. Unknown kinds and lifecycle/persistence
+   * throws are caught and substituted with the "placeholder" kind so a single
+   * bad pane cannot abort the whole workspace restore.
    */
   restorePane(
     workspaceId: string,
     input: { paneId: string; kind: string; params?: Record<string, unknown>; title?: string }
   ): ShellPaneRecordSnapshot {
     const workspace = this.requireWorkspace(workspaceId);
+    try {
+      return this.restorePaneWithSpec(workspace, input);
+    } catch (err) {
+      return this.restorePaneAsPlaceholder(workspace, input, err);
+    }
+  }
+
+  private restorePaneWithSpec(
+    workspace: WorkspaceRecord,
+    input: { paneId: string; kind: string; params?: Record<string, unknown>; title?: string }
+  ): ShellPaneRecordSnapshot {
     const spec = this.options.paneRegistry.get(input.kind);
     if (!spec) {
       throw new Error(`Unknown pane kind '${input.kind}'`);
@@ -120,15 +134,53 @@ export class ShellCore implements ShellModelHost {
     }
 
     const title = input.title?.trim() || humanizePaneKind(input.kind);
-
-    workspace.paneOrder.push(input.paneId);
-    workspace.paneTitles.set(input.paneId, title);
-    workspace.paneStates.set(input.paneId, record);
-    workspace.paneParams.set(input.paneId, Object.keys(normalizedParams).length > 0 ? normalizedParams : params);
-    workspace.activePaneId = input.paneId;
-    this.paneWorkspaceIds.set(input.paneId, workspace.id);
-
+    this.commitRestoredPane(workspace, input.paneId, record, normalizedParams, params, title);
     return this.createPaneSnapshot(workspace, input.paneId, title);
+  }
+
+  private restorePaneAsPlaceholder(
+    workspace: WorkspaceRecord,
+    input: { paneId: string; kind: string; params?: Record<string, unknown>; title?: string },
+    cause: unknown
+  ): ShellPaneRecordSnapshot {
+    const placeholderSpec = this.options.paneRegistry.get(PLACEHOLDER_PANE_KIND);
+    if (!placeholderSpec) {
+      throw new Error(
+        `Cannot substitute placeholder — pane kind '${PLACEHOLDER_PANE_KIND}' is not registered`
+      );
+    }
+    const params: Record<string, unknown> = {
+      originalKind: input.kind,
+      error: cause instanceof Error ? cause.message : String(cause)
+    };
+    const workspaceContext = this.toWorkspaceContext(workspace);
+    const record = createPaneStateRecord({
+      spec: placeholderSpec,
+      workspace: workspaceContext,
+      params
+    });
+    const title = `Missing: ${input.kind}`;
+    this.commitRestoredPane(workspace, input.paneId, record, params, params, title);
+    return this.createPaneSnapshot(workspace, input.paneId, title);
+  }
+
+  private commitRestoredPane(
+    workspace: WorkspaceRecord,
+    paneId: string,
+    record: PaneStateRecord,
+    normalizedParams: Record<string, unknown>,
+    fallbackParams: Record<string, unknown> | undefined,
+    title: string
+  ) {
+    workspace.paneOrder.push(paneId);
+    workspace.paneTitles.set(paneId, title);
+    workspace.paneStates.set(paneId, record);
+    workspace.paneParams.set(
+      paneId,
+      Object.keys(normalizedParams).length > 0 ? normalizedParams : fallbackParams
+    );
+    workspace.activePaneId = paneId;
+    this.paneWorkspaceIds.set(paneId, workspace.id);
   }
 
   setActiveWorkspace(workspaceId: string | null) {

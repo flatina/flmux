@@ -1,4 +1,6 @@
+import { PLACEHOLDER_PANE_KIND } from "@flmux/core/shell";
 import { BrowserPaneRenderer } from "../panes/browserPane";
+import { PlaceholderPaneRenderer } from "../panes/placeholderPane";
 import { TerminalPaneRenderer } from "../panes/terminalPane";
 import {
   type PaneDescriptor,
@@ -182,6 +184,10 @@ function createBuiltinPaneDescriptors(
             ? { cwd: record.cwd }
             : undefined
       }
+    },
+    {
+      kind: PLACEHOLDER_PANE_KIND,
+      createRenderer: () => new PlaceholderPaneRenderer()
     }
   ];
 }

@@ -1,6 +1,7 @@
 import {
   PaneRegistry,
   ShellCore,
+  createPlaceholderPaneSpec,
   createShellModel,
   isBrowserPaneStateRecord,
   isTerminalPaneStateRecord,
@@ -47,6 +48,7 @@ export async function createWebModeShellAuthority(options: {
   extensionModuleImporter?: ExtensionModuleImporter;
 }): Promise<WebModeShellAuthority> {
   const paneRegistry = new PaneRegistry<PaneSpec>();
+  paneRegistry.register(createPlaceholderPaneSpec());
   for (const spec of createBuiltinPaneSpecs(options.projectDir)) {
     paneRegistry.register(spec);
   }

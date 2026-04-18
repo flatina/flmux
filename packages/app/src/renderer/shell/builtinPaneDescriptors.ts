@@ -41,8 +41,7 @@ function createBuiltinPaneDescriptors(
       createRenderer: ({ runtime }) =>
         new TerminalPaneRenderer({
           shellModel: runtime.shellModel,
-          terminalEvents: runtime.terminalHost,
-          onRuntimeStateChange: runtime.onTerminalRuntimeStateChange
+          terminalEvents: runtime.terminalHost
         }),
       lifecycle: {
         createParams: ({ input }) => ({

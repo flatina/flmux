@@ -353,6 +353,96 @@ describe("ShellCore", () => {
     expect(params).toEqual({ originalKind: "unknown-kind", error: expect.stringContaining("unknown-kind") });
   });
 
+  it("deleteWorkspace drops pane records, paneWorkspaceIds, and kills attached terminals", async () => {
+    const { core, backend } = buildShellCore();
+    const second = await core.createWorkspace({ title: "Second" });
+    const termPane = await core.createPane({ kind: "terminal", cwd: "." });
+    const delegate = core.createTerminalDelegate();
+    await delegate.attachRuntime(termPane.id, { cwd: "." });
+    const browserPane = await core.createPane({ kind: "browser", url: "/x" });
+
+    await core.deleteWorkspace(second.id);
+
+    expect(backend.killCalls).toEqual([{ rootKey: "root_test", runtimeId: "rt_1" }]);
+    expect(core.getWorkspaceIds()).toEqual(["workspace.1"]);
+    expect(core.getPaneWorkspaceId(termPane.id)).toBeUndefined();
+    expect(core.getPaneWorkspaceId(browserPane.id)).toBeUndefined();
+    expect(await core.closePane(termPane.id)).toEqual({ paneId: termPane.id, closed: false });
+    expect(core.getActiveWorkspaceId()).toBe("workspace.1");
+  });
+
+  it("deleteWorkspace on an unknown id is a no-op", async () => {
+    const { core } = buildShellCore();
+    await core.deleteWorkspace("workspace.ghost");
+    expect(core.getWorkspaceIds()).toEqual(["workspace.1"]);
+  });
+
+  it("clearAll wipes every workspace and pane record and resets active pointer", async () => {
+    const { core } = buildShellCore();
+    await core.createWorkspace({ title: "Second" });
+    await core.createPane({ kind: "browser", url: "/x" });
+
+    await core.clearAll();
+
+    expect(core.getWorkspaceIds()).toEqual([]);
+    expect(core.getActiveWorkspaceId()).toBeNull();
+  });
+
+  it("listPanesByWorkspace is workspace-scoped and safe for inactive workspaces", async () => {
+    const { core } = buildShellCore();
+    const second = await core.createWorkspace({ title: "Second" });
+    const newPane = await core.createPane({ kind: "browser", url: "/extra" });
+    core.setActiveWorkspace("workspace.1");
+
+    const firstPanes = core.listPanesByWorkspace("workspace.1");
+    const secondPanes = core.listPanesByWorkspace(second.id);
+
+    expect(firstPanes.map((pane) => pane.kind)).toEqual(["browser"]);
+    expect(secondPanes.map((pane) => pane.id)).toContain(newPane.id);
+  });
+
+  it("setActiveWorkspace noops on unknown id (no throw)", async () => {
+    const { core } = buildShellCore();
+    core.setActiveWorkspace("workspace.ghost");
+    expect(core.getActiveWorkspaceId()).toBeNull();
+    core.setActiveWorkspace("workspace.1");
+    expect(core.getActiveWorkspaceId()).toBe("workspace.1");
+  });
+
+  it("serializePaneParams runs the pane spec's persistence hook", async () => {
+    const loudSpec: PaneSpec = {
+      kind: "loud",
+      persistence: {
+        serializeParams: ({ currentParams }) => ({
+          note: String(currentParams?.note ?? "").toUpperCase()
+        })
+      }
+    };
+    const { core } = buildShellCore([loudSpec]);
+    const pane = await core.createPane({ kind: "loud", params: { note: "hello" } });
+    expect(core.serializePaneParams(pane.id)).toEqual({ note: "HELLO" });
+  });
+
+  it("peekPaneParams returns a clone of the stored params (sync)", async () => {
+    const { core } = buildShellCore();
+    const pane = await core.createPane({ kind: "browser", url: "/pristine" });
+    const params = core.peekPaneParams(pane.id);
+    expect(params).toEqual({ url: `${ORIGIN}/pristine` });
+    params!.url = "mutated";
+    expect(core.peekPaneParams(pane.id)).toEqual({ url: `${ORIGIN}/pristine` });
+  });
+
+  it("getWorkspaceSnapshot returns defaultTitle for saves", async () => {
+    const { core } = buildShellCore();
+    await core.setScopedProperty({ scope: "workspace" }, "title", "Custom Label");
+    const snapshot = core.getWorkspaceSnapshot("workspace.1");
+    expect(snapshot).toMatchObject({
+      id: "workspace.1",
+      title: "Custom Label",
+      defaultTitle: "Workspace 1"
+    });
+  });
+
   it("substitutes placeholder when a pane spec's lifecycle/persistence hook throws", async () => {
     const hostileSpec: PaneSpec = {
       kind: "hostile",

@@ -6,17 +6,12 @@ import type { ShellModelAPI } from "../shell/types";
 import type {
   TerminalCreateResult,
   TerminalRuntimeEvent,
-  TerminalRuntimeSummary,
   TerminalWriteResult
 } from "../../shared/terminal";
 
 export interface TerminalPaneRendererDependencies {
   shellModel: ShellModelAPI;
   terminalEvents: Pick<TerminalHostAPI, "subscribe">;
-  onRuntimeStateChange(
-    paneId: string,
-    state: { cwd: string; rootKey: string | null; runtimeId: string | null; summary: TerminalRuntimeSummary | null }
-  ): void;
 }
 
 type TerminalPaneParams = {
@@ -206,12 +201,6 @@ export class TerminalPaneRenderer implements IContentRenderer {
     this.cwd = result.terminal.cwd;
     this.history = clampHistory(result.history);
     this.lastResizeSignature = null;
-    this.deps.onRuntimeStateChange(this.paneId, {
-      cwd: this.cwd,
-      rootKey: this.rootKey,
-      runtimeId: this.runtimeId,
-      summary: result.terminal
-    });
     this.replaceTerminalBuffer();
   }
 
@@ -256,12 +245,6 @@ export class TerminalPaneRenderer implements IContentRenderer {
       this.rootKey = event.terminal.rootKey;
       this.runtimeId = event.terminal.runtimeId;
       this.cwd = event.terminal.cwd;
-      this.deps.onRuntimeStateChange(this.paneId, {
-        cwd: this.cwd,
-        rootKey: this.rootKey,
-        runtimeId: this.runtimeId,
-        summary: event.terminal
-      });
       this.fitTerminal();
       return;
     }
@@ -270,12 +253,6 @@ export class TerminalPaneRenderer implements IContentRenderer {
       this.rootKey = null;
       this.runtimeId = null;
       this.lastResizeSignature = null;
-      this.deps.onRuntimeStateChange(this.paneId, {
-        cwd: this.cwd,
-        rootKey: null,
-        runtimeId: null,
-        summary: null
-      });
       this.writeSystemLine("terminal detached");
     }
   }

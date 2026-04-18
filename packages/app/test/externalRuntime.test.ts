@@ -69,7 +69,6 @@ describe("external pane runtime", () => {
         terminalHost: null as never,
         normalizeBrowserUrl: () => null,
         onBrowserUrlChange() {},
-        onTerminalRuntimeStateChange() {}
       } satisfies PaneRendererRuntimeContext
     });
     renderer.init?.({
@@ -185,7 +184,6 @@ describe("external pane runtime", () => {
         terminalHost: null as never,
         normalizeBrowserUrl: () => null,
         onBrowserUrlChange() {},
-        onTerminalRuntimeStateChange() {}
       }
     });
 
@@ -323,7 +321,6 @@ describe("external pane runtime", () => {
         terminalHost: null as never,
         normalizeBrowserUrl: () => null,
         onBrowserUrlChange() {},
-        onTerminalRuntimeStateChange() {}
       }
     });
     renderer.init?.({

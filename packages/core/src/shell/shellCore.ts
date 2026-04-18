@@ -8,6 +8,7 @@ import {
   isTerminalPaneStateRecord,
   resolvePaneCreateParams,
   resolvePaneTitle,
+  serializePaneParams as serializePaneParamsHelper,
   type PanePathMount,
   type PanePathMountContext,
   type PaneSpec,
@@ -184,12 +185,7 @@ export class ShellCore implements ShellModelHost {
   }
 
   setActiveWorkspace(workspaceId: string | null) {
-    if (workspaceId === null) {
-      this.activeWorkspaceId = null;
-      return;
-    }
-    this.requireWorkspace(workspaceId);
-    this.activeWorkspaceId = workspaceId;
+    this.activeWorkspaceId = workspaceId && this.workspaces.has(workspaceId) ? workspaceId : null;
   }
 
   setActivePane(workspaceId: string, paneId: string | null) {
@@ -214,6 +210,56 @@ export class ShellCore implements ShellModelHost {
 
   getWorkspaceIds(): string[] {
     return [...this.workspaces.keys()];
+  }
+
+  /**
+   * Drop a workspace and every pane record owned by it (including
+   * paneWorkspaceIds entries). Kills any attached terminal runtimes first so
+   * the install-scoped ptyd daemon doesn't leak runtimes owned by the closed
+   * workspace's panes. No last-workspace invariant enforced — the caller owns
+   * re-seeding. After this returns, `closePane(ghostId)` for any previously-
+   * owned paneId is a safe `{closed: false}` no-op.
+   */
+  async deleteWorkspace(workspaceId: string): Promise<void> {
+    const workspace = this.workspaces.get(workspaceId);
+    if (!workspace) {
+      return;
+    }
+    for (const paneId of [...workspace.paneOrder]) {
+      const record = workspace.paneStates.get(paneId);
+      if (record && isTerminalPaneStateRecord(record) && record.rootKey && record.runtimeId) {
+        try {
+          await this.options.terminalBackend.kill({
+            rootKey: record.rootKey,
+            runtimeId: record.runtimeId
+          });
+        } catch {
+          // Best-effort; even if the kill fails we still drop core state.
+        }
+      }
+      this.paneWorkspaceIds.delete(paneId);
+    }
+    this.workspaces.delete(workspaceId);
+    if (this.activeWorkspaceId === workspaceId) {
+      this.activeWorkspaceId = this.workspaces.keys().next().value ?? null;
+    }
+  }
+
+  /** Drop every workspace + pane record. Fallback for outer-layout restore failure. */
+  async clearAll(): Promise<void> {
+    for (const workspaceId of [...this.workspaces.keys()]) {
+      await this.deleteWorkspace(workspaceId);
+    }
+  }
+
+  /**
+   * Workspace-scoped pane enumeration. Unlike `listPanes()` which targets the
+   * active workspace, this is safe to call on inactive workspaces (e.g. during
+   * a reset of a non-current workspace, or after bulk restore).
+   */
+  listPanesByWorkspace(workspaceId: string): ShellPaneRecordSnapshot[] {
+    const workspace = this.requireWorkspace(workspaceId);
+    return workspace.paneOrder.map((paneId) => this.createPaneSnapshot(workspace, paneId));
   }
 
   /** Existing-pane URL re-normalization on origin change is an adapter concern; core only records the value. */
@@ -467,8 +513,40 @@ export class ShellCore implements ShellModelHost {
   }
 
   async getPaneParams(paneId: string): Promise<Record<string, unknown> | undefined> {
+    return this.peekPaneParams(paneId);
+  }
+
+  /** Synchronous pane-params read for view layers that need params at dockview mount time. */
+  peekPaneParams(paneId: string): Record<string, unknown> | undefined {
     const workspace = this.findWorkspaceByPaneId(paneId);
     return cloneJsonObject(workspace?.paneParams.get(paneId));
+  }
+
+  /**
+   * Run a pane's `persistence.serializeParams` hook to produce a portable
+   * save-time params shape (e.g. browser strips app-origin prefix so restored
+   * URLs re-resolve against the current origin). Returns undefined if the pane
+   * is unknown or the spec declares no hook.
+   */
+  serializePaneParams(paneId: string): Record<string, unknown> | undefined {
+    const workspace = this.findWorkspaceByPaneId(paneId);
+    if (!workspace) {
+      return undefined;
+    }
+    const record = workspace.paneStates.get(paneId);
+    if (!record) {
+      return undefined;
+    }
+    const spec = this.options.paneRegistry.get(record.kind);
+    if (!spec) {
+      return undefined;
+    }
+    return serializePaneParamsHelper({
+      spec,
+      workspace: this.toWorkspaceContext(workspace),
+      record,
+      currentParams: cloneJsonObject(workspace.paneParams.get(paneId))
+    });
   }
 
   async setPaneParams(paneId: string, nextParams: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -603,9 +681,16 @@ export class ShellCore implements ShellModelHost {
     return {
       id: workspace.id,
       title: workspace.title,
+      defaultTitle: workspace.defaultTitle,
       activePaneId: workspace.activePaneId,
       paneCount: workspace.paneOrder.length
     };
+  }
+
+  /** Synchronous workspace snapshot for view layers that need to read core state during dockview mount. */
+  getWorkspaceSnapshot(workspaceId: string): WorkspaceStatusSnapshot | undefined {
+    const workspace = this.workspaces.get(workspaceId);
+    return workspace ? this.toWorkspaceStatus(workspace) : undefined;
   }
 
   getWorkspaceContext(workspaceId: string): PaneWorkspaceContext | undefined {

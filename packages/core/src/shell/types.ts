@@ -61,6 +61,7 @@ export interface AppStatusSnapshot {
 export interface WorkspaceStatusSnapshot {
   id: string;
   title: string;
+  defaultTitle: string;
   activePaneId: string | null;
   paneCount: number;
 }

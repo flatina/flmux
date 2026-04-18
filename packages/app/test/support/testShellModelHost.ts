@@ -181,6 +181,7 @@ export class TestShellModelHost implements ShellModelHost {
     return this.workspaceOrder.map((workspaceId) => ({
       id: workspaceId,
       title: this.workspaceTitles.get(workspaceId) ?? workspaceId,
+      defaultTitle: this.workspaceTitles.get(workspaceId) ?? workspaceId,
       activePaneId: workspaceId === this.workspaceId ? this.activePaneId : null,
       paneCount: this.workspacePaneCounts.get(workspaceId) ?? 0
     }));
@@ -223,6 +224,7 @@ export class TestShellModelHost implements ShellModelHost {
     return {
       id: this.workspaceId,
       title: this.workspaceTitle,
+      defaultTitle: this.workspaceTitles.get(this.workspaceId) ?? this.workspaceTitle,
       activePaneId: this.activePaneId,
       paneCount: this.panes.size
     };

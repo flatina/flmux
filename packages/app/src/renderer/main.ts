@@ -30,7 +30,6 @@ async function bootstrap() {
 
   const workbench = new FlmuxWorkbench(config, rpc.requestProxy);
   await registerLocalExternalPaneDescriptors(workbench, config.localExtensions);
-  await workbench.start();
 
   rpc.setRequestHandler({
     "shellModel.path.get": (params) => workbench.shellModel.pathGet(params.path),
@@ -40,4 +39,5 @@ async function bootstrap() {
   });
 
   await rpc.requestProxy["flmux.client.register"]();
+  await workbench.start();
 }

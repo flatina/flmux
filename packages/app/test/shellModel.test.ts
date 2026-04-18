@@ -33,6 +33,7 @@ describe("shell model direct", () => {
       value: {
         id: "workspace.test",
         title: "Workspace Test",
+        defaultTitle: "Workspace Test",
         activePaneId: "pane.term",
         paneCount: 2
       }

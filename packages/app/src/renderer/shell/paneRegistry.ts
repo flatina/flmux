@@ -23,7 +23,6 @@ import {
   resolvePaneTitle as resolveCorePaneTitle,
   serializePaneParams as serializeCorePaneParams
 } from "@flmux/core/shell";
-import type { TerminalRuntimeSummary } from "../../shared/terminal";
 import type { TerminalHostAPI } from "../terminalHost";
 import type { NewPaneInput, ShellModelAPI } from "./types";
 
@@ -49,10 +48,6 @@ export interface PaneRendererRuntimeContext {
   terminalHost: Pick<TerminalHostAPI, "subscribe">;
   normalizeBrowserUrl(value: string): string | null;
   onBrowserUrlChange(paneId: string, url: string): void;
-  onTerminalRuntimeStateChange(
-    paneId: string,
-    state: { cwd: string; rootKey: string | null; runtimeId: string | null; summary: TerminalRuntimeSummary | null }
-  ): void;
 }
 
 export interface PaneDescriptor<TStateRecord extends PaneStateRecord = PaneStateRecord> extends PaneSpec<TStateRecord> {

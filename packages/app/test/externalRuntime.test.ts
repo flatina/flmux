@@ -143,6 +143,7 @@ describe("external pane runtime", () => {
     let updatedParameters: Record<string, unknown> | undefined;
     let updatedTitle: string | undefined;
     const pathSetCalls: Array<{ path: string; value: unknown }> = [];
+    const pathCallCalls: Array<{ path: string; args: Record<string, unknown> | undefined }> = [];
 
     const descriptor = createExternalPaneDescriptor({
       kind: "sample.stateful",
@@ -175,7 +176,10 @@ describe("external pane runtime", () => {
             pathSetCalls.push({ path, value });
             return { ok: true, value };
           },
-          pathCall: async () => ({ ok: true, value: null })
+          pathCall: async (path, args) => {
+            pathCallCalls.push({ path, args });
+            return { ok: true, value: null };
+          }
         },
         browserPanelTemplate: null as never,
         terminalHost: null as never,
@@ -215,6 +219,11 @@ describe("external pane runtime", () => {
     expect(updatedParameters).toEqual({
       note: "patched",
       stale: true
+    });
+    await Promise.resolve();
+    expect(pathCallCalls).toContainEqual({
+      path: "/panes/pane.stateful/params:patch",
+      args: { note: "patched" }
     });
 
     renderer.update?.({

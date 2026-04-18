@@ -180,11 +180,12 @@ class ExternalPaneStateController implements PaneStateStore {
   }
 
   patchParams(nextParams: Record<string, unknown>) {
-    this.params = {
-      ...this.params,
-      ...cloneParams(nextParams)
-    };
+    const patch = cloneParams(nextParams);
+    this.params = { ...this.params, ...patch };
     this.panelApi?.updateParameters(this.params);
+    void this.shellModel.pathCall(`/panes/${this.paneId}/params:patch`, patch).catch((error) => {
+      console.warn(`failed to patch params for pane '${this.paneId}'`, error);
+    });
   }
 
   getTitle() {

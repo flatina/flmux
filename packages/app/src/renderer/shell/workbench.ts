@@ -13,11 +13,13 @@ import "../styles.css";
 import { setupDropIndicatorMasks } from "../maskHelper";
 import { createTerminalHost } from "../terminalHost";
 import {
+  createWorkspaceBus,
   type NewPaneInput,
   type PaneWorkspaceContext,
   type SequencedShellCoreEvent,
   type ShellModelAPI,
-  type ShellPaneRecordSnapshot
+  type ShellPaneRecordSnapshot,
+  type WorkspaceBus
 } from "@flmux/core/shell";
 import {
   PaneRegistry,
@@ -45,6 +47,7 @@ type PendingPane = {
 
 type WorkspaceRecord = {
   id: string;
+  bus: WorkspaceBus;
   outerPanelApi: DockviewPanelApi | null;
   innerApi: DockviewApi | null;
   innerHost: HTMLElement | null;
@@ -488,13 +491,14 @@ export class FlmuxWorkbench {
   }
 
   private toWorkspaceContext(workspaceId: string): PaneWorkspaceContext {
+    const record = this.workspaces.get(workspaceId);
+    if (!record) {
+      throw new Error(`Unknown workspace '${workspaceId}'`);
+    }
     return {
       id: workspaceId,
       defaultBrowserPath: `/__flmux/internal/start?workspace=${encodeURIComponent(workspaceId)}`,
-      bus: {
-        publish: () => {},
-        subscribe: () => () => {}
-      },
+      bus: record.bus,
       appOrigin: this.config.appOrigin
     };
   }
@@ -650,6 +654,10 @@ export class FlmuxWorkbench {
     }
     const record: WorkspaceRecord = {
       id: workspaceId,
+      // Renderer-local workspace bus. Extension panes publish+subscribe here
+      // via their PaneWorkspaceContext.bus. Cross-client broadcast (main-side
+      // publishers reaching renderer subscribers) is Phase B per plan v2.
+      bus: createWorkspaceBus(workspaceId),
       outerPanelApi: null,
       innerApi: null,
       innerHost: null,

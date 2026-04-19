@@ -7,7 +7,8 @@ import type {
   ClientScopedPathGetInput,
   ClientScopedPathListInput,
   ClientScopedPathSetInput,
-  FlmuxSessionSaveLayouts
+  FlmuxSessionSaveLayouts,
+  FlmuxShellBootstrapResponse
 } from "../shared/rendererBridge";
 import type { DiscoveredLocalExtension } from "./localExtensions";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
@@ -35,6 +36,10 @@ export function startFlmuxServer(options: {
   shellModelRouter: FlmuxShellModelRouter;
   localExtensions?: DiscoveredLocalExtension[];
   saveSession?(layouts: FlmuxSessionSaveLayouts): Promise<void>;
+  /** Mint a fresh attachment and build its bootstrap snapshot. Only wired
+   * in web mode — desktop CEF uses the preload `flmux.shellBootstrap` RPC
+   * instead. Returning null rejects the request as unauthorized. */
+  bootstrapAttachment?(): FlmuxShellBootstrapResponse;
   authorizer?: FlmuxWebModeAuthorizer;
   rpcWebHandler?: {
     open(ws: { send(data: Uint8Array | ArrayBuffer): void | number }): void;
@@ -117,6 +122,27 @@ export function startFlmuxServer(options: {
         }
         return await options.shellModelRouter.pathCall(input);
       });
+    })
+    .post("/api/shell/bootstrap", ({ request, set }) => {
+      const auth = authorizeRequest(request, set, options.authorizer);
+      if (!auth.ok) {
+        return "Unauthorized";
+      }
+
+      if (!options.bootstrapAttachment) {
+        set.status = 404;
+        return "Not Found";
+      }
+
+      // Sync body (Preflight #1 §S3): mutate (bootstrapAttachment) → capture
+      // seqStart → compose snapshot → set cookie → return. No awaits, no
+      // microtask yields. Feedback Q3: cookie is set for future B2
+      // continuity but not re-read in B1d — every call mints fresh.
+      const response = options.bootstrapAttachment();
+      const cookie = `flmux-attachment=${response.attachmentId}; HttpOnly; Path=/; SameSite=Strict`;
+      setHeader(set, "set-cookie", cookie);
+      setHeader(set, "content-type", "application/json; charset=utf-8");
+      return response;
     })
     .post("/api/session/save", async ({ request, set }) => {
       const auth = authorizeRequest(request, set, options.authorizer);

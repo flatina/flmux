@@ -87,8 +87,10 @@ export class FlmuxWorkbench {
   // Suppresses dockview→pathCall while we are applying core-driven state to dockview
   private applyingCoreState = false;
 
-  // Save throttling
-  private sessionSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  // Session persistence: renderer pushes layout deltas on every change via
+  // `flmux.layout.push`; main debounces + writes via `sessionStore`. The
+  // pagehide beacon is the last-chance flush for an in-flight push that
+  // might not make it over the wire before the tab/window closes.
   private sessionPersistenceEnabled = false;
   private sessionPersistenceSuppressed = false;
 
@@ -113,10 +115,54 @@ export class FlmuxWorkbench {
   async start() {
     this.initializeOuterShell();
 
-    const bootstrap = await this.hostProxy["flmux.shellBootstrap"]();
-    this.applyBootstrap(bootstrap);
-    this.lastAppliedSeq = bootstrap.seqStart;
-    this.bootstrapped = true;
+    if (this.config.mode === "web") {
+      // Web: HTTP POST bootstrap mints the attachmentId server-side and
+      // installs the ring-buffer subscriber; apply snapshot; THEN register
+      // with the attachmentId so the server flushes any replay + installs
+      // the live forwarder. Order matters — forwarder can't exist before
+      // attachmentId does.
+      const bootstrap = await this.fetchWebBootstrap();
+      this.applyBootstrap(bootstrap);
+      this.lastAppliedSeq = bootstrap.seqStart;
+      this.bootstrapped = true;
+      // `register` RPC and `shellCore.event` messages share one ordered WS
+      // stream — server-side replay events sent inside the register
+      // handler arrive on the same socket before the register response,
+      // so bootstrapped=true + lastAppliedSeq must be set above. If a
+      // future refactor routes register through a separate transport
+      // this ordering assumption dies and events can arrive before the
+      // gate is armed.
+      const registration = await this.hostProxy["flmux.client.register"]({
+        attachmentId: bootstrap.attachmentId,
+        lastAppliedSeq: bootstrap.seqStart
+      });
+      if (registration.status === "rebootstrap-required") {
+        // Ring buffer overflowed between bootstrap and register (rare in
+        // B1d single-attachment; possible under server-side event storms).
+        // Simplest recovery: reload the page to restart the cycle.
+        console.warn("[flmux] rebootstrap-required on first register — reloading");
+        window.location.reload();
+        return;
+      }
+    } else {
+      // Desktop: register first (installs forwarder on the pinned "local"
+      // attachment), then preload-RPC bootstrap. Live events emitted during
+      // bootstrap reach the renderer and are buffered by the seq gate.
+      // Desktop register never carries a binding arg → server-side
+      // `onClientRegister` returns void → response is always `"ok"`. The
+      // `"rebootstrap-required"` branch only arises for web. A pinned test
+      // in `hostRequests.test.ts` guards the invariant.
+      const registration = await this.hostProxy["flmux.client.register"]({});
+      if (registration.status !== "ok") {
+        throw new Error(
+          `flmux.client.register: desktop preload returned unexpected status '${registration.status}'`
+        );
+      }
+      const bootstrap = await this.hostProxy["flmux.shellBootstrap"]();
+      this.applyBootstrap(bootstrap);
+      this.lastAppliedSeq = bootstrap.seqStart;
+      this.bootstrapped = true;
+    }
     this.drainBufferedEvents();
 
     this.updateDocumentTitle();
@@ -124,10 +170,25 @@ export class FlmuxWorkbench {
 
     if (this.lifecyclePolicy.persistSession) {
       this.sessionPersistenceEnabled = true;
+      // Pagehide beacon: last-chance flush. Main's 250 ms debounce might
+      // hold a pending delta when the tab/window goes away; beacon POSTs
+      // the latest layout directly for an immediate write.
       window.addEventListener("pagehide", () => {
-        void this.flushSessionSave({ preferBeacon: true });
+        if (this.sessionPersistenceSuppressed) return;
+        this.saveLayoutsViaBeacon(this.serializeSessionLayouts());
       });
     }
+  }
+
+  private async fetchWebBootstrap(): Promise<FlmuxShellBootstrapResponse> {
+    const response = await fetch(`${this.config.appOrigin}/api/shell/bootstrap`, {
+      method: "POST",
+      credentials: "same-origin"
+    });
+    if (!response.ok) {
+      throw new Error(`/api/shell/bootstrap failed: ${response.status} ${response.statusText}`);
+    }
+    return await response.json() as FlmuxShellBootstrapResponse;
   }
 
   // ── Bootstrap ──
@@ -252,7 +313,7 @@ export class FlmuxWorkbench {
     } finally {
       this.applyingCoreState = priorApplying;
     }
-    this.scheduleSessionSave();
+    this.pushLayout();
   }
 
   private applyWorkspaceAdded(payload: {
@@ -514,10 +575,10 @@ export class FlmuxWorkbench {
       if (panel) {
         void this.shellModel.pathCall(`/workspaces/${panel.id}/setActive`);
       }
-      this.scheduleSessionSave();
+      this.pushLayout();
     });
     this.outerApi.onDidLayoutChange(() => {
-      this.scheduleSessionSave();
+      this.pushLayout();
     });
     this.outerApi.onDidRemovePanel((panel) => {
       if (this.applyingCoreState || this.disposingWorkspace.has(panel.id)) {
@@ -538,7 +599,7 @@ export class FlmuxWorkbench {
         .finally(() => {
           this.disposingWorkspace.delete(panel.id);
         });
-      this.scheduleSessionSave();
+      this.pushLayout();
     });
 
     const layoutOuter = () => {
@@ -589,10 +650,10 @@ export class FlmuxWorkbench {
       if (panel) {
         void this.shellModel.pathCall(`/panes/${panel.id}/setActive`);
       }
-      this.scheduleSessionSave();
+      this.pushLayout();
     });
     api.onDidAddPanel(() => {
-      this.scheduleSessionSave();
+      this.pushLayout();
     });
     api.onDidRemovePanel((panel) => {
       if (this.applyingCoreState || this.disposingWorkspace.has(record.id)) {
@@ -601,10 +662,10 @@ export class FlmuxWorkbench {
       void this.shellModel.pathCall(`/panes/${panel.id}/close`).catch((error) => {
         console.warn(`failed to close pane '${panel.id}' via shellModel`, error);
       });
-      this.scheduleSessionSave();
+      this.pushLayout();
     });
     api.onDidLayoutChange(() => {
-      this.scheduleSessionSave();
+      this.pushLayout();
     });
   }
 
@@ -664,38 +725,14 @@ export class FlmuxWorkbench {
     };
   }
 
-  private scheduleSessionSave() {
+  private pushLayout() {
     if (!this.sessionPersistenceEnabled || this.sessionPersistenceSuppressed) {
       return;
-    }
-    if (this.sessionSaveTimer) {
-      clearTimeout(this.sessionSaveTimer);
-    }
-    this.sessionSaveTimer = setTimeout(() => {
-      this.sessionSaveTimer = null;
-      if (!this.sessionPersistenceEnabled || this.sessionPersistenceSuppressed) {
-        return;
-      }
-      const layouts = this.serializeSessionLayouts();
-      void this.hostProxy["flmux.session.save"](layouts).catch((error) => {
-        console.warn("failed to persist flmux session layouts", error);
-      });
-    }, 250);
-  }
-
-  private async flushSessionSave(options: { preferBeacon?: boolean } = {}) {
-    if (!this.sessionPersistenceEnabled || this.sessionPersistenceSuppressed) {
-      return;
-    }
-    if (this.sessionSaveTimer) {
-      clearTimeout(this.sessionSaveTimer);
-      this.sessionSaveTimer = null;
     }
     const layouts = this.serializeSessionLayouts();
-    if (options.preferBeacon && this.saveLayoutsViaBeacon(layouts)) {
-      return;
-    }
-    await this.hostProxy["flmux.session.save"](layouts);
+    void this.hostProxy["flmux.layout.push"](layouts).catch((error: unknown) => {
+      console.warn("failed to push flmux layout delta", error);
+    });
   }
 
   private saveLayoutsViaBeacon(layouts: FlmuxSessionSaveLayouts): boolean {

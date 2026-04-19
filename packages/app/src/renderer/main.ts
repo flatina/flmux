@@ -6,7 +6,6 @@ import { registerLocalExternalPaneDescriptors } from "./external/registerLocalEx
 import { FlmuxWorkbench } from "./shell/workbench";
 import { pushShellCoreEvent } from "./shell/shellEventBus";
 import { pushTerminalEvent } from "./terminalHost";
-import { FlmuxWebModeClient } from "./webModeClient";
 
 void bootstrap().catch((error) => {
   document.body.innerHTML = `<pre class="fatal">${String(error)}</pre>`;
@@ -27,15 +26,11 @@ async function bootstrap() {
   });
 
   const config = await rpc.requestProxy["flmux.getConfig"]();
-  if (config.mode === "web") {
-    const webClient = new FlmuxWebModeClient(config);
-    await webClient.start();
-    return;
-  }
-
   const workbench = new FlmuxWorkbench(config, rpc.requestProxy);
   await registerLocalExternalPaneDescriptors(workbench, config.localExtensions);
-
-  await rpc.requestProxy["flmux.client.register"]();
+  // Register + bootstrap live inside `workbench.start()` — ordering differs
+  // by mode (desktop: register→bootstrap so the forwarder is up for events
+  // emitted during bootstrap; web: HTTP bootstrap→register so the server
+  // has an attachmentId before it can install the forwarder).
   await workbench.start();
 }

@@ -44,6 +44,34 @@ export async function runWebModeBootSmokeScenario(
   const unauthorizedClients = await fetch(`${origin}/api/clients`);
   expect(unauthorizedClients.status).toBe(401);
 
+  // `/api/shell/bootstrap` — browser attach handshake (B1d). Sync body,
+  // cookie-minted attachmentId, snapshot with seqStart.
+  const shellBootstrapRes = await fetch(`${origin}/api/shell/bootstrap`, {
+    method: "POST",
+    headers: { cookie: cookieHeader }
+  });
+  expect(shellBootstrapRes.status).toBe(200);
+  const attachmentCookie = shellBootstrapRes.headers.get("set-cookie");
+  expect(attachmentCookie).toContain("flmux-attachment=");
+  expect(attachmentCookie).toContain("HttpOnly");
+  expect(attachmentCookie).toContain("Path=/");
+  const shellBootstrap = await shellBootstrapRes.json() as {
+    attachmentId: string;
+    snapshot: { activeWorkspaceId: string | null };
+    outerLayout: unknown;
+    innerLayouts: Record<string, unknown>;
+    seqStart: number;
+  };
+  expect(shellBootstrap.attachmentId).toMatch(/^web_/);
+  expect(shellBootstrap.snapshot.activeWorkspaceId).toBe("workspace.1");
+  expect(shellBootstrap.outerLayout).toBeNull();
+  expect(typeof shellBootstrap.seqStart).toBe("number");
+
+  // Unauthorized bootstrap POST must be rejected even if the browser
+  // forgets the cookie.
+  const anonBootstrap = await fetch(`${origin}/api/shell/bootstrap`, { method: "POST" });
+  expect(anonBootstrap.status).toBe(401);
+
   const clients = await fetchJson<{
     ok: true;
     clients: Array<{

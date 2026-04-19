@@ -42,7 +42,7 @@ async function createTestAuthority(options: { initial?: FlmuxSessionSnapshot | n
 describe("desktop shell authority bridge", () => {
   it("seeds a default workspace when no session snapshot exists", async () => {
     const { authority } = await createTestAuthority();
-    const bootstrap = authority.shellBootstrap();
+    const bootstrap = authority.shellBootstrap("local");
 
     expect(bootstrap.attachmentId).toBe("local");
     expect(bootstrap.snapshot.workspaces).toHaveLength(1);
@@ -118,16 +118,16 @@ describe("desktop shell authority bridge", () => {
 
   it("shellBootstrap returns synchronously (not a Promise) — preflight #1 §S3", async () => {
     const { authority } = await createTestAuthority();
-    const result = authority.shellBootstrap();
+    const result = authority.shellBootstrap("local");
     expect(result).not.toHaveProperty("then");
     expect(typeof result.seqStart).toBe("number");
   });
 
   it("shellBootstrap captures seqStart before composing snapshot", async () => {
     const { authority } = await createTestAuthority();
-    const first = authority.shellBootstrap();
+    const first = authority.shellBootstrap("local");
     await authority.shellModel.pathCall("/workspaces/new");
-    const second = authority.shellBootstrap();
+    const second = authority.shellBootstrap("local");
     expect(second.seqStart).toBeGreaterThan(first.seqStart);
   });
 
@@ -211,7 +211,7 @@ describe("desktop shell authority bridge", () => {
     };
 
     const { authority } = await createTestAuthority({ initial });
-    const bootstrap = authority.shellBootstrap();
+    const bootstrap = authority.shellBootstrap("local");
 
     expect(bootstrap.snapshot.workspaces.map((ws) => ws.id)).toEqual(["workspace.alpha"]);
     expect(bootstrap.snapshot.panes["workspace.alpha"].map((pane) => pane.id)).toEqual(["pane.persisted"]);
@@ -245,7 +245,7 @@ describe("desktop shell authority bridge", () => {
     };
 
     const { authority } = await createTestAuthority({ initial });
-    const bootstrap = authority.shellBootstrap();
+    const bootstrap = authority.shellBootstrap("local");
     const innerLayout = bootstrap.innerLayouts["workspace.alpha"] as {
       panels: { [id: string]: { contentComponent: string; params?: Record<string, unknown> } };
     };
@@ -263,6 +263,7 @@ describe("desktop shell authority bridge", () => {
       getCallerViewId: () => 1,
       paneOwners: new Map(),
       shellModelRouter: authority.router,
+      shellModel: authority.shellModel,
       terminalService,
       localExtensions: [],
       desktopAuthority: authority
@@ -275,7 +276,7 @@ describe("desktop shell authority bridge", () => {
     });
 
     // Seed workspace + two new workspaces = 3
-    expect(authority.shellBootstrap().snapshot.workspaces).toHaveLength(3);
+    expect(authority.shellBootstrap("local").snapshot.workspaces).toHaveLength(3);
   });
 
   it("onClientRegister wires per-view shellCore.event forwarding, and detach tears it down", async () => {
@@ -301,6 +302,7 @@ describe("desktop shell authority bridge", () => {
       getCallerViewId: () => viewId,
       paneOwners: new Map(),
       shellModelRouter: authority.router,
+      shellModel: authority.shellModel,
       terminalService: createTerminalService(createInMemoryTerminalBackend()),
       localExtensions: [],
       desktopAuthority: authority,
@@ -314,7 +316,7 @@ describe("desktop shell authority bridge", () => {
       }
     });
 
-    handlers["flmux.client.register"]();
+    handlers["flmux.client.register"]({});
     expect(received).toHaveLength(0);
 
     await authority.shellModel.pathCall("/workspaces/new");
@@ -328,11 +330,11 @@ describe("desktop shell authority bridge", () => {
 
   it("deleting the last workspace auto-reseeds so /status/workspace never throws", async () => {
     const { authority } = await createTestAuthority();
-    const initialWorkspaceId = authority.shellBootstrap().snapshot.workspaces[0].id;
+    const initialWorkspaceId = authority.shellBootstrap("local").snapshot.workspaces[0].id;
 
     await authority.shellModel.pathCall(`/workspaces/${initialWorkspaceId}/delete`);
 
-    const bootstrap = authority.shellBootstrap();
+    const bootstrap = authority.shellBootstrap("local");
     expect(bootstrap.snapshot.workspaces).toHaveLength(1);
     expect(bootstrap.snapshot.activeWorkspaceId).toBe(bootstrap.snapshot.workspaces[0].id);
     const status = await authority.shellModel.pathGet("/status/workspace");
@@ -350,6 +352,7 @@ describe("desktop shell authority bridge", () => {
       getCallerViewId: () => 42,
       paneOwners,
       shellModelRouter: authority.router,
+      shellModel: authority.shellModel,
       terminalService,
       localExtensions: [],
       desktopAuthority: authority
@@ -375,8 +378,8 @@ describe("desktop shell authority bridge", () => {
   // which external surfaces will hit first.
   it("router.pathCall forwards PathCallerContext to bus.publish", async () => {
     const { authority } = await createTestAuthority();
-    const paneId = authority.shellBootstrap().snapshot.panes[
-      authority.shellBootstrap().snapshot.workspaces[0].id
+    const paneId = authority.shellBootstrap("local").snapshot.panes[
+      authority.shellBootstrap("local").snapshot.workspaces[0].id
     ][0].id;
 
     const withoutCaller = await authority.router.pathCall({
@@ -405,12 +408,13 @@ describe("desktop shell authority bridge", () => {
       getCallerViewId: () => 1,
       paneOwners: new Map(),
       shellModelRouter: authority.router,
+      shellModel: authority.shellModel,
       terminalService: createTerminalService(createInMemoryTerminalBackend()),
       localExtensions: [],
       desktopAuthority: authority
     });
 
-    const paneId = authority.shellBootstrap().snapshot.panes[authority.shellBootstrap().snapshot.workspaces[0].id][0].id;
+    const paneId = authority.shellBootstrap("local").snapshot.panes[authority.shellBootstrap("local").snapshot.workspaces[0].id][0].id;
 
     const withoutCaller = await handlers["shellModel.path.call"]({
       path: "/bus/publish",
@@ -431,8 +435,8 @@ describe("desktop shell authority bridge", () => {
     const captured: SequencedShellCoreEvent[] = [];
     authority.subscribe((event) => captured.push(event));
 
-    const reference = authority.shellBootstrap().snapshot.panes[
-      authority.shellBootstrap().snapshot.workspaces[0].id
+    const reference = authority.shellBootstrap("local").snapshot.panes[
+      authority.shellBootstrap("local").snapshot.workspaces[0].id
     ][0].id;
 
     await authority.shellModel.pathCall("/panes/new", {
@@ -455,7 +459,7 @@ describe("desktop shell authority bridge", () => {
   it("/panes/new routes args.workspaceId and caller.workspaceId to explicit targets", async () => {
     const { authority } = await createTestAuthority();
     await authority.shellModel.pathCall("/workspaces/new", { title: "Second" });
-    const snapshot = authority.shellBootstrap().snapshot;
+    const snapshot = authority.shellBootstrap("local").snapshot;
     const [wsFirst, wsSecond] = snapshot.workspaces;
     expect(wsFirst.id).toBe("workspace.1");
     expect(wsSecond.id).toBe("workspace.2");
@@ -498,12 +502,12 @@ describe("desktop shell authority bridge", () => {
   // workspace momentarily), pass position:undefined to dockview.
   it("pane.added carries place but no referencePaneId for header-action /panes/new", async () => {
     const { authority } = await createTestAuthority();
-    const workspaceId = authority.shellBootstrap().snapshot.workspaces[0].id;
+    const workspaceId = authority.shellBootstrap("local").snapshot.workspaces[0].id;
 
-    for (const pane of authority.shellBootstrap().snapshot.panes[workspaceId]) {
+    for (const pane of authority.shellBootstrap("local").snapshot.panes[workspaceId]) {
       await authority.shellModel.pathCall(`/panes/${pane.id}/close`);
     }
-    const cleared = authority.shellBootstrap().snapshot.panes[workspaceId];
+    const cleared = authority.shellBootstrap("local").snapshot.panes[workspaceId];
     expect(cleared).toEqual([]);
 
     const captured: SequencedShellCoreEvent[] = [];

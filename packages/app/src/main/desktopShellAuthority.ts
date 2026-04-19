@@ -34,16 +34,18 @@ export interface DesktopShellAuthority {
   subscribe(handler: (event: SequencedShellCoreEvent) => void): () => void;
   start(origin: string): Promise<void>;
   applyTerminalEvent(event: TerminalRuntimeEvent): void;
-  /** Desktop CEF is a single attachment — the shellBootstrap handshake
-   * always resolves to the `"local"` slot. `attachmentId` is pinned in
-   * the response so the renderer can pin it back into caller context on
-   * subsequent pathCalls (parity with the HTTP /api/shell/bootstrap
-   * route web browsers will use in B1d). */
-  shellBootstrap(): FlmuxShellBootstrapResponse;
+  /** Seed the attachment's active workspace if the slot is fresh. Idempotent
+   * by design: slots that already hold an active ws short-circuit, so tab
+   * refresh within grace and desktop repeat-calls are both safe. */
+  bootstrapAttachment(attachmentId: string): void;
+  /** Build the bootstrap snapshot for `attachmentId`. Desktop callers pass
+   * `DESKTOP_ATTACHMENT_ID` ("local") via the preload RPC; web browsers
+   * pass the server-minted attachmentId via the HTTP bootstrap route. */
+  shellBootstrap(attachmentId: string): FlmuxShellBootstrapResponse;
   persistSession(layouts: FlmuxSessionSaveLayouts): Promise<void>;
 }
 
-const DESKTOP_ATTACHMENT_ID = "local";
+export const DESKTOP_ATTACHMENT_ID = "local";
 
 export async function createDesktopShellAuthority(options: {
   projectDir: string;
@@ -94,6 +96,17 @@ export async function createDesktopShellAuthority(options: {
     shellCore.initialize();
   }
 
+  function bootstrapAttachment(attachmentId: string) {
+    if (shellCore.getSlotActiveWorkspaceId(attachmentId) !== null) {
+      return;
+    }
+    const [firstWs] = shellCore.getWorkspaceIds();
+    if (!firstWs) {
+      throw new Error("bootstrapAttachment: shell has no workspaces to seed active");
+    }
+    shellCore.setActiveWorkspace(firstWs, { slotKey: attachmentId });
+  }
+
   return {
     clientId,
     shellModel,
@@ -107,12 +120,20 @@ export async function createDesktopShellAuthority(options: {
     subscribe: (handler) => shellCore.subscribe(handler),
     start,
     applyTerminalEvent: (event) => shellCore.applyTerminalEvent(event),
-    shellBootstrap: () => buildBootstrapResponse({
-      attachmentId: DESKTOP_ATTACHMENT_ID,
-      shellCore,
-      outerLayout: persistedOuterLayout,
-      innerLayouts: persistedInnerLayouts
-    }),
+    bootstrapAttachment,
+    shellBootstrap: (attachmentId: string) => {
+      // Preflight #1 §S3 + feedback Q4: mutate (bootstrap helper) THEN
+      // capture seqStart inside buildBootstrapResponse so any
+      // `workspace.activeChanged` emitted here has seq ≤ seqStart and is
+      // filtered by the client's seq gate (no double-apply).
+      bootstrapAttachment(attachmentId);
+      return buildBootstrapResponse({
+        attachmentId,
+        shellCore,
+        outerLayout: persistedOuterLayout,
+        innerLayouts: persistedInnerLayouts
+      });
+    },
     persistSession: async (layouts) => {
       const composed = composeSessionSnapshot(shellCore, layouts);
       await options.sessionStore.save(composed);
@@ -196,7 +217,7 @@ function rebuildPaneRecordsFromLayout(
   return cloned;
 }
 
-function buildBootstrapResponse(options: {
+export function buildBootstrapResponse(options: {
   attachmentId: string;
   shellCore: ShellCore;
   outerLayout: unknown | null;

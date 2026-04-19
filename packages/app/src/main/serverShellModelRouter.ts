@@ -1,13 +1,16 @@
 import type { ShellModelAPI, WorkspaceStatusSnapshot } from "@flmux/core/shell";
 import type { FlmuxClientRegistry } from "./clientRegistry";
 import type {
-  ClientRegistrationResult,
   ClientScopedPathCallInput,
   ClientScopedPathGetInput,
   ClientScopedPathListInput,
   ClientScopedPathSetInput
 } from "../shared/rendererBridge";
-import type { FlmuxClientSummary, FlmuxShellModelRouter } from "./shellModelBridge";
+import type {
+  ClientRegistration,
+  FlmuxClientSummary,
+  FlmuxShellModelRouter
+} from "./shellModelBridge";
 
 export function createServerShellModelRouter(options: {
   authorityClientId: string;
@@ -19,7 +22,7 @@ export function createServerShellModelRouter(options: {
   const authorityViewId = options.authorityViewId ?? 0;
 
   return {
-    registerClient(viewId: number): ClientRegistrationResult {
+    registerClient(viewId: number): ClientRegistration {
       // `clientId` is for HTTP/CLI scoping only — the preload-owned desktop
       // renderer routes through `shellModel.path.*` / `flmux.*` and never sends
       // its clientId back. Return only {clientId}: the full registry record

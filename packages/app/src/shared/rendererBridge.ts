@@ -72,10 +72,10 @@ export type FlmuxHostRequests = {
     response: FlmuxRendererBootstrapConfig;
   };
   "flmux.client.register": {
-    params: undefined;
+    params: { attachmentId?: string; lastAppliedSeq?: number };
     response: ClientRegistrationResult;
   };
-  "flmux.session.save": {
+  "flmux.layout.push": {
     params: FlmuxSessionSaveLayouts;
     response: { ok: true };
   };
@@ -167,9 +167,9 @@ export interface FlmuxRendererBridge {
 
 // ── Shared types ──
 
-export interface ClientRegistrationResult {
-  clientId: string;
-}
+export type ClientRegistrationResult =
+  | { status: "ok"; clientId: string }
+  | { status: "rebootstrap-required" };
 
 export interface ClientScopedPathGetInput {
   clientId: string;

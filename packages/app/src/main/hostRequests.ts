@@ -1,10 +1,10 @@
-import type { PathCallerContext } from "@flmux/core/shell";
+import type { PathCallerContext, ShellModelAPI } from "@flmux/core/shell";
 import type {
   FlmuxRendererBootstrapConfig,
   FlmuxSessionSaveLayouts
 } from "../shared/rendererBridge";
 import type { FlmuxRuntimeMode } from "../shared/runtimeMode";
-import type { DesktopShellAuthority } from "./desktopShellAuthority";
+import { DESKTOP_ATTACHMENT_ID, type DesktopShellAuthority } from "./desktopShellAuthority";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
 import type { TerminalService } from "./terminal-service";
 import type { DiscoveredLocalExtension } from "./localExtensions";
@@ -27,10 +27,27 @@ export function createFlmuxHostRequestHandlers(options: {
   getCallerAttachmentId?(viewId: number): string | null;
   paneOwners: Map<string, number>;
   shellModelRouter: FlmuxShellModelRouter;
+  /** Authoritative `ShellModelAPI` for this process — desktop's local
+   * authority or web's server-owned authority. Preload/WS callers reach
+   * it directly (trusted transport); CLI/external HTTP goes through
+   * `shellModelRouter` with clientId scoping. */
+  shellModel: ShellModelAPI;
   terminalService: TerminalService;
   localExtensions: DiscoveredLocalExtension[];
   desktopAuthority: DesktopShellAuthority | null;
-  onClientRegister?(viewId: number): void;
+  /** Bind a freshly-registered view to its attachment. Returning
+   * `"rebootstrap-required"` short-circuits the RPC with the same status,
+   * telling the client to drop local state and re-POST `/api/shell/bootstrap`.
+   * Desktop ignores `binding`; web passes `{attachmentId, lastAppliedSeq}`
+   * after the HTTP bootstrap response. */
+  onClientRegister?(
+    viewId: number,
+    binding?: { attachmentId: string; lastAppliedSeq: number }
+  ): "rebootstrap-required" | void;
+  /** Record a layout delta for the main-side debounced session write. Only
+   * wired in desktop mode — web authority has no `sessionStore` in B1d
+   * (B2 gap). */
+  pushLayout?(layouts: FlmuxSessionSaveLayouts): void;
 }) {
   const buildConfig = (): FlmuxRendererBootstrapConfig => ({
     mode: options.mode,
@@ -50,32 +67,51 @@ export function createFlmuxHostRequestHandlers(options: {
   return {
     "flmux.getConfig": () => buildConfig(),
 
-    "flmux.client.register": () => {
+    "flmux.client.register": (params: {
+      attachmentId?: string;
+      lastAppliedSeq?: number;
+    }) => {
       const viewId = options.getCallerViewId();
+      const binding = params?.attachmentId
+        ? {
+            attachmentId: params.attachmentId,
+            lastAppliedSeq: params.lastAppliedSeq ?? 0
+          }
+        : undefined;
+      // Mint clientId first — `onClientRegister` installs the forwarder which
+      // may resolve the client by viewId (requires a minted id). On
+      // "rebootstrap-required" the dangling clientId is cleaned up when the
+      // client closes its WS to re-bootstrap.
       const registration = options.shellModelRouter.registerClient(viewId);
-      options.onClientRegister?.(viewId);
-      return registration;
+      const outcome = options.onClientRegister?.(viewId, binding);
+      if (outcome === "rebootstrap-required") {
+        return { status: "rebootstrap-required" as const };
+      }
+      return { status: "ok" as const, clientId: registration.clientId };
     },
 
     "flmux.shellBootstrap": () => {
-      return requireDesktopAuthority("flmux.shellBootstrap").shellBootstrap();
+      // Desktop CEF pins `"local"` as its attachment. Web clients receive
+      // their server-minted `attachmentId` via `/api/shell/bootstrap` HTTP
+      // POST instead — they never reach this preload-only RPC.
+      return requireDesktopAuthority("flmux.shellBootstrap").shellBootstrap(DESKTOP_ATTACHMENT_ID);
     },
 
-    "flmux.session.save": async (params: FlmuxSessionSaveLayouts) => {
-      await requireDesktopAuthority("flmux.session.save").persistSession(params);
+    "flmux.layout.push": (params: FlmuxSessionSaveLayouts) => {
+      options.pushLayout?.(params);
       return { ok: true as const };
     },
 
     "shellModel.path.get": (params: { path: string }) => {
-      return requireDesktopAuthority("shellModel.path.get").shellModel.pathGet(params.path);
+      return options.shellModel.pathGet(params.path);
     },
 
     "shellModel.path.list": (params: { path: string }) => {
-      return requireDesktopAuthority("shellModel.path.list").shellModel.pathList(params.path);
+      return options.shellModel.pathList(params.path);
     },
 
     "shellModel.path.set": (params: { path: string; value: unknown }) => {
-      return requireDesktopAuthority("shellModel.path.set").shellModel.pathSet(params.path, params.value);
+      return options.shellModel.pathSet(params.path, params.value);
     },
 
     "shellModel.path.call": async (params: {
@@ -83,7 +119,6 @@ export function createFlmuxHostRequestHandlers(options: {
       args?: Record<string, unknown>;
       caller?: PathCallerContext;
     }) => {
-      const authority = requireDesktopAuthority("shellModel.path.call");
       // Inject caller.attachmentId from the view's bound attachment so the
       // model layer can route slot-aware mutations (setActive*, createPane
       // with implicit ws, etc.) without relying on defaultSlotKey.
@@ -91,7 +126,7 @@ export function createFlmuxHostRequestHandlers(options: {
       const caller: PathCallerContext | undefined = attachmentId
         ? { ...(params.caller ?? {}), attachmentId: params.caller?.attachmentId ?? attachmentId }
         : params.caller;
-      const result = await authority.shellModel.pathCall(params.path, params.args, caller);
+      const result = await options.shellModel.pathCall(params.path, params.args, caller);
       if (result.ok) {
         const attachMatch = TERMINAL_ATTACH_PATH.exec(params.path);
         if (attachMatch) {

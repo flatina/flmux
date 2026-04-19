@@ -84,6 +84,63 @@ describe("web mode shell authority", () => {
     })).rejects.toThrow(`Unknown flmux client: ${rendererClient.clientId}`);
   });
 
+  it("shellBootstrap(attachmentId) seeds a fresh slot and captures seqStart after mutation", async () => {
+    const clientRegistry = new FlmuxClientRegistry();
+    const terminalService = createTerminalService(createInMemoryTerminalBackend());
+    const authority = await createWebModeShellAuthority({
+      projectDir: "C:/project",
+      runtimeLabel: "web server authority",
+      terminalService,
+      clientRegistry
+    });
+    await authority.start("http://127.0.0.1:4321");
+
+    // Subscribe BEFORE bootstrap to count active-change emits targeted at
+    // the new slot — preflight #2 "authority injects targetAttachmentId"
+    // says bootstrapAttachment emits exactly one `workspace.activeChanged`
+    // on first call, zero on idempotent re-entry.
+    const activeChangesForAlpha: number[] = [];
+    const unsub = authority.subscribe((event) => {
+      if (event.topic === "workspace.activeChanged" && event.targetAttachmentId === "web_alpha") {
+        activeChangesForAlpha.push(event.seq);
+      }
+    });
+
+    const fresh = authority.shellBootstrap("web_alpha");
+    expect(fresh.attachmentId).toBe("web_alpha");
+    expect(fresh.snapshot.activeWorkspaceId).toBe("workspace.1");
+    expect(fresh.outerLayout).toBeNull();
+    expect(fresh.innerLayouts).toEqual({});
+    expect(activeChangesForAlpha).toHaveLength(1);
+    // seqStart captured AFTER the bootstrap mutation emit — the emitted
+    // active-change must have seq ≤ seqStart so the client's seq-gate
+    // filters it (avoids double-apply with the snapshot's activeWorkspaceId).
+    expect(activeChangesForAlpha[0]).toBeLessThanOrEqual(fresh.seqStart);
+
+    const again = authority.shellBootstrap("web_alpha");
+    expect(again.snapshot.activeWorkspaceId).toBe("workspace.1");
+    expect(again.seqStart).toBe(fresh.seqStart);
+    expect(activeChangesForAlpha).toHaveLength(1);
+
+    unsub();
+  });
+
+  it("shellBootstrap returns synchronously — preflight #1 §S3 parity with desktop", async () => {
+    const clientRegistry = new FlmuxClientRegistry();
+    const terminalService = createTerminalService(createInMemoryTerminalBackend());
+    const authority = await createWebModeShellAuthority({
+      projectDir: "C:/project",
+      runtimeLabel: "web server authority",
+      terminalService,
+      clientRegistry
+    });
+    await authority.start("http://127.0.0.1:4321");
+
+    const result = authority.shellBootstrap("web_sync_check");
+    expect(result).not.toHaveProperty("then");
+    expect(typeof result.seqStart).toBe("number");
+  });
+
   it("registers manifest-declared extension pane kinds", async () => {
     const clientRegistry = new FlmuxClientRegistry();
     const terminalService = createTerminalService(createInMemoryTerminalBackend());

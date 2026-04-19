@@ -1,11 +1,15 @@
 import { BrowserView, BrowserWindow, AppRuntime } from "bunite-core";
 import type { SequencedShellCoreEvent } from "@flmux/core/shell";
-import type { FlmuxRendererBridgeSchema } from "../shared/rendererBridge";
+import type { FlmuxRendererBridgeSchema, FlmuxSessionSaveLayouts } from "../shared/rendererBridge";
 import type { TerminalRuntimeEvent } from "../shared/terminal";
 import { AttachmentRegistry } from "./attachmentRegistry";
 import { FlmuxClientRegistry } from "./clientRegistry";
 import { createSessionStore } from "./sessionStore";
-import { createDesktopShellAuthority, type DesktopShellAuthority } from "./desktopShellAuthority";
+import {
+  DESKTOP_ATTACHMENT_ID,
+  createDesktopShellAuthority,
+  type DesktopShellAuthority
+} from "./desktopShellAuthority";
 import { createWebModeShellAuthority, type WebModeShellAuthority } from "./webModeShellAuthority";
 import { startFlmuxServer } from "./server";
 import { forwardTerminalEventToOwnedClient } from "./terminalEventForwarding";
@@ -18,13 +22,6 @@ import {
   discoverConfiguredLocalExtensions,
   resolveConfiguredLocalExtensionsRootDir
 } from "./localExtensions";
-
-/**
- * Desktop CEF attachment is a single, stable identity. Web browser
- * attachments get per-connection uuids in B1d (tied to the cookie
- * attachmentId returned by /api/shell/bootstrap).
- */
-const DESKTOP_ATTACHMENT_ID = "local";
 
 type ShellAuthority = Pick<
   DesktopShellAuthority | WebModeShellAuthority,
@@ -72,7 +69,8 @@ const webModeShellAuthority = runtimeMode === "web"
   : null;
 
 const shellModelRouter = desktopAuthority?.router ?? webModeShellAuthority?.router;
-if (!shellModelRouter) {
+const shellModel = desktopAuthority?.shellModel ?? webModeShellAuthority?.shellModel;
+if (!shellModelRouter || !shellModel) {
   throw new Error(`No shell model authority configured for runtime mode '${runtimeMode}'`);
 }
 
@@ -89,28 +87,37 @@ function scopeMatches(event: SequencedShellCoreEvent, attachmentId: string): boo
 }
 
 /**
- * Bind a transport (desktop preload or web ws client) to an attachment.
- * Runs two subscribers against the shell core:
- *   1. Always-on buffer: writes scope-matched events into the attachment's
- *      ring buffer, independent of live connection status. Installed once
- *      per attachment; preserved across disconnect+reconnect.
- *   2. Live forwarder: scope-matched + pushed through the bridge. Replaced
- *      on reconnect.
+ * Install the always-on ring-buffer subscriber for `attachmentId`. Called
+ * at attachment creation time (desktop preload register, web HTTP bootstrap)
+ * so the buffer is alive from the moment the attachment exists — including
+ * the window between `/api/shell/bootstrap` response and the browser's WS
+ * `flmux.client.register` call. Idempotent.
+ */
+function ensureBufferSubscriber(attachmentId: string) {
+  if (!shellAuthority) return;
+  const state = attachmentRegistry.ensure(attachmentId);
+  if (state.unsubscribeBuffer) return;
+  const unsub = shellAuthority.subscribe((event) => {
+    if (scopeMatches(event, attachmentId)) {
+      attachmentRegistry.pushBuffered(attachmentId, event);
+    }
+  });
+  attachmentRegistry.setBufferSubscriber(attachmentId, unsub);
+}
+
+/**
+ * Bind a connected transport (desktop preload or web ws client) to an
+ * attachment's live event forwarder. The buffer subscriber is installed
+ * separately via `ensureBufferSubscriber` at attachment creation. On
+ * reconnect this is called again — the live forwarder is replaced, the
+ * buffer subscriber is untouched.
  */
 function installAttachmentForwarder(attachmentId: string, viewId: number) {
   if (!shellAuthority) return;
   const client = clientRegistry.resolveByViewId(viewId);
   if (!client) return;
 
-  const state = attachmentRegistry.ensure(attachmentId);
-  if (!state.unsubscribeBuffer) {
-    const unsubBuffer = shellAuthority.subscribe((event) => {
-      if (scopeMatches(event, attachmentId)) {
-        attachmentRegistry.pushBuffered(attachmentId, event);
-      }
-    });
-    attachmentRegistry.setBufferSubscriber(attachmentId, unsubBuffer);
-  }
+  ensureBufferSubscriber(attachmentId);
 
   const unsubLive = shellAuthority.subscribe((event) => {
     if (!scopeMatches(event, attachmentId)) return;
@@ -118,6 +125,61 @@ function installAttachmentForwarder(attachmentId: string, viewId: number) {
   });
   attachmentRegistry.attachLive(attachmentId, viewId, unsubLive);
   viewIdToAttachmentId.set(viewId, attachmentId);
+}
+
+/**
+ * Web-mode attachment binding: replay any buffered events the client missed
+ * between bootstrap and register, then install the live forwarder. Returns
+ * `"rebootstrap-required"` when the client's `lastAppliedSeq` is older than
+ * the ring buffer's oldest seq — the client drops local state and re-POSTs
+ * `/api/shell/bootstrap`.
+ */
+function bindWebAttachment(
+  viewId: number,
+  binding: { attachmentId: string; lastAppliedSeq: number }
+): "rebootstrap-required" | void {
+  const replayed = attachmentRegistry.replayAfter(binding.attachmentId, binding.lastAppliedSeq);
+  if (replayed === null) {
+    // Buffer rolled past the client's seq — the stale attachment entry is
+    // useless now; the client will mint a fresh id on re-bootstrap.
+    attachmentRegistry.evict(binding.attachmentId);
+    return "rebootstrap-required";
+  }
+  const client = clientRegistry.resolveByViewId(viewId);
+  if (client) {
+    for (const event of replayed) {
+      client.bridge.sendProxy["shellCore.event"](event);
+    }
+  }
+  installAttachmentForwarder(binding.attachmentId, viewId);
+}
+
+function mintWebAttachmentId(): string {
+  return `web_${crypto.randomUUID()}`;
+}
+
+/** Main-side session-save debounce. Web mode has no `sessionStore` in
+ * B1d — `pushLayout` is a no-op there (B2 gap). */
+const SESSION_SAVE_DEBOUNCE_MS = 250;
+let pendingLayouts: FlmuxSessionSaveLayouts | null = null;
+let layoutDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+function pushLayout(layouts: FlmuxSessionSaveLayouts) {
+  if (!desktopAuthority) return;
+  // Coalescing shape: overwrite pendingLayouts + early-return keeps the
+  // already-armed timer; the latest layout wins when it fires. A burst of
+  // pushes inside the debounce window writes once.
+  pendingLayouts = layouts;
+  if (layoutDebounceTimer) return;
+  layoutDebounceTimer = setTimeout(() => {
+    layoutDebounceTimer = null;
+    const toWrite = pendingLayouts;
+    pendingLayouts = null;
+    if (!toWrite) return;
+    void desktopAuthority!.persistSession(toWrite).catch((error) => {
+      console.warn("[flmux] failed to persist session layouts", error);
+    });
+  }, SESSION_SAVE_DEBOUNCE_MS);
 }
 
 function releaseView(viewId: number) {
@@ -155,14 +217,18 @@ const rendererRpc = BrowserView.defineRPC<FlmuxRendererBridgeSchema>({
       getCallerAttachmentId: (viewId) => viewIdToAttachmentId.get(viewId) ?? null,
       paneOwners,
       shellModelRouter,
+      shellModel,
       terminalService,
       localExtensions,
       desktopAuthority,
       onClientRegister: (viewId) => {
         // Desktop CEF is a single attachment; its viewId binds to the
-        // stable "local" identity for the life of the process.
+        // stable "local" identity for the life of the process. Web clients
+        // reach the separate handler below with a `binding` arg — the
+        // desktop preload never passes one.
         installAttachmentForwarder(DESKTOP_ATTACHMENT_ID, viewId);
-      }
+      },
+      pushLayout
     })
   }
 });
@@ -184,13 +250,22 @@ rendererRpc.webHandler.onWebClientConnected = (client) => {
     getCallerAttachmentId: (id) => viewIdToAttachmentId.get(id) ?? null,
     paneOwners,
     shellModelRouter,
+    shellModel,
     terminalService,
     localExtensions,
     desktopAuthority,
-    // Web-mode attachment binding lands in B1d — cookie-driven identity
-    // from /api/shell/bootstrap. B1c leaves onClientRegister a no-op for
-    // web clients so the infrastructure compiles without a browser.
-    onClientRegister: () => {}
+    onClientRegister: (registeredViewId, binding) => {
+      if (!binding) {
+        throw new Error(
+          "flmux.client.register: web clients must pass {attachmentId, lastAppliedSeq} " +
+          "obtained from /api/shell/bootstrap"
+        );
+      }
+      return bindWebAttachment(registeredViewId, binding);
+    },
+    // Web has no sessionStore in B1d (desktop-only). See `pushLayout`
+    // definition above — web pushes are silently dropped (B2 gap).
+    pushLayout
   }));
   clientRegistry.attachRenderer(viewId, client.rpc);
 };
@@ -207,6 +282,24 @@ const server = startFlmuxServer({
   localExtensions,
   saveSession: desktopAuthority
     ? (layouts) => desktopAuthority.persistSession(layouts)
+    : undefined,
+  // Web-mode HTTP bootstrap. Each call mints a fresh attachmentId, installs
+  // its ring-buffer subscriber BEFORE composing the snapshot (so events
+  // emitted by `shellBootstrap` or by concurrent callers during the HTTP
+  // round-trip land in the buffer for replay at register time), then runs
+  // the authority's sync bootstrap. The grace timer armed here evicts the
+  // attachment if the browser never completes register (crashed tab, or
+  // rebootstrap-required before forwarder install) — without it, the
+  // shellCore subscriber would leak for the process lifetime.
+  bootstrapAttachment: webModeShellAuthority
+    ? () => {
+        const attachmentId = mintWebAttachmentId();
+        ensureBufferSubscriber(attachmentId);
+        attachmentRegistry.markDisconnected(attachmentId, (state) => {
+          console.log(`[flmux] unbound attachment ${state.attachmentId} evicted after grace`);
+        });
+        return webModeShellAuthority.shellBootstrap(attachmentId);
+      }
     : undefined,
   authorizer: webModeAuthorizer ?? undefined,
   rpcWebHandler: rendererRpc.webHandler

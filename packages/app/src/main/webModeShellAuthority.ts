@@ -7,6 +7,8 @@ import {
   type SequencedShellCoreEvent,
   type ShellModelAPI
 } from "@flmux/core/shell";
+import type { FlmuxShellBootstrapResponse } from "../shared/rendererBridge";
+import { buildBootstrapResponse } from "./desktopShellAuthority";
 import type { TerminalRuntimeEvent } from "../shared/terminal";
 import type { TerminalService } from "./terminal-service";
 import { createServerShellModelRouter } from "./serverShellModelRouter";
@@ -25,6 +27,13 @@ export interface WebModeShellAuthority {
   subscribe(handler: (event: SequencedShellCoreEvent) => void): () => void;
   start(origin: string): Promise<void>;
   applyTerminalEvent(event: TerminalRuntimeEvent): void;
+  /** Mirror of the desktop helper — seeds the attachment's active ws when
+   * the slot is fresh. Idempotent. */
+  bootstrapAttachment(attachmentId: string): void;
+  /** Build the snapshot for a browser attachment. No session restore —
+   * web mode has no `sessionStore` in B1d (per-user persistence lands in
+   * B2). `outerLayout`/`innerLayouts` are always `null` here. */
+  shellBootstrap(attachmentId: string): FlmuxShellBootstrapResponse;
 }
 
 export async function createWebModeShellAuthority(options: {
@@ -60,6 +69,32 @@ export async function createWebModeShellAuthority(options: {
   });
   const clientId = `server_${crypto.randomUUID()}`;
 
+  function bootstrapAttachment(attachmentId: string) {
+    if (shellCore.getSlotActiveWorkspaceId(attachmentId) !== null) {
+      return;
+    }
+    const [firstWs] = shellCore.getWorkspaceIds();
+    if (!firstWs) {
+      throw new Error("bootstrapAttachment: shell has no workspaces to seed active");
+    }
+    shellCore.setActiveWorkspace(firstWs, { slotKey: attachmentId });
+  }
+
+  function shellBootstrap(attachmentId: string): FlmuxShellBootstrapResponse {
+    // Mirror of the desktop path: mutate (bootstrap helper) BEFORE capturing
+    // seqStart (inside buildBootstrapResponse) so the emitted
+    // `workspace.activeChanged` is already folded into the snapshot boundary
+    // (Preflight #1 §S3 + feedback Q4). Web authority has no session
+    // restore, so outerLayout/innerLayouts are always empty.
+    bootstrapAttachment(attachmentId);
+    return buildBootstrapResponse({
+      attachmentId,
+      shellCore,
+      outerLayout: null,
+      innerLayouts: {}
+    });
+  }
+
   return {
     clientId,
     shellModel,
@@ -69,9 +104,6 @@ export async function createWebModeShellAuthority(options: {
       getWorkspace: async () => shellCore.getWorkspaceStatus(),
       clientRegistry: options.clientRegistry
     }),
-    // Parity with desktopShellAuthority.subscribe — the forwarder wire that
-    // pushes these events to attached browser clients lands in B1c, but
-    // exposing the hook here lets main.ts install it without another flip.
     subscribe: (handler) => shellCore.subscribe(handler),
     async start(origin: string) {
       shellCore.setAppOrigin(origin);
@@ -79,6 +111,8 @@ export async function createWebModeShellAuthority(options: {
     },
     applyTerminalEvent(event) {
       shellCore.applyTerminalEvent(event);
-    }
+    },
+    bootstrapAttachment,
+    shellBootstrap
   };
 }

@@ -26,6 +26,15 @@ export interface ShellPathEntry {
 
 export interface PathCallerContext {
   sourcePaneId?: string;
+  // Phase B: routing/context hints. `attachmentId` names the attachment
+  // whose view-state a mutation targets (e.g. /workspaces/{id}/setActive);
+  // `workspaceId` resolves implicit-current-workspace paths (/panes/new,
+  // /status/workspace/*) for preload callers. Both optional here — wired
+  // in later Phase B steps. External callers (CLI, raw HTTP) without an
+  // attachment leave them unset and hit INVALID_VALUE on paths that need
+  // the resolution.
+  attachmentId?: string;
+  workspaceId?: string;
 }
 
 export type Awaitable<T> = T | Promise<T>;

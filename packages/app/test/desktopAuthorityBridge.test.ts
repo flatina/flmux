@@ -368,6 +368,32 @@ describe("desktop shell authority bridge", () => {
     expect(paneOwners.get(paneId)).toBe(42);
   });
 
+  // Router goes onto the HTTP/WS wire (external, CLI). If router.pathCall
+  // drops `caller`, every caller-dependent path (/bus/publish today; Phase B
+  // adds /workspaces/{id}/setActive etc.) silently falls back to "no caller",
+  // which external surfaces will hit first.
+  it("router.pathCall forwards PathCallerContext to bus.publish", async () => {
+    const { authority } = await createTestAuthority();
+    const paneId = authority.shellBootstrap().snapshot.panes[
+      authority.shellBootstrap().snapshot.workspaces[0].id
+    ][0].id;
+
+    const withoutCaller = await authority.router.pathCall({
+      clientId: authority.clientId,
+      path: "/bus/publish",
+      args: { topic: "demo.ping", payload: { n: 1 } }
+    });
+    expect(withoutCaller).toMatchObject({ ok: false });
+
+    const withCaller = await authority.router.pathCall({
+      clientId: authority.clientId,
+      path: "/bus/publish",
+      args: { topic: "demo.ping", payload: { n: 1 } },
+      caller: { sourcePaneId: paneId }
+    });
+    expect(withCaller).toMatchObject({ ok: true });
+  });
+
   it("shellModel.path.call forwards PathCallerContext to bus.publish", async () => {
     const { authority } = await createTestAuthority();
     const handlers = createFlmuxHostRequestHandlers({

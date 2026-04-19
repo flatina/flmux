@@ -186,4 +186,5 @@ export interface ClientScopedPathCallInput {
   clientId: string;
   path: string;
   args?: Record<string, unknown>;
+  caller?: PathCallerContext;
 }

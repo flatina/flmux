@@ -59,7 +59,7 @@ export function createServerShellModelRouter(options: {
 
     async pathCall(input: ClientScopedPathCallInput) {
       assertAuthorityClientId(input.clientId, options.authorityClientId);
-      return await options.shellModel.pathCall(input.path, input.args);
+      return await options.shellModel.pathCall(input.path, input.args, input.caller);
     }
   };
 }

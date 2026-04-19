@@ -48,10 +48,12 @@ export function createFlmuxHostRequestHandlers(options: {
     viewId: number,
     binding?: { attachmentId: string; lastAppliedSeq: number }
   ): "rebootstrap-required" | void;
-  /** Record a layout delta for the main-side debounced session write. Only
-   * wired in desktop mode — web authority has no `sessionStore` in B1d
-   * (B2 gap). */
-  pushLayout?(layouts: FlmuxSessionSaveLayouts): void;
+  /** Record a layout delta for the main-side debounced session write.
+   * `viewId` is the caller's renderer id — main resolves which user's
+   * authority owns the save (per-user sessionStore in web, single
+   * sessionStore in desktop). A no-op when the authority has no
+   * `persistSession` wired. */
+  pushLayout?(viewId: number, layouts: FlmuxSessionSaveLayouts): void;
 }) {
   const buildConfig = (): FlmuxRendererBootstrapConfig => ({
     mode: options.mode,
@@ -124,7 +126,7 @@ export function createFlmuxHostRequestHandlers(options: {
     },
 
     "flmux.layout.push": (params: FlmuxSessionSaveLayouts) => {
-      options.pushLayout?.(params);
+      options.pushLayout?.(options.getCallerViewId(), params);
       return { ok: true as const };
     },
 

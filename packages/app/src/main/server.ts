@@ -39,10 +39,11 @@ export function startFlmuxServer(options: {
    * context because auth would have already rejected the request). */
   resolveShellModelRouter(context: FlmuxAuthorizationContext | null): Promise<FlmuxShellModelRouter>;
   localExtensions?: DiscoveredLocalExtension[];
-  /** Called from `/api/session/save` beacon in desktop mode. Web mode
-   * leaves this undefined — per-user sessionStore is a B2 Phase 2+
-   * concern (pending on-disk layout + admin migration decision). */
-  saveSession?(layouts: FlmuxSessionSaveLayouts): Promise<void>;
+  /** Called from `/api/session/save` beacon. Receives the authenticated
+   * user's context so web mode can route to the right per-user
+   * authority; desktop ignores it and routes to its single authority.
+   * Undefined when the calling authority has no sessionStore wired. */
+  saveSession?(context: FlmuxAuthorizationContext | null, layouts: FlmuxSessionSaveLayouts): Promise<void>;
   /** Mint a fresh attachment and build its bootstrap snapshot for the
    * authenticated user. Only wired in web mode — desktop CEF uses the
    * preload `flmux.shellBootstrap` RPC instead. */
@@ -172,7 +173,7 @@ export function startFlmuxServer(options: {
           throw new Error("Invalid flmux session save layouts");
         }
 
-        await options.saveSession(input);
+        await options.saveSession(auth.context, input);
         return { ok: true };
       });
     })

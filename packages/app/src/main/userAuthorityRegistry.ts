@@ -1,4 +1,6 @@
+import { join } from "node:path";
 import type { DiscoveredLocalExtension } from "./localExtensions";
+import { createSessionStore } from "./sessionStore";
 import { createWebModeShellAuthority, type WebModeShellAuthority } from "./webModeShellAuthority";
 import type { FlmuxClientRegistry } from "./clientRegistry";
 import type { TerminalService } from "./terminal-service";
@@ -15,6 +17,11 @@ export interface WebModeUserAuthorityRegistryOptions {
    * attach per-authority index subscribers (e.g. paneId→authority for
    * terminal event routing) without the registry knowing about them. */
   onAuthorityCreated?(userId: string, authority: WebModeShellAuthority): void;
+  /** When set, each user authority gets a persistent session store at
+   * `<sessionsDir>/<userId>/session.json`. Workspaces survive process
+   * restarts per-user. Omit to keep authorities in-memory only (tests,
+   * dev without auth). */
+  sessionsDir?: string;
 }
 
 export interface WebModeUserAuthorityRegistry {
@@ -30,11 +37,11 @@ export interface WebModeUserAuthorityRegistry {
  * CLI sessions from the same user share that authority → their workspaces
  * and panes mirror each other.
  *
- * Phase 2 gaps (intentional):
- * - **Session persistence** — desktop keeps its single `sessionStore`;
- *   web has no per-user persistent store until we decide on the on-disk
- *   layout and admin migration story. A user's workspaces evaporate
- *   when the bun process exits.
+ * Per-user session persistence is wired when `sessionsDir` is set:
+ * each authority gets its own store at `<sessionsDir>/<userId>/session.json`.
+ * Without `sessionsDir` the authorities stay in-memory (useful for tests).
+ *
+ * Phase 2+ gap (intentional):
  * - **Authority eviction** — authorities live for the process lifetime.
  *   Every user who ever authenticated contributes a `ShellCore` that
  *   receives every terminal event forever. Phase 2+ adds a
@@ -47,12 +54,16 @@ export function createWebModeUserAuthorityRegistry(
   const pending = new Map<string, Promise<WebModeShellAuthority>>();
 
   async function create(userId: string): Promise<WebModeShellAuthority> {
+    const sessionStore = options.sessionsDir
+      ? createSessionStore({ filePath: join(options.sessionsDir, userId, "session.json") })
+      : undefined;
     const authority = await createWebModeShellAuthority({
       projectDir: options.projectDir,
       runtimeLabel: `web server authority (${userId})`,
       terminalService: options.terminalService,
       clientRegistry: options.clientRegistry,
-      localExtensions: options.localExtensions
+      localExtensions: options.localExtensions,
+      sessionStore
     });
     await authority.start(options.getOrigin());
     authorities.set(userId, authority);

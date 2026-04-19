@@ -7,8 +7,16 @@ export interface FlmuxSessionStore {
   save(snapshot: FlmuxSessionSnapshot): Promise<void>;
 }
 
-export function createSessionStore(): FlmuxSessionStore {
-  const filePath = process.env.FLMUX_SESSION_FILE?.trim() || join(process.cwd(), ".tmp", "session.json");
+export interface FlmuxSessionStoreOptions {
+  /** Explicit path for this store. Overrides the env/cwd defaults — used
+   * by per-user web-mode stores that live under `<authDir>/sessions/`. */
+  filePath?: string;
+}
+
+export function createSessionStore(options: FlmuxSessionStoreOptions = {}): FlmuxSessionStore {
+  const filePath = options.filePath
+    || process.env.FLMUX_SESSION_FILE?.trim()
+    || join(process.cwd(), ".tmp", "session.json");
 
   return {
     async load() {

@@ -141,7 +141,7 @@ export async function createDesktopShellAuthority(options: {
   };
 }
 
-function restoreFromSession(
+export function restoreFromSession(
   shellCore: ShellCore,
   snapshot: FlmuxSessionSnapshot
 ): FlmuxSessionSaveLayouts | null {
@@ -257,7 +257,7 @@ export function buildBootstrapResponse(options: {
   };
 }
 
-function composeSessionSnapshot(
+export function composeSessionSnapshot(
   shellCore: ShellCore,
   layouts: FlmuxSessionSaveLayouts
 ): FlmuxSessionSnapshot {

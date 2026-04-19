@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { BrowserView, BrowserWindow, AppRuntime } from "bunite-core";
 import type { SequencedShellCoreEvent, ShellModelAPI } from "@flmux/core/shell";
 import type { FlmuxRendererBridgeSchema, FlmuxSessionSaveLayouts } from "../shared/rendererBridge";
@@ -32,6 +33,7 @@ type ShellAuthority = Pick<
   readonly shellModel: ShellModelAPI;
   readonly router: FlmuxShellModelRouter;
   readonly clientId: string;
+  persistSession?(layouts: FlmuxSessionSaveLayouts): Promise<void>;
 };
 
 const runtimeMode = resolveFlmuxRuntimeMode();
@@ -79,7 +81,11 @@ const userAuthorityRegistry: WebModeUserAuthorityRegistry | null = runtimeMode =
       getOrigin: () => serverOrigin,
       onAuthorityCreated: (_userId, authority) => {
         trackPaneLifecycle(authority);
-      }
+      },
+      // Per-user session persistence under the auth dir — each
+      // authenticated user gets `<authDir>/sessions/<userId>/session.json`.
+      // `webModeAuthPaths` is always set when runtimeMode is "web".
+      sessionsDir: webModeAuthPaths ? join(webModeAuthPaths.authDir, "sessions") : undefined
     })
   : null;
 
@@ -221,29 +227,36 @@ function mintWebAttachmentId(): string {
   return `web_${crypto.randomUUID()}`;
 }
 
-/** Main-side session-save debounce. Desktop-only — web mode has no
- * `sessionStore`. Per-user sessionStore is a B2 Phase 2+ concern (decision
- * pending on on-disk layout and admin migration). */
+/** Main-side session-save debounce. Per-authority — each user in web
+ * mode debounces independently; desktop debounces its single authority.
+ * Web authorities with no `persistSession` method (no sessionStore wired)
+ * silently drop the push. */
 const SESSION_SAVE_DEBOUNCE_MS = 250;
-let pendingLayouts: FlmuxSessionSaveLayouts | null = null;
-let layoutDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+type PersistingAuthority = ShellAuthority & {
+  persistSession(layouts: FlmuxSessionSaveLayouts): Promise<void>;
+};
+const pendingLayoutsByAuthority = new WeakMap<PersistingAuthority, FlmuxSessionSaveLayouts>();
+const debounceTimerByAuthority = new WeakMap<PersistingAuthority, ReturnType<typeof setTimeout>>();
 
-function pushLayout(layouts: FlmuxSessionSaveLayouts) {
-  if (!desktopAuthority) return;
+function pushLayoutForViewId(viewId: number, layouts: FlmuxSessionSaveLayouts) {
+  const authority = resolveAuthorityForViewId(viewId);
+  if (!authority?.persistSession) return;
+  const persisting = authority as PersistingAuthority;
   // Coalescing shape: overwrite pendingLayouts + early-return keeps the
   // already-armed timer; the latest layout wins when it fires. A burst of
   // pushes inside the debounce window writes once.
-  pendingLayouts = layouts;
-  if (layoutDebounceTimer) return;
-  layoutDebounceTimer = setTimeout(() => {
-    layoutDebounceTimer = null;
-    const toWrite = pendingLayouts;
-    pendingLayouts = null;
+  pendingLayoutsByAuthority.set(persisting, layouts);
+  if (debounceTimerByAuthority.has(persisting)) return;
+  const timer = setTimeout(() => {
+    debounceTimerByAuthority.delete(persisting);
+    const toWrite = pendingLayoutsByAuthority.get(persisting);
+    pendingLayoutsByAuthority.delete(persisting);
     if (!toWrite) return;
-    void desktopAuthority!.persistSession(toWrite).catch((error) => {
+    void persisting.persistSession(toWrite).catch((error) => {
       console.warn("[flmux] failed to persist session layouts", error);
     });
   }, SESSION_SAVE_DEBOUNCE_MS);
+  debounceTimerByAuthority.set(persisting, timer);
 }
 
 function releaseView(viewId: number) {
@@ -318,7 +331,7 @@ const rendererRpc = BrowserView.defineRPC<FlmuxRendererBridgeSchema>({
         // desktop preload never passes one.
         installAttachmentForwarder(DESKTOP_ATTACHMENT_ID, viewId);
       },
-      pushLayout
+      pushLayout: pushLayoutForViewId
     })
   }
 });
@@ -358,10 +371,10 @@ rendererRpc.webHandler.onWebClientConnected = (client) => {
       }
       return bindWebAttachment(registeredViewId, binding);
     },
-    // Web has no sessionStore in B2 Phase 1. Per-user persistence is a
-    // separate axis (on-disk layout + admin migration) deferred to a
-    // future B2 Phase 2+ work item.
-    pushLayout
+    // Per-user sessionStore persistence (B2 Phase 2): the user's
+    // authority owns its own store at `<authDir>/sessions/<userId>/session.json`
+    // — main resolves the right one from the caller's viewId.
+    pushLayout: pushLayoutForViewId
   }));
   clientRegistry.attachRenderer(viewId, client.rpc);
 };
@@ -377,8 +390,17 @@ const server = startFlmuxServer({
   resolveShellModelRouter: resolveShellModelRouterForRequest,
   localExtensions,
   saveSession: desktopAuthority
-    ? (layouts) => desktopAuthority.persistSession(layouts)
-    : undefined,
+    ? (_context, layouts) => desktopAuthority.persistSession(layouts)
+    : userAuthorityRegistry
+      ? async (context, layouts) => {
+          if (!context) {
+            throw new Error("/api/session/save: web mode requires an auth context");
+          }
+          const authority = await userAuthorityRegistry.getOrCreate(context.user.name);
+          if (!authority.persistSession) return;
+          await authority.persistSession(layouts);
+        }
+      : undefined,
   // Web-mode HTTP bootstrap. Resolves the calling user from auth context,
   // lazily creates the user's authority, mints a fresh attachmentId,
   // records the attachmentId→userId mapping so WS register + shellModel

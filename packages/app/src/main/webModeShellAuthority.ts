@@ -7,8 +7,8 @@ import {
   type SequencedShellCoreEvent,
   type ShellModelAPI
 } from "@flmux/core/shell";
-import type { FlmuxShellBootstrapResponse } from "../shared/rendererBridge";
-import { buildBootstrapResponse } from "./desktopShellAuthority";
+import type { FlmuxSessionSaveLayouts, FlmuxShellBootstrapResponse } from "../shared/rendererBridge";
+import { buildBootstrapResponse, composeSessionSnapshot, restoreFromSession } from "./desktopShellAuthority";
 import type { TerminalRuntimeEvent } from "../shared/terminal";
 import type { TerminalService } from "./terminal-service";
 import { createServerShellModelRouter } from "./serverShellModelRouter";
@@ -19,6 +19,7 @@ import {
   createExtensionPaneSpecs,
   type ExtensionModuleImporter
 } from "./paneSpecs";
+import type { FlmuxSessionStore } from "./sessionStore";
 
 export interface WebModeShellAuthority {
   readonly clientId: string;
@@ -30,10 +31,14 @@ export interface WebModeShellAuthority {
   /** Mirror of the desktop helper — seeds the attachment's active ws when
    * the slot is fresh. Idempotent. */
   bootstrapAttachment(attachmentId: string): void;
-  /** Build the snapshot for a browser attachment. No session restore —
-   * web mode has no `sessionStore` in B1d (per-user persistence lands in
-   * B2). `outerLayout`/`innerLayouts` are always `null` here. */
+  /** Build the snapshot for a browser attachment. Includes `outerLayout` /
+   * `innerLayouts` when a session store is wired and the last save was
+   * restored at startup; empty otherwise. */
   shellBootstrap(attachmentId: string): FlmuxShellBootstrapResponse;
+  /** Persist the caller's layout delta to this authority's session store.
+   * `undefined` when no store is wired (single-user dev mode / tests) —
+   * callers should tolerate absence the same way desktop does. */
+  persistSession?(layouts: FlmuxSessionSaveLayouts): Promise<void>;
 }
 
 export async function createWebModeShellAuthority(options: {
@@ -43,6 +48,10 @@ export async function createWebModeShellAuthority(options: {
   clientRegistry: FlmuxClientRegistry;
   localExtensions?: readonly DiscoveredLocalExtension[];
   extensionModuleImporter?: ExtensionModuleImporter;
+  /** Per-user persistent store. When present, `start()` attempts
+   * `sessionStore.load()` + `restoreFromSession` before falling back to
+   * `initialize()`; `persistSession` writes through to the store. */
+  sessionStore?: FlmuxSessionStore;
 }): Promise<WebModeShellAuthority> {
   const paneRegistry = new PaneRegistry<PaneSpec>();
   paneRegistry.register(createPlaceholderPaneSpec());
@@ -69,6 +78,13 @@ export async function createWebModeShellAuthority(options: {
   });
   const clientId = `server_${crypto.randomUUID()}`;
 
+  // Persisted snapshot layouts survive across restarts if a session store
+  // is wired. Populated at start() via load+restore; consumed by
+  // shellBootstrap so the first attachment sees the restored workspace
+  // tree instead of the seed.
+  let persistedOuterLayout: unknown | null = null;
+  let persistedInnerLayouts: Record<string, unknown | null> = {};
+
   function bootstrapAttachment(attachmentId: string) {
     if (shellCore.getSlotActiveWorkspaceId(attachmentId) !== null) {
       return;
@@ -84,14 +100,13 @@ export async function createWebModeShellAuthority(options: {
     // Mirror of the desktop path: mutate (bootstrap helper) BEFORE capturing
     // seqStart (inside buildBootstrapResponse) so the emitted
     // `workspace.activeChanged` is already folded into the snapshot boundary
-    // (Preflight #1 §S3 + feedback Q4). Web authority has no session
-    // restore, so outerLayout/innerLayouts are always empty.
+    // (Preflight #1 §S3 + feedback Q4).
     bootstrapAttachment(attachmentId);
     return buildBootstrapResponse({
       attachmentId,
       shellCore,
-      outerLayout: null,
-      innerLayouts: {}
+      outerLayout: persistedOuterLayout,
+      innerLayouts: persistedInnerLayouts
     });
   }
 
@@ -107,12 +122,25 @@ export async function createWebModeShellAuthority(options: {
     subscribe: (handler) => shellCore.subscribe(handler),
     async start(origin: string) {
       shellCore.setAppOrigin(origin);
+      const snapshot = options.sessionStore ? await options.sessionStore.load() : null;
+      const restored = snapshot ? restoreFromSession(shellCore, snapshot) : null;
+      if (restored) {
+        persistedOuterLayout = restored.outerLayout;
+        persistedInnerLayouts = restored.innerLayouts;
+        return;
+      }
       shellCore.initialize();
     },
     applyTerminalEvent(event) {
       shellCore.applyTerminalEvent(event);
     },
     bootstrapAttachment,
-    shellBootstrap
+    shellBootstrap,
+    persistSession: options.sessionStore
+      ? async (layouts: FlmuxSessionSaveLayouts) => {
+          const composed = composeSessionSnapshot(shellCore, layouts);
+          await options.sessionStore!.save(composed);
+        }
+      : undefined
   };
 }

@@ -1,18 +1,27 @@
-import { describe, expect, it } from "bun:test";
-import { resolve } from "node:path";
+import { afterEach, describe, expect, it } from "bun:test";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { FlmuxClientRegistry } from "../src/main/clientRegistry";
 import { createInMemoryTerminalBackend, createTerminalService } from "../src/main/terminal-service";
 import { createWebModeUserAuthorityRegistry } from "../src/main/userAuthorityRegistry";
 
 const PROJECT_DIR = resolve(import.meta.dir, "..", "..", "..");
 
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(tempDirs.splice(0).map(async (dir) => await rm(dir, { recursive: true, force: true })));
+});
+
 describe("web-mode user authority registry (B2 Phase 1)", () => {
-  function makeRegistry() {
+  function makeRegistry(options: { sessionsDir?: string } = {}) {
     return createWebModeUserAuthorityRegistry({
       projectDir: PROJECT_DIR,
       terminalService: createTerminalService(createInMemoryTerminalBackend()),
       clientRegistry: new FlmuxClientRegistry(),
-      getOrigin: () => "http://127.0.0.1:4321"
+      getOrigin: () => "http://127.0.0.1:4321",
+      ...options
     });
   }
 
@@ -89,5 +98,102 @@ describe("web-mode user authority registry (B2 Phase 1)", () => {
     // Beta's stream must not see alpha's slot-scoped event — each
     // authority's subscribe is local to that user's ShellCore.
     expect(betaEvents.some((entry) => entry.startsWith("workspace.activeChanged:alpha_view"))).toBe(false);
+  });
+
+  it("wires per-user session stores under sessionsDir — B2 Phase 2 persistence", async () => {
+    const sessionsDir = await mkdtemp(join(tmpdir(), "flmux-sessions-"));
+    tempDirs.push(sessionsDir);
+
+    const registry = makeRegistry({ sessionsDir });
+
+    const alpha = await registry.getOrCreate("alpha");
+    expect(alpha.persistSession).toBeDefined();
+    const createRes = await alpha.router.pathCall({
+      clientId: alpha.clientId,
+      path: "/workspaces/new"
+    }) as { ok: true; value: { workspaceId: string } };
+    const newWorkspaceId = createRes.value.workspaceId;
+    // Simulate the renderer layout push — composeSessionSnapshot only
+    // persists workspaces present in outerLayout.panels.
+    const alphaLayout = {
+      outerLayout: {
+        panels: {
+          "workspace.1": { id: "workspace.1", contentComponent: "workspace" },
+          [newWorkspaceId]: { id: newWorkspaceId, contentComponent: "workspace" }
+        }
+      },
+      innerLayouts: {}
+    };
+    await alpha.persistSession!(alphaLayout);
+
+    const beta = await registry.getOrCreate("beta");
+    await beta.persistSession!({
+      outerLayout: {
+        panels: {
+          "workspace.1": { id: "workspace.1", contentComponent: "workspace" }
+        }
+      },
+      innerLayouts: {}
+    });
+
+    const userDirs = await readdir(sessionsDir);
+    expect(userDirs.sort()).toEqual(["alpha", "beta"]);
+    const alphaSnapshot = JSON.parse(await readFile(join(sessionsDir, "alpha", "session.json"), "utf8")) as {
+      version: number;
+      workspaces: Record<string, unknown>;
+    };
+    expect(alphaSnapshot.version).toBe(4);
+    // alpha created an extra workspace — persisted; beta did not.
+    expect(Object.keys(alphaSnapshot.workspaces)).toHaveLength(2);
+    const betaSnapshot = JSON.parse(await readFile(join(sessionsDir, "beta", "session.json"), "utf8")) as {
+      workspaces: Record<string, unknown>;
+    };
+    expect(Object.keys(betaSnapshot.workspaces)).toHaveLength(1);
+  });
+
+  it("omits persistSession when sessionsDir is not configured", async () => {
+    const registry = makeRegistry();
+    const alpha = await registry.getOrCreate("alpha");
+    expect(alpha.persistSession).toBeUndefined();
+  });
+
+  it("restores persisted workspaces on a fresh registry (restart scenario)", async () => {
+    const sessionsDir = await mkdtemp(join(tmpdir(), "flmux-sessions-restore-"));
+    tempDirs.push(sessionsDir);
+
+    // Session 1 — alpha creates a second workspace and persists.
+    const registry1 = makeRegistry({ sessionsDir });
+    const alpha1 = await registry1.getOrCreate("alpha");
+    const createRes = await alpha1.router.pathCall({
+      clientId: alpha1.clientId,
+      path: "/workspaces/new"
+    }) as { ok: true; value: { workspaceId: string } };
+    await alpha1.persistSession!({
+      outerLayout: {
+        panels: {
+          "workspace.1": { id: "workspace.1", contentComponent: "workspace" },
+          [createRes.value.workspaceId]: { id: createRes.value.workspaceId, contentComponent: "workspace" }
+        }
+      },
+      innerLayouts: {}
+    });
+
+    // Session 2 — fresh registry, same sessionsDir. Alpha's authority
+    // should restore the two workspaces from disk instead of seeding one.
+    const registry2 = makeRegistry({ sessionsDir });
+    const alpha2 = await registry2.getOrCreate("alpha");
+    const workspaces = await alpha2.router.pathGet({
+      clientId: alpha2.clientId,
+      path: "/workspaces"
+    }) as { ok: true; found: true; value: Record<string, unknown> };
+    expect(Object.keys(workspaces.value).sort()).toEqual([
+      "workspace.1",
+      createRes.value.workspaceId
+    ].sort());
+
+    // The restored authority also exposes the layout via shellBootstrap
+    // so browser attachments get the saved outer/inner layouts.
+    const bootstrap = alpha2.shellBootstrap("alpha_view");
+    expect(bootstrap.outerLayout).not.toBeNull();
   });
 });

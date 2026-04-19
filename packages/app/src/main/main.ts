@@ -410,18 +410,29 @@ const server = startFlmuxServer({
   // timer so an attachment whose WS register never arrives doesn't leak
   // a permanent shellCore subscriber.
   bootstrapAttachment: userAuthorityRegistry
-    ? async (context) => {
+    ? async (context, existingAttachmentId) => {
         if (!context) {
           throw new Error("/api/shell/bootstrap: web mode requires an auth context");
         }
         const userId = context.user.name;
         const authority = await userAuthorityRegistry.getOrCreate(userId);
-        const attachmentId = mintWebAttachmentId();
-        attachmentIdToUserId.set(attachmentId, userId);
-        ensureBufferSubscriber(attachmentId);
+        // Cookie continuity (B2 Phase 3): reuse the attachmentId when the
+        // browser's cookie matches a still-alive attachment owned by this
+        // user. Preserves slot state (active ws/pane) across tab refresh
+        // inside the 30-second grace window. Mismatch or unknown → mint
+        // fresh, install buffer subscriber. Either path re-arms the
+        // grace timer so the HTTP→WS register gap stays covered.
+        const canReuse = existingAttachmentId
+          && attachmentIdToUserId.get(existingAttachmentId) === userId
+          && attachmentRegistry.get(existingAttachmentId) !== undefined;
+        const attachmentId = canReuse ? existingAttachmentId! : mintWebAttachmentId();
+        if (!canReuse) {
+          attachmentIdToUserId.set(attachmentId, userId);
+          ensureBufferSubscriber(attachmentId);
+        }
         attachmentRegistry.markDisconnected(attachmentId, (state) => {
           attachmentIdToUserId.delete(state.attachmentId);
-          console.log(`[flmux] unbound attachment ${state.attachmentId} evicted after grace`);
+          console.log(`[flmux] attachment ${state.attachmentId} evicted after grace`);
         });
         return authority.shellBootstrap(attachmentId);
       }

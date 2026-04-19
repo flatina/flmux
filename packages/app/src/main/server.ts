@@ -44,10 +44,15 @@ export function startFlmuxServer(options: {
    * authority; desktop ignores it and routes to its single authority.
    * Undefined when the calling authority has no sessionStore wired. */
   saveSession?(context: FlmuxAuthorizationContext | null, layouts: FlmuxSessionSaveLayouts): Promise<void>;
-  /** Mint a fresh attachment and build its bootstrap snapshot for the
-   * authenticated user. Only wired in web mode — desktop CEF uses the
-   * preload `flmux.shellBootstrap` RPC instead. */
-  bootstrapAttachment?(context: FlmuxAuthorizationContext | null): Promise<FlmuxShellBootstrapResponse>;
+  /** Build the bootstrap snapshot for the authenticated user. When
+   * `existingAttachmentId` is the cookie value from a prior bootstrap
+   * and the server still owns that attachment for this user, the
+   * callback may reuse it (B2 Phase 3 cookie continuity) — otherwise
+   * it mints fresh. Only wired in web mode. */
+  bootstrapAttachment?(
+    context: FlmuxAuthorizationContext | null,
+    existingAttachmentId: string | null
+  ): Promise<FlmuxShellBootstrapResponse>;
   authorizer?: FlmuxWebModeAuthorizer;
   rpcWebHandler?: {
     open(ws: { send(data: Uint8Array | ArrayBuffer): void | number }): void;
@@ -163,7 +168,8 @@ export function startFlmuxServer(options: {
       // is still sync (preflight #1 §S3) so the snapshot boundary invariant
       // holds. What's async is the user's authority creation, not the
       // bootstrap body.
-      const response = await options.bootstrapAttachment(auth.context);
+      const existingAttachmentId = readCookie(request.headers.get("cookie"), "flmux-attachment");
+      const response = await options.bootstrapAttachment(auth.context, existingAttachmentId);
       const cookie = `flmux-attachment=${response.attachmentId}; HttpOnly; Path=/; SameSite=Strict`;
       setHeader(set, "set-cookie", cookie);
       setHeader(set, "content-type", "application/json; charset=utf-8");

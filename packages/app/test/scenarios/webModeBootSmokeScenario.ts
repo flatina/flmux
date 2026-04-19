@@ -75,6 +75,27 @@ export async function runWebModeBootSmokeScenario(
   const anonBootstrap = await fetch(`${origin}/api/shell/bootstrap`, { method: "POST" });
   expect(anonBootstrap.status).toBe(401);
 
+  // Cookie continuity (B2 Phase 3): presenting the previous attachment
+  // cookie alongside auth reuses the attachmentId. Mint-fresh only when
+  // the cookie is absent, mismatched, or the server no longer owns it.
+  const continuityRes = await fetch(`${origin}/api/shell/bootstrap`, {
+    method: "POST",
+    headers: { cookie: `${cookieHeader}; flmux-attachment=${shellBootstrap.attachmentId}` }
+  });
+  expect(continuityRes.status).toBe(200);
+  const continuityBody = await continuityRes.json() as { attachmentId: string };
+  expect(continuityBody.attachmentId).toBe(shellBootstrap.attachmentId);
+
+  // Bogus cookie → server falls back to minting fresh (isolation preserved).
+  const bogusRes = await fetch(`${origin}/api/shell/bootstrap`, {
+    method: "POST",
+    headers: { cookie: `${cookieHeader}; flmux-attachment=web_unknown` }
+  });
+  expect(bogusRes.status).toBe(200);
+  const bogusBody = await bogusRes.json() as { attachmentId: string };
+  expect(bogusBody.attachmentId).not.toBe("web_unknown");
+  expect(bogusBody.attachmentId).toMatch(/^web_/);
+
   const clients = await fetchJson<{
     ok: true;
     clients: Array<{
@@ -259,6 +280,21 @@ export async function runWebModeBootSmokeScenario(
   expect(crossUserRes.status).toBe(400);
   const crossUserBody = await crossUserRes.json() as { ok: false; error: string };
   expect(crossUserBody.error).toContain("Unknown flmux client");
+
+  // Cookie-continuity cross-user safety: presenting admin's attachmentId
+  // cookie with beta's auth must NOT reuse — mints fresh for beta, so
+  // admin's slot state stays private to admin.
+  const crossUserReuseRes = await fetch(`${origin}/api/shell/bootstrap`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${betaTokenResult.token}`,
+      cookie: `flmux-attachment=${shellBootstrap.attachmentId}`
+    }
+  });
+  expect(crossUserReuseRes.status).toBe(200);
+  const crossUserReuseBody = await crossUserReuseRes.json() as { attachmentId: string };
+  expect(crossUserReuseBody.attachmentId).not.toBe(shellBootstrap.attachmentId);
+  expect(crossUserReuseBody.attachmentId).not.toBe(betaBootstrap.attachmentId);
 }
 
 function cookieFromSetCookie(setCookie: string | null) {

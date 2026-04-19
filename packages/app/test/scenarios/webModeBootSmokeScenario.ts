@@ -1,5 +1,6 @@
 import { expect } from "bun:test";
-import { resolve } from "node:path";
+import { writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import type { AppProcessHandle } from "../support/realAppSmokeSupport";
 import {
   fetchJson,
@@ -7,6 +8,8 @@ import {
   waitFor,
   waitForWebOrigin
 } from "../support/realAppSmokeSupport";
+import { runTokensCli } from "../../src/cliTokens";
+import { stringifyUsersToml } from "../../src/main/auth/tomlWriter";
 
 export interface WebBootSmokeOptions {
   token: string;
@@ -178,6 +181,84 @@ export async function runWebModeBootSmokeScenario(
       ? panes.result.value
       : null;
   }, { timeoutMs: 15_000, intervalMs: 250, label: "web mode pane list after API and CLI calls" });
+
+  // ── Multi-user isolation (B2 Phase 1) ─────────────────────────────
+  // Second user's authority is a distinct ShellCore; nothing from admin
+  // above leaks into beta's snapshot / clients / pane list. Proves the
+  // per-user routing chain (auth → registry → authority) at the HTTP
+  // layer end-to-end — complementing `userAuthorityRegistry.test.ts`
+  // which covers the factory in isolation.
+  writeFileSync(
+    join(options.authDir, "users.toml"),
+    stringifyUsersToml([
+      { name: "admin", allowPaneKinds: "*" },
+      { name: "beta", allowPaneKinds: "*" }
+    ]),
+    "utf8"
+  );
+  const betaTokenResult = await runTokensCli([
+    "issue", "--user", "beta", "--auth-dir", options.authDir
+  ]) as { token: string };
+
+  const betaBootstrapRes = await fetch(`${origin}/api/shell/bootstrap`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${betaTokenResult.token}` }
+  });
+  expect(betaBootstrapRes.status).toBe(200);
+  const betaBootstrap = await betaBootstrapRes.json() as {
+    attachmentId: string;
+    snapshot: { activeWorkspaceId: string | null };
+  };
+  expect(betaBootstrap.attachmentId).toMatch(/^web_/);
+  expect(betaBootstrap.attachmentId).not.toBe(shellBootstrap.attachmentId);
+  expect(betaBootstrap.snapshot.activeWorkspaceId).toBe("workspace.1");
+
+  const betaClients = await fetchJson<{
+    ok: true;
+    clients: Array<{ clientId: string }>;
+  }>(`${origin}/api/clients`, {
+    headers: { authorization: `Bearer ${betaTokenResult.token}` }
+  });
+  expect(betaClients.clients).toHaveLength(1);
+  expect(betaClients.clients[0].clientId).not.toBe(authorityClientId);
+
+  // Beta's pane list contains only the default seed (cowsay + browser);
+  // admin's three extra panes (browser + terminal + cowsay from earlier
+  // in this scenario) don't leak across user boundaries.
+  const betaPanes = await postJson<{
+    ok: true;
+    result: {
+      ok: true;
+      found: true;
+      value: Record<string, { kind: string }>;
+    };
+  }>(`${origin}/api/model/path/get`, {
+    clientId: betaClients.clients[0].clientId,
+    path: "/status/panes"
+  }, {
+    headers: { authorization: `Bearer ${betaTokenResult.token}` }
+  });
+  const betaPaneKinds = Object.values(betaPanes.result.value).map((pane) => pane.kind).sort();
+  expect(betaPaneKinds).toEqual(["browser", "cowsay"]);
+
+  // Cross-user clientId rejection: admin's clientId on beta's route is
+  // refused by assertAuthorityClientId (beta's router pins its own id).
+  const crossUserRes = await fetch(`${origin}/api/model/path/get`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${betaTokenResult.token}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      clientId: authorityClientId,
+      path: "/status/app"
+    })
+  });
+  // 400 — the router rejects the admin clientId presented on beta's
+  // authenticated route via `assertAuthorityClientId`.
+  expect(crossUserRes.status).toBe(400);
+  const crossUserBody = await crossUserRes.json() as { ok: false; error: string };
+  expect(crossUserBody.error).toContain("Unknown flmux client");
 }
 
 function cookieFromSetCookie(setCookie: string | null) {

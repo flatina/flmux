@@ -24,11 +24,10 @@ export function createBrowserPaneSpec(): PaneSpec<BrowserPaneStateRecord> {
         kind: "browser",
         url: resolveBrowserUrl(workspace, optionalStringParam(params?.url) ?? workspace.defaultBrowserPath)
       }),
-      createSnapshot: ({ paneId, title, active, record }) => ({
+      createSnapshot: ({ paneId, title, record }) => ({
         id: paneId,
         kind: "browser",
         title,
-        active,
         browser: { url: record.url }
       })
     },

@@ -273,15 +273,14 @@ export class FlmuxWorkbench {
     }
   }
 
-  private applyWorkspaceRemoved(payload: { id: string; newActiveWorkspaceId: string | null }) {
+  private applyWorkspaceRemoved(payload: { id: string }) {
     // applyingCoreState is already true, so outer/inner onDidRemovePanel
     // callbacks fired by dockview's disposal cascade short-circuit before
-    // the pathCall branch — no extra guard needed here.
+    // the pathCall branch — no extra guard needed here. A follow-up
+    // workspace.activeChanged (scope=attachment, target=this attachment)
+    // re-points outer setActive; this handler just closes the panel.
     this.outerApi?.getPanel(payload.id)?.api.close();
     this.workspaces.delete(payload.id);
-    if (payload.newActiveWorkspaceId) {
-      this.outerApi?.getPanel(payload.newActiveWorkspaceId)?.api.setActive();
-    }
   }
 
   private applyWorkspaceTitleChanged(payload: { id: string; title: string }) {
@@ -331,16 +330,11 @@ export class FlmuxWorkbench {
     });
   }
 
-  private applyPaneRemoved(payload: {
-    paneId: string;
-    workspaceId: string;
-    newActivePaneId: string | null;
-  }) {
+  private applyPaneRemoved(payload: { paneId: string; workspaceId: string }) {
     const record = this.workspaces.get(payload.workspaceId);
     record?.innerApi?.getPanel(payload.paneId)?.api.close();
-    if (payload.newActivePaneId) {
-      record?.innerApi?.getPanel(payload.newActivePaneId)?.api.setActive();
-    }
+    // New-active selection now arrives as a separate scope=attachment
+    // pane.activeChanged — this handler only closes the panel.
   }
 
   private applyPaneTitleChanged(payload: { paneId: string; workspaceId: string; title: string }) {

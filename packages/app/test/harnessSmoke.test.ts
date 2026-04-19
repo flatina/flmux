@@ -26,7 +26,6 @@ describe("flmux harness smoke", () => {
         workspace: {
           id: string;
           title: string;
-          activePaneId: string | null;
           paneCount: number;
         } | null;
       }>;
@@ -39,7 +38,6 @@ describe("flmux harness smoke", () => {
       workspace: {
         id: harness.workspaceId,
         title: "Workspace Smoke",
-        activePaneId: null,
         paneCount: 0
       }
     });
@@ -286,8 +284,7 @@ describe("flmux harness smoke", () => {
       pane: {
         id: paneId,
         kind: "cowsay",
-        title: "hello from cli",
-        active: true
+        title: "hello from cli"
       }
     });
 

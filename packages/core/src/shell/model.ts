@@ -263,10 +263,18 @@ class ShellModel implements ShellModelAPI {
     }
 
     if (segments[0] === "workspaces") {
+      // `caller.attachmentId` flows through slot-aware mutations so the
+      // attachment-scoped events (workspace.activeChanged) target the right
+      // slot. Mutations without caller.attachmentId land on the authority's
+      // default slot.
+      const slotKey = caller.attachmentId;
+      const slotOptions = slotKey ? { slotKey } : undefined;
+
       if (segments.length === 2 && segments[1] === "new") {
-        const createdWorkspace = await this.host.createWorkspace({
-          title: optionalString(args.title)
-        });
+        const createdWorkspace = await this.host.createWorkspace(
+          { title: optionalString(args.title) },
+          slotOptions
+        );
         return {
           ok: true,
           value: {
@@ -289,7 +297,7 @@ class ShellModel implements ShellModelAPI {
       }
 
       if (segments.length === 3 && segments[2] === "setActive") {
-        await this.host.setActiveWorkspace(segments[1]!);
+        await this.host.setActiveWorkspace(segments[1]!, slotOptions);
         return { ok: true, value: { workspaceId: segments[1] } };
       }
 
@@ -306,12 +314,19 @@ class ShellModel implements ShellModelAPI {
     }
 
     if (segments.length === 2 && segments[1] === "new") {
-      const input = parseNewPaneArgs(args);
+      const { input, workspaceId: argsWorkspaceId } = parseNewPaneArgs(args);
       if (!(await this.host.hasPaneKind(input.kind))) {
         return throwPathError("INVALID_VALUE", `Unsupported pane kind '${input.kind}'`);
       }
 
-      const pane = await this.host.createPane(input);
+      // Resolution order: args.workspaceId > caller.workspaceId > slot's active (via host fallback).
+      // Host throws INVALID_VALUE when all three are absent.
+      const workspaceId = argsWorkspaceId ?? caller.workspaceId;
+      const slotKey = caller.attachmentId;
+      const pane = await this.host.createPane(
+        input,
+        workspaceId || slotKey ? { workspaceId, slotKey } : undefined
+      );
       return {
         ok: true,
         value: {
@@ -403,7 +418,7 @@ class ShellModel implements ShellModelAPI {
     }
 
     if (segments.length === 3 && segments[2] === "setActive") {
-      await this.host.setActivePane(pane.id);
+      await this.host.setActivePane(pane.id, caller.attachmentId ? { slotKey: caller.attachmentId } : undefined);
       return { ok: true, value: { paneId: pane.id } };
     }
 
@@ -533,7 +548,6 @@ class ShellModel implements ShellModelAPI {
         entries: [
           leafEntry("id", `/workspaces/${workspace.id}/id`),
           ...statePropertyEntries(WORKSPACE_STATE_PROPERTIES, `/workspaces/${workspace.id}`, "key", false),
-          leafEntry("activePaneId", `/workspaces/${workspace.id}/activePaneId`),
           leafEntry("paneCount", `/workspaces/${workspace.id}/paneCount`)
         ]
       };
@@ -787,7 +801,6 @@ class ShellModel implements ShellModelAPI {
         entries: [
           leafEntry("id", "/status/workspace/id"),
           leafEntry("title", "/status/workspace/title"),
-          leafEntry("activePaneId", "/status/workspace/activePaneId"),
           leafEntry("paneCount", "/status/workspace/paneCount")
         ]
       };
@@ -1006,7 +1019,7 @@ class ShellModel implements ShellModelAPI {
 
   private async resolvePane(paneSegment: string): Promise<ShellPaneRecordSnapshot | undefined> {
     if (paneSegment === "current") {
-      const activePaneId = (await this.host.getWorkspaceStatus()).activePaneId;
+      const activePaneId = await this.host.getCurrentPaneId();
       if (!activePaneId) {
         throw new ModelPathError("NO_CURRENT_PANE", "No active pane is available");
       }
@@ -1140,7 +1153,7 @@ function workspaceRootAliasEntries() {
   return statePropertyEntries(WORKSPACE_STATE_PROPERTIES, "", "alias");
 }
 
-class ModelPathError extends Error {
+export class ModelPathError extends Error {
   constructor(
     readonly code: PathErrorCode,
     message: string
@@ -1162,7 +1175,7 @@ function parsePath(path: string): string[] {
   return segments;
 }
 
-function parseNewPaneArgs(args: Record<string, unknown>): NewPaneInput {
+function parseNewPaneArgs(args: Record<string, unknown>): { input: NewPaneInput; workspaceId: string | undefined } {
   const kind = optionalString(args.kind);
   if (!kind) {
     throw new ModelPathError("INVALID_VALUE", "call /panes/new requires kind=...");
@@ -1173,6 +1186,7 @@ function parseNewPaneArgs(args: Record<string, unknown>): NewPaneInput {
   const url = optionalString(args.url);
   const cwd = optionalString(args.cwd);
   const referencePaneId = optionalString(args.referencePaneId);
+  const workspaceId = optionalString(args.workspaceId);
   const params = Object.fromEntries(
     Object.entries(args).filter(([key]) => (
       key !== "kind" &&
@@ -1180,18 +1194,22 @@ function parseNewPaneArgs(args: Record<string, unknown>): NewPaneInput {
       key !== "url" &&
       key !== "cwd" &&
       key !== "place" &&
-      key !== "referencePaneId"
+      key !== "referencePaneId" &&
+      key !== "workspaceId"
     ))
   );
 
   return {
-    kind,
-    title,
-    url,
-    cwd,
-    params: Object.keys(params).length > 0 ? params : undefined,
-    place,
-    referencePaneId
+    input: {
+      kind,
+      title,
+      url,
+      cwd,
+      params: Object.keys(params).length > 0 ? params : undefined,
+      place,
+      referencePaneId
+    },
+    workspaceId
   };
 }
 
@@ -1290,7 +1308,6 @@ function toPaneStatusSnapshot(pane: ShellPaneRecordSnapshot) {
         id: pane.id,
         kind: pane.kind,
         title: pane.title,
-        active: pane.active,
         browser: toBrowserStatusSnapshot(pane)
       }
     : pane.kind === "terminal"
@@ -1298,10 +1315,9 @@ function toPaneStatusSnapshot(pane: ShellPaneRecordSnapshot) {
           id: pane.id,
           kind: pane.kind,
           title: pane.title,
-          active: pane.active,
           terminal: toTerminalStatusSnapshot(pane)
         }
-    : { id: pane.id, kind: pane.kind, title: pane.title, active: pane.active };
+    : { id: pane.id, kind: pane.kind, title: pane.title };
 }
 
 function paneStateEntries(_pane: ShellPaneRecordSnapshot, basePath: string): ShellPathEntry[] {
@@ -1318,8 +1334,7 @@ function paneStatusEntries(_pane: ShellPaneRecordSnapshot, basePath: string): Sh
   return [
     leafEntry("id", `${basePath}/id`),
     leafEntry("kind", `${basePath}/kind`),
-    ...propertyEntries,
-    leafEntry("active", `${basePath}/active`)
+    ...propertyEntries
   ];
 }
 
@@ -1340,11 +1355,11 @@ function isAppStatusKey(value: string): value is keyof AppStatusSnapshot {
 }
 
 function isWorkspaceStatusKey(value: string): value is keyof ReturnType<ShellModelHost["getWorkspaceStatus"]> {
-  return value === "id" || value === "title" || value === "activePaneId" || value === "paneCount";
+  return value === "id" || value === "title" || value === "paneCount";
 }
 
 function isPaneStatusKey(value: string): value is keyof ReturnType<typeof toPaneStatusSnapshot> {
-  return value === "id" || value === "kind" || value === "title" || value === "active";
+  return value === "id" || value === "kind" || value === "title";
 }
 
 function isPaneStatusLeaf(value: string): value is keyof ReturnType<typeof toPaneStatusSnapshot> {

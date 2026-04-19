@@ -60,7 +60,11 @@ export async function createDesktopShellAuthority(options: {
     paneRegistry,
     runtimeLabel: options.runtimeLabel,
     projectDir: options.projectDir,
-    terminalBackend: options.terminalService
+    terminalBackend: options.terminalService,
+    // Phase B: the CEF renderer is a single attachment; name its slot
+    // "local" so scope=attachment event envelopes are self-describing.
+    // B2 switches to per-attachment slotKey = real attachmentId.
+    defaultSlotKey: "local"
   });
   const shellModel = createShellModel({
     host: shellCore,
@@ -210,7 +214,9 @@ function buildBootstrapResponse(options: {
     workspaces: workspaceIds.map((id) => shellCore.getWorkspaceSnapshot(id)!),
     panes,
     paneParams,
-    activeWorkspaceId: shellCore.getActiveWorkspaceId()
+    // Desktop CEF is a single attachment; name the slot explicitly here so
+    // the dependency on the authority-configured defaultSlotKey is visible.
+    activeWorkspaceId: shellCore.getSlotActiveWorkspaceId("local")
   };
   return {
     snapshot,

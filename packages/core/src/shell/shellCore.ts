@@ -16,21 +16,26 @@ import {
   type PaneStateRecord,
   type PaneWorkspaceContext
 } from "./panes";
+import { ModelPathError } from "./model";
 import { createWorkspaceBus } from "./workspaceBus";
-import type {
-  AppStatusSnapshot,
-  NewPaneInput,
-  ScopedPropertyTarget,
-  SequencedShellCoreEvent,
-  ShellCoreEvent,
-  ShellModelHost,
-  ShellPaneRecordSnapshot,
-  ShellResolvedPanePathMount,
-  ShellResolvedPaneSubtreeMount,
-  ShellTerminalDelegate,
-  WorkspaceBus,
-  WorkspaceBusEvent,
-  WorkspaceStatusSnapshot
+import {
+  SHELL_CORE_EVENT_SCOPES,
+  type ActiveStateSlot,
+  type AppStatusSnapshot,
+  type NewPaneInput,
+  type ScopedPropertyTarget,
+  type SequencedShellCoreEvent,
+  type ShellCoreEvent,
+  type ShellCreatePaneOptions,
+  type ShellModelHost,
+  type ShellPaneRecordSnapshot,
+  type ShellResolvedPanePathMount,
+  type ShellResolvedPaneSubtreeMount,
+  type ShellSlotOptions,
+  type ShellTerminalDelegate,
+  type WorkspaceBus,
+  type WorkspaceBusEvent,
+  type WorkspaceStatusSnapshot
 } from "./types";
 
 interface WorkspaceRecord {
@@ -43,7 +48,6 @@ interface WorkspaceRecord {
   paneTitles: Map<string, string>;
   paneStates: Map<string, PaneStateRecord>;
   paneParams: Map<string, Record<string, unknown> | undefined>;
-  activePaneId: string | null;
 }
 
 export interface ShellCoreOptions {
@@ -53,19 +57,39 @@ export interface ShellCoreOptions {
   projectDir: string;
   terminalBackend: TerminalBackend;
   initialAppOrigin?: string;
+  /**
+   * Slot key used when a mutation/read doesn't pass an explicit slot — i.e.
+   * the "owner" attachment for initialize(), restoreWorkspace, and the
+   * requireCurrentWorkspace() preload-convenience read. Authority callers
+   * pass their attachmentId here (desktop: `"local"`); tests may omit.
+   *
+   * **B1b transition**: core treats defaultSlotKey as the implicit target
+   * for initialize/restore so the single-attachment world behaves like the
+   * pre-split core. When B2 lands per-attachment routing, initialize/restore
+   * need an explicit slotKey argument or the shell bootstrap needs to be
+   * driven from the authority rather than the core — at that point
+   * defaultSlotKey should either go away or become strictly test-scoped.
+   */
+  defaultSlotKey?: string;
 }
+
+const IMPLICIT_DEFAULT_SLOT_KEY = "default";
 
 export class ShellCore implements ShellModelHost {
   private readonly workspaces = new Map<string, WorkspaceRecord>();
   private readonly paneWorkspaceIds = new Map<string, string>();
   private readonly eventSubscribers = new Set<(event: SequencedShellCoreEvent) => void>();
+  // Per-slot active state. `slotKey` is opaque to core — authority treats it
+  // as attachmentId; tests treat it as a harness id. Core only routes.
+  private readonly activeSlots = new Map<string, ActiveStateSlot>();
+  private readonly defaultSlotKey: string;
   private appTitle = "flmux";
   private appOrigin: string;
-  private activeWorkspaceId: string | null = null;
   private seq = 0;
 
   constructor(private readonly options: ShellCoreOptions) {
     this.appOrigin = options.initialAppOrigin ?? "http://127.0.0.1:0";
+    this.defaultSlotKey = options.defaultSlotKey ?? IMPLICIT_DEFAULT_SLOT_KEY;
   }
 
   /**
@@ -82,22 +106,68 @@ export class ShellCore implements ShellModelHost {
     return this.seq;
   }
 
-  private emit(event: ShellCoreEvent) {
+  /**
+   * Emit with a routing envelope. `target` matters only for attachment-scoped
+   * topics (per SHELL_CORE_EVENT_SCOPES); for all-broadcast topics the
+   * argument is silently dropped — "routing isn't payload" made mechanical.
+   * Callers that accidentally pass target to a broadcast topic won't leak
+   * that into the envelope. Authority/mutation callers supply `target` via
+   * caller.attachmentId → options.slotKey → here.
+   */
+  private emit(event: ShellCoreEvent, target?: string) {
     this.seq += 1;
-    const sequenced = { ...event, seq: this.seq } as SequencedShellCoreEvent;
+    const scope = SHELL_CORE_EVENT_SCOPES[event.topic];
+    const sequenced = {
+      ...event,
+      seq: this.seq,
+      scope,
+      targetAttachmentId: scope === "attachment" ? target : undefined
+    } as SequencedShellCoreEvent;
     for (const handler of this.eventSubscribers) {
       handler(sequenced);
     }
   }
 
+  private ensureSlot(slotKey: string): ActiveStateSlot {
+    let slot = this.activeSlots.get(slotKey);
+    if (!slot) {
+      slot = { activeWorkspaceId: null, activePaneIdByWorkspace: new Map() };
+      this.activeSlots.set(slotKey, slot);
+    }
+    return slot;
+  }
+
+  private resolveSlotKey(options?: ShellSlotOptions): string {
+    return options?.slotKey ?? this.defaultSlotKey;
+  }
+
   initialize() {
-    if (this.activeWorkspaceId) {
+    // Idempotent by default slot: once the default slot has an active ws, no-op.
+    // "Default slot" is the implicit owner — authority names it "local" on
+    // construction, tests leave it as "default". Other (non-default) slots
+    // bootstrap themselves via setActiveWorkspace.
+    const slot = this.ensureSlot(this.defaultSlotKey);
+    if (slot.activeWorkspaceId) {
       return;
     }
 
-    const workspace = this.createWorkspaceRecord("workspace.1", "Workspace 1");
-    this.activeWorkspaceId = workspace.id;
-    this.seedWorkspace(workspace);
+    let workspace = this.workspaces.get("workspace.1");
+    const created = !workspace;
+    if (!workspace) {
+      workspace = this.createWorkspaceRecord("workspace.1", "Workspace 1");
+    }
+    if (created) {
+      this.emit({
+        topic: "workspace.added",
+        payload: { id: workspace.id, title: workspace.title, defaultTitle: workspace.defaultTitle }
+      });
+    }
+    slot.activeWorkspaceId = workspace.id;
+    this.emit(
+      { topic: "workspace.activeChanged", payload: { id: workspace.id } },
+      this.defaultSlotKey
+    );
+    this.seedWorkspace(workspace, this.defaultSlotKey);
   }
 
   /**
@@ -112,9 +182,12 @@ export class ShellCore implements ShellModelHost {
     if (input.defaultTitle) {
       workspace.defaultTitle = input.defaultTitle;
     }
-    const previousActive = this.activeWorkspaceId;
-    if (input.setActive || !this.activeWorkspaceId) {
-      this.activeWorkspaceId = workspace.id;
+    // restoreWorkspace targets the default slot — it is a bootstrap-time
+    // helper for the owner attachment (desktop session restore).
+    const slot = this.ensureSlot(this.defaultSlotKey);
+    const previousActiveWsId = slot.activeWorkspaceId;
+    if (input.setActive || !slot.activeWorkspaceId) {
+      slot.activeWorkspaceId = workspace.id;
     }
     if (!existed) {
       this.emit({
@@ -122,8 +195,11 @@ export class ShellCore implements ShellModelHost {
         payload: { id: workspace.id, title: workspace.title, defaultTitle: workspace.defaultTitle }
       });
     }
-    if (previousActive !== this.activeWorkspaceId) {
-      this.emit({ topic: "workspace.activeChanged", payload: { id: this.activeWorkspaceId } });
+    if (previousActiveWsId !== slot.activeWorkspaceId) {
+      this.emit(
+        { topic: "workspace.activeChanged", payload: { id: slot.activeWorkspaceId } },
+        this.defaultSlotKey
+      );
     }
     return this.toWorkspaceStatus(workspace);
   }
@@ -210,7 +286,9 @@ export class ShellCore implements ShellModelHost {
     fallbackParams: Record<string, unknown> | undefined,
     title: string
   ) {
-    const previousActivePaneId = workspace.activePaneId;
+    // Restore attributes the pane to the default slot (the owner attachment).
+    const slot = this.ensureSlot(this.defaultSlotKey);
+    const previousActivePaneId = slot.activePaneIdByWorkspace.get(workspace.id);
     workspace.paneOrder.push(paneId);
     workspace.paneTitles.set(paneId, title);
     workspace.paneStates.set(paneId, record);
@@ -218,7 +296,7 @@ export class ShellCore implements ShellModelHost {
       paneId,
       Object.keys(normalizedParams).length > 0 ? normalizedParams : fallbackParams
     );
-    workspace.activePaneId = paneId;
+    slot.activePaneIdByWorkspace.set(workspace.id, paneId);
     this.paneWorkspaceIds.set(paneId, workspace.id);
     const snapshot = this.createPaneSnapshot(workspace, paneId, title);
     this.emit({
@@ -231,46 +309,64 @@ export class ShellCore implements ShellModelHost {
       }
     });
     if (previousActivePaneId !== paneId) {
-      this.emit({
-        topic: "pane.activeChanged",
-        payload: { workspaceId: workspace.id, paneId }
-      });
+      this.emit(
+        { topic: "pane.activeChanged", payload: { workspaceId: workspace.id, paneId } },
+        this.defaultSlotKey
+      );
     }
   }
 
-  setActiveWorkspace(workspaceId: string | null) {
+  setActiveWorkspace(workspaceId: string | null, options?: ShellSlotOptions) {
+    const slotKey = this.resolveSlotKey(options);
+    const slot = this.ensureSlot(slotKey);
     const next = workspaceId && this.workspaces.has(workspaceId) ? workspaceId : null;
-    if (next === this.activeWorkspaceId) {
+    if (next === slot.activeWorkspaceId) {
       return;
     }
-    this.activeWorkspaceId = next;
-    this.emit({ topic: "workspace.activeChanged", payload: { id: next } });
+    slot.activeWorkspaceId = next;
+    this.emit({ topic: "workspace.activeChanged", payload: { id: next } }, slotKey);
   }
 
-  setActivePane(paneId: string) {
+  setActivePane(paneId: string, options?: ShellSlotOptions) {
     const workspaceId = this.paneWorkspaceIds.get(paneId);
     if (!workspaceId) {
       return;
     }
-    const workspace = this.workspaces.get(workspaceId)!;
-    if (workspace.activePaneId === paneId) {
+    const slotKey = this.resolveSlotKey(options);
+    const slot = this.ensureSlot(slotKey);
+    if (slot.activePaneIdByWorkspace.get(workspaceId) === paneId) {
       return;
     }
-    workspace.activePaneId = paneId;
-    this.emit({ topic: "pane.activeChanged", payload: { workspaceId, paneId } });
+    slot.activePaneIdByWorkspace.set(workspaceId, paneId);
+    this.emit(
+      { topic: "pane.activeChanged", payload: { workspaceId, paneId } },
+      slotKey
+    );
   }
 
-  clearActivePane(workspaceId: string) {
-    const workspace = this.workspaces.get(workspaceId);
-    if (!workspace || workspace.activePaneId === null) {
+  clearActivePane(workspaceId: string, options?: ShellSlotOptions) {
+    const slotKey = this.resolveSlotKey(options);
+    const slot = this.activeSlots.get(slotKey);
+    if (!slot || !slot.activePaneIdByWorkspace.has(workspaceId)) {
       return;
     }
-    workspace.activePaneId = null;
-    this.emit({ topic: "pane.activeChanged", payload: { workspaceId, paneId: null } });
+    slot.activePaneIdByWorkspace.delete(workspaceId);
+    this.emit(
+      { topic: "pane.activeChanged", payload: { workspaceId, paneId: null } },
+      slotKey
+    );
   }
 
-  getActiveWorkspaceId(): string | null {
-    return this.activeWorkspaceId;
+  /** Read the slot's current active workspace (defaults to defaultSlotKey). */
+  getSlotActiveWorkspaceId(slotKey?: string): string | null {
+    const key = slotKey ?? this.defaultSlotKey;
+    return this.activeSlots.get(key)?.activeWorkspaceId ?? null;
+  }
+
+  /** Read the slot's active pane within a specific workspace. */
+  getSlotActivePaneId(workspaceId: string, slotKey?: string): string | null {
+    const key = slotKey ?? this.defaultSlotKey;
+    return this.activeSlots.get(key)?.activePaneIdByWorkspace.get(workspaceId) ?? null;
   }
 
   setAppTitle(title: string) {
@@ -312,25 +408,57 @@ export class ShellCore implements ShellModelHost {
       [...workspace.paneOrder].map((paneId) => this.closePane(paneId))
     );
     this.workspaces.delete(workspaceId);
-    const wasActive = this.activeWorkspaceId === workspaceId;
-    const newActiveWorkspaceId = wasActive
-      ? (this.workspaces.keys().next().value ?? null)
-      : this.activeWorkspaceId;
-    if (wasActive) {
-      this.activeWorkspaceId = newActiveWorkspaceId;
+    const nextWorkspaceId = this.workspaces.keys().next().value ?? null;
+
+    // Every slot pointing at the deleted ws gets bumped to the next remaining
+    // (or null if empty). Each affected slot gets its own attachment-scoped
+    // workspace.activeChanged so handlers can re-point without re-checking
+    // their own slot id.
+    const affectedSlots: Array<{ slotKey: string; newId: string | null }> = [];
+    for (const [slotKey, slot] of this.activeSlots) {
+      if (slot.activeWorkspaceId === workspaceId) {
+        slot.activeWorkspaceId = nextWorkspaceId;
+        affectedSlots.push({ slotKey, newId: nextWorkspaceId });
+      }
+      slot.activePaneIdByWorkspace.delete(workspaceId);
     }
+
     this.emit({
       topic: "workspace.removed",
-      payload: { id: workspaceId, newActiveWorkspaceId }
+      payload: { id: workspaceId }
     });
-    if (wasActive) {
-      this.emit({ topic: "workspace.activeChanged", payload: { id: newActiveWorkspaceId } });
+    for (const { slotKey, newId } of affectedSlots) {
+      this.emit(
+        { topic: "workspace.activeChanged", payload: { id: newId } },
+        slotKey
+      );
     }
     // ≥1 workspace invariant: closing the last workspace immediately re-seeds
     // a default so callers (/status/workspace, /api/clients, external model
-    // reads) never observe a no-current-workspace state.
+    // reads) never observe a no-current-workspace state. initialize() moves
+    // the default slot onto the new ws.1; any other slot that was also on the
+    // deleted ws sat at null after step 3 — bump those too and emit per-slot
+    // activeChanged so every attachment that lost its workspace ends up on
+    // the reseed, not stuck at null.
     if (this.workspaces.size === 0) {
       this.initialize();
+      const reseedWsId = this.activeSlots.get(this.defaultSlotKey)?.activeWorkspaceId ?? null;
+      if (reseedWsId) {
+        for (const { slotKey } of affectedSlots) {
+          if (slotKey === this.defaultSlotKey) {
+            // initialize() already handled the default slot.
+            continue;
+          }
+          const slot = this.ensureSlot(slotKey);
+          if (slot.activeWorkspaceId === null) {
+            slot.activeWorkspaceId = reseedWsId;
+            this.emit(
+              { topic: "workspace.activeChanged", payload: { id: reseedWsId } },
+              slotKey
+            );
+          }
+        }
+      }
     }
   }
 
@@ -499,19 +627,27 @@ export class ShellCore implements ShellModelHost {
     return [...this.workspaces.values()].map((workspace) => this.toWorkspaceStatus(workspace));
   }
 
-  async createWorkspace(input: { title?: string } = {}): Promise<WorkspaceStatusSnapshot> {
+  async createWorkspace(
+    input: { title?: string } = {},
+    options?: ShellSlotOptions
+  ): Promise<WorkspaceStatusSnapshot> {
+    const slotKey = this.resolveSlotKey(options);
+    const slot = this.ensureSlot(slotKey);
     const descriptor = this.allocateWorkspaceDescriptor(input.title);
-    const previousActive = this.activeWorkspaceId;
+    const previousActiveWsId = slot.activeWorkspaceId;
     const workspace = this.createWorkspaceRecord(descriptor.id, descriptor.title);
-    this.activeWorkspaceId = workspace.id;
+    slot.activeWorkspaceId = workspace.id;
     this.emit({
       topic: "workspace.added",
       payload: { id: workspace.id, title: workspace.title, defaultTitle: workspace.defaultTitle }
     });
-    if (previousActive !== this.activeWorkspaceId) {
-      this.emit({ topic: "workspace.activeChanged", payload: { id: this.activeWorkspaceId } });
+    if (previousActiveWsId !== slot.activeWorkspaceId) {
+      this.emit(
+        { topic: "workspace.activeChanged", payload: { id: slot.activeWorkspaceId } },
+        slotKey
+      );
     }
-    this.seedWorkspace(workspace);
+    this.seedWorkspace(workspace, slotKey);
     return this.toWorkspaceStatus(workspace);
   }
 
@@ -527,34 +663,57 @@ export class ShellCore implements ShellModelHost {
         payload: { id: workspace.id, title: workspace.title }
       });
     }
-    this.seedWorkspace(workspace);
+    // Reseed attributes panes to the default slot. Non-default slots that
+    // happen to be on this workspace keep their existing active (which was
+    // cleared by closePane) — their attachment will pick something on next
+    // user action.
+    this.seedWorkspace(workspace, this.defaultSlotKey);
     return this.toWorkspaceStatus(workspace);
   }
 
-  async getWorkspaceStatus(): Promise<WorkspaceStatusSnapshot> {
-    return this.toWorkspaceStatus(this.requireCurrentWorkspace());
+  async getWorkspaceStatus(options?: ShellSlotOptions): Promise<WorkspaceStatusSnapshot> {
+    return this.toWorkspaceStatus(this.requireCurrentWorkspace(options));
+  }
+
+  async getCurrentPaneId(options?: ShellSlotOptions): Promise<string | null> {
+    const workspace = this.requireCurrentWorkspace(options);
+    return this.getSlotActivePaneId(workspace.id, options?.slotKey);
   }
 
   async hasPaneKind(kind: string): Promise<boolean> {
     return this.options.paneRegistry.get(kind) !== undefined;
   }
 
-  async listPanes(): Promise<ShellPaneRecordSnapshot[]> {
-    const workspace = this.requireCurrentWorkspace();
+  async listPanes(options?: ShellSlotOptions): Promise<ShellPaneRecordSnapshot[]> {
+    const workspace = this.requireCurrentWorkspace(options);
     return workspace.paneOrder.map((paneId) => this.createPaneSnapshot(workspace, paneId));
   }
 
   async getPane(paneId: string): Promise<ShellPaneRecordSnapshot | undefined> {
-    const workspace = this.requireCurrentWorkspace();
-    if (!workspace.paneStates.has(paneId)) {
+    const workspace = this.findWorkspaceByPaneId(paneId);
+    if (!workspace || !workspace.paneStates.has(paneId)) {
       return undefined;
     }
     return this.createPaneSnapshot(workspace, paneId);
   }
 
-  async createPane(input: NewPaneInput): Promise<ShellPaneRecordSnapshot> {
-    const workspace = this.requireCurrentWorkspace();
-    return this.addPane(workspace, input);
+  async createPane(
+    input: NewPaneInput,
+    options?: ShellCreatePaneOptions
+  ): Promise<ShellPaneRecordSnapshot> {
+    const slotKey = this.resolveSlotKey(options);
+    const workspaceId = options?.workspaceId ?? this.activeSlots.get(slotKey)?.activeWorkspaceId;
+    if (!workspaceId) {
+      // Surface as INVALID_VALUE at the path-call boundary (preflight #2
+      // §"Caller-driven 구현 규칙" step 3). Throwing a plain Error would
+      // degrade to INTERNAL_ERROR through toPathMutationError.
+      throw new ModelPathError(
+        "INVALID_VALUE",
+        `createPane requires a target workspaceId (none given and slot '${slotKey}' has no active workspace)`
+      );
+    }
+    const workspace = this.requireWorkspace(workspaceId);
+    return this.addPane(workspace, input, slotKey);
   }
 
   async closePane(paneId: string): Promise<{ paneId: string; closed: boolean }> {
@@ -576,21 +735,35 @@ export class ShellCore implements ShellModelHost {
     workspace.paneTitles.delete(paneId);
     workspace.paneOrder = workspace.paneOrder.filter((candidate) => candidate !== paneId);
     this.paneWorkspaceIds.delete(paneId);
-    const wasActive = workspace.activePaneId === paneId;
-    const newActivePaneId = wasActive ? (workspace.paneOrder.at(-1) ?? null) : workspace.activePaneId;
-    if (wasActive) {
-      workspace.activePaneId = newActivePaneId;
+
+    // Per-slot active update: only slots that had this pane active in this
+    // workspace need to move. Each gets its own attachment-scoped event.
+    const fallbackPaneId = workspace.paneOrder.at(-1) ?? null;
+    const affectedSlots: Array<{ slotKey: string; newPaneId: string | null }> = [];
+    for (const [slotKey, slot] of this.activeSlots) {
+      if (slot.activePaneIdByWorkspace.get(workspace.id) === paneId) {
+        if (fallbackPaneId !== null) {
+          slot.activePaneIdByWorkspace.set(workspace.id, fallbackPaneId);
+        } else {
+          slot.activePaneIdByWorkspace.delete(workspace.id);
+        }
+        affectedSlots.push({ slotKey, newPaneId: fallbackPaneId });
+      }
     }
+
     if (closed) {
       this.emit({
         topic: "pane.removed",
-        payload: { paneId, workspaceId: workspace.id, newActivePaneId }
+        payload: { paneId, workspaceId: workspace.id }
       });
-      if (wasActive) {
-        this.emit({
-          topic: "pane.activeChanged",
-          payload: { workspaceId: workspace.id, paneId: newActivePaneId }
-        });
+      for (const { slotKey, newPaneId } of affectedSlots) {
+        this.emit(
+          {
+            topic: "pane.activeChanged",
+            payload: { workspaceId: workspace.id, paneId: newPaneId }
+          },
+          slotKey
+        );
       }
     }
 
@@ -748,12 +921,19 @@ export class ShellCore implements ShellModelHost {
     };
   }
 
-  private requireCurrentWorkspace() {
-    if (!this.activeWorkspaceId) {
-      throw new Error("Shell core is not initialized");
+  /**
+   * Preload-convenience "current workspace" read: the given slot's active ws,
+   * or the default slot if omitted. B1b keeps this as an implicit-current
+   * helper for paths that haven't migrated to explicit workspaceId yet; B1e
+   * deletes it and re-routes all callers.
+   */
+  private requireCurrentWorkspace(options?: ShellSlotOptions): WorkspaceRecord {
+    const slotKey = this.resolveSlotKey(options);
+    const slot = this.activeSlots.get(slotKey);
+    if (!slot?.activeWorkspaceId) {
+      throw new Error(`Shell core has no active workspace for slot '${slotKey}'`);
     }
-
-    return this.requireWorkspace(this.activeWorkspaceId);
+    return this.requireWorkspace(slot.activeWorkspaceId);
   }
 
   private requireWorkspace(workspaceId: string) {
@@ -807,7 +987,6 @@ export class ShellCore implements ShellModelHost {
       id: workspace.id,
       title: workspace.title,
       defaultTitle: workspace.defaultTitle,
-      activePaneId: workspace.activePaneId,
       paneCount: workspace.paneOrder.length
     };
   }
@@ -849,12 +1028,11 @@ export class ShellCore implements ShellModelHost {
       spec,
       paneId,
       title: titleOverride ?? workspace.paneTitles.get(paneId) ?? humanizePaneKind(record.kind),
-      active: workspace.activePaneId === paneId,
       record
     });
   }
 
-  private seedWorkspace(workspace: WorkspaceRecord) {
+  private seedWorkspace(workspace: WorkspaceRecord, slotKey: string) {
     const kinds = [
       this.options.paneRegistry.get("cowsay") ? "cowsay" : null,
       "browser"
@@ -864,23 +1042,34 @@ export class ShellCore implements ShellModelHost {
     workspace.paneTitles.clear();
     workspace.paneStates.clear();
     workspace.paneParams.clear();
-    workspace.activePaneId = null;
+    // Clear this workspace's active-pane tracking in every slot — panes
+    // about to be rebuilt with fresh ids. Slots keep their own activeWs.
+    // B2 TODO: other slots should also emit pane.activeChanged(null) for
+    // workspace.id if they had one before, so attachment-side mirrors stay
+    // consistent. B1b has a single slot, so this quiet purge is safe.
+    for (const slot of this.activeSlots.values()) {
+      slot.activePaneIdByWorkspace.delete(workspace.id);
+    }
 
     let firstPaneId: string | null = null;
     for (const kind of kinds) {
-      const pane = this.addPane(workspace, {
-        kind,
-        title: kind === "browser" ? "Start" : humanizePaneKind(kind),
-        ...(kind === "browser" ? { url: workspace.defaultBrowserPath } : {}),
-        ...(firstPaneId ? { place: "right", referencePaneId: firstPaneId } : {})
-      });
+      const pane = this.addPane(
+        workspace,
+        {
+          kind,
+          title: kind === "browser" ? "Start" : humanizePaneKind(kind),
+          ...(kind === "browser" ? { url: workspace.defaultBrowserPath } : {}),
+          ...(firstPaneId ? { place: "right", referencePaneId: firstPaneId } : {})
+        },
+        slotKey
+      );
       if (!firstPaneId) {
         firstPaneId = pane.id;
       }
-      if (kind === "browser") {
-        workspace.activePaneId = pane.id;
-      }
     }
+    // addPane attributes each new pane to `slotKey` and emits
+    // pane.activeChanged for it — final state: browser (last added) is that
+    // slot's active. Matches the pre-slot behavior.
   }
 
   private createWorkspaceRecord(id: string, title: string) {
@@ -898,8 +1087,7 @@ export class ShellCore implements ShellModelHost {
       paneOrder: [],
       paneTitles: new Map(),
       paneStates: new Map(),
-      paneParams: new Map(),
-      activePaneId: null
+      paneParams: new Map()
     };
     this.workspaces.set(id, workspace);
     return workspace;
@@ -917,7 +1105,11 @@ export class ShellCore implements ShellModelHost {
     };
   }
 
-  private addPane(workspace: WorkspaceRecord, input: NewPaneInput): ShellPaneRecordSnapshot {
+  private addPane(
+    workspace: WorkspaceRecord,
+    input: NewPaneInput,
+    slotKey: string
+  ): ShellPaneRecordSnapshot {
     const paneId = `pane_${crypto.randomUUID()}`;
     const spec = this.options.paneRegistry.get(input.kind);
     if (!spec) {
@@ -948,12 +1140,13 @@ export class ShellCore implements ShellModelHost {
     }
 
     const storedParams = Object.keys(normalizedParams).length > 0 ? normalizedParams : params;
-    const previousActivePaneId = workspace.activePaneId;
+    const slot = this.ensureSlot(slotKey);
+    const previousActivePaneId = slot.activePaneIdByWorkspace.get(workspace.id);
     workspace.paneOrder.push(paneId);
     workspace.paneTitles.set(paneId, title);
     workspace.paneStates.set(paneId, record);
     workspace.paneParams.set(paneId, storedParams);
-    workspace.activePaneId = paneId;
+    slot.activePaneIdByWorkspace.set(workspace.id, paneId);
     this.paneWorkspaceIds.set(paneId, workspace.id);
     const snapshot = this.createPaneSnapshot(workspace, paneId, title);
     this.emit({
@@ -968,10 +1161,10 @@ export class ShellCore implements ShellModelHost {
       }
     });
     if (previousActivePaneId !== paneId) {
-      this.emit({
-        topic: "pane.activeChanged",
-        payload: { workspaceId: workspace.id, paneId }
-      });
+      this.emit(
+        { topic: "pane.activeChanged", payload: { workspaceId: workspace.id, paneId } },
+        slotKey
+      );
     }
     return snapshot;
   }

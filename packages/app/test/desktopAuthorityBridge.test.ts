@@ -447,6 +447,49 @@ describe("desktop shell authority bridge", () => {
     expect(paneAdded.payload.referencePaneId).toBe(reference);
   });
 
+  // /panes/new workspaceId resolution: args > caller.workspaceId > slot
+  // active. With no explicit target AND no active slot workspace, the call
+  // must surface as INVALID_VALUE (preflight #2 §"Caller-driven 구현 규칙"
+  // step 3), not crash as INTERNAL_ERROR.
+  it("/panes/new routes args.workspaceId and caller.workspaceId to explicit targets", async () => {
+    const { authority } = await createTestAuthority();
+    await authority.shellModel.pathCall("/workspaces/new", { title: "Second" });
+    const snapshot = authority.shellBootstrap().snapshot;
+    const [wsFirst, wsSecond] = snapshot.workspaces;
+    expect(wsFirst.id).toBe("workspace.1");
+    expect(wsSecond.id).toBe("workspace.2");
+
+    // args.workspaceId wins.
+    const intoFirst = await authority.shellModel.pathCall("/panes/new", {
+      kind: "browser",
+      workspaceId: wsFirst.id
+    });
+    expect(intoFirst.ok).toBe(true);
+    if (!intoFirst.ok) throw new Error("expected ok");
+    const firstPaneId = (intoFirst.value as { paneId: string }).paneId;
+    expect(authority.shellCore.getPaneWorkspaceId(firstPaneId)).toBe(wsFirst.id);
+
+    // caller.workspaceId used when args.workspaceId absent.
+    const intoSecondViaCaller = await authority.shellModel.pathCall(
+      "/panes/new",
+      { kind: "browser" },
+      { workspaceId: wsSecond.id }
+    );
+    expect(intoSecondViaCaller.ok).toBe(true);
+    if (!intoSecondViaCaller.ok) throw new Error("expected ok");
+    const secondPaneId = (intoSecondViaCaller.value as { paneId: string }).paneId;
+    expect(authority.shellCore.getPaneWorkspaceId(secondPaneId)).toBe(wsSecond.id);
+  });
+
+  it("/panes/new returns INVALID_VALUE when no workspaceId is resolvable", async () => {
+    const { authority } = await createTestAuthority();
+    // Break the fallback by clearing the default slot's active ws.
+    authority.shellCore.setActiveWorkspace(null);
+
+    const result = await authority.shellModel.pathCall("/panes/new", { kind: "browser" });
+    expect(result).toMatchObject({ ok: false, code: "INVALID_VALUE" });
+  });
+
   // /panes/new without referencePaneId is the header-action "+" hot path
   // (workbench.ts:383). Core must accept it and emit pane.added with place
   // preserved + referencePaneId undefined so the renderer can fall back to

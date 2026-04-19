@@ -71,8 +71,15 @@ export interface WorkspaceStatusSnapshot {
   id: string;
   title: string;
   defaultTitle: string;
-  activePaneId: string | null;
   paneCount: number;
+}
+
+// Phase B per-attachment active state. `slotKey` is an opaque id the core
+// does not interpret; the authority (or test harness) chooses what it names
+// — desktop maps one attachment to `"local"`. Core just routes.
+export interface ActiveStateSlot {
+  activeWorkspaceId: string | null;
+  activePaneIdByWorkspace: Map<string, string>;
 }
 
 export interface BrowserPaneStateSnapshot {
@@ -90,7 +97,6 @@ export interface BrowserPaneStatusSnapshot extends BrowserPaneStateSnapshot {}
 
 export interface PaneStatusSnapshot extends PaneStateSnapshot {
   id: string;
-  active: boolean;
   browser?: BrowserPaneStatusSnapshot;
   terminal?: TerminalPaneStatusSnapshot;
 }
@@ -142,20 +148,32 @@ export type ScopedPropertyTarget =
   | { scope: "workspace"; workspaceId?: string }
   | { scope: "pane"; paneId: string };
 
+export interface ShellSlotOptions {
+  /** Opaque slot id (= attachmentId at authority level). Omit to use the core's default slot. */
+  slotKey?: string;
+}
+
+export interface ShellCreatePaneOptions extends ShellSlotOptions {
+  /** Explicit target workspace. When omitted the slot's current active workspace is used; if that too is null, the call fails with INVALID_VALUE. */
+  workspaceId?: string;
+}
+
 export interface ShellModelHost {
   getAppStatus(): Awaitable<AppStatusSnapshot>;
   listWorkspaces(): Awaitable<WorkspaceStatusSnapshot[]>;
-  createWorkspace(input?: { title?: string }): Awaitable<WorkspaceStatusSnapshot>;
+  createWorkspace(input?: { title?: string }, options?: ShellSlotOptions): Awaitable<WorkspaceStatusSnapshot>;
   resetWorkspace(workspaceId: string): Awaitable<WorkspaceStatusSnapshot>;
   deleteWorkspace(workspaceId: string): Awaitable<void>;
-  setActiveWorkspace(workspaceId: string): Awaitable<void>;
-  getWorkspaceStatus(): Awaitable<WorkspaceStatusSnapshot>;
+  setActiveWorkspace(workspaceId: string, options?: ShellSlotOptions): Awaitable<void>;
+  getWorkspaceStatus(options?: ShellSlotOptions): Awaitable<WorkspaceStatusSnapshot>;
+  /** Slot-scoped "/panes/current" resolver. B1b interim; B1e retires the /current path entirely. */
+  getCurrentPaneId(options?: ShellSlotOptions): Awaitable<string | null>;
   hasPaneKind(kind: string): Awaitable<boolean>;
-  listPanes(): Awaitable<ShellPaneRecordSnapshot[]>;
+  listPanes(options?: ShellSlotOptions): Awaitable<ShellPaneRecordSnapshot[]>;
   getPane(paneId: string): Awaitable<ShellPaneRecordSnapshot | undefined>;
-  createPane(input: NewPaneInput): Awaitable<ShellPaneRecordSnapshot>;
+  createPane(input: NewPaneInput, options?: ShellCreatePaneOptions): Awaitable<ShellPaneRecordSnapshot>;
   closePane(paneId: string): Awaitable<{ paneId: string; closed: boolean }>;
-  setActivePane(paneId: string): Awaitable<void>;
+  setActivePane(paneId: string, options?: ShellSlotOptions): Awaitable<void>;
   setScopedProperty(target: ScopedPropertyTarget, key: string, value: unknown): Awaitable<{ value: unknown }>;
   getPaneParams(paneId: string): Awaitable<Record<string, unknown> | undefined>;
   setPaneParams(paneId: string, nextParams: Record<string, unknown>): Awaitable<Record<string, unknown>>;
@@ -197,13 +215,45 @@ export interface WorkspaceBus {
 export type ShellCoreEvent =
   | { topic: "app.titleChanged"; payload: { title: string } }
   | { topic: "workspace.added"; payload: { id: string; title: string; defaultTitle: string } }
-  | { topic: "workspace.removed"; payload: { id: string; newActiveWorkspaceId: string | null } }
+  | { topic: "workspace.removed"; payload: { id: string } }
   | { topic: "workspace.titleChanged"; payload: { id: string; title: string } }
   | { topic: "workspace.activeChanged"; payload: { id: string | null } }
   | { topic: "pane.added"; payload: { paneId: string; workspaceId: string; snapshot: ShellPaneRecordSnapshot; params: Record<string, unknown> | undefined; place?: PanePlacement; referencePaneId?: string } }
-  | { topic: "pane.removed"; payload: { paneId: string; workspaceId: string; newActivePaneId: string | null } }
+  | { topic: "pane.removed"; payload: { paneId: string; workspaceId: string } }
   | { topic: "pane.titleChanged"; payload: { paneId: string; workspaceId: string; title: string } }
   | { topic: "pane.paramsChanged"; payload: { paneId: string; workspaceId: string; params: Record<string, unknown> | undefined; snapshot: ShellPaneRecordSnapshot } }
   | { topic: "pane.activeChanged"; payload: { workspaceId: string; paneId: string | null } };
 
-export type SequencedShellCoreEvent = ShellCoreEvent & { seq: number };
+export type ShellCoreEventTopic = ShellCoreEvent["topic"];
+
+/**
+ * Topic→scope policy. `"attachment"` events go to one slot only
+ * (targetAttachmentId on the envelope); `"all"` events broadcast to every
+ * subscriber. New topics must add an entry here — the envelope builder reads
+ * from this table so forgetting the entry fails compilation.
+ */
+export const SHELL_CORE_EVENT_SCOPES = {
+  "app.titleChanged": "all",
+  "workspace.added": "all",
+  "workspace.removed": "all",
+  "workspace.titleChanged": "all",
+  "workspace.activeChanged": "attachment",
+  "pane.added": "all",
+  "pane.removed": "all",
+  "pane.titleChanged": "all",
+  "pane.paramsChanged": "all",
+  "pane.activeChanged": "attachment"
+} as const satisfies Record<ShellCoreEventTopic, "all" | "attachment">;
+
+/**
+ * Routing metadata on top of the semantic payload. `scope` is derived by the
+ * core from the topic (see SHELL_CORE_EVENT_SCOPES); `targetAttachmentId` is
+ * supplied by whoever drove the mutation (authority/preload passes
+ * caller.attachmentId through) when scope === "attachment". Forwarders
+ * filter on these two fields alone — handlers never re-check.
+ */
+export type SequencedShellCoreEvent = ShellCoreEvent & {
+  seq: number;
+  scope: "all" | "attachment";
+  targetAttachmentId?: string;
+};

@@ -38,7 +38,6 @@ describe("web mode shell authority", () => {
           id: "workspace.1",
           title: "Workspace 1",
           defaultTitle: "Workspace 1",
-          activePaneId: expect.any(String),
           paneCount: 1
         }
       }
@@ -55,7 +54,6 @@ describe("web mode shell authority", () => {
         id: "workspace.1",
         title: "Workspace 1",
         defaultTitle: "Workspace 1",
-        activePaneId: expect.any(String),
         paneCount: 1
       }
     });

@@ -34,7 +34,6 @@ describe("shell model direct", () => {
         id: "workspace.test",
         title: "Workspace Test",
         defaultTitle: "Workspace Test",
-        activePaneId: "pane.term",
         paneCount: 2
       }
     });
@@ -96,7 +95,6 @@ describe("shell model direct", () => {
       workspace: {
         id: string;
         title: string;
-        activePaneId: string | null;
         paneCount: number;
       };
     };
@@ -108,7 +106,6 @@ describe("shell model direct", () => {
         path: expect.stringMatching(/^\/workspaces\/workspace\.\d+$/),
         workspace: {
           title: "Workspace Gamma",
-          activePaneId: expect.any(String),
           paneCount: 2
         }
       }
@@ -234,7 +231,6 @@ describe("shell model direct", () => {
       entries: [
         { name: "id", path: "/workspaces/workspace.test/id", kind: "leaf", writable: false },
         { name: "title", path: "/workspaces/workspace.test/title", kind: "leaf", writable: false },
-        { name: "activePaneId", path: "/workspaces/workspace.test/activePaneId", kind: "leaf", writable: false },
         { name: "paneCount", path: "/workspaces/workspace.test/paneCount", kind: "leaf", writable: false }
       ]
     });
@@ -382,7 +378,6 @@ describe("shell model direct", () => {
         { name: "id", path: "/status/panes/pane.term/id", kind: "leaf", writable: false },
         { name: "kind", path: "/status/panes/pane.term/kind", kind: "leaf", writable: false },
         { name: "title", path: "/status/panes/pane.term/title", kind: "leaf", writable: false },
-        { name: "active", path: "/status/panes/pane.term/active", kind: "leaf", writable: false },
         { name: "terminal", path: "/status/panes/pane.term/terminal", kind: "object", writable: false }
       ]
     });
@@ -649,8 +644,7 @@ describe("shell model direct", () => {
           title: "Start",
           browser: {
             url: "http://127.0.0.1:4321/__flmux/internal/start?workspace=workspace.test"
-          },
-          active: true
+          }
         }
       }
     });
@@ -694,8 +688,7 @@ describe("shell model direct", () => {
           title: "Fixture Browser",
           browser: {
             url: "https://example.test"
-          },
-          active: true
+          }
         }
       }
     });
@@ -723,8 +716,7 @@ describe("shell model direct", () => {
         return {
           id: "pane.custom",
           kind: input.kind,
-          title: input.title?.trim() || "Custom Pane",
-          active: true
+          title: input.title?.trim() || "Custom Pane"
         };
       }
     }
@@ -752,8 +744,7 @@ describe("shell model direct", () => {
         pane: {
           id: "pane.custom",
           kind: "sample.chart",
-          title: "CPU Chart",
-          active: true
+          title: "CPU Chart"
         }
       }
     });

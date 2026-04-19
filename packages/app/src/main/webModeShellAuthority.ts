@@ -4,6 +4,7 @@ import {
   createPlaceholderPaneSpec,
   createShellModel,
   type PaneSpec,
+  type SequencedShellCoreEvent,
   type ShellModelAPI
 } from "@flmux/core/shell";
 import type { TerminalRuntimeEvent } from "../shared/terminal";
@@ -21,6 +22,7 @@ export interface WebModeShellAuthority {
   readonly clientId: string;
   readonly shellModel: ShellModelAPI;
   readonly router: ReturnType<typeof createServerShellModelRouter>;
+  subscribe(handler: (event: SequencedShellCoreEvent) => void): () => void;
   start(origin: string): Promise<void>;
   applyTerminalEvent(event: TerminalRuntimeEvent): void;
 }
@@ -46,7 +48,11 @@ export async function createWebModeShellAuthority(options: {
     paneRegistry,
     runtimeLabel: options.runtimeLabel,
     projectDir: options.projectDir,
-    terminalBackend: options.terminalService
+    terminalBackend: options.terminalService,
+    // Web-mode authority's default slot is the server-side ShellModelAPI
+    // driver (CLI, external HTTP calls without a browser attachment). B2
+    // replaces this with per-attachment (browser) slots.
+    defaultSlotKey: "server"
   });
   const shellModel = createShellModel({
     host: shellCore,
@@ -63,6 +69,10 @@ export async function createWebModeShellAuthority(options: {
       getWorkspace: async () => shellCore.getWorkspaceStatus(),
       clientRegistry: options.clientRegistry
     }),
+    // Parity with desktopShellAuthority.subscribe — the forwarder wire that
+    // pushes these events to attached browser clients lands in B1c, but
+    // exposing the hook here lets main.ts install it without another flip.
+    subscribe: (handler) => shellCore.subscribe(handler),
     async start(origin: string) {
       shellCore.setAppOrigin(origin);
       shellCore.initialize();

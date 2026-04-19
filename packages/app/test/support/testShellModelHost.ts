@@ -182,7 +182,6 @@ export class TestShellModelHost implements ShellModelHost {
       id: workspaceId,
       title: this.workspaceTitles.get(workspaceId) ?? workspaceId,
       defaultTitle: this.workspaceTitles.get(workspaceId) ?? workspaceId,
-      activePaneId: workspaceId === this.workspaceId ? this.activePaneId : null,
       paneCount: this.workspacePaneCounts.get(workspaceId) ?? 0
     }));
   }
@@ -254,9 +253,13 @@ export class TestShellModelHost implements ShellModelHost {
       id: this.workspaceId,
       title: this.workspaceTitle,
       defaultTitle: this.workspaceTitles.get(this.workspaceId) ?? this.workspaceTitle,
-      activePaneId: this.activePaneId,
       paneCount: this.panes.size
     };
+  }
+
+  async getCurrentPaneId(): Promise<string | null> {
+    this.syncCurrentWorkspaceSnapshot();
+    return this.activePaneId;
   }
 
   hasPaneKind(kind: string): boolean {
@@ -761,14 +764,12 @@ export class TestShellModelHost implements ShellModelHost {
 
   private toPaneSnapshot(paneId: string): ShellPaneRecordSnapshot {
     const pane = this.requirePane(paneId);
-    const active = this.activePaneId === paneId;
 
     if (pane.kind === "browser") {
       return {
         id: pane.id,
         kind: pane.kind,
         title: pane.title,
-        active,
         browser: {
           url: pane.url
         }
@@ -780,7 +781,6 @@ export class TestShellModelHost implements ShellModelHost {
         id: pane.id,
         kind: pane.kind,
         title: pane.title,
-        active,
         terminal: {
           attached: pane.runtimeId !== null,
           rootKey: pane.rootKey,
@@ -797,8 +797,7 @@ export class TestShellModelHost implements ShellModelHost {
     return {
       id: pane.id,
       kind: pane.kind,
-      title: pane.title,
-      active
+      title: pane.title
     };
   }
 }

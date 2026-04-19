@@ -55,13 +55,12 @@ function createBuiltinPaneDescriptors(
           runtimeId: null,
           summary: null
         }),
-        createSnapshot: ({ paneId, title, active, record }) =>
+        createSnapshot: ({ paneId, title, record }) =>
           isTerminalPaneRecord(record)
             ? {
                 id: paneId,
                 kind: "terminal",
                 title,
-                active,
                 terminal: {
                   attached: record.runtimeId !== null,
                   rootKey: record.rootKey,
@@ -76,8 +75,7 @@ function createBuiltinPaneDescriptors(
             : {
                 id: paneId,
                 kind: record.kind,
-                title,
-                active
+                title
               }
       },
       subtreeMounts: [

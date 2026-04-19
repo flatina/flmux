@@ -292,16 +292,16 @@ describe("ShellCore", () => {
     const { core } = buildShellCore();
     const extra = await core.createWorkspace({ title: "Second" });
     core.setActiveWorkspace("workspace.1");
-    expect(core.getActiveWorkspaceId()).toBe("workspace.1");
+    expect(core.getSlotActiveWorkspaceId()).toBe("workspace.1");
 
     core.setActiveWorkspace(extra.id);
-    expect(core.getActiveWorkspaceId()).toBe(extra.id);
+    expect(core.getSlotActiveWorkspaceId()).toBe(extra.id);
 
     const pane = await core.createPane({ kind: "browser", url: "/x" });
     core.clearActivePane(extra.id);
-    expect((await core.getWorkspaceStatus()).activePaneId).toBeNull();
+    expect(core.getSlotActivePaneId(extra.id)).toBeNull();
     core.setActivePane(pane.id);
-    expect((await core.getWorkspaceStatus()).activePaneId).toBe(pane.id);
+    expect(core.getSlotActivePaneId(extra.id)).toBe(pane.id);
   });
 
   it("creates separate workspaces whose bus is scoped to each id", async () => {
@@ -368,7 +368,7 @@ describe("ShellCore", () => {
     expect(core.getPaneWorkspaceId(termPane.id)).toBeUndefined();
     expect(core.getPaneWorkspaceId(browserPane.id)).toBeUndefined();
     expect(await core.closePane(termPane.id)).toEqual({ paneId: termPane.id, closed: false });
-    expect(core.getActiveWorkspaceId()).toBe("workspace.1");
+    expect(core.getSlotActiveWorkspaceId()).toBe("workspace.1");
   });
 
   it("deleteWorkspace on an unknown id is a no-op", async () => {
@@ -386,7 +386,46 @@ describe("ShellCore", () => {
     const ids = core.getWorkspaceIds();
     expect(ids).toHaveLength(1);
     expect(ids[0]).toBe("workspace.1");
-    expect(core.getActiveWorkspaceId()).toBe("workspace.1");
+    expect(core.getSlotActiveWorkspaceId()).toBe("workspace.1");
+  });
+
+  it("last-workspace delete reseed bumps every affected slot, not only the default", async () => {
+    const { core } = buildShellCore();
+    // Put two slots on workspace.1: default (from initialize) + a second slot.
+    core.setActiveWorkspace("workspace.1", { slotKey: "other" });
+    expect(core.getSlotActiveWorkspaceId("other")).toBe("workspace.1");
+
+    const captured: Array<{ topic: string; target?: string; payload: any }> = [];
+    core.subscribe((event) =>
+      captured.push({ topic: event.topic, target: event.targetAttachmentId, payload: event.payload })
+    );
+
+    await core.deleteWorkspace("workspace.1");
+
+    // Both slots land on the reseed, not null.
+    expect(core.getSlotActiveWorkspaceId()).toBe("workspace.1");
+    expect(core.getSlotActiveWorkspaceId("other")).toBe("workspace.1");
+
+    const activeChanges = captured.filter((e) => e.topic === "workspace.activeChanged");
+    // Sequence:
+    // 1. intermediate null emitted per affected slot (before reseed)
+    // 2. reseed workspace.added
+    // 3. default slot to ws.1 (inside initialize)
+    // 4. other slot to ws.1 (deleteWorkspace walks affected slots)
+    const perSlot = activeChanges.reduce<Record<string, string[]>>((acc, e) => {
+      const key = e.target ?? "__default__";
+      (acc[key] ??= []).push((e.payload as { id: string | null }).id ?? "null");
+      return acc;
+    }, {});
+    // Order inside each slot: null → "workspace.1".
+    expect(perSlot[core["defaultSlotKey"]]).toEqual(["null", "workspace.1"]);
+    expect(perSlot["other"]).toEqual(["null", "workspace.1"]);
+
+    // workspace.removed precedes the intermediate null activeChanged; reseed's
+    // workspace.added precedes the "workspace.1" activeChanged events.
+    const order = captured.map((e) => e.topic);
+    expect(order.indexOf("workspace.removed")).toBeLessThan(order.indexOf("workspace.activeChanged"));
+    expect(order.indexOf("workspace.added")).toBeLessThan(order.lastIndexOf("workspace.activeChanged"));
   });
 
   it("listPanesByWorkspace is workspace-scoped and safe for inactive workspaces", async () => {
@@ -404,10 +443,13 @@ describe("ShellCore", () => {
 
   it("setActiveWorkspace noops on unknown id (no throw)", async () => {
     const { core } = buildShellCore();
+    // initialize() seeded default slot's active to workspace.1; setting an
+    // unknown id resets it to null per the "next && workspaces.has(next)"
+    // resolution rule.
     core.setActiveWorkspace("workspace.ghost");
-    expect(core.getActiveWorkspaceId()).toBeNull();
+    expect(core.getSlotActiveWorkspaceId()).toBeNull();
     core.setActiveWorkspace("workspace.1");
-    expect(core.getActiveWorkspaceId()).toBe("workspace.1");
+    expect(core.getSlotActiveWorkspaceId()).toBe("workspace.1");
   });
 
   it("serializePaneParams runs the pane spec's persistence hook", async () => {
@@ -486,17 +528,106 @@ describe("ShellCore", () => {
     expect(events.filter((t) => t === "workspace.activeChanged")).toHaveLength(0);
   });
 
-  it("pane.removed payload includes newActivePaneId when closing active pane", async () => {
+  it("broadcast topics carry scope='all' and no targetAttachmentId", async () => {
+    const { core } = buildShellCore();
+    const captured: Array<{ topic: string; scope: string; targetAttachmentId?: string }> = [];
+    core.subscribe((event) =>
+      captured.push({ topic: event.topic, scope: event.scope, targetAttachmentId: event.targetAttachmentId })
+    );
+
+    await core.createWorkspace({ title: "Second" });
+    const wsAdded = captured.find((e) => e.topic === "workspace.added")!;
+    expect(wsAdded.scope).toBe("all");
+    expect(wsAdded.targetAttachmentId).toBeUndefined();
+
+    const pane = await core.createPane({ kind: "browser", url: "/x" });
+    const paneAdded = captured.find((e) => e.topic === "pane.added")!;
+    expect(paneAdded.scope).toBe("all");
+    expect(paneAdded.targetAttachmentId).toBeUndefined();
+
+    await core.setScopedProperty({ scope: "app" }, "title", "flmux-test-scope");
+    const titleChanged = captured.find((e) => e.topic === "app.titleChanged")!;
+    expect(titleChanged.scope).toBe("all");
+    expect(titleChanged.targetAttachmentId).toBeUndefined();
+    expect(pane.id).toBeTruthy();
+  });
+
+  it("setActiveWorkspace with explicit slotKey routes event to that target", async () => {
+    const { core } = buildShellCore();
+    await core.createWorkspace({ title: "Second" });
+    const captured: Array<{ topic: string; scope: string; targetAttachmentId?: string; payload: any }> = [];
+    core.subscribe((event) =>
+      captured.push({ topic: event.topic, scope: event.scope, targetAttachmentId: event.targetAttachmentId, payload: event.payload })
+    );
+
+    core.setActiveWorkspace("workspace.1", { slotKey: "other.attachment" });
+    const activeChanged = captured.find((e) => e.topic === "workspace.activeChanged")!;
+    expect(activeChanged.scope).toBe("attachment");
+    expect(activeChanged.targetAttachmentId).toBe("other.attachment");
+    expect(activeChanged.payload).toEqual({ id: "workspace.1" });
+
+    // Default slot's active is unchanged by a targeted mutation.
+    expect(core.getSlotActiveWorkspaceId("other.attachment")).toBe("workspace.1");
+    expect(core.getSlotActiveWorkspaceId()).not.toBe("workspace.1");
+  });
+
+  it("two slots maintain independent active workspace + pane state", async () => {
+    const { core } = buildShellCore();
+    const extra = await core.createWorkspace({ title: "Second" });
+    const paneInExtra = await core.createPane({ kind: "browser", url: "/x" });
+
+    // Default slot is on `extra` (createWorkspace bumped it). Put slot "B" on ws.1.
+    core.setActiveWorkspace("workspace.1", { slotKey: "B" });
+    const firstPaneOnWs1 = core.listPanesByWorkspace("workspace.1")[0]!;
+    core.setActivePane(firstPaneOnWs1.id, { slotKey: "B" });
+
+    expect(core.getSlotActiveWorkspaceId()).toBe(extra.id);
+    expect(core.getSlotActiveWorkspaceId("B")).toBe("workspace.1");
+    expect(core.getSlotActivePaneId(extra.id)).toBe(paneInExtra.id);
+    expect(core.getSlotActivePaneId("workspace.1", "B")).toBe(firstPaneOnWs1.id);
+    // Slot B has no opinion on `extra`.
+    expect(core.getSlotActivePaneId(extra.id, "B")).toBeNull();
+  });
+
+  it("createPane without a workspace target throws ModelPathError INVALID_VALUE", async () => {
+    const { core } = buildShellCore();
+    // Drop default slot's active workspace so the implicit fallback fails.
+    core.setActiveWorkspace(null);
+
+    await expect(core.createPane({ kind: "browser", url: "/x" })).rejects.toMatchObject({
+      code: "INVALID_VALUE"
+    });
+
+    // Slot-only option (no args.workspaceId, slot has no active) also fails.
+    await expect(
+      core.createPane({ kind: "browser" }, { slotKey: "never.bootstrapped" })
+    ).rejects.toMatchObject({ code: "INVALID_VALUE" });
+  });
+
+  it("closing active pane emits pane.removed + scope=attachment pane.activeChanged", async () => {
     const { core } = buildShellCore();
     const second = await core.createPane({ kind: "browser", url: "/s" });
     const first = (await core.listPanes()).find((p) => p.id !== second.id)!;
 
-    const captured: Array<{ topic: string; payload: any }> = [];
-    core.subscribe((event) => captured.push({ topic: event.topic, payload: event.payload }));
+    const captured: Array<{ topic: string; scope: string; targetAttachmentId?: string; payload: any }> = [];
+    core.subscribe((event) =>
+      captured.push({
+        topic: event.topic,
+        scope: event.scope,
+        targetAttachmentId: event.targetAttachmentId,
+        payload: event.payload
+      })
+    );
 
     await core.closePane(second.id);
     const removed = captured.find((e) => e.topic === "pane.removed")!;
-    expect(removed.payload).toMatchObject({ paneId: second.id, newActivePaneId: first.id });
+    expect(removed.payload).toEqual({ paneId: second.id, workspaceId: "workspace.1" });
+    expect(removed.scope).toBe("all");
+
+    const activeChanged = captured.find((e) => e.topic === "pane.activeChanged")!;
+    expect(activeChanged.payload).toEqual({ workspaceId: "workspace.1", paneId: first.id });
+    expect(activeChanged.scope).toBe("attachment");
+    expect(activeChanged.targetAttachmentId).toBeTruthy();
   });
 
   it("terminal.applyTerminalEvent does not emit shellCore.event topics", async () => {
@@ -586,10 +717,10 @@ function builtinSpecs(): PaneSpec[] {
             workspace.defaultBrowserPath
           )
         }),
-        createSnapshot: ({ paneId, title, active, record }) =>
+        createSnapshot: ({ paneId, title, record }) =>
           isBrowserPaneStateRecord(record)
-            ? { id: paneId, kind: "browser", title, active, browser: { url: record.url } }
-            : { id: paneId, kind: record.kind, title, active }
+            ? { id: paneId, kind: "browser", title, browser: { url: record.url } }
+            : { id: paneId, kind: record.kind, title }
       }
     },
     {
@@ -604,13 +735,12 @@ function builtinSpecs(): PaneSpec[] {
           runtimeId: null,
           summary: null
         }),
-        createSnapshot: ({ paneId, title, active, record }) =>
+        createSnapshot: ({ paneId, title, record }) =>
           isTerminalPaneStateRecord(record)
             ? {
                 id: paneId,
                 kind: "terminal",
                 title,
-                active,
                 terminal: {
                   attached: record.runtimeId !== null,
                   rootKey: record.rootKey,
@@ -622,7 +752,7 @@ function builtinSpecs(): PaneSpec[] {
                   updatedAt: record.summary?.updatedAt ?? null
                 }
               }
-            : { id: paneId, kind: record.kind, title, active }
+            : { id: paneId, kind: record.kind, title }
       }
     }
   ];

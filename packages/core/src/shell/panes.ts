@@ -39,7 +39,6 @@ export interface PaneLifecycleHooks<TRecord extends PaneStateRecord = PaneStateR
   createSnapshot?(args: {
     paneId: string;
     title: string;
-    active: boolean;
     record: TRecord;
   }): ShellPaneRecordSnapshot;
 }
@@ -180,19 +179,16 @@ export function createPaneSnapshot<TRecord extends PaneStateRecord>(options: {
   spec: PaneSpec<TRecord>;
   paneId: string;
   title: string;
-  active: boolean;
   record: TRecord;
 }): ShellPaneRecordSnapshot {
   return options.spec.lifecycle?.createSnapshot?.({
     paneId: options.paneId,
     title: options.title,
-    active: options.active,
     record: options.record
   }) ?? {
     id: options.paneId,
     kind: options.record.kind,
-    title: options.title,
-    active: options.active
+    title: options.title
   };
 }
 

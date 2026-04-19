@@ -38,13 +38,12 @@ export function createBuiltinPaneSpecs(projectDir: string): PaneSpec[] {
           runtimeId: null,
           summary: null
         }),
-        createSnapshot: ({ paneId, title, active, record }) =>
+        createSnapshot: ({ paneId, title, record }) =>
           isTerminalPaneStateRecord(record)
             ? {
                 id: paneId,
                 kind: "terminal",
                 title,
-                active,
                 terminal: {
                   attached: record.runtimeId !== null,
                   rootKey: record.rootKey,
@@ -59,8 +58,7 @@ export function createBuiltinPaneSpecs(projectDir: string): PaneSpec[] {
             : {
                 id: paneId,
                 kind: record.kind,
-                title,
-                active
+                title
               }
       },
       subtreeMounts: [

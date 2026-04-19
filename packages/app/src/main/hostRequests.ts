@@ -26,12 +26,16 @@ export function createFlmuxHostRequestHandlers(options: {
    * on the authority's defaultSlotKey). */
   getCallerAttachmentId?(viewId: number): string | null;
   paneOwners: Map<string, number>;
-  shellModelRouter: FlmuxShellModelRouter;
-  /** Authoritative `ShellModelAPI` for this process — desktop's local
-   * authority or web's server-owned authority. Preload/WS callers reach
-   * it directly (trusted transport); CLI/external HTTP goes through
-   * `shellModelRouter` with clientId scoping. */
-  shellModel: ShellModelAPI;
+  /** Resolve the caller's authority `ShellModelAPI`. Desktop ignores args
+   * and returns the single authority; web needs the caller's attachment
+   * binding (`viewId` for post-register calls, or `hints.attachmentId`
+   * during register itself when `viewIdToAttachmentId` isn't set yet).
+   * Throws the RPC back to the client if the binding can't be resolved
+   * (should be impossible for well-behaved clients). */
+  resolveShellModel(viewId: number, hints?: { attachmentId?: string }): ShellModelAPI | null;
+  /** Resolve the caller's `FlmuxShellModelRouter` — used for clientId
+   * minting at register time. Same input shape as `resolveShellModel`. */
+  resolveShellModelRouter(viewId: number, hints?: { attachmentId?: string }): FlmuxShellModelRouter | null;
   terminalService: TerminalService;
   localExtensions: DiscoveredLocalExtension[];
   desktopAuthority: DesktopShellAuthority | null;
@@ -64,6 +68,14 @@ export function createFlmuxHostRequestHandlers(options: {
     return options.desktopAuthority;
   };
 
+  const requireShellModel = (op: string): ShellModelAPI => {
+    const shellModel = options.resolveShellModel(options.getCallerViewId());
+    if (!shellModel) {
+      throw new Error(`${op}: no authority resolvable for caller (attachment not bound)`);
+    }
+    return shellModel;
+  };
+
   return {
     "flmux.getConfig": () => buildConfig(),
 
@@ -78,11 +90,25 @@ export function createFlmuxHostRequestHandlers(options: {
             lastAppliedSeq: params.lastAppliedSeq ?? 0
           }
         : undefined;
+      // Resolve the caller's router from the binding hint. When the
+      // attachment is unknown server-side (aged out during grace, never
+      // minted, or the client replayed a stale/bogus id), the web resolver
+      // returns null — signal `rebootstrap-required` so the client recovers
+      // via HTTP bootstrap instead of surfacing a raw RPC error. Desktop
+      // ignores the binding and always returns its single authority; a
+      // null here means a genuine misconfiguration.
+      const router = options.resolveShellModelRouter(viewId, binding);
+      if (!router) {
+        if (binding) {
+          return { status: "rebootstrap-required" as const };
+        }
+        throw new Error("flmux.client.register: no authority resolvable for caller");
+      }
       // Mint clientId first — `onClientRegister` installs the forwarder which
       // may resolve the client by viewId (requires a minted id). On
       // "rebootstrap-required" the dangling clientId is cleaned up when the
       // client closes its WS to re-bootstrap.
-      const registration = options.shellModelRouter.registerClient(viewId);
+      const registration = router.registerClient(viewId);
       const outcome = options.onClientRegister?.(viewId, binding);
       if (outcome === "rebootstrap-required") {
         return { status: "rebootstrap-required" as const };
@@ -103,15 +129,18 @@ export function createFlmuxHostRequestHandlers(options: {
     },
 
     "shellModel.path.get": (params: { path: string }) => {
-      return options.shellModel.pathGet(params.path);
+      const shellModel = requireShellModel("shellModel.path.get");
+      return shellModel.pathGet(params.path);
     },
 
     "shellModel.path.list": (params: { path: string }) => {
-      return options.shellModel.pathList(params.path);
+      const shellModel = requireShellModel("shellModel.path.list");
+      return shellModel.pathList(params.path);
     },
 
     "shellModel.path.set": (params: { path: string; value: unknown }) => {
-      return options.shellModel.pathSet(params.path, params.value);
+      const shellModel = requireShellModel("shellModel.path.set");
+      return shellModel.pathSet(params.path, params.value);
     },
 
     "shellModel.path.call": async (params: {
@@ -119,6 +148,7 @@ export function createFlmuxHostRequestHandlers(options: {
       args?: Record<string, unknown>;
       caller?: PathCallerContext;
     }) => {
+      const shellModel = requireShellModel("shellModel.path.call");
       // Inject caller.attachmentId from the view's bound attachment so the
       // model layer can route slot-aware mutations (setActive*, createPane
       // with implicit ws, etc.) without relying on defaultSlotKey.
@@ -126,7 +156,7 @@ export function createFlmuxHostRequestHandlers(options: {
       const caller: PathCallerContext | undefined = attachmentId
         ? { ...(params.caller ?? {}), attachmentId: params.caller?.attachmentId ?? attachmentId }
         : params.caller;
-      const result = await options.shellModel.pathCall(params.path, params.args, caller);
+      const result = await shellModel.pathCall(params.path, params.args, caller);
       if (result.ok) {
         const attachMatch = TERMINAL_ATTACH_PATH.exec(params.path);
         if (attachMatch) {

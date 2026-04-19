@@ -24,7 +24,7 @@ describe("web mode auth (users + tokens store)", () => {
 
     const server = startFlmuxServer({
       rendererDir,
-      shellModelRouter: createStubShellModelRouter(),
+      resolveShellModelRouter: async () => createStubShellModelRouter(),
       authorizer: createFlmuxWebModeAuthorizer(resolveFlmuxAuthPaths(authDir))
     });
 
@@ -75,7 +75,7 @@ describe("web mode auth (users + tokens store)", () => {
 
     const server = startFlmuxServer({
       rendererDir,
-      shellModelRouter: createStubShellModelRouter(),
+      resolveShellModelRouter: async () => createStubShellModelRouter(),
       authorizer: createFlmuxWebModeAuthorizer(resolveFlmuxAuthPaths(authDir))
     });
 
@@ -95,7 +95,7 @@ describe("web mode auth (users + tokens store)", () => {
 
     const server = startFlmuxServer({
       rendererDir,
-      shellModelRouter: createStubShellModelRouter(),
+      resolveShellModelRouter: async () => createStubShellModelRouter(),
       authorizer: createFlmuxWebModeAuthorizer(resolveFlmuxAuthPaths(authDir))
     });
 
@@ -131,13 +131,13 @@ describe("web mode auth (users + tokens store)", () => {
     const calls: Array<{ path: string; args?: Record<string, unknown> }> = [];
     const server = startFlmuxServer({
       rendererDir,
-      shellModelRouter: {
+      resolveShellModelRouter: async () => ({
         ...createStubShellModelRouter(),
         pathCall: async (input) => {
           calls.push({ path: input.path, args: input.args });
           return { ok: true, value: null };
         }
-      },
+      }),
       authorizer: createFlmuxWebModeAuthorizer(resolveFlmuxAuthPaths(authDir))
     });
 

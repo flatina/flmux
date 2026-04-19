@@ -109,4 +109,20 @@ describe("AttachmentRegistry", () => {
     expect(registry.resolveByViewId(7)?.attachmentId).toBe("a");
     expect(registry.resolveByViewId(9)).toBeUndefined();
   });
+
+  it("onEvict fires AFTER evict() clears the entry — pins ordering for main.ts userId-map cleanup", async () => {
+    // main.ts's markDisconnected callback deletes
+    // `attachmentIdToUserId.set(attachmentId, …)` — that cleanup relies
+    // on the entry already being gone so downstream code that observes
+    // the map cannot see a half-evicted attachment. A future refactor
+    // that moves onEvict ahead of evict() would silently break the
+    // buffer-sub-teardown ↔ user-map-cleanup ordering (Claude B2 Phase 1
+    // review B1 follow-up).
+    const registry = new AttachmentRegistry({ graceMs: 5 });
+    registry.setBufferSubscriber("a", () => {});
+    registry.markDisconnected("a", (state) => {
+      expect(registry.get(state.attachmentId)).toBeUndefined();
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
 });

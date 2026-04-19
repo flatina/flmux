@@ -1,5 +1,5 @@
 import { BrowserView, BrowserWindow, AppRuntime } from "bunite-core";
-import type { SequencedShellCoreEvent } from "@flmux/core/shell";
+import type { SequencedShellCoreEvent, ShellModelAPI } from "@flmux/core/shell";
 import type { FlmuxRendererBridgeSchema, FlmuxSessionSaveLayouts } from "../shared/rendererBridge";
 import type { TerminalRuntimeEvent } from "../shared/terminal";
 import { AttachmentRegistry } from "./attachmentRegistry";
@@ -10,14 +10,16 @@ import {
   createDesktopShellAuthority,
   type DesktopShellAuthority
 } from "./desktopShellAuthority";
-import { createWebModeShellAuthority, type WebModeShellAuthority } from "./webModeShellAuthority";
+import type { WebModeShellAuthority } from "./webModeShellAuthority";
+import { createWebModeUserAuthorityRegistry, type WebModeUserAuthorityRegistry } from "./userAuthorityRegistry";
 import { startFlmuxServer } from "./server";
 import { forwardTerminalEventToOwnedClient } from "./terminalEventForwarding";
 import { createTerminalService } from "./terminal-service";
 import { createFlmuxHostRequestHandlers } from "./hostRequests";
-import { createFlmuxWebModeAuthorizer } from "./webModeAuth";
+import { createFlmuxWebModeAuthorizer, type FlmuxAuthorizationContext } from "./webModeAuth";
 import { resolveFlmuxAuthDir, resolveFlmuxAuthPaths } from "./auth/authConfig";
 import { resolveFlmuxRuntimeMode } from "./runtimeMode";
+import type { FlmuxShellModelRouter } from "./shellModelBridge";
 import {
   discoverConfiguredLocalExtensions,
   resolveConfiguredLocalExtensionsRootDir
@@ -26,7 +28,11 @@ import {
 type ShellAuthority = Pick<
   DesktopShellAuthority | WebModeShellAuthority,
   "subscribe"
->;
+> & {
+  readonly shellModel: ShellModelAPI;
+  readonly router: FlmuxShellModelRouter;
+  readonly clientId: string;
+};
 
 const runtimeMode = resolveFlmuxRuntimeMode();
 process.env.BUNITE_REMOTE_DEBUGGING_PORT ??= "9227";
@@ -58,32 +64,64 @@ const desktopAuthority: DesktopShellAuthority | null = runtimeMode === "desktop"
     })
   : null;
 
-const webModeShellAuthority = runtimeMode === "web"
-  ? await createWebModeShellAuthority({
+let serverOrigin = "";
+
+// Web mode: `Map<userId, WebModeShellAuthority>`. Each authenticated user
+// gets an isolated `ShellCore` on first reach. Session persistence is NOT
+// per-user yet — desktop keeps its single `sessionStore`, web has none
+// (B2 Phase 2+ concern).
+const userAuthorityRegistry: WebModeUserAuthorityRegistry | null = runtimeMode === "web"
+  ? createWebModeUserAuthorityRegistry({
       projectDir,
-      runtimeLabel: "web server authority",
       terminalService,
       clientRegistry,
-      localExtensions
+      localExtensions,
+      getOrigin: () => serverOrigin
     })
   : null;
 
-const shellModelRouter = desktopAuthority?.router ?? webModeShellAuthority?.router;
-const shellModel = desktopAuthority?.shellModel ?? webModeShellAuthority?.shellModel;
-if (!shellModelRouter || !shellModel) {
-  throw new Error(`No shell model authority configured for runtime mode '${runtimeMode}'`);
+// Mode exclusivity guard: `resolveAuthorityForViewId` branches on
+// `desktopAuthority` first, which is safe only when exactly one of the
+// two is configured. A mixed-mode misconfiguration would silently route
+// every web viewId to the desktop authority.
+if ((desktopAuthority === null) === (userAuthorityRegistry === null)) {
+  throw new Error(
+    `Exactly one of desktopAuthority/userAuthorityRegistry must be configured (runtime mode: '${runtimeMode}')`
+  );
 }
-
-const authorityClientId = desktopAuthority?.clientId ?? webModeShellAuthority?.clientId ?? null;
-
-const shellAuthority: ShellAuthority | null = desktopAuthority ?? webModeShellAuthority ?? null;
 
 const attachmentRegistry = new AttachmentRegistry();
 const viewIdToAttachmentId = new Map<number, string>();
+// Web-only: records which user owns each minted attachmentId so WS
+// register + shellModel.path.* calls route to the right authority.
+const attachmentIdToUserId = new Map<string, string>();
 
 function scopeMatches(event: SequencedShellCoreEvent, attachmentId: string): boolean {
   if (event.scope === "all") return true;
   return event.targetAttachmentId === attachmentId;
+}
+
+/**
+ * Resolve the authority an attachment belongs to. Desktop has a single
+ * authority and ignores `attachmentId`; web looks up the owning user via
+ * the bootstrap-time mapping. Returns null in web mode if the attachment
+ * is unknown (e.g. stale cookie after server restart).
+ */
+function resolveAuthorityForAttachment(attachmentId: string): ShellAuthority | null {
+  if (desktopAuthority) return desktopAuthority;
+  const userId = attachmentIdToUserId.get(attachmentId);
+  if (!userId) return null;
+  return userAuthorityRegistry?.get(userId) ?? null;
+}
+
+function resolveAuthorityForViewId(
+  viewId: number,
+  hints?: { attachmentId?: string }
+): ShellAuthority | null {
+  if (desktopAuthority) return desktopAuthority;
+  const attachmentId = hints?.attachmentId ?? viewIdToAttachmentId.get(viewId);
+  if (!attachmentId) return null;
+  return resolveAuthorityForAttachment(attachmentId);
 }
 
 /**
@@ -94,10 +132,11 @@ function scopeMatches(event: SequencedShellCoreEvent, attachmentId: string): boo
  * `flmux.client.register` call. Idempotent.
  */
 function ensureBufferSubscriber(attachmentId: string) {
-  if (!shellAuthority) return;
+  const authority = resolveAuthorityForAttachment(attachmentId);
+  if (!authority) return;
   const state = attachmentRegistry.ensure(attachmentId);
   if (state.unsubscribeBuffer) return;
-  const unsub = shellAuthority.subscribe((event) => {
+  const unsub = authority.subscribe((event) => {
     if (scopeMatches(event, attachmentId)) {
       attachmentRegistry.pushBuffered(attachmentId, event);
     }
@@ -113,13 +152,14 @@ function ensureBufferSubscriber(attachmentId: string) {
  * buffer subscriber is untouched.
  */
 function installAttachmentForwarder(attachmentId: string, viewId: number) {
-  if (!shellAuthority) return;
+  const authority = resolveAuthorityForAttachment(attachmentId);
+  if (!authority) return;
   const client = clientRegistry.resolveByViewId(viewId);
   if (!client) return;
 
   ensureBufferSubscriber(attachmentId);
 
-  const unsubLive = shellAuthority.subscribe((event) => {
+  const unsubLive = authority.subscribe((event) => {
     if (!scopeMatches(event, attachmentId)) return;
     client.bridge.sendProxy["shellCore.event"](event);
   });
@@ -141,8 +181,10 @@ function bindWebAttachment(
   const replayed = attachmentRegistry.replayAfter(binding.attachmentId, binding.lastAppliedSeq);
   if (replayed === null) {
     // Buffer rolled past the client's seq — the stale attachment entry is
-    // useless now; the client will mint a fresh id on re-bootstrap.
+    // useless now; the client will mint a fresh id on re-bootstrap. Drop
+    // the attachmentId→user mapping too so the entry doesn't linger.
     attachmentRegistry.evict(binding.attachmentId);
+    attachmentIdToUserId.delete(binding.attachmentId);
     return "rebootstrap-required";
   }
   const client = clientRegistry.resolveByViewId(viewId);
@@ -158,8 +200,9 @@ function mintWebAttachmentId(): string {
   return `web_${crypto.randomUUID()}`;
 }
 
-/** Main-side session-save debounce. Web mode has no `sessionStore` in
- * B1d — `pushLayout` is a no-op there (B2 gap). */
+/** Main-side session-save debounce. Desktop-only — web mode has no
+ * `sessionStore`. Per-user sessionStore is a B2 Phase 2+ concern (decision
+ * pending on on-disk layout and admin migration). */
 const SESSION_SAVE_DEBOUNCE_MS = 250;
 let pendingLayouts: FlmuxSessionSaveLayouts | null = null;
 let layoutDebounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -187,6 +230,7 @@ function releaseView(viewId: number) {
   if (attachmentId) {
     viewIdToAttachmentId.delete(viewId);
     attachmentRegistry.markDisconnected(attachmentId, (state) => {
+      attachmentIdToUserId.delete(state.attachmentId);
       console.log(`[flmux] attachment ${state.attachmentId} evicted after grace period`);
     });
   }
@@ -196,8 +240,23 @@ function releaseView(viewId: number) {
   clientRegistry.detachRenderer(viewId);
 }
 
+async function resolveShellModelRouterForRequest(
+  context: FlmuxAuthorizationContext | null
+): Promise<FlmuxShellModelRouter> {
+  if (desktopAuthority) return desktopAuthority.router;
+  if (!userAuthorityRegistry) {
+    throw new Error("No authority registry configured");
+  }
+  if (!context) {
+    // Web mode always runs with an authorizer — if auth passed, context
+    // must be non-null. Guard here for shape safety.
+    throw new Error("resolveShellModelRouter: web mode requires an auth context");
+  }
+  const authority = await userAuthorityRegistry.getOrCreate(context.user.name);
+  return authority.router;
+}
+
 let desktopViewId: number | null = null;
-let serverOrigin = "";
 
 function requireDesktopViewId() {
   if (desktopViewId == null) {
@@ -206,18 +265,28 @@ function requireDesktopViewId() {
   return desktopViewId;
 }
 
+const desktopAuthorityClientId = desktopAuthority?.clientId ?? null;
+
+const resolveShellModel = (viewId: number, hints?: { attachmentId?: string }): ShellModelAPI | null => {
+  return resolveAuthorityForViewId(viewId, hints)?.shellModel ?? null;
+};
+
+const resolveShellModelRouter = (viewId: number, hints?: { attachmentId?: string }): FlmuxShellModelRouter | null => {
+  return resolveAuthorityForViewId(viewId, hints)?.router ?? null;
+};
+
 const rendererRpc = BrowserView.defineRPC<FlmuxRendererBridgeSchema>({
   handlers: {
     requests: createFlmuxHostRequestHandlers({
       mode: runtimeMode,
       getAppOrigin: () => serverOrigin,
       getProjectDir: () => projectDir,
-      getAuthorityClientId: () => authorityClientId,
+      getAuthorityClientId: () => desktopAuthorityClientId,
       getCallerViewId: requireDesktopViewId,
       getCallerAttachmentId: (viewId) => viewIdToAttachmentId.get(viewId) ?? null,
       paneOwners,
-      shellModelRouter,
-      shellModel,
+      resolveShellModel,
+      resolveShellModelRouter,
       terminalService,
       localExtensions,
       desktopAuthority,
@@ -245,12 +314,17 @@ rendererRpc.webHandler.onWebClientConnected = (client) => {
     mode: runtimeMode,
     getAppOrigin: () => serverOrigin,
     getProjectDir: () => projectDir,
-    getAuthorityClientId: () => authorityClientId,
+    // Web clients discover their *own* authority's clientId via
+    // /api/clients — this field is historically the "well-known authority
+    // clientId" for the preload-RPC transport. In web mode the value is
+    // user-specific and not known at WS-open time, so we expose null and
+    // let the browser read it through the auth-scoped /api/clients route.
+    getAuthorityClientId: () => null,
     getCallerViewId: () => viewId,
     getCallerAttachmentId: (id) => viewIdToAttachmentId.get(id) ?? null,
     paneOwners,
-    shellModelRouter,
-    shellModel,
+    resolveShellModel,
+    resolveShellModelRouter,
     terminalService,
     localExtensions,
     desktopAuthority,
@@ -263,8 +337,9 @@ rendererRpc.webHandler.onWebClientConnected = (client) => {
       }
       return bindWebAttachment(registeredViewId, binding);
     },
-    // Web has no sessionStore in B1d (desktop-only). See `pushLayout`
-    // definition above — web pushes are silently dropped (B2 gap).
+    // Web has no sessionStore in B2 Phase 1. Per-user persistence is a
+    // separate axis (on-disk layout + admin migration) deferred to a
+    // future B2 Phase 2+ work item.
     pushLayout
   }));
   clientRegistry.attachRenderer(viewId, client.rpc);
@@ -278,27 +353,34 @@ rendererRpc.webHandler.onWebClientDisconnected = (client) => {
 
 const server = startFlmuxServer({
   rendererDir,
-  shellModelRouter,
+  resolveShellModelRouter: resolveShellModelRouterForRequest,
   localExtensions,
   saveSession: desktopAuthority
     ? (layouts) => desktopAuthority.persistSession(layouts)
     : undefined,
-  // Web-mode HTTP bootstrap. Each call mints a fresh attachmentId, installs
-  // its ring-buffer subscriber BEFORE composing the snapshot (so events
-  // emitted by `shellBootstrap` or by concurrent callers during the HTTP
-  // round-trip land in the buffer for replay at register time), then runs
-  // the authority's sync bootstrap. The grace timer armed here evicts the
-  // attachment if the browser never completes register (crashed tab, or
-  // rebootstrap-required before forwarder install) — without it, the
-  // shellCore subscriber would leak for the process lifetime.
-  bootstrapAttachment: webModeShellAuthority
-    ? () => {
+  // Web-mode HTTP bootstrap. Resolves the calling user from auth context,
+  // lazily creates the user's authority, mints a fresh attachmentId,
+  // records the attachmentId→userId mapping so WS register + shellModel
+  // calls route to the right authority, installs the buffer subscriber
+  // BEFORE composing the snapshot (so events emitted by shellBootstrap or
+  // concurrent callers land in the buffer), and arms the unbound-grace
+  // timer so an attachment whose WS register never arrives doesn't leak
+  // a permanent shellCore subscriber.
+  bootstrapAttachment: userAuthorityRegistry
+    ? async (context) => {
+        if (!context) {
+          throw new Error("/api/shell/bootstrap: web mode requires an auth context");
+        }
+        const userId = context.user.name;
+        const authority = await userAuthorityRegistry.getOrCreate(userId);
         const attachmentId = mintWebAttachmentId();
+        attachmentIdToUserId.set(attachmentId, userId);
         ensureBufferSubscriber(attachmentId);
         attachmentRegistry.markDisconnected(attachmentId, (state) => {
+          attachmentIdToUserId.delete(state.attachmentId);
           console.log(`[flmux] unbound attachment ${state.attachmentId} evicted after grace`);
         });
-        return webModeShellAuthority.shellBootstrap(attachmentId);
+        return authority.shellBootstrap(attachmentId);
       }
     : undefined,
   authorizer: webModeAuthorizer ?? undefined,
@@ -307,9 +389,6 @@ const server = startFlmuxServer({
 serverOrigin = server.origin;
 if (desktopAuthority) {
   await desktopAuthority.start(server.origin);
-}
-if (webModeShellAuthority) {
-  await webModeShellAuthority.start(server.origin);
 }
 
 console.log(`[flmux] ${runtimeMode} mode server listening at ${server.origin}`);
@@ -321,7 +400,17 @@ if (webModeAuthPaths) {
 
 terminalService.subscribe((event: TerminalRuntimeEvent) => {
   desktopAuthority?.applyTerminalEvent(event);
-  webModeShellAuthority?.applyTerminalEvent(event);
+  // Fan out to every created user authority. Each authority's
+  // applyTerminalEvent is a paneId lookup against its own ShellCore; a
+  // miss is a no-op, so in practice only the owning authority applies
+  // the event. Isolation here is probabilistic (paneIds are uuids), not
+  // enforced — a paneId collision across authorities would cause both
+  // to accept the event. Phase 2+ adds runtimeId-based ownership match
+  // at applyTerminalEvent, plus paneId→authority indexing so the fan-out
+  // stops being O(n_users) per event.
+  for (const { authority } of userAuthorityRegistry?.list() ?? []) {
+    authority.applyTerminalEvent(event);
+  }
   forwardTerminalEventToOwnedClient({
     event,
     paneOwners,

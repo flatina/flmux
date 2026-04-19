@@ -33,13 +33,20 @@ const EXTENSION_API_RUNTIME_DIST_DIR = fileURLToPath(new URL("../../../extension
 
 export function startFlmuxServer(options: {
   rendererDir: string;
-  shellModelRouter: FlmuxShellModelRouter;
+  /** Request-scoped router resolver. Desktop returns its single authority
+   * router regardless of context; web returns the calling user's router
+   * (auth context carries the user id; web mode guarantees non-null
+   * context because auth would have already rejected the request). */
+  resolveShellModelRouter(context: FlmuxAuthorizationContext | null): Promise<FlmuxShellModelRouter>;
   localExtensions?: DiscoveredLocalExtension[];
+  /** Called from `/api/session/save` beacon in desktop mode. Web mode
+   * leaves this undefined — per-user sessionStore is a B2 Phase 2+
+   * concern (pending on-disk layout + admin migration decision). */
   saveSession?(layouts: FlmuxSessionSaveLayouts): Promise<void>;
-  /** Mint a fresh attachment and build its bootstrap snapshot. Only wired
-   * in web mode — desktop CEF uses the preload `flmux.shellBootstrap` RPC
-   * instead. Returning null rejects the request as unauthorized. */
-  bootstrapAttachment?(): FlmuxShellBootstrapResponse;
+  /** Mint a fresh attachment and build its bootstrap snapshot for the
+   * authenticated user. Only wired in web mode — desktop CEF uses the
+   * preload `flmux.shellBootstrap` RPC instead. */
+  bootstrapAttachment?(context: FlmuxAuthorizationContext | null): Promise<FlmuxShellBootstrapResponse>;
   authorizer?: FlmuxWebModeAuthorizer;
   rpcWebHandler?: {
     open(ws: { send(data: Uint8Array | ArrayBuffer): void | number }): void;
@@ -56,9 +63,10 @@ export function startFlmuxServer(options: {
         return "Unauthorized";
       }
 
+      const router = await options.resolveShellModelRouter(auth.context);
       return {
         ok: true,
-        clients: await options.shellModelRouter.listClients()
+        clients: await router.listClients()
       };
     })
     .get("/__flmux/runtime/extension-api.js", async ({ request, set }) => {
@@ -91,7 +99,8 @@ export function startFlmuxServer(options: {
         return "Unauthorized";
       }
 
-      return handleJsonRequest<ClientScopedPathGetInput>(request, set, (input) => options.shellModelRouter.pathGet(input));
+      const router = await options.resolveShellModelRouter(auth.context);
+      return handleJsonRequest<ClientScopedPathGetInput>(request, set, (input) => router.pathGet(input));
     })
     .post("/api/model/path/list", async ({ request, set }) => {
       const auth = authorizeRequest(request, set, options.authorizer);
@@ -99,7 +108,8 @@ export function startFlmuxServer(options: {
         return "Unauthorized";
       }
 
-      return handleJsonRequest<ClientScopedPathListInput>(request, set, (input) => options.shellModelRouter.pathList(input));
+      const router = await options.resolveShellModelRouter(auth.context);
+      return handleJsonRequest<ClientScopedPathListInput>(request, set, (input) => router.pathList(input));
     })
     .post("/api/model/path/set", async ({ request, set }) => {
       const auth = authorizeRequest(request, set, options.authorizer);
@@ -107,7 +117,8 @@ export function startFlmuxServer(options: {
         return "Unauthorized";
       }
 
-      return handleJsonRequest<ClientScopedPathSetInput>(request, set, (input) => options.shellModelRouter.pathSet(input));
+      const router = await options.resolveShellModelRouter(auth.context);
+      return handleJsonRequest<ClientScopedPathSetInput>(request, set, (input) => router.pathSet(input));
     })
     .post("/api/model/path/call", async ({ request, set }) => {
       const auth = authorizeRequest(request, set, options.authorizer);
@@ -115,15 +126,16 @@ export function startFlmuxServer(options: {
         return "Unauthorized";
       }
 
+      const router = await options.resolveShellModelRouter(auth.context);
       return handleJsonRequest<ClientScopedPathCallInput>(request, set, async (input) => {
         const deniedReason = checkPaneKindAuthz(input, auth.context, options.authorizer);
         if (deniedReason) {
           throw new FlmuxAuthzError(deniedReason);
         }
-        return await options.shellModelRouter.pathCall(input);
+        return await router.pathCall(input);
       });
     })
-    .post("/api/shell/bootstrap", ({ request, set }) => {
+    .post("/api/shell/bootstrap", async ({ request, set }) => {
       const auth = authorizeRequest(request, set, options.authorizer);
       if (!auth.ok) {
         return "Unauthorized";
@@ -134,11 +146,13 @@ export function startFlmuxServer(options: {
         return "Not Found";
       }
 
-      // Sync body (Preflight #1 §S3): mutate (bootstrapAttachment) → capture
-      // seqStart → compose snapshot → set cookie → return. No awaits, no
-      // microtask yields. Feedback Q3: cookie is set for future B2
-      // continuity but not re-read in B1d — every call mints fresh.
-      const response = options.bootstrapAttachment();
+      // Per-user authority lazy-instantiation is an async step (B2 Phase 1)
+      // — `getOrCreate(userId)` may spin up a fresh ShellCore + initialize
+      // it. The seqStart/snapshot compose inside `authority.shellBootstrap`
+      // is still sync (preflight #1 §S3) so the snapshot boundary invariant
+      // holds. What's async is the user's authority creation, not the
+      // bootstrap body.
+      const response = await options.bootstrapAttachment(auth.context);
       const cookie = `flmux-attachment=${response.attachmentId}; HttpOnly; Path=/; SameSite=Strict`;
       setHeader(set, "set-cookie", cookie);
       setHeader(set, "content-type", "application/json; charset=utf-8");

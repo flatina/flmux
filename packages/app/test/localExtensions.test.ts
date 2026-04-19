@@ -195,7 +195,7 @@ describe("local extension loading", () => {
     const server = startFlmuxServer({
       rendererDir,
       localExtensions,
-      shellModelRouter: createShellModelRouterStub()
+      resolveShellModelRouter: async () => createShellModelRouterStub()
     });
 
     try {
@@ -236,7 +236,7 @@ describe("local extension loading", () => {
     const rendererDir = await createTempRendererDir();
     const server = startFlmuxServer({
       rendererDir,
-      shellModelRouter: createShellModelRouterStub()
+      resolveShellModelRouter: async () => createShellModelRouterStub()
     });
 
     try {
@@ -272,7 +272,7 @@ describe("local extension loading", () => {
     const server = startFlmuxServer({
       rendererDir,
       localExtensions,
-      shellModelRouter: createShellModelRouterStub()
+      resolveShellModelRouter: async () => createShellModelRouterStub()
     });
 
     try {
@@ -312,7 +312,7 @@ describe("local extension loading", () => {
     const server = startFlmuxServer({
       rendererDir,
       localExtensions,
-      shellModelRouter: createShellModelRouterStub()
+      resolveShellModelRouter: async () => createShellModelRouterStub()
     });
 
     try {

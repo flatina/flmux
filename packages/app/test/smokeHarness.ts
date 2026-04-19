@@ -60,7 +60,7 @@ export async function createSmokeHarness(): Promise<SmokeHarness> {
 
   const server = startFlmuxServer({
     rendererDir,
-    shellModelRouter: router
+    resolveShellModelRouter: async () => router
   });
   host.setAppOrigin(server.origin);
 

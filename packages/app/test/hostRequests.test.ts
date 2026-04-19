@@ -59,15 +59,15 @@ describe("flmux host requests", () => {
       getAuthorityClientId: () => null,
       getCallerViewId: () => 77,
       paneOwners,
-      shellModelRouter: {
+      resolveShellModelRouter: () => ({
         registerClient,
         listClients: async () => [],
         pathGet: async () => ({ ok: true }),
         pathList: async () => ({ ok: true }),
         pathSet: async () => ({ ok: true }),
         pathCall: async () => ({ ok: true })
-      },
-      shellModel: shellModelStub,
+      }),
+      resolveShellModel: () => shellModelStub,
       terminalService: {
         create,
         adoptByPaneId,
@@ -131,15 +131,15 @@ describe("flmux host requests", () => {
       getAuthorityClientId: () => "server_authority",
       getCallerViewId: () => 5,
       paneOwners: new Map(),
-      shellModelRouter: {
+      resolveShellModelRouter: () => ({
         registerClient: () => ({ clientId: "client-5" }),
         listClients: async () => [],
         pathGet: async () => ({ ok: true }),
         pathList: async () => ({ ok: true }),
         pathSet: async () => ({ ok: true }),
         pathCall: async () => ({ ok: true })
-      },
-      shellModel: shellModelStub,
+      }),
+      resolveShellModel: () => shellModelStub,
       terminalService: {
         create: async () => {
           throw new Error("not used");
@@ -189,20 +189,20 @@ describe("flmux host requests", () => {
       getAuthorityClientId: () => null,
       getCallerViewId: () => 1,
       paneOwners: new Map(),
-      shellModelRouter: {
+      resolveShellModelRouter: () => ({
         registerClient: () => ({ clientId: "client-1" }),
         listClients: async () => [],
         pathGet: async () => ({ ok: true }),
         pathList: async () => ({ ok: true }),
         pathSet: async () => ({ ok: true }),
         pathCall: async () => ({ ok: true })
-      },
-      shellModel: {
+      }),
+      resolveShellModel: () => ({
         pathGet: async () => ({ ok: true, found: false, value: undefined }),
         pathList: async () => ({ ok: true, found: false, entries: [] }),
         pathSet: async () => ({ ok: true, value: null }),
         pathCall: async () => ({ ok: true, value: null })
-      },
+      }),
       terminalService: {
         create: async () => {
           throw new Error("not used");
@@ -240,20 +240,20 @@ describe("flmux host requests", () => {
       getAuthorityClientId: () => "server_authority",
       getCallerViewId: () => 9,
       paneOwners: new Map(),
-      shellModelRouter: {
+      resolveShellModelRouter: () => ({
         registerClient: () => ({ clientId: "client-9" }),
         listClients: async () => [],
         pathGet: async () => ({ ok: true }),
         pathList: async () => ({ ok: true }),
         pathSet: async () => ({ ok: true }),
         pathCall: async () => ({ ok: true })
-      },
-      shellModel: {
+      }),
+      resolveShellModel: () => ({
         pathGet: async () => ({ ok: true, found: false, value: undefined }),
         pathList: async () => ({ ok: true, found: false, entries: [] }),
         pathSet: async () => ({ ok: true, value: null }),
         pathCall: async () => ({ ok: true, value: null })
-      },
+      }),
       terminalService: {
         create: async () => {
           throw new Error("not used");
@@ -273,5 +273,74 @@ describe("flmux host requests", () => {
     });
 
     expect(() => handlers["flmux.client.register"]({})).toThrow("/api/shell/bootstrap");
+  });
+
+  it("web register returns rebootstrap-required when the attachmentId is unknown server-side", () => {
+    // Simulates a browser replaying an attachmentId the server no longer
+    // knows — attachment aged out during grace, never minted, or a
+    // scripted client sent a bogus id. The register handler must signal
+    // recovery (not raw RPC error) so the client reloads via HTTP
+    // bootstrap (Codex B2 Phase 1 review B1).
+    const handlers = createFlmuxHostRequestHandlers({
+      mode: "web",
+      getAppOrigin: () => "http://127.0.0.1:0",
+      getProjectDir: () => ".",
+      getAuthorityClientId: () => "server_authority",
+      getCallerViewId: () => 11,
+      paneOwners: new Map(),
+      resolveShellModelRouter: () => null,
+      resolveShellModel: () => null,
+      terminalService: {
+        create: async () => {
+          throw new Error("not used");
+        },
+        adoptByPaneId: async () => ({ ok: true, outcome: "not_found" }),
+        write: async () => ({ ok: true, accepted: true, runtimeId: "t", history: "", terminal: null }),
+        resize: async () => ({ ok: true, accepted: true, runtimeId: "t", terminal: null }),
+        history: async () => ({ ok: true, runtimeId: "t", data: "" }),
+        kill: async () => ({ ok: true, rootKey: "r", runtimeId: "t", killed: true, terminal: null }),
+        listRoots: async () => [],
+        subscribe: () => () => {},
+        dispose: () => {}
+      },
+      localExtensions: [],
+      desktopAuthority: null
+    });
+
+    expect(handlers["flmux.client.register"]({ attachmentId: "web_bogus", lastAppliedSeq: 0 }))
+      .toEqual({ status: "rebootstrap-required" });
+  });
+
+  it("web shellModel.path.* rejects before register (attachment not bound)", async () => {
+    const handlers = createFlmuxHostRequestHandlers({
+      mode: "web",
+      getAppOrigin: () => "http://127.0.0.1:0",
+      getProjectDir: () => ".",
+      getAuthorityClientId: () => "server_authority",
+      getCallerViewId: () => 13,
+      paneOwners: new Map(),
+      resolveShellModelRouter: () => null,
+      resolveShellModel: () => null,
+      terminalService: {
+        create: async () => {
+          throw new Error("not used");
+        },
+        adoptByPaneId: async () => ({ ok: true, outcome: "not_found" }),
+        write: async () => ({ ok: true, accepted: true, runtimeId: "t", history: "", terminal: null }),
+        resize: async () => ({ ok: true, accepted: true, runtimeId: "t", terminal: null }),
+        history: async () => ({ ok: true, runtimeId: "t", data: "" }),
+        kill: async () => ({ ok: true, rootKey: "r", runtimeId: "t", killed: true, terminal: null }),
+        listRoots: async () => [],
+        subscribe: () => () => {},
+        dispose: () => {}
+      },
+      localExtensions: [],
+      desktopAuthority: null
+    });
+
+    // Throws synchronously (requireShellModel is called before the
+    // handler returns a Promise) — use the sync `toThrow` matcher.
+    expect(() => handlers["shellModel.path.get"]({ path: "/workspaces" }))
+      .toThrow("attachment not bound");
   });
 });

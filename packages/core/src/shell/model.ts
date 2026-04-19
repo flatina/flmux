@@ -686,15 +686,19 @@ class ShellModel implements ShellModelAPI {
 
   private async getStatusPath(segments: string[]): Promise<PathGetResult> {
     if (segments.length === 0) {
-      const app = await this.host.getAppStatus();
-      const workspace = await this.host.getWorkspaceStatus();
-      const panes = await this.host.listPanes();
+      const [app, attachments, workspaces, panes] = await Promise.all([
+        this.host.getAppStatus(),
+        this.host.listAttachmentSlots(),
+        this.host.listWorkspaces(),
+        this.host.listPanes()
+      ]);
       return {
         ok: true,
         found: true,
         value: {
           app,
-          workspace,
+          attachments: Object.fromEntries(attachments.map((entry) => [entry.attachmentId, entry])),
+          workspaces: Object.fromEntries(workspaces.map((workspace) => [workspace.id, workspace])),
           panes: Object.fromEntries(
             panes.map((pane) => [pane.id, toPaneStatusSnapshot(pane)])
           )
@@ -706,8 +710,16 @@ class ShellModel implements ShellModelAPI {
       return await this.getStatusApp(segments.slice(1));
     }
 
+    if (segments[0] === "attachments") {
+      return await this.getStatusAttachments(segments.slice(1));
+    }
+
     if (segments[0] === "workspace") {
       return await this.getStatusWorkspace(segments.slice(1));
+    }
+
+    if (segments[0] === "workspaces") {
+      return await this.getStatusWorkspaces(segments.slice(1));
     }
 
     if (segments[0] === "panes") {
@@ -724,7 +736,9 @@ class ShellModel implements ShellModelAPI {
         found: true,
         entries: [
           objectEntry("app", "/status/app"),
+          objectEntry("attachments", "/status/attachments"),
           objectEntry("workspace", "/status/workspace"),
+          objectEntry("workspaces", "/status/workspaces"),
           objectEntry("panes", "/status/panes")
         ]
       };
@@ -734,8 +748,16 @@ class ShellModel implements ShellModelAPI {
       return await this.listStatusApp(segments.slice(1));
     }
 
+    if (segments[0] === "attachments") {
+      return await this.listStatusAttachments(segments.slice(1));
+    }
+
     if (segments[0] === "workspace") {
       return await this.listStatusWorkspace(segments.slice(1));
+    }
+
+    if (segments[0] === "workspaces") {
+      return await this.listStatusWorkspaces(segments.slice(1));
     }
 
     if (segments[0] === "panes") {
@@ -808,6 +830,185 @@ class ShellModel implements ShellModelAPI {
 
     if (segments.length === 1 && isWorkspaceStatusKey(segments[0])) {
       return throwPathError("INVALID_PATH", "Leaf path cannot be listed");
+    }
+
+    return notFoundList();
+  }
+
+  private async getStatusAttachments(segments: string[]): Promise<PathGetResult> {
+    const attachments = await this.host.listAttachmentSlots();
+    if (segments.length === 0) {
+      return {
+        ok: true,
+        found: true,
+        value: Object.fromEntries(attachments.map((entry) => [entry.attachmentId, entry]))
+      };
+    }
+
+    const attachment = attachments.find((entry) => entry.attachmentId === segments[0]);
+    if (!attachment) {
+      return notFoundGet();
+    }
+
+    if (segments.length === 1) {
+      return { ok: true, found: true, value: attachment };
+    }
+
+    if (segments.length === 2) {
+      if (segments[1] === "attachmentId") {
+        return { ok: true, found: true, value: attachment.attachmentId };
+      }
+      if (segments[1] === "activeWorkspaceId") {
+        return { ok: true, found: true, value: attachment.activeWorkspaceId };
+      }
+      if (segments[1] === "activePaneIdByWorkspace") {
+        return { ok: true, found: true, value: attachment.activePaneIdByWorkspace };
+      }
+    }
+
+    if (segments[1] === "currentWorkspace") {
+      if (!attachment.activeWorkspaceId) {
+        return { ok: true, found: false, value: null };
+      }
+      // Delegate the workspace subtree to getStatusWorkspaces so the aliasing
+      // layer (paneCount/title/panes/*) stays in one place.
+      return await this.getStatusWorkspaces([attachment.activeWorkspaceId, ...segments.slice(2)]);
+    }
+
+    return notFoundGet();
+  }
+
+  private async listStatusAttachments(segments: string[]): Promise<PathListResult> {
+    const attachments = await this.host.listAttachmentSlots();
+    if (segments.length === 0) {
+      return {
+        ok: true,
+        found: true,
+        entries: attachments.map((entry) => objectEntry(entry.attachmentId, `/status/attachments/${entry.attachmentId}`))
+      };
+    }
+
+    const attachment = attachments.find((entry) => entry.attachmentId === segments[0]);
+    if (!attachment) {
+      return notFoundList();
+    }
+
+    if (segments.length === 1) {
+      return {
+        ok: true,
+        found: true,
+        entries: [
+          leafEntry("attachmentId", `/status/attachments/${attachment.attachmentId}/attachmentId`),
+          leafEntry("activeWorkspaceId", `/status/attachments/${attachment.attachmentId}/activeWorkspaceId`),
+          leafEntry("activePaneIdByWorkspace", `/status/attachments/${attachment.attachmentId}/activePaneIdByWorkspace`),
+          objectEntry("currentWorkspace", `/status/attachments/${attachment.attachmentId}/currentWorkspace`)
+        ]
+      };
+    }
+
+    if (segments.length === 2) {
+      if (
+        segments[1] === "attachmentId" ||
+        segments[1] === "activeWorkspaceId" ||
+        segments[1] === "activePaneIdByWorkspace"
+      ) {
+        return throwPathError("INVALID_PATH", "Leaf path cannot be listed");
+      }
+      if (segments[1] === "currentWorkspace" && attachment.activeWorkspaceId) {
+        return {
+          ok: true,
+          found: true,
+          entries: [
+            leafEntry("id", `/status/attachments/${attachment.attachmentId}/currentWorkspace/id`),
+            leafEntry("title", `/status/attachments/${attachment.attachmentId}/currentWorkspace/title`),
+            leafEntry("paneCount", `/status/attachments/${attachment.attachmentId}/currentWorkspace/paneCount`)
+          ]
+        };
+      }
+    }
+
+    return notFoundList();
+  }
+
+  private async getStatusWorkspaces(segments: string[]): Promise<PathGetResult> {
+    if (segments.length === 0) {
+      const workspaces = await this.host.listWorkspaces();
+      return {
+        ok: true,
+        found: true,
+        value: Object.fromEntries(workspaces.map((workspace) => [workspace.id, workspace]))
+      };
+    }
+
+    const workspaceId = segments[0];
+    const workspaces = await this.host.listWorkspaces();
+    const workspace = workspaces.find((candidate) => candidate.id === workspaceId);
+    if (!workspace) {
+      return notFoundGet();
+    }
+
+    if (segments.length === 1) {
+      return { ok: true, found: true, value: workspace };
+    }
+
+    if (segments.length === 2) {
+      if (segments[1] === "panes") {
+        const panes = await this.host.listPanesByWorkspace(workspaceId);
+        return {
+          ok: true,
+          found: true,
+          value: Object.fromEntries(panes.map((pane) => [pane.id, toPaneStatusSnapshot(pane)]))
+        };
+      }
+      if (isWorkspaceStatusKey(segments[1])) {
+        return { ok: true, found: true, value: workspace[segments[1]] };
+      }
+    }
+
+    return notFoundGet();
+  }
+
+  private async listStatusWorkspaces(segments: string[]): Promise<PathListResult> {
+    const workspaces = await this.host.listWorkspaces();
+    if (segments.length === 0) {
+      return {
+        ok: true,
+        found: true,
+        entries: workspaces.map((workspace) => objectEntry(workspace.id, `/status/workspaces/${workspace.id}`))
+      };
+    }
+
+    const workspaceId = segments[0];
+    const workspace = workspaces.find((candidate) => candidate.id === workspaceId);
+    if (!workspace) {
+      return notFoundList();
+    }
+
+    if (segments.length === 1) {
+      return {
+        ok: true,
+        found: true,
+        entries: [
+          leafEntry("id", `/status/workspaces/${workspaceId}/id`),
+          leafEntry("title", `/status/workspaces/${workspaceId}/title`),
+          leafEntry("paneCount", `/status/workspaces/${workspaceId}/paneCount`),
+          objectEntry("panes", `/status/workspaces/${workspaceId}/panes`)
+        ]
+      };
+    }
+
+    if (segments.length === 2) {
+      if (isWorkspaceStatusKey(segments[1])) {
+        return throwPathError("INVALID_PATH", "Leaf path cannot be listed");
+      }
+      if (segments[1] === "panes") {
+        const panes = await this.host.listPanesByWorkspace(workspaceId);
+        return {
+          ok: true,
+          found: true,
+          entries: panes.map((pane) => objectEntry(pane.id, `/status/workspaces/${workspaceId}/panes/${pane.id}`))
+        };
+      }
     }
 
     return notFoundList();

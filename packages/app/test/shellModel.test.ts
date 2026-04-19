@@ -66,6 +66,65 @@ describe("shell model direct", () => {
     });
   });
 
+  it("exposes /status/attachments/* and /status/workspaces/{id}/* explicit-target reads (B1e)", async () => {
+    const host = new TestShellModelHost({
+      workspaceId: "workspace.test",
+      workspaceTitle: "Workspace Test",
+      activePaneId: "pane.alpha",
+      panes: [
+        { id: "pane.alpha", kind: "cowsay", title: "Cowsay" }
+      ]
+    });
+    const model = host.createModel();
+
+    const attachments = await model.pathGet("/status/attachments");
+    expect(attachments).toMatchObject({ ok: true, found: true });
+    if (attachments.ok && attachments.found) {
+      expect(attachments.value).toEqual({
+        test: {
+          attachmentId: "test",
+          activeWorkspaceId: "workspace.test",
+          activePaneIdByWorkspace: { "workspace.test": "pane.alpha" }
+        }
+      });
+    }
+
+    const current = await model.pathGet("/status/attachments/test/currentWorkspace");
+    expect(current).toMatchObject({
+      ok: true,
+      found: true,
+      value: { id: "workspace.test", title: "Workspace Test", paneCount: 1 }
+    });
+
+    const currentTitle = await model.pathGet("/status/attachments/test/currentWorkspace/title");
+    expect(currentTitle).toEqual({ ok: true, found: true, value: "Workspace Test" });
+
+    const explicit = await model.pathGet("/status/workspaces/workspace.test");
+    expect(explicit).toMatchObject({
+      ok: true,
+      found: true,
+      value: { id: "workspace.test", title: "Workspace Test", paneCount: 1 }
+    });
+
+    const explicitPanes = await model.pathGet("/status/workspaces/workspace.test/panes");
+    expect(explicitPanes).toMatchObject({ ok: true, found: true });
+    if (explicitPanes.ok && explicitPanes.found) {
+      expect(Object.keys(explicitPanes.value as Record<string, unknown>)).toEqual(["pane.alpha"]);
+    }
+
+    const missingWorkspace = await model.pathGet("/status/workspaces/workspace.unknown");
+    expect(missingWorkspace).toMatchObject({ ok: true, found: false });
+
+    const missingAttachment = await model.pathGet("/status/attachments/web_does_not_exist");
+    expect(missingAttachment).toMatchObject({ ok: true, found: false });
+
+    const attachmentsList = await model.pathList("/status/attachments");
+    expect(attachmentsList).toMatchObject({ ok: true, found: true });
+    if (attachmentsList.ok && attachmentsList.found) {
+      expect(attachmentsList.entries.map((entry) => entry.name)).toEqual(["test"]);
+    }
+  });
+
   it("creates and lists workspaces through /workspaces/new", async () => {
     const host = new TestShellModelHost({
       workspaceId: "workspace.test",

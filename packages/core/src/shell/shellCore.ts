@@ -672,11 +672,15 @@ export class ShellCore implements ShellModelHost {
   }
 
   async getWorkspaceStatus(options?: ShellSlotOptions): Promise<WorkspaceStatusSnapshot> {
-    return this.toWorkspaceStatus(this.requireCurrentWorkspace(options));
+    return this.toWorkspaceStatus(this.requireSlotActiveWorkspace(options));
+  }
+
+  async getWorkspaceStatusById(workspaceId: string): Promise<WorkspaceStatusSnapshot> {
+    return this.toWorkspaceStatus(this.requireWorkspace(workspaceId));
   }
 
   async getCurrentPaneId(options?: ShellSlotOptions): Promise<string | null> {
-    const workspace = this.requireCurrentWorkspace(options);
+    const workspace = this.requireSlotActiveWorkspace(options);
     return this.getSlotActivePaneId(workspace.id, options?.slotKey);
   }
 
@@ -685,8 +689,23 @@ export class ShellCore implements ShellModelHost {
   }
 
   async listPanes(options?: ShellSlotOptions): Promise<ShellPaneRecordSnapshot[]> {
-    const workspace = this.requireCurrentWorkspace(options);
+    const workspace = this.requireSlotActiveWorkspace(options);
     return workspace.paneOrder.map((paneId) => this.createPaneSnapshot(workspace, paneId));
+  }
+
+  /**
+   * Slot-state summary for `/status/attachments/*`. The authority names slots
+   * after attachments, so this is effectively "per-attachment view state"
+   * from the core's perspective. Transport-level metadata (connected,
+   * lastSeen) lives outside core and is merged in at a higher layer when
+   * needed.
+   */
+  async listAttachmentSlots(): Promise<import("./types").AttachmentSlotSummary[]> {
+    return Array.from(this.activeSlots.entries()).map(([attachmentId, slot]) => ({
+      attachmentId,
+      activeWorkspaceId: slot.activeWorkspaceId,
+      activePaneIdByWorkspace: Object.fromEntries(slot.activePaneIdByWorkspace)
+    }));
   }
 
   async getPane(paneId: string): Promise<ShellPaneRecordSnapshot | undefined> {
@@ -782,7 +801,7 @@ export class ShellCore implements ShellModelHost {
     }
 
     if (target.scope === "workspace") {
-      const workspace = target.workspaceId ? this.requireWorkspace(target.workspaceId) : this.requireCurrentWorkspace();
+      const workspace = target.workspaceId ? this.requireWorkspace(target.workspaceId) : this.requireSlotActiveWorkspace();
       if (workspace.title !== nextValue) {
         workspace.title = nextValue;
         this.emit({ topic: "workspace.titleChanged", payload: { id: workspace.id, title: nextValue } });
@@ -922,16 +941,19 @@ export class ShellCore implements ShellModelHost {
   }
 
   /**
-   * Preload-convenience "current workspace" read: the given slot's active ws,
-   * or the default slot if omitted. B1b keeps this as an implicit-current
-   * helper for paths that haven't migrated to explicit workspaceId yet; B1e
-   * deletes it and re-routes all callers.
+   * Resolve the slot's active workspace record. Throws `INVALID_VALUE` when
+   * the slot has no active ws — transport should surface this to the caller
+   * with a pointer at the new explicit paths (`/status/workspaces/{id}`,
+   * `/status/attachments/{aid}/currentWorkspace`).
    */
-  private requireCurrentWorkspace(options?: ShellSlotOptions): WorkspaceRecord {
+  private requireSlotActiveWorkspace(options?: ShellSlotOptions): WorkspaceRecord {
     const slotKey = this.resolveSlotKey(options);
     const slot = this.activeSlots.get(slotKey);
     if (!slot?.activeWorkspaceId) {
-      throw new Error(`Shell core has no active workspace for slot '${slotKey}'`);
+      throw new ModelPathError(
+        "INVALID_VALUE",
+        `slot '${slotKey}' has no active workspace — pass a workspaceId explicitly or use /status/workspaces/{id}`
+      );
     }
     return this.requireWorkspace(slot.activeWorkspaceId);
   }

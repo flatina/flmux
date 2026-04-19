@@ -158,6 +158,14 @@ export interface ShellCreatePaneOptions extends ShellSlotOptions {
   workspaceId?: string;
 }
 
+/** Shape returned by `/status/attachments/*`. Slot-level view state only —
+ * transport-level metadata (connected, lastSeen) is a higher-layer concern. */
+export interface AttachmentSlotSummary {
+  attachmentId: string;
+  activeWorkspaceId: string | null;
+  activePaneIdByWorkspace: Record<string, string>;
+}
+
 export interface ShellModelHost {
   getAppStatus(): Awaitable<AppStatusSnapshot>;
   listWorkspaces(): Awaitable<WorkspaceStatusSnapshot[]>;
@@ -166,10 +174,13 @@ export interface ShellModelHost {
   deleteWorkspace(workspaceId: string): Awaitable<void>;
   setActiveWorkspace(workspaceId: string, options?: ShellSlotOptions): Awaitable<void>;
   getWorkspaceStatus(options?: ShellSlotOptions): Awaitable<WorkspaceStatusSnapshot>;
+  getWorkspaceStatusById(workspaceId: string): Awaitable<WorkspaceStatusSnapshot>;
+  listAttachmentSlots(): Awaitable<AttachmentSlotSummary[]>;
   /** Slot-scoped "/panes/current" resolver. B1b interim; B1e retires the /current path entirely. */
   getCurrentPaneId(options?: ShellSlotOptions): Awaitable<string | null>;
   hasPaneKind(kind: string): Awaitable<boolean>;
   listPanes(options?: ShellSlotOptions): Awaitable<ShellPaneRecordSnapshot[]>;
+  listPanesByWorkspace(workspaceId: string): Awaitable<ShellPaneRecordSnapshot[]>;
   getPane(paneId: string): Awaitable<ShellPaneRecordSnapshot | undefined>;
   createPane(input: NewPaneInput, options?: ShellCreatePaneOptions): Awaitable<ShellPaneRecordSnapshot>;
   closePane(paneId: string): Awaitable<{ paneId: string; closed: boolean }>;

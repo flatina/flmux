@@ -257,6 +257,38 @@ export class TestShellModelHost implements ShellModelHost {
     };
   }
 
+  getWorkspaceStatusById(workspaceId: string): WorkspaceStatusSnapshot {
+    if (!this.workspaceTitles.has(workspaceId)) {
+      throw new Error(`Unknown workspace '${workspaceId}'`);
+    }
+    const title = this.workspaceTitles.get(workspaceId) ?? workspaceId;
+    return {
+      id: workspaceId,
+      title,
+      defaultTitle: title,
+      paneCount: workspaceId === this.workspaceId ? this.panes.size : (this.workspacePaneCounts.get(workspaceId) ?? 0)
+    };
+  }
+
+  listAttachmentSlots() {
+    return [
+      {
+        attachmentId: "test",
+        activeWorkspaceId: this.workspaceId,
+        activePaneIdByWorkspace: this.activePaneId
+          ? { [this.workspaceId]: this.activePaneId }
+          : {}
+      }
+    ];
+  }
+
+  listPanesByWorkspace(workspaceId: string): ShellPaneRecordSnapshot[] {
+    if (workspaceId !== this.workspaceId) {
+      return [];
+    }
+    return this.listPanes();
+  }
+
   async getCurrentPaneId(): Promise<string | null> {
     this.syncCurrentWorkspaceSnapshot();
     return this.activePaneId;

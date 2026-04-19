@@ -11,6 +11,10 @@ export interface WebModeUserAuthorityRegistryOptions {
   /** Server origin set at startup; forwarded to each user's authority on
    * first use so browser-pane URLs resolve against the live port. */
   getOrigin(): string;
+  /** Called once per fresh authority right after it starts. Lets main.ts
+   * attach per-authority index subscribers (e.g. paneId→authority for
+   * terminal event routing) without the registry knowing about them. */
+  onAuthorityCreated?(userId: string, authority: WebModeShellAuthority): void;
 }
 
 export interface WebModeUserAuthorityRegistry {
@@ -52,6 +56,7 @@ export function createWebModeUserAuthorityRegistry(
     });
     await authority.start(options.getOrigin());
     authorities.set(userId, authority);
+    options.onAuthorityCreated?.(userId, authority);
     return authority;
   }
 

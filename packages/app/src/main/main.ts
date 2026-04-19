@@ -27,7 +27,7 @@ import {
 
 type ShellAuthority = Pick<
   DesktopShellAuthority | WebModeShellAuthority,
-  "subscribe"
+  "subscribe" | "applyTerminalEvent"
 > & {
   readonly shellModel: ShellModelAPI;
   readonly router: FlmuxShellModelRouter;
@@ -76,7 +76,10 @@ const userAuthorityRegistry: WebModeUserAuthorityRegistry | null = runtimeMode =
       terminalService,
       clientRegistry,
       localExtensions,
-      getOrigin: () => serverOrigin
+      getOrigin: () => serverOrigin,
+      onAuthorityCreated: (_userId, authority) => {
+        trackPaneLifecycle(authority);
+      }
     })
   : null;
 
@@ -95,6 +98,24 @@ const viewIdToAttachmentId = new Map<number, string>();
 // Web-only: records which user owns each minted attachmentId so WS
 // register + shellModel.path.* calls route to the right authority.
 const attachmentIdToUserId = new Map<string, string>();
+// Terminal event routing index: paneId → owning authority. Replaces the
+// naive fan-out-to-every-authority pattern so terminal events apply to
+// exactly the authority that owns the pane, not every authority whose
+// ShellCore happens to lack the id. Kept in sync via pane.added /
+// pane.removed subscribers installed once per authority (desktop at
+// startup, web on first getOrCreate via the registry's onAuthorityCreated
+// hook).
+const paneIdToAuthority = new Map<string, ShellAuthority>();
+
+function trackPaneLifecycle(authority: ShellAuthority): () => void {
+  return authority.subscribe((event) => {
+    if (event.topic === "pane.added") {
+      paneIdToAuthority.set(event.payload.paneId, authority);
+    } else if (event.topic === "pane.removed") {
+      paneIdToAuthority.delete(event.payload.paneId);
+    }
+  });
+}
 
 function scopeMatches(event: SequencedShellCoreEvent, attachmentId: string): boolean {
   if (event.scope === "all") return true;
@@ -388,6 +409,9 @@ const server = startFlmuxServer({
 });
 serverOrigin = server.origin;
 if (desktopAuthority) {
+  // Subscribe BEFORE start() so any pane.added emitted during session
+  // restore indexes correctly for terminal routing.
+  trackPaneLifecycle(desktopAuthority);
   await desktopAuthority.start(server.origin);
 }
 
@@ -399,17 +423,13 @@ if (webModeAuthPaths) {
 }
 
 terminalService.subscribe((event: TerminalRuntimeEvent) => {
-  desktopAuthority?.applyTerminalEvent(event);
-  // Fan out to every created user authority. Each authority's
-  // applyTerminalEvent is a paneId lookup against its own ShellCore; a
-  // miss is a no-op, so in practice only the owning authority applies
-  // the event. Isolation here is probabilistic (paneIds are uuids), not
-  // enforced — a paneId collision across authorities would cause both
-  // to accept the event. Phase 2+ adds runtimeId-based ownership match
-  // at applyTerminalEvent, plus paneId→authority indexing so the fan-out
-  // stops being O(n_users) per event.
-  for (const { authority } of userAuthorityRegistry?.list() ?? []) {
-    authority.applyTerminalEvent(event);
+  // paneId→authority index replaces the O(n_users) fan-out. Events for
+  // unknown panes (no paneId or no index entry) are skipped — the
+  // shellCore-side applyTerminalEvent would have no-op'd anyway, and
+  // enforced routing beats the old probabilistic paneId-uniqueness
+  // argument (two authorities can't both accept the same event).
+  if (event.paneId) {
+    paneIdToAuthority.get(event.paneId)?.applyTerminalEvent(event);
   }
   forwardTerminalEventToOwnedClient({
     event,

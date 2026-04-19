@@ -44,6 +44,7 @@ describe("desktop shell authority bridge", () => {
     const { authority } = await createTestAuthority();
     const bootstrap = authority.shellBootstrap();
 
+    expect(bootstrap.attachmentId).toBe("local");
     expect(bootstrap.snapshot.workspaces).toHaveLength(1);
     expect(bootstrap.snapshot.workspaces[0].id).toBe("workspace.1");
     expect(bootstrap.snapshot.panes["workspace.1"]).toBeDefined();

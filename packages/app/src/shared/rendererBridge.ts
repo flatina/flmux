@@ -32,6 +32,11 @@ export interface FlmuxShellSnapshot {
 }
 
 export interface FlmuxShellBootstrapResponse {
+  /** Opaque attachment identity. Client echoes this back in subsequent
+   * pathCalls as `caller.attachmentId` so the core routes attachment-scoped
+   * events + mutations to the right slot. Desktop CEF always receives
+   * `"local"`; web attachments get a server-minted id. */
+  attachmentId: string;
   snapshot: FlmuxShellSnapshot;
   outerLayout: unknown | null;
   innerLayouts: Record<string, unknown | null>;

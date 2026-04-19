@@ -34,9 +34,16 @@ export interface DesktopShellAuthority {
   subscribe(handler: (event: SequencedShellCoreEvent) => void): () => void;
   start(origin: string): Promise<void>;
   applyTerminalEvent(event: TerminalRuntimeEvent): void;
+  /** Desktop CEF is a single attachment — the shellBootstrap handshake
+   * always resolves to the `"local"` slot. `attachmentId` is pinned in
+   * the response so the renderer can pin it back into caller context on
+   * subsequent pathCalls (parity with the HTTP /api/shell/bootstrap
+   * route web browsers will use in B1d). */
   shellBootstrap(): FlmuxShellBootstrapResponse;
   persistSession(layouts: FlmuxSessionSaveLayouts): Promise<void>;
 }
+
+const DESKTOP_ATTACHMENT_ID = "local";
 
 export async function createDesktopShellAuthority(options: {
   projectDir: string;
@@ -62,9 +69,9 @@ export async function createDesktopShellAuthority(options: {
     projectDir: options.projectDir,
     terminalBackend: options.terminalService,
     // Phase B: the CEF renderer is a single attachment; name its slot
-    // "local" so scope=attachment event envelopes are self-describing.
+    // `"local"` so scope=attachment event envelopes are self-describing.
     // B2 switches to per-attachment slotKey = real attachmentId.
-    defaultSlotKey: "local"
+    defaultSlotKey: DESKTOP_ATTACHMENT_ID
   });
   const shellModel = createShellModel({
     host: shellCore,
@@ -101,6 +108,7 @@ export async function createDesktopShellAuthority(options: {
     start,
     applyTerminalEvent: (event) => shellCore.applyTerminalEvent(event),
     shellBootstrap: () => buildBootstrapResponse({
+      attachmentId: DESKTOP_ATTACHMENT_ID,
       shellCore,
       outerLayout: persistedOuterLayout,
       innerLayouts: persistedInnerLayouts
@@ -189,6 +197,7 @@ function rebuildPaneRecordsFromLayout(
 }
 
 function buildBootstrapResponse(options: {
+  attachmentId: string;
   shellCore: ShellCore;
   outerLayout: unknown | null;
   innerLayouts: Record<string, unknown | null>;
@@ -214,11 +223,12 @@ function buildBootstrapResponse(options: {
     workspaces: workspaceIds.map((id) => shellCore.getWorkspaceSnapshot(id)!),
     panes,
     paneParams,
-    // Desktop CEF is a single attachment; name the slot explicitly here so
-    // the dependency on the authority-configured defaultSlotKey is visible.
-    activeWorkspaceId: shellCore.getSlotActiveWorkspaceId("local")
+    // Read the attachment's slot explicitly — coupling to defaultSlotKey
+    // should be visible here.
+    activeWorkspaceId: shellCore.getSlotActiveWorkspaceId(options.attachmentId)
   };
   return {
+    attachmentId: options.attachmentId,
     snapshot,
     outerLayout: options.outerLayout,
     innerLayouts: options.innerLayouts,

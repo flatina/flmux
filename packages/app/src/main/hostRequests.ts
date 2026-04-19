@@ -18,6 +18,13 @@ export function createFlmuxHostRequestHandlers(options: {
   getProjectDir(): string;
   getAuthorityClientId(): string | null;
   getCallerViewId(): number;
+  /** Resolve the caller's attachmentId for a viewId; null before the
+   * attachment forwarder has been installed. Injected into the
+   * PathCallerContext of every `shellModel.path.call` so the core routes
+   * attachment-scoped events and mutations to the right slot.
+   * Optional — tests can omit (defaults to "no attachment", mutations land
+   * on the authority's defaultSlotKey). */
+  getCallerAttachmentId?(viewId: number): string | null;
   paneOwners: Map<string, number>;
   shellModelRouter: FlmuxShellModelRouter;
   terminalService: TerminalService;
@@ -77,7 +84,14 @@ export function createFlmuxHostRequestHandlers(options: {
       caller?: PathCallerContext;
     }) => {
       const authority = requireDesktopAuthority("shellModel.path.call");
-      const result = await authority.shellModel.pathCall(params.path, params.args, params.caller);
+      // Inject caller.attachmentId from the view's bound attachment so the
+      // model layer can route slot-aware mutations (setActive*, createPane
+      // with implicit ws, etc.) without relying on defaultSlotKey.
+      const attachmentId = options.getCallerAttachmentId?.(options.getCallerViewId()) ?? null;
+      const caller: PathCallerContext | undefined = attachmentId
+        ? { ...(params.caller ?? {}), attachmentId: params.caller?.attachmentId ?? attachmentId }
+        : params.caller;
+      const result = await authority.shellModel.pathCall(params.path, params.args, caller);
       if (result.ok) {
         const attachMatch = TERMINAL_ATTACH_PATH.exec(params.path);
         if (attachMatch) {

@@ -113,7 +113,7 @@ export async function runWorkspaceResetSmokeScenario(appHandles: AppProcessHandl
           value: {
             id: string;
             title: string;
-            activePaneId: string | null;
+            defaultTitle: string;
             paneCount: number;
           };
         };

@@ -262,7 +262,7 @@ function createStubShellModelRouter() {
       workspace: {
         id: "workspace.1",
         title: "Workspace 1",
-        activePaneId: null,
+        defaultTitle: "Workspace 1",
         paneCount: 1
       }
     }],

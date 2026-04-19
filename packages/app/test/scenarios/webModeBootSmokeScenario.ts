@@ -103,7 +103,7 @@ export async function runWebModeBootSmokeScenario(
       workspace: {
         id: string;
         title: string;
-        activePaneId: string | null;
+        defaultTitle: string;
         paneCount: number;
       } | null;
     }>;

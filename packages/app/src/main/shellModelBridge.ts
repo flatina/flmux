@@ -1,3 +1,4 @@
+import type { WorkspaceStatusSnapshot } from "@flmux/core/shell";
 import type {
   ClientScopedPathCallInput,
   ClientScopedPathGetInput,
@@ -8,7 +9,7 @@ import type {
 export interface FlmuxClientSummary {
   clientId: string;
   viewId: number;
-  workspace: unknown | null;
+  workspace: WorkspaceStatusSnapshot | null;
 }
 
 /** Internal router shape — distinct from the RPC-boundary

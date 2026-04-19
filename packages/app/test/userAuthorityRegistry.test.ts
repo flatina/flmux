@@ -157,6 +157,29 @@ describe("web-mode user authority registry (B2 Phase 1)", () => {
     expect(alpha.persistSession).toBeUndefined();
   });
 
+  it("evict(userId) runs onAuthorityEvicted and removes the authority", async () => {
+    const evictions: Array<{ userId: string; clientId: string }> = [];
+    const registry = createWebModeUserAuthorityRegistry({
+      projectDir: PROJECT_DIR,
+      terminalService: createTerminalService(createInMemoryTerminalBackend()),
+      clientRegistry: new FlmuxClientRegistry(),
+      getOrigin: () => "http://127.0.0.1:4321",
+      onAuthorityEvicted: (userId, authority) => {
+        evictions.push({ userId, clientId: authority.clientId });
+      }
+    });
+
+    const alpha = await registry.getOrCreate("alpha");
+    const evicted = registry.evict("alpha");
+    expect(evicted).toBe(alpha);
+    expect(registry.get("alpha")).toBeUndefined();
+    expect(evictions).toEqual([{ userId: "alpha", clientId: alpha.clientId }]);
+
+    // Second evict is a no-op; onAuthorityEvicted fires exactly once.
+    expect(registry.evict("alpha")).toBeUndefined();
+    expect(evictions).toHaveLength(1);
+  });
+
   it("restores persisted workspaces on a fresh registry (restart scenario)", async () => {
     const sessionsDir = await mkdtemp(join(tmpdir(), "flmux-sessions-restore-"));
     tempDirs.push(sessionsDir);

@@ -17,6 +17,10 @@ export interface FlmuxWebModeAuthorizer {
   readonly cookieName: string;
   readonly queryParam: string;
   authorize(tokenValue: string): FlmuxAuthorizationContext | null;
+  /** Look up a user by name. Used by the WS event forwarder to check
+   * `allow_paths.read` against shellCore events — we only have the
+   * userId via `attachmentIdToUserId`, not a token. */
+  getUser(name: string): FlmuxUser | null;
   isPaneKindAllowed(user: FlmuxUser, kind: string): boolean;
   /** True when the user's `allow_paths.{method}` permits `path`. Absent
    * config (or value `"*"`) permits every path. Missing method key
@@ -61,6 +65,9 @@ export function createAuthorizerFromStores(options: {
       }
 
       return { user, tokenId: tokenRecord.id };
+    },
+    getUser(name) {
+      return options.userStore.getUser(name);
     },
     isPaneKindAllowed(user, kind) {
       if (user.allowPaneKinds === "*") {

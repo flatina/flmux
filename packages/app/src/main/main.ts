@@ -17,7 +17,8 @@ import { startFlmuxServer } from "./server";
 import { forwardTerminalEventToOwnedClient } from "./terminalEventForwarding";
 import { createTerminalService } from "./terminal-service";
 import { createFlmuxHostRequestHandlers } from "./hostRequests";
-import { createFlmuxWebModeAuthorizer, type FlmuxAuthorizationContext } from "./webModeAuth";
+import { createFlmuxWebModeAuthorizer, type FlmuxAuthorizationContext, type FlmuxWebModeAuthorizer } from "./webModeAuth";
+import { eventToReadPath } from "./auth/eventAclPath";
 import { resolveFlmuxAuthDir, resolveFlmuxAuthPaths } from "./auth/authConfig";
 import { resolveFlmuxRuntimeMode } from "./runtimeMode";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
@@ -82,12 +83,68 @@ const userAuthorityRegistry: WebModeUserAuthorityRegistry | null = runtimeMode =
       onAuthorityCreated: (_userId, authority) => {
         trackPaneLifecycle(authority);
       },
+      onAuthorityEvicted: (_userId, authority) => {
+        paneLifecycleUnsubs.get(authority)?.();
+        paneLifecycleUnsubs.delete(authority);
+        for (const [paneId, owner] of paneIdToAuthority.entries()) {
+          if (owner === authority) paneIdToAuthority.delete(paneId);
+        }
+        // Cancel any pending debounce so we don't write through a
+        // freshly-evicted authority (sessionStore.save would still
+        // succeed, but the work is wasted).
+        const timer = debounceTimerByAuthority.get(authority as PersistingAuthority);
+        if (timer) {
+          clearTimeout(timer);
+          debounceTimerByAuthority.delete(authority as PersistingAuthority);
+          pendingLayoutsByAuthority.delete(authority as PersistingAuthority);
+        }
+      },
       // Per-user session persistence under the auth dir — each
       // authenticated user gets `<authDir>/sessions/<userId>/session.json`.
       // `webModeAuthPaths` is always set when runtimeMode is "web".
       sessionsDir: webModeAuthPaths ? join(webModeAuthPaths.authDir, "sessions") : undefined
     })
   : null;
+
+/** Authority-eviction grace: after a user's last attachment evicts, wait
+ * this long before tearing down their authority. Gives legitimate tab
+ * refresh + next-login windows time to reconnect without paying the
+ * cost of a full ShellCore rebuild. Tunable; 5 min is the default dev
+ * value. */
+const AUTHORITY_EVICTION_GRACE_MS = 5 * 60 * 1000;
+const pendingAuthorityEvictionByUser = new Map<string, ReturnType<typeof setTimeout>>();
+
+function countUserAttachments(userId: string): number {
+  let count = 0;
+  for (const owner of attachmentIdToUserId.values()) {
+    if (owner === userId) count += 1;
+  }
+  return count;
+}
+
+function cancelPendingAuthorityEviction(userId: string) {
+  const timer = pendingAuthorityEvictionByUser.get(userId);
+  if (timer) {
+    clearTimeout(timer);
+    pendingAuthorityEvictionByUser.delete(userId);
+  }
+}
+
+function maybeScheduleAuthorityEviction(userId: string) {
+  if (!userAuthorityRegistry) return;
+  if (countUserAttachments(userId) > 0) return;
+  cancelPendingAuthorityEviction(userId);
+  const timer = setTimeout(() => {
+    pendingAuthorityEvictionByUser.delete(userId);
+    // Re-check: a new attachment may have been minted during the grace.
+    if (countUserAttachments(userId) > 0) return;
+    const evicted = userAuthorityRegistry.evict(userId);
+    if (evicted) {
+      console.log(`[flmux] authority for user '${userId}' evicted after attachment grace`);
+    }
+  }, AUTHORITY_EVICTION_GRACE_MS);
+  pendingAuthorityEvictionByUser.set(userId, timer);
+}
 
 // Mode exclusivity guard: `resolveAuthorityForViewId` branches on
 // `desktopAuthority` first, which is safe only when exactly one of the
@@ -112,20 +169,47 @@ const attachmentIdToUserId = new Map<string, string>();
 // startup, web on first getOrCreate via the registry's onAuthorityCreated
 // hook).
 const paneIdToAuthority = new Map<string, ShellAuthority>();
+// Lifecycle-subscription unsubs keyed by the tracked authority — so we
+// can tear down the subscription at authority eviction without leaking
+// a shellCore subscriber for the process lifetime.
+const paneLifecycleUnsubs = new WeakMap<ShellAuthority, () => void>();
 
 function trackPaneLifecycle(authority: ShellAuthority): () => void {
-  return authority.subscribe((event) => {
+  const unsub = authority.subscribe((event) => {
     if (event.topic === "pane.added") {
       paneIdToAuthority.set(event.payload.paneId, authority);
     } else if (event.topic === "pane.removed") {
       paneIdToAuthority.delete(event.payload.paneId);
     }
   });
+  paneLifecycleUnsubs.set(authority, unsub);
+  return unsub;
 }
 
 function scopeMatches(event: SequencedShellCoreEvent, attachmentId: string): boolean {
   if (event.scope === "all") return true;
   return event.targetAttachmentId === attachmentId;
+}
+
+/**
+ * Broadcast-forwarder ACL gate (B3): event is only delivered if the
+ * attachment's user can read the path the event corresponds to. Desktop
+ * mode (no authorizer) and users with `allow_paths = "*"` pass through.
+ * Unmapped events (structural, no specific path) pass through too.
+ */
+function isEventAllowedForAttachment(
+  authorizer: FlmuxWebModeAuthorizer | null,
+  attachmentId: string,
+  event: SequencedShellCoreEvent
+): boolean {
+  if (!authorizer) return true;
+  const userId = attachmentIdToUserId.get(attachmentId);
+  if (!userId) return true;
+  const user = authorizer.getUser(userId);
+  if (!user) return true;
+  const path = eventToReadPath(event);
+  if (path === null) return true;
+  return authorizer.isPathAllowed(user, "read", path);
 }
 
 /**
@@ -164,9 +248,9 @@ function ensureBufferSubscriber(attachmentId: string) {
   const state = attachmentRegistry.ensure(attachmentId);
   if (state.unsubscribeBuffer) return;
   const unsub = authority.subscribe((event) => {
-    if (scopeMatches(event, attachmentId)) {
-      attachmentRegistry.pushBuffered(attachmentId, event);
-    }
+    if (!scopeMatches(event, attachmentId)) return;
+    if (!isEventAllowedForAttachment(webModeAuthorizer, attachmentId, event)) return;
+    attachmentRegistry.pushBuffered(attachmentId, event);
   });
   attachmentRegistry.setBufferSubscriber(attachmentId, unsub);
 }
@@ -188,6 +272,7 @@ function installAttachmentForwarder(attachmentId: string, viewId: number) {
 
   const unsubLive = authority.subscribe((event) => {
     if (!scopeMatches(event, attachmentId)) return;
+    if (!isEventAllowedForAttachment(webModeAuthorizer, attachmentId, event)) return;
     client.bridge.sendProxy["shellCore.event"](event);
   });
   attachmentRegistry.attachLive(attachmentId, viewId, unsubLive);
@@ -264,8 +349,10 @@ function releaseView(viewId: number) {
   if (attachmentId) {
     viewIdToAttachmentId.delete(viewId);
     attachmentRegistry.markDisconnected(attachmentId, (state) => {
+      const userId = attachmentIdToUserId.get(state.attachmentId);
       attachmentIdToUserId.delete(state.attachmentId);
       console.log(`[flmux] attachment ${state.attachmentId} evicted after grace period`);
+      if (userId) maybeScheduleAuthorityEviction(userId);
     });
   }
   for (const [paneId, owner] of paneOwners.entries()) {
@@ -431,9 +518,15 @@ const server = startFlmuxServer({
           ensureBufferSubscriber(attachmentId);
         }
         attachmentRegistry.markDisconnected(attachmentId, (state) => {
+          const ownerId = attachmentIdToUserId.get(state.attachmentId);
           attachmentIdToUserId.delete(state.attachmentId);
           console.log(`[flmux] attachment ${state.attachmentId} evicted after grace`);
+          if (ownerId) maybeScheduleAuthorityEviction(ownerId);
         });
+        // User came back (either fresh or via cookie reuse) — cancel any
+        // pending authority eviction scheduled by the previous last-
+        // attachment-gone event.
+        cancelPendingAuthorityEviction(userId);
         return authority.shellBootstrap(attachmentId);
       }
     : undefined,

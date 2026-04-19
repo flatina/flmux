@@ -17,6 +17,11 @@ export interface WebModeUserAuthorityRegistryOptions {
    * attach per-authority index subscribers (e.g. paneId→authority for
    * terminal event routing) without the registry knowing about them. */
   onAuthorityCreated?(userId: string, authority: WebModeShellAuthority): void;
+  /** Called when `evict(userId)` removes an authority. Mirror of
+   * `onAuthorityCreated` — lets main.ts tear down the index subscribers
+   * and clean up its per-authority state (paneId→authority entries,
+   * pending debounce timers, etc.). */
+  onAuthorityEvicted?(userId: string, authority: WebModeShellAuthority): void;
   /** When set, each user authority gets a persistent session store at
    * `<sessionsDir>/<userId>/session.json`. Workspaces survive process
    * restarts per-user. Omit to keep authorities in-memory only (tests,
@@ -28,6 +33,11 @@ export interface WebModeUserAuthorityRegistry {
   getOrCreate(userId: string): Promise<WebModeShellAuthority>;
   get(userId: string): WebModeShellAuthority | undefined;
   list(): Array<{ userId: string; authority: WebModeShellAuthority }>;
+  /** Remove an authority from the registry. Main.ts calls this after the
+   * no-attachment grace expires; the authority's `ShellCore` subscribers
+   * are torn down via the `onAuthorityEvicted` callback. Returns the
+   * evicted authority (or undefined if it wasn't registered). */
+  evict(userId: string): WebModeShellAuthority | undefined;
 }
 
 /**
@@ -88,6 +98,13 @@ export function createWebModeUserAuthorityRegistry(
     },
     list() {
       return Array.from(authorities.entries()).map(([userId, authority]) => ({ userId, authority }));
+    },
+    evict(userId) {
+      const authority = authorities.get(userId);
+      if (!authority) return undefined;
+      authorities.delete(userId);
+      options.onAuthorityEvicted?.(userId, authority);
+      return authority;
     }
   };
 }

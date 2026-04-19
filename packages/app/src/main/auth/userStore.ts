@@ -2,9 +2,29 @@ import { existsSync, readFileSync } from "node:fs";
 
 export type AllowPaneKinds = "*" | readonly string[];
 
+/**
+ * Path-level ACL for `/api/model/path/*` HTTP callers (CLI + external
+ * scripts). Each key lists glob patterns of paths the user may read /
+ * write / call. Preload (desktop CEF) and WS (authenticated browser
+ * after `/api/shell/bootstrap`) bypass this check — they are trusted
+ * transports after auth.
+ *
+ * Glob subset: literals, `*` (matches any chars within one segment),
+ * `**` (matches zero or more segments). Absent `allow_paths` or value
+ * `"*"` means "all paths permitted".
+ */
+export type AllowPathsConfig =
+  | "*"
+  | {
+      read?: readonly string[];
+      write?: readonly string[];
+      call?: readonly string[];
+    };
+
 export interface FlmuxUser {
   name: string;
   allowPaneKinds: AllowPaneKinds;
+  allowPaths: AllowPathsConfig;
 }
 
 export interface UserStore {
@@ -50,7 +70,8 @@ function parseUser(raw: Record<string, unknown>): FlmuxUser {
 
   return {
     name,
-    allowPaneKinds: parseAllowPaneKinds(raw.allow_pane_kinds, name)
+    allowPaneKinds: parseAllowPaneKinds(raw.allow_pane_kinds, name),
+    allowPaths: parseAllowPaths(raw.allow_paths, name)
   };
 }
 
@@ -64,4 +85,33 @@ function parseAllowPaneKinds(raw: unknown, userName: string): AllowPaneKinds {
   }
 
   throw new Error(`users.toml: user '${userName}' has invalid allow_pane_kinds`);
+}
+
+function parseAllowPaths(raw: unknown, userName: string): AllowPathsConfig {
+  // Absent → allow-all. Explicit "*" → same. Otherwise each method key
+  // (read/write/call) is a list of glob patterns; missing keys mean no
+  // access for that method.
+  if (raw === undefined || raw === null || raw === "*") {
+    return "*";
+  }
+
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const table = raw as Record<string, unknown>;
+    const result: { read?: readonly string[]; write?: readonly string[]; call?: readonly string[] } = {};
+    for (const method of ["read", "write", "call"] as const) {
+      const value = table[method];
+      if (value === undefined) {
+        continue;
+      }
+      if (!Array.isArray(value) || !value.every((entry) => typeof entry === "string")) {
+        throw new Error(
+          `users.toml: user '${userName}' has invalid allow_paths.${method} (expected array of glob strings)`
+        );
+      }
+      result[method] = [...(value as string[])];
+    }
+    return result;
+  }
+
+  throw new Error(`users.toml: user '${userName}' has invalid allow_paths`);
 }

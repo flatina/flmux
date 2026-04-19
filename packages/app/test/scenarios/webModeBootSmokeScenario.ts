@@ -191,8 +191,8 @@ export async function runWebModeBootSmokeScenario(
   writeFileSync(
     join(options.authDir, "users.toml"),
     stringifyUsersToml([
-      { name: "admin", allowPaneKinds: "*" },
-      { name: "beta", allowPaneKinds: "*" }
+      { name: "admin", allowPaneKinds: "*", allowPaths: "*" },
+      { name: "beta", allowPaneKinds: "*", allowPaths: "*" }
     ]),
     "utf8"
   );

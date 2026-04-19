@@ -101,7 +101,10 @@ export function startFlmuxServer(options: {
       }
 
       const router = await options.resolveShellModelRouter(auth.context);
-      return handleJsonRequest<ClientScopedPathGetInput>(request, set, (input) => router.pathGet(input));
+      return handleJsonRequest<ClientScopedPathGetInput>(request, set, async (input) => {
+        assertPathAllowed(input.path, "read", auth.context, options.authorizer);
+        return await router.pathGet(input);
+      });
     })
     .post("/api/model/path/list", async ({ request, set }) => {
       const auth = authorizeRequest(request, set, options.authorizer);
@@ -110,7 +113,10 @@ export function startFlmuxServer(options: {
       }
 
       const router = await options.resolveShellModelRouter(auth.context);
-      return handleJsonRequest<ClientScopedPathListInput>(request, set, (input) => router.pathList(input));
+      return handleJsonRequest<ClientScopedPathListInput>(request, set, async (input) => {
+        assertPathAllowed(input.path, "read", auth.context, options.authorizer);
+        return await router.pathList(input);
+      });
     })
     .post("/api/model/path/set", async ({ request, set }) => {
       const auth = authorizeRequest(request, set, options.authorizer);
@@ -119,7 +125,10 @@ export function startFlmuxServer(options: {
       }
 
       const router = await options.resolveShellModelRouter(auth.context);
-      return handleJsonRequest<ClientScopedPathSetInput>(request, set, (input) => router.pathSet(input));
+      return handleJsonRequest<ClientScopedPathSetInput>(request, set, async (input) => {
+        assertPathAllowed(input.path, "write", auth.context, options.authorizer);
+        return await router.pathSet(input);
+      });
     })
     .post("/api/model/path/call", async ({ request, set }) => {
       const auth = authorizeRequest(request, set, options.authorizer);
@@ -129,6 +138,7 @@ export function startFlmuxServer(options: {
 
       const router = await options.resolveShellModelRouter(auth.context);
       return handleJsonRequest<ClientScopedPathCallInput>(request, set, async (input) => {
+        assertPathAllowed(input.path, "call", auth.context, options.authorizer);
         const deniedReason = checkPaneKindAuthz(input, auth.context, options.authorizer);
         if (deniedReason) {
           throw new FlmuxAuthzError(deniedReason);
@@ -279,6 +289,22 @@ function denyUnauthorized(
   set.status = 401;
   setHeader(set, "www-authenticate", 'Bearer realm="flmux-web"');
   return { ok: false };
+}
+
+function assertPathAllowed(
+  path: string,
+  method: "read" | "write" | "call",
+  context: FlmuxAuthorizationContext | null,
+  authorizer: FlmuxWebModeAuthorizer | undefined
+): void {
+  // No authorizer = desktop mode (single trusted user), or test scaffold
+  // without auth — skip. With auth set but no context, the request would
+  // have been rejected earlier; defensive fall-through.
+  if (!authorizer || !context) return;
+  if (authorizer.isPathAllowed(context.user, method, path)) return;
+  throw new FlmuxAuthzError(
+    `User '${context.user.name}' is not allowed to ${method} '${path}'`
+  );
 }
 
 function checkPaneKindAuthz(

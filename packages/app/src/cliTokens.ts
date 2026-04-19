@@ -83,7 +83,14 @@ function bootstrap(paths: FlmuxAuthPaths, argv: string[]) {
     );
   }
 
-  const user: FlmuxUser = { name: userName, allowPaneKinds: parseAllowPaneKinds(allowPaneKindsArg) };
+  const user: FlmuxUser = {
+    name: userName,
+    allowPaneKinds: parseAllowPaneKinds(allowPaneKindsArg),
+    // Bootstrap grants the initial admin full path access. Per-path ACL
+    // is opt-in via subsequent hand-edits to users.toml (`allow_paths`
+    // table); default `"*"` matches the admin-bootstrap intent.
+    allowPaths: "*"
+  };
   writeUsersFile(paths.usersFile, [user]);
 
   return issueTokenFor(paths, userName, { label });

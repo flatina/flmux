@@ -1,4 +1,5 @@
 import type { FlmuxAuthPaths } from "./auth/authConfig";
+import { matchAnyPathGlob } from "./auth/pathGlob";
 import { hashToken } from "./auth/tokenFormat";
 import { createTokenStore, type TokenStore } from "./auth/tokenStore";
 import { createUserStore, type FlmuxUser, type UserStore } from "./auth/userStore";
@@ -8,11 +9,19 @@ export interface FlmuxAuthorizationContext {
   tokenId: string;
 }
 
+/** `/api/model/path/*` methods gated by `allow_paths`. `list` is treated
+ * as a read (directory-like enumeration of the same path). */
+export type PathAccessMethod = "read" | "write" | "call";
+
 export interface FlmuxWebModeAuthorizer {
   readonly cookieName: string;
   readonly queryParam: string;
   authorize(tokenValue: string): FlmuxAuthorizationContext | null;
   isPaneKindAllowed(user: FlmuxUser, kind: string): boolean;
+  /** True when the user's `allow_paths.{method}` permits `path`. Absent
+   * config (or value `"*"`) permits every path. Missing method key
+   * denies all paths for that method. */
+  isPathAllowed(user: FlmuxUser, method: PathAccessMethod, path: string): boolean;
 }
 
 export function createFlmuxWebModeAuthorizer(paths: FlmuxAuthPaths): FlmuxWebModeAuthorizer {
@@ -58,6 +67,16 @@ export function createAuthorizerFromStores(options: {
         return true;
       }
       return user.allowPaneKinds.includes(kind);
+    },
+    isPathAllowed(user, method, path) {
+      if (user.allowPaths === "*") {
+        return true;
+      }
+      const patterns = user.allowPaths[method];
+      if (!patterns || patterns.length === 0) {
+        return false;
+      }
+      return matchAnyPathGlob(patterns, path);
     }
   };
 }

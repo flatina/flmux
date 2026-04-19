@@ -178,6 +178,79 @@ describe("web mode auth (users + tokens store)", () => {
       server.stop();
     }
   });
+
+  it("enforces allow_paths.{read,write,call} on /api/model/path/* (B3 ACL)", async () => {
+    const { rendererDir, authDir } = await createFixture();
+    const bootstrap = await runTokensCli([
+      "bootstrap",
+      "--name",
+      "scoped",
+      "--auth-dir",
+      authDir
+    ]) as { token: string };
+
+    // Hand-edit users.toml to narrow the user's path ACL: reads allowed
+    // everywhere under /status, writes denied entirely, calls only on
+    // /panes/*/close.
+    const usersToml = [
+      `# users.toml`,
+      ``,
+      `[[users]]`,
+      `name = "scoped"`,
+      `allow_pane_kinds = "*"`,
+      `allow_paths.read = ["/status/**"]`,
+      `allow_paths.call = ["/panes/*/close"]`,
+      ``
+    ].join("\n");
+    await writeFile(join(authDir, "users.toml"), usersToml, "utf8");
+
+    const calls: Array<{ path: string; method: "get" | "set" | "call" }> = [];
+    const server = startFlmuxServer({
+      rendererDir,
+      resolveShellModelRouter: async () => ({
+        ...createStubShellModelRouter(),
+        pathGet: async (input) => { calls.push({ path: input.path, method: "get" }); return { ok: true, found: true, value: null }; },
+        pathSet: async (input) => { calls.push({ path: input.path, method: "set" }); return { ok: true, value: null }; },
+        pathCall: async (input) => { calls.push({ path: input.path, method: "call" }); return { ok: true, value: null }; }
+      }),
+      authorizer: createFlmuxWebModeAuthorizer(resolveFlmuxAuthPaths(authDir))
+    });
+
+    async function post(route: string, body: Record<string, unknown>) {
+      return await fetch(`${server.origin}${route}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${bootstrap.token}`
+        },
+        body: JSON.stringify({ clientId: "c", ...body })
+      });
+    }
+
+    try {
+      // read allowed under /status/**
+      expect((await post("/api/model/path/get", { path: "/status/app" })).status).toBe(200);
+      // read denied outside /status (allow_paths.read doesn't cover it)
+      const readDenied = await post("/api/model/path/get", { path: "/workspaces" });
+      expect(readDenied.status).toBe(403);
+      expect((await readDenied.json() as { error: string }).error).toContain("read");
+
+      // write denied everywhere — allow_paths.write is absent (empty)
+      const writeDenied = await post("/api/model/path/set", { path: "/status/app/title", value: "x" });
+      expect(writeDenied.status).toBe(403);
+
+      // call allowed only on /panes/*/close
+      expect((await post("/api/model/path/call", { path: "/panes/pane.xyz/close" })).status).toBe(200);
+      const callDenied = await post("/api/model/path/call", { path: "/panes/new", args: { kind: "browser" } });
+      expect(callDenied.status).toBe(403);
+      expect((await callDenied.json() as { error: string }).error).toContain("call");
+
+      // Router was only invoked on the allowed requests (2).
+      expect(calls.map((c) => c.method).sort()).toEqual(["call", "get"]);
+    } finally {
+      server.stop();
+    }
+  });
 });
 
 function createStubShellModelRouter() {

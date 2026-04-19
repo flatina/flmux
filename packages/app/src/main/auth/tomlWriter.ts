@@ -12,6 +12,16 @@ export function stringifyUsersToml(users: readonly FlmuxUser[]): string {
     lines.push("[[users]]");
     lines.push(`name = ${tomlString(user.name)}`);
     lines.push(`allow_pane_kinds = ${renderAllowPaneKinds(user.allowPaneKinds)}`);
+    if (user.allowPaths === "*") {
+      lines.push(`allow_paths = ${tomlString("*")}`);
+    } else {
+      for (const method of ["read", "write", "call"] as const) {
+        const globs = user.allowPaths[method];
+        if (globs !== undefined) {
+          lines.push(`allow_paths.${method} = [${globs.map(tomlString).join(", ")}]`);
+        }
+      }
+    }
     lines.push("");
   }
 

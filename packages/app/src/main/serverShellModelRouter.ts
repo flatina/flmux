@@ -20,11 +20,14 @@ export function createServerShellModelRouter(options: {
 
   return {
     registerClient(viewId: number): ClientRegistrationResult {
-      // Return only {clientId}. The full registry record carries `bridge`, a
-      // Proxy whose Proxy-get returns functions for every key — if it crosses
-      // the preload wire msgpackr's `value.toJSON` check succeeds, invokes
-      // toJSON as a nested RPC request, and the resulting unhandled rejection
-      // crashes Bun.
+      // `clientId` is for HTTP/CLI scoping only — the preload-owned desktop
+      // renderer routes through `shellModel.path.*` / `flmux.*` and never sends
+      // its clientId back. Return only {clientId}: the full registry record
+      // carries `bridge`, a Proxy whose get resolves every key to a function;
+      // if it crosses the preload wire msgpackr's `value.toJSON` probe
+      // succeeds, invokes toJSON as a nested RPC, and the resulting unhandled
+      // rejection crashes Bun. Same risk on any other RPC that might be
+      // tempted to return a RegisteredFlmuxClient verbatim.
       const { clientId } = options.clientRegistry.registerRenderer(viewId);
       return { clientId };
     },

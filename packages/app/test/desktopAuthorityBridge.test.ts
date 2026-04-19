@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { pack } from "msgpackr";
 import type { SequencedShellCoreEvent } from "@flmux/core/shell";
 import { createDesktopShellAuthority } from "../src/main/desktopShellAuthority";
 import { FlmuxClientRegistry } from "../src/main/clientRegistry";
@@ -6,7 +7,7 @@ import { createFlmuxHostRequestHandlers } from "../src/main/hostRequests";
 import { createInMemoryTerminalBackend, createTerminalService } from "../src/main/terminal-service";
 import type { FlmuxSessionStore } from "../src/main/sessionStore";
 import type { FlmuxSessionSnapshot } from "../src/shared/session";
-import type { FlmuxSessionSaveLayouts } from "../src/shared/rendererBridge";
+import type { FlmuxSessionSaveLayouts, FlmuxRendererBridge } from "../src/shared/rendererBridge";
 
 function createMemorySessionStore(initial: FlmuxSessionSnapshot | null = null): FlmuxSessionStore & {
   current(): FlmuxSessionSnapshot | null;
@@ -79,6 +80,39 @@ describe("desktop shell authority bridge", () => {
     const registration = authority.router.registerClient(viewId);
     expect(Object.keys(registration).sort()).toEqual(["clientId"]);
     expect(typeof registration.clientId).toBe("string");
+  });
+
+  // Pins the bug-class, not just this RPC's shape: the real `FlmuxRendererBridge`
+  // on the preload wire is a Proxy whose get resolves every key to a function,
+  // and msgpackr's pack() probes `value.toJSON` during encoding. Returning that
+  // Proxy in a response invokes toJSON as a nested RPC, whose unhandled
+  // rejection crashes Bun. Any RPC that returns a Proxy-backed object has the
+  // same failure — so assert at encoder level.
+  it("registerClient response packs without probing the bridge Proxy", async () => {
+    const { authority, clientRegistry } = await createTestAuthority();
+    const viewId = 78;
+    let bridgeProbed = false;
+    const bridge = new Proxy({} as FlmuxRendererBridge, {
+      get: (_target, key) => {
+        if (typeof key === "string") {
+          bridgeProbed = true;
+        }
+        return () => {};
+      }
+    });
+    clientRegistry.attachRenderer(viewId, bridge);
+
+    const registration = authority.router.registerClient(viewId);
+    bridgeProbed = false;
+    pack(registration);
+    expect(bridgeProbed).toBe(false);
+
+    // Sanity: if a future RPC hands the full record through, pack *does* probe
+    // the bridge — this half fails loudly if the mechanism ever stops
+    // reproducing (e.g. msgpackr stops calling toJSON), prompting a revisit.
+    bridgeProbed = false;
+    pack({ clientId: registration.clientId, viewId, bridge });
+    expect(bridgeProbed).toBe(true);
   });
 
   it("shellBootstrap returns synchronously (not a Promise) — preflight #1 §S3", async () => {
@@ -385,5 +419,36 @@ describe("desktop shell authority bridge", () => {
       .at(-1)!;
     expect(paneAdded.payload.place).toBe("right");
     expect(paneAdded.payload.referencePaneId).toBe(reference);
+  });
+
+  // /panes/new without referencePaneId is the header-action "+" hot path
+  // (workbench.ts:383). Core must accept it and emit pane.added with place
+  // preserved + referencePaneId undefined so the renderer can fall back to
+  // innerApi.activePanel — or, when even activePanel is absent (no-pane
+  // workspace momentarily), pass position:undefined to dockview.
+  it("pane.added carries place but no referencePaneId for header-action /panes/new", async () => {
+    const { authority } = await createTestAuthority();
+    const workspaceId = authority.shellBootstrap().snapshot.workspaces[0].id;
+
+    for (const pane of authority.shellBootstrap().snapshot.panes[workspaceId]) {
+      await authority.shellModel.pathCall(`/panes/${pane.id}/close`);
+    }
+    const cleared = authority.shellBootstrap().snapshot.panes[workspaceId];
+    expect(cleared).toEqual([]);
+
+    const captured: SequencedShellCoreEvent[] = [];
+    authority.subscribe((event) => captured.push(event));
+
+    const result = await authority.shellModel.pathCall("/panes/new", {
+      kind: "browser",
+      place: "right"
+    });
+    expect(result.ok).toBe(true);
+
+    const paneAdded = captured
+      .filter((event): event is SequencedShellCoreEvent & { topic: "pane.added" } => event.topic === "pane.added")
+      .at(-1)!;
+    expect(paneAdded.payload.place).toBe("right");
+    expect(paneAdded.payload.referencePaneId).toBeUndefined();
   });
 });

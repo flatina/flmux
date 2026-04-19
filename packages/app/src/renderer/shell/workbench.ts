@@ -36,6 +36,7 @@ import { getFlmuxRendererLifecyclePolicy } from "../../shared/runtimeMode";
 import { resolveTerminalCwdFromRoot } from "../../shared/terminalPath";
 import { createShellModelClientOverPreload } from "./shellModelClient";
 import { subscribeShellCoreEvents } from "./shellEventBus";
+import { buildPaneWorkspaceContext } from "./workspaceContext";
 
 type PendingPane = {
   id: string;
@@ -483,12 +484,11 @@ export class FlmuxWorkbench {
     if (!record) {
       throw new Error(`Unknown workspace '${workspaceId}'`);
     }
-    return {
-      id: workspaceId,
-      defaultBrowserPath: `/__flmux/internal/start?workspace=${encodeURIComponent(workspaceId)}`,
+    return buildPaneWorkspaceContext({
+      workspaceId,
       bus: record.bus,
       appOrigin: this.config.appOrigin
-    };
+    });
   }
 
   private initializeOuterShell() {

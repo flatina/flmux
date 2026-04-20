@@ -361,6 +361,133 @@ test("C6 allow_paths.read gates broadcast forwarder (B3)", async ({ browser }) =
   }
 });
 
+// C7 — Terminal runtime survives `page.reload()` with identity + history
+// preserved. The server-side `ShellCore` + `AttachmentRegistry` continuity
+// is what C2 proved at the slot-state layer; this pushes further into the
+// ptyd adopt path. We can't assert this via HTTP smoke alone because the
+// interesting transport concern (bunite WS reconnect keeps the paneId's
+// owner mapping + terminal event channel alive) is only exercised when
+// a real browser drops + re-establishes its WS.
+test("C7 terminal runtime survives page.reload (ptyd adopt)", async ({ browser }) => {
+  if (!handle) throw new Error("web app not running");
+
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await page.goto(`${handle.origin}/?token=${encodeURIComponent(handle.token)}`);
+    await expect(page.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
+
+    const cookieHeader = (await context.cookies(handle.origin))
+      .map((c) => `${c.name}=${c.value}`).join("; ");
+    const clientId = ((await (await fetch(`${handle.origin}/api/clients`, {
+      headers: { cookie: cookieHeader }
+    })).json()) as { clients: Array<{ clientId: string }> }).clients[0]!.clientId;
+
+    const origin = handle.origin;
+    const httpPath = async (method: "get" | "call" | "set", path: string, extra: Record<string, unknown> = {}) => {
+      const res = await fetch(`${origin}/api/model/path/${method}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: cookieHeader },
+        body: JSON.stringify({ clientId, path, ...extra })
+      });
+      return (await res.json()) as { result: { ok: true; value: unknown } | { ok: false; error: string; code: string } };
+    };
+
+    const created = (await httpPath("call", "/panes/new", {
+      args: { kind: "terminal", place: "right", workspaceId: "workspace.1" }
+    })) as unknown as { result: { ok: true; value: { paneId: string } } };
+    expect(created.result.ok).toBe(true);
+    const paneId = created.result.value.paneId;
+    await expect(page.locator('.workspace-panel[data-workspace-id="workspace.1"] .terminal-panel')).toBeVisible({ timeout: 10_000 });
+
+    // Renderer mounts the terminal pane and calls `/terminal/attach` over
+    // its WS — wait for the runtime to settle on the server side.
+    const runtimeIdBefore = await waitForRuntimeId(handle.origin, cookieHeader, clientId, paneId);
+
+    // Write a marker through HTTP — ptyd's PTY echoes it back to the
+    // session history buffer regardless of who wrote it.
+    const marker = "flmux-c7-marker";
+    await httpPath("call", `/panes/${paneId}/terminal/write`, { args: { data: `echo ${marker}\r` } });
+    await page.waitForTimeout(500);
+    const historyBefore = await readHistory(handle.origin, cookieHeader, clientId, paneId);
+    expect(historyBefore).toContain(marker);
+
+    await page.reload();
+    await expect(page.locator('.dockview-shell')).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('.workspace-panel[data-workspace-id="workspace.1"] .terminal-panel')).toBeVisible({ timeout: 15_000 });
+
+    const cookieHeaderAfter = (await context.cookies(handle.origin))
+      .map((c) => `${c.name}=${c.value}`).join("; ");
+    const clientIdAfter = ((await (await fetch(`${handle.origin}/api/clients`, {
+      headers: { cookie: cookieHeaderAfter }
+    })).json()) as { clients: Array<{ clientId: string }> }).clients[0]!.clientId;
+    // Same web-mode authority, same clientId.
+    expect(clientIdAfter).toBe(clientId);
+
+    const runtimeIdAfter = await waitForRuntimeId(handle.origin, cookieHeaderAfter, clientIdAfter, paneId);
+    expect(runtimeIdAfter).toBe(runtimeIdBefore);
+
+    const historyAfter = await readHistory(handle.origin, cookieHeaderAfter, clientIdAfter, paneId);
+    expect(historyAfter).toContain(marker);
+
+    // Also confirm the runtime is still writable — same ptyd process
+    // accepts input and history grows with the post-reload marker.
+    const marker2 = "flmux-c7-post-reload";
+    await fetch(`${origin}/api/model/path/call`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: cookieHeaderAfter },
+      body: JSON.stringify({
+        clientId: clientIdAfter,
+        path: `/panes/${paneId}/terminal/write`,
+        args: { data: `echo ${marker2}\r` }
+      })
+    });
+    await page.waitForTimeout(500);
+    const historyFinal = await readHistory(handle.origin, cookieHeaderAfter, clientIdAfter, paneId);
+    expect(historyFinal).toContain(marker);
+    expect(historyFinal).toContain(marker2);
+  } finally {
+    await context.close();
+  }
+});
+
+async function waitForRuntimeId(
+  origin: string,
+  cookieHeader: string,
+  clientId: string,
+  paneId: string
+): Promise<string> {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    const res = await fetch(`${origin}/api/model/path/get`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: cookieHeader },
+      body: JSON.stringify({ clientId, path: `/status/panes/${paneId}/terminal/runtimeId` })
+    });
+    const body = (await res.json()) as { result: { ok: true; value: string | null } };
+    if (body.result.ok && typeof body.result.value === "string") {
+      return body.result.value;
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  throw new Error(`waitForRuntimeId(${paneId}): no runtime attached within 15s`);
+}
+
+async function readHistory(
+  origin: string,
+  cookieHeader: string,
+  clientId: string,
+  paneId: string
+): Promise<string> {
+  const res = await fetch(`${origin}/api/model/path/call`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: cookieHeader },
+    body: JSON.stringify({ clientId, path: `/panes/${paneId}/terminal/history`, args: { maxBytes: 4096 } })
+  });
+  const body = (await res.json()) as { result: { ok: true; value: { data: string } } };
+  return body.result.value.data;
+}
+
 async function collectOutput(proc: ChildProcess): Promise<string> {
   return new Promise((resolveFn, reject) => {
     let stdout = "";

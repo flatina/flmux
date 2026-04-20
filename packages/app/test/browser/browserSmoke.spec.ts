@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -270,6 +270,94 @@ test("C3 two tabs of the same user keep independent active workspaces (B1b)", as
   } finally {
     await contextA.close();
     await contextB.close();
+  }
+});
+
+// C6 — `allow_paths.read` ACL gates the live WS event stream (B3).
+// HTTP smoke covers the denial side on `/api/model/path/*`, but the
+// broadcast forwarder (`main.ts:isEventAllowedForAttachment`) is a
+// separate gate that only fires over real WS. Single-user scope: each
+// web user has their own `ShellCore`, so the ACL applies to the user's
+// own event stream, not cross-user. We give `restricted` a read scope
+// limited to workspace.1, have them create a second workspace via
+// (allowed) write/call, and assert they don't see the `workspace.added`
+// event for the new workspace — even though they initiated it.
+test("C6 allow_paths.read gates broadcast forwarder (B3)", async ({ browser }) => {
+  if (!handle) throw new Error("web app not running");
+
+  writeFileSync(
+    resolve(handle.authDir, "users.toml"),
+    [
+      `[[users]]`,
+      `name = "admin"`,
+      `allow_pane_kinds = "*"`,
+      `allow_paths = "*"`,
+      ``,
+      `[[users]]`,
+      `name = "restricted"`,
+      `allow_pane_kinds = "*"`,
+      ``,
+      `[users.allow_paths]`,
+      `read = ["/status/workspaces/workspace.1/**", "/status/attachments/**"]`,
+      `write = ["**"]`,
+      `call = ["**"]`,
+      ``
+    ].join("\n"),
+    "utf8"
+  );
+
+  const issueProc = spawn(
+    "bun",
+    ["src/cli.ts", "tokens", "issue", "--user", "restricted", "--auth-dir", handle.authDir],
+    { cwd: APP_DIR, shell: process.platform === "win32" }
+  );
+  const { token: restrictedToken } = JSON.parse(await collectOutput(issueProc)) as { token: string };
+
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await page.goto(`${handle.origin}/?token=${encodeURIComponent(restrictedToken)}`);
+    await expect(page.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
+
+    const cookieHeader = (await context.cookies(handle.origin))
+      .map((c) => `${c.name}=${c.value}`).join("; ");
+    const clientId = ((await (await fetch(`${handle.origin}/api/clients`, {
+      headers: { cookie: cookieHeader }
+    })).json()) as { clients: Array<{ clientId: string }> }).clients[0]!.clientId;
+
+    // Positive control — rename workspace.1 (in read scope). Confirms the
+    // forwarder is alive and events reach the DOM. Without this the
+    // negative assertion below is vacuous.
+    const renamedTitle = "C6-renamed-ws1";
+    await fetch(`${handle.origin}/api/model/path/set`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: cookieHeader },
+      body: JSON.stringify({
+        clientId,
+        path: "/workspaces/workspace.1/title",
+        value: renamedTitle
+      })
+    });
+    await expect(page.locator('.dv-tab', { hasText: renamedTitle })).toBeVisible({ timeout: 10_000 });
+
+    // Negative — create a new workspace. Event `workspace.added` maps to
+    // `/status/workspaces/<newId>` which isn't in read scope.
+    const created = await (await fetch(`${handle.origin}/api/model/path/call`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: cookieHeader },
+      body: JSON.stringify({
+        clientId,
+        path: "/workspaces/new",
+        args: { title: "ShouldBeHidden-c6" }
+      })
+    })).json() as { result: { value: { workspaceId: string } } };
+    const hiddenWsId = created.result.value.workspaceId;
+
+    await page.waitForTimeout(1500);
+    await expect(page.locator(`.workspace-panel[data-workspace-id="${hiddenWsId}"]`)).toHaveCount(0);
+    await expect(page.locator('.dv-tab', { hasText: "ShouldBeHidden-c6" })).toHaveCount(0);
+  } finally {
+    await context.close();
   }
 });
 

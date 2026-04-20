@@ -60,7 +60,8 @@ export function createFlmuxHostRequestHandlers(options: {
     appOrigin: options.getAppOrigin(),
     projectDir: options.getProjectDir(),
     authorityClientId: options.getAuthorityClientId(),
-    localExtensions: createLocalExtensionLoadEntries(options.localExtensions, options.getAppOrigin())
+    localExtensions: createLocalExtensionLoadEntries(options.localExtensions, options.getAppOrigin()),
+    devMode: process.env.FLMUX_DEV_MODE === "1"
   });
 
   const requireDesktopAuthority = (op: string): DesktopShellAuthority => {

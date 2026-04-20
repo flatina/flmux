@@ -69,6 +69,7 @@ export interface FlmuxRendererBootstrapConfig {
   projectDir: string;
   authorityClientId: string | null;
   localExtensions: FlmuxLocalExtensionLoadEntry[];
+  devMode: boolean;
 }
 
 export type FlmuxHostRequests = {

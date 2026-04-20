@@ -202,15 +202,15 @@ test("C2 tab refresh reuses attachmentId + preserves slot state (B2P3)", async (
 // under the same user get distinct attachmentIds, and each tab's
 // setActiveWorkspace only moves its own slot.
 //
-// SKIPPED: PointerEvent {pointerdown, pointerup} + .click() sequence
-// was attempted and still doesn't fire onDidActivePanelChange —
-// dockview flips dv-active-tab visually but the handler never runs.
-// Skip synthetic-DOM approaches entirely; go programmatic via
-// window.__flmuxTest.setActiveWorkspace under FLMUX_DEV_MODE=1. HTTP
-// path is gated (no caller) so the test can't reach per-slot setActive
-// without the renderer in the loop. Leaving the setup so the follow-up
-// can pick up where this left off.
-test.skip("C3 two tabs of the same user keep independent active workspaces (B1b)", async ({ browser }) => {
+// Dockview's synthetic DOM (.click(), PointerEvent dispatch) flips the
+// `dv-active-tab` class but doesn't fire `onDidActivePanelChange`, and
+// even `panel.api.setActive()` only partially propagates. We drive the
+// same `shellModel.pathCall` the click handler would — exposed under
+// FLMUX_DEV_MODE=1 as `window.__flmuxTest.setActiveWorkspace`. The call
+// routes through preload/WS so `hostRequests.ts` injects
+// `caller.attachmentId`, exercising the per-slot RPC path that HTTP
+// alone can't reach after the B3 caller-drop.
+test("C3 two tabs of the same user keep independent active workspaces (B1b)", async ({ browser }) => {
   if (!handle) throw new Error("web app not running");
   const contextA = await browser.newContext();
   const contextB = await browser.newContext();
@@ -250,23 +250,23 @@ test.skip("C3 two tabs of the same user keep independent active workspaces (B1b)
     await expect(pageA).toHaveTitle(/Workspace 1/);
     await expect(pageB).toHaveTitle(/Workspace 1/);
 
-    // Tab A switches to the "Divergence" (ws.2) outer tab. Dockview tabs
-    // respond to `pointerdown` (not generic `click`), and we need the
-    // OUTER workspace tabstrip (inner pane tabs nest inside
-    // `.workspace-panel`). Switching the panel triggers
-    // `shellModel.pathCall('/workspaces/{id}/setActive')` via workbench,
-    // which routes through preload/WS RPC with caller.attachmentId
-    // injected — the only surface that targets a specific attachment's
-    // slot after B3 cleanup stripped caller from HTTP.
-    await pageA.locator('.dv-tab', { hasText: "Divergence" }).first().click();
+    // Drive the outer-tab activation through the dev-mode hook — the
+    // programmatic path that mirrors what a real click *would* do if
+    // dockview fired its change event for synthetic input.
+    await pageA.evaluate(
+      (id) => (window as unknown as {
+        __flmuxTest: { setActiveWorkspace(id: string): void };
+      }).__flmuxTest.setActiveWorkspace(id),
+      ws2
+    );
 
     // Tab A's title now reflects ws.2; Tab B stays on ws.1.
     // This is the observable per-attachment divergence — scope=attachment
     // `workspace.activeChanged` reached only pageA.
     await expect(pageA).toHaveTitle(/Divergence/, { timeout: 15_000 });
-    // Tab B's active groupview should still be on ws.1 — the scope=attachment
-    // event targeting A didn't reach B.
-    await expect(pageB.locator('.dv-groupview.dv-active-group .workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible();
+    // Tab B's title should NOT have changed — scope=attachment event for A
+    // never reached B's forwarder, so B's slot stays on workspace.1.
+    await expect(pageB).toHaveTitle(/Workspace 1/);
   } finally {
     await contextA.close();
     await contextB.close();

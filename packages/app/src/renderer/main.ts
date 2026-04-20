@@ -33,4 +33,12 @@ async function bootstrap() {
   // emitted during bootstrap; web: HTTP bootstrap→register so the server
   // has an attachmentId before it can install the forwarder).
   await workbench.start();
+
+  if (config.devMode) {
+    (window as unknown as {
+      __flmuxTest: { setActiveWorkspace(id: string): void };
+    }).__flmuxTest = {
+      setActiveWorkspace: (id: string) => workbench.setActiveWorkspace(id)
+    };
+  }
 }

@@ -112,6 +112,15 @@ export class FlmuxWorkbench {
     this.paneRegistry.register(descriptor);
   }
 
+  // Programmatic outer-tab activation. Skips dockview entirely and drives
+  // the same `shellModel.pathCall` the `onDidActivePanelChange` handler
+  // would invoke — routes through preload/WS so `hostRequests.ts` injects
+  // `caller.attachmentId`. Dockview's synthetic-click and
+  // `panel.api.setActive()` paths don't reliably reach this RPC.
+  setActiveWorkspace(workspaceId: string): void {
+    void this.shellModel.pathCall(`/workspaces/${workspaceId}/setActive`);
+  }
+
   async start() {
     this.initializeOuterShell();
 

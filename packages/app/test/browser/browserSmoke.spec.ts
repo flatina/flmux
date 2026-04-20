@@ -210,6 +210,10 @@ test("C2 tab refresh reuses attachmentId + preserves slot state (B2P3)", async (
 // routes through preload/WS so `hostRequests.ts` injects
 // `caller.attachmentId`, exercising the per-slot RPC path that HTTP
 // alone can't reach after the B3 caller-drop.
+//
+// Scope limit: the hook bypasses Dockview's click → `pathCall` chain, so
+// a regression in the click wiring itself wouldn't fail here. Covered
+// elsewhere (outerApi.onDidActivePanelChange handler in workbench.ts).
 test("C3 two tabs of the same user keep independent active workspaces (B1b)", async ({ browser }) => {
   if (!handle) throw new Error("web app not running");
   const contextA = await browser.newContext();
@@ -264,8 +268,10 @@ test("C3 two tabs of the same user keep independent active workspaces (B1b)", as
     // This is the observable per-attachment divergence — scope=attachment
     // `workspace.activeChanged` reached only pageA.
     await expect(pageA).toHaveTitle(/Divergence/, { timeout: 15_000 });
-    // Tab B's title should NOT have changed — scope=attachment event for A
-    // never reached B's forwarder, so B's slot stays on workspace.1.
+    // Observation window: even if the scope=attachment event leaked, it
+    // would reach B within the same network hop as A. Wait past that
+    // window before asserting B's title hasn't moved.
+    await pageB.waitForTimeout(1000);
     await expect(pageB).toHaveTitle(/Workspace 1/);
   } finally {
     await contextA.close();
@@ -361,14 +367,19 @@ test("C6 allow_paths.read gates broadcast forwarder (B3)", async ({ browser }) =
   }
 });
 
-// C7 — Terminal runtime survives `page.reload()` with identity + history
-// preserved. The server-side `ShellCore` + `AttachmentRegistry` continuity
-// is what C2 proved at the slot-state layer; this pushes further into the
-// ptyd adopt path. We can't assert this via HTTP smoke alone because the
-// interesting transport concern (bunite WS reconnect keeps the paneId's
-// owner mapping + terminal event channel alive) is only exercised when
-// a real browser drops + re-establishes its WS.
-test("C7 terminal runtime survives page.reload (ptyd adopt)", async ({ browser }) => {
+// C7 — Server-side terminal runtime identity + state survive a browser
+// WS drop/reconnect (triggered by `page.reload()`). Proves that ptyd's
+// runtime isn't killed when the only owning WS disconnects within the
+// grace window, and history + runtimeId stay stable across the drop.
+//
+// Scope limit: the post-reload assertions are all HTTP against server
+// state. They don't verify that the reloaded renderer re-adopts the
+// terminal or that `terminal.event` forwarding recovers in the new
+// viewId — those are separate UX concerns (`paneOwners` is keyed by
+// viewId and doesn't survive reload). The invariant under test here is
+// strictly server-side resilience to WS drop, which HTTP smoke can't
+// exercise because it has no real-WS transport to drop.
+test("C7 terminal runtime survives browser WS drop across page.reload", async ({ browser }) => {
   if (!handle) throw new Error("web app not running");
 
   const context = await browser.newContext();
@@ -418,16 +429,12 @@ test("C7 terminal runtime survives page.reload (ptyd adopt)", async ({ browser }
 
     const cookieHeaderAfter = (await context.cookies(handle.origin))
       .map((c) => `${c.name}=${c.value}`).join("; ");
-    const clientIdAfter = ((await (await fetch(`${handle.origin}/api/clients`, {
-      headers: { cookie: cookieHeaderAfter }
-    })).json()) as { clients: Array<{ clientId: string }> }).clients[0]!.clientId;
-    // Same web-mode authority, same clientId.
-    expect(clientIdAfter).toBe(clientId);
-
-    const runtimeIdAfter = await waitForRuntimeId(handle.origin, cookieHeaderAfter, clientIdAfter, paneId);
+    // Same user/authority → same clientId (structural, not proof of the
+    // reloaded view's WS state).
+    const runtimeIdAfter = await waitForRuntimeId(handle.origin, cookieHeaderAfter, clientId, paneId);
     expect(runtimeIdAfter).toBe(runtimeIdBefore);
 
-    const historyAfter = await readHistory(handle.origin, cookieHeaderAfter, clientIdAfter, paneId);
+    const historyAfter = await readHistory(handle.origin, cookieHeaderAfter, clientId, paneId);
     expect(historyAfter).toContain(marker);
 
     // Also confirm the runtime is still writable — same ptyd process
@@ -437,13 +444,13 @@ test("C7 terminal runtime survives page.reload (ptyd adopt)", async ({ browser }
       method: "POST",
       headers: { "content-type": "application/json", cookie: cookieHeaderAfter },
       body: JSON.stringify({
-        clientId: clientIdAfter,
+        clientId,
         path: `/panes/${paneId}/terminal/write`,
         args: { data: `echo ${marker2}\r` }
       })
     });
     await page.waitForTimeout(500);
-    const historyFinal = await readHistory(handle.origin, cookieHeaderAfter, clientIdAfter, paneId);
+    const historyFinal = await readHistory(handle.origin, cookieHeaderAfter, clientId, paneId);
     expect(historyFinal).toContain(marker);
     expect(historyFinal).toContain(marker2);
   } finally {

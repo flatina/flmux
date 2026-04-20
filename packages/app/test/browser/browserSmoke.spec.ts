@@ -367,6 +367,89 @@ test("C6 allow_paths.read gates broadcast forwarder (B3)", async ({ browser }) =
   }
 });
 
+// C5 — Authority evicts from `userAuthorityRegistry` after the last
+// attachment's grace plus the authority grace on top. Spawn a fresh
+// flmux --web with short grace env overrides so the eviction chain
+// (attachment-evict → authority-evict) fits within a few seconds.
+//
+// Observable: a second bootstrap under the same token returns a
+// different authority `clientId`, proving the old registry entry was
+// dropped and `userAuthorityRegistry.getOrCreate` minted a fresh
+// authority. This is the invariant under test — the registry-level
+// eviction + re-create. Resource-cleanup of the dropped authority
+// (ShellCore GC, ptyd lifecycle) is out of scope here and covered by
+// the `onAuthorityEvicted` side-effect wiring in `main.ts`.
+test("C5 authority evicts after attachment+authority grace", async ({ browser }) => {
+  const authDir = mkdtempSync(resolve(tmpdir(), "flmux-c5-auth-"));
+  let appProc: ChildProcess | null = null;
+
+  try {
+    const tokenProc = spawn(
+      "bun", ["src/cli.ts", "tokens", "bootstrap", "--auth-dir", authDir],
+      { cwd: APP_DIR, shell: process.platform === "win32" }
+    );
+    const { token } = JSON.parse(await collectOutput(tokenProc)) as { token: string };
+
+    appProc = spawn(
+      "bun", ["src/main.ts", "--web"],
+      {
+        cwd: APP_DIR,
+        env: {
+          ...process.env,
+          FLMUX_AUTH_DIR: authDir,
+          FLMUX_DEV_MODE: "1",
+          FLMUX_ATTACHMENT_GRACE_MS: "300",
+          FLMUX_AUTHORITY_EVICTION_GRACE_MS: "300"
+        },
+        shell: process.platform === "win32"
+      }
+    );
+    const origin = await waitForOrigin(appProc);
+
+    const getAuthorityClientId = async (ctx: import("@playwright/test").BrowserContext) => {
+      const cookieHeader = (await ctx.cookies(origin))
+        .map((c) => `${c.name}=${c.value}`).join("; ");
+      const res = await fetch(`${origin}/api/clients`, { headers: { cookie: cookieHeader } });
+      return ((await res.json()) as { clients: Array<{ clientId: string }> }).clients[0]!.clientId;
+    };
+
+    const contextBefore = await browser.newContext();
+    let clientIdBefore: string;
+    try {
+      const page = await contextBefore.newPage();
+      await page.goto(`${origin}/?token=${encodeURIComponent(token)}`);
+      await expect(page.locator('.dockview-shell')).toBeVisible({ timeout: 20_000 });
+      clientIdBefore = await getAuthorityClientId(contextBefore);
+    } finally {
+      await contextBefore.close();
+    }
+
+    // Wait past attachment grace (300) + authority grace (300) + margin.
+    // The eviction chain only starts when the server observes the WS
+    // disconnect (via `onWebClientDisconnected`), which can lag
+    // `context.close()` on slow runners — keep a generous cushion.
+    await new Promise((r) => setTimeout(r, 3000));
+
+    const contextAfter = await browser.newContext();
+    try {
+      const page = await contextAfter.newPage();
+      await page.goto(`${origin}/?token=${encodeURIComponent(token)}`);
+      await expect(page.locator('.dockview-shell')).toBeVisible({ timeout: 20_000 });
+      const clientIdAfter = await getAuthorityClientId(contextAfter);
+      expect(clientIdAfter).not.toBe(clientIdBefore);
+    } finally {
+      await contextAfter.close();
+    }
+  } finally {
+    if (appProc) {
+      appProc.kill("SIGTERM");
+      await new Promise((r) => setTimeout(r, 300));
+      if (!appProc.killed) appProc.kill("SIGKILL");
+    }
+    try { rmSync(authDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+  }
+});
+
 // C7 — Server-side terminal runtime identity + state survive a browser
 // WS drop/reconnect (triggered by `page.reload()`). Proves that ptyd's
 // runtime isn't killed when the only owning WS disconnects within the

@@ -119,7 +119,11 @@ const userAuthorityRegistry: WebModeUserAuthorityRegistry | null = runtimeMode =
  * policy, piggybacking on the existing `rebootstrap-required` path.
  * Intentionally NOT implemented as a synthetic shellCore.event — that
  * would muddy the "events describe shell state" contract from B1b. */
-const AUTHORITY_EVICTION_GRACE_MS = 5 * 60 * 1000;
+const authorityGraceEnvMs = Number.parseInt(process.env.FLMUX_AUTHORITY_EVICTION_GRACE_MS ?? "", 10);
+const AUTHORITY_EVICTION_GRACE_MS =
+  Number.isFinite(authorityGraceEnvMs) && authorityGraceEnvMs > 0
+    ? authorityGraceEnvMs
+    : 5 * 60 * 1000;
 const pendingAuthorityEvictionByUser = new Map<string, ReturnType<typeof setTimeout>>();
 
 function countUserAttachments(userId: string): number {
@@ -164,7 +168,12 @@ if ((desktopAuthority === null) === (userAuthorityRegistry === null)) {
   );
 }
 
-const attachmentRegistry = new AttachmentRegistry();
+const attachmentGraceEnvMs = Number.parseInt(process.env.FLMUX_ATTACHMENT_GRACE_MS ?? "", 10);
+const attachmentRegistry = new AttachmentRegistry(
+  Number.isFinite(attachmentGraceEnvMs) && attachmentGraceEnvMs > 0
+    ? { graceMs: attachmentGraceEnvMs }
+    : undefined
+);
 const viewIdToAttachmentId = new Map<number, string>();
 // Web-only: records which user owns each minted attachmentId so WS
 // register + shellModel.path.* calls route to the right authority.

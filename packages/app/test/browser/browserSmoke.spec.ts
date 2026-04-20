@@ -202,17 +202,14 @@ test("C2 tab refresh reuses attachmentId + preserves slot state (B2P3)", async (
 // under the same user get distinct attachmentIds, and each tab's
 // setActiveWorkspace only moves its own slot.
 //
-// SKIPPED: clicking the outer dockview tab in Chromium flips the
-// `dv-active-tab` class locally but `outerApi.onDidActivePanelChange`
-// doesn't fire, so workbench never calls `/workspaces/{id}/setActive`
-// and both attachments' server-side slots stay on ws.1. Needs
-// investigation of the dockview-core@5 event surface under
-// synthetic-click events — probably need a programmatic tab-switch API
-// path or a dev-mode test hook that calls setActive with caller.
-// attachmentId directly. HTTP path is gated (no caller) so the test
-// can't reach per-slot setActive without the renderer in the loop.
-// Leaving the setup + diagnostic so the follow-up can pick up where
-// this left off.
+// SKIPPED: PointerEvent {pointerdown, pointerup} + .click() sequence
+// was attempted and still doesn't fire onDidActivePanelChange —
+// dockview flips dv-active-tab visually but the handler never runs.
+// Skip synthetic-DOM approaches entirely; go programmatic via
+// window.__flmuxTest.setActiveWorkspace under FLMUX_DEV_MODE=1. HTTP
+// path is gated (no caller) so the test can't reach per-slot setActive
+// without the renderer in the loop. Leaving the setup so the follow-up
+// can pick up where this left off.
 test.skip("C3 two tabs of the same user keep independent active workspaces (B1b)", async ({ browser }) => {
   if (!handle) throw new Error("web app not running");
   const contextA = await browser.newContext();

@@ -162,7 +162,7 @@ describe("flmux host requests", () => {
     // web mode — the mutation path that lives inside workbench.ts.
     expect(await handlers["shellModel.path.get"]({ path: "/status/app" }))
       .toEqual({ ok: true, found: true, value: { title: "Test" } });
-    expect(pathGet).toHaveBeenCalledWith("/status/app");
+    expect(pathGet).toHaveBeenCalledWith("/status/app", undefined);
 
     expect(await handlers["shellModel.path.call"]({ path: "/panes/new", args: { kind: "browser" } }))
       .toEqual({ ok: true, value: null });
@@ -178,6 +178,47 @@ describe("flmux host requests", () => {
     // bootstrap first).
     const layouts: FlmuxSessionSaveLayouts = { outerLayout: null, innerLayouts: {} };
     expect(handlers["flmux.layout.push"](layouts)).toEqual({ ok: true });
+  });
+
+  it("preload injects caller.attachmentId on every shellModel.path.* RPC (get/list/set/call)", async () => {
+    const pathGet = mock(async () => ({ ok: true as const, found: true, value: null }));
+    const pathList = mock(async () => ({ ok: true as const, found: true, entries: [] }));
+    const pathSet = mock(async () => ({ ok: true as const, value: null }));
+    const pathCall = mock(async () => ({ ok: true as const, value: null }));
+    const handlers = createFlmuxHostRequestHandlers({
+      mode: "desktop",
+      getAppOrigin: () => "http://127.0.0.1:0",
+      getProjectDir: () => ".",
+      getAuthorityClientId: () => null,
+      getCallerViewId: () => 1,
+      getCallerAttachmentId: () => "local",
+      paneOwners: new Map(),
+      resolveShellModelRouter: () => ({
+        registerClient: () => ({ clientId: "client-1" }),
+        listClients: async () => [],
+        pathGet: async () => ({ ok: true }),
+        pathList: async () => ({ ok: true }),
+        pathSet: async () => ({ ok: true }),
+        pathCall: async () => ({ ok: true })
+      }),
+      resolveShellModel: () => ({ pathGet, pathList, pathSet, pathCall }),
+      terminalService: {} as never,
+      localExtensions: [],
+      desktopAuthority: null
+    });
+
+    await handlers["shellModel.path.get"]({ path: "/status/workspace" });
+    await handlers["shellModel.path.list"]({ path: "/panes" });
+    await handlers["shellModel.path.set"]({ path: "/title", value: "Renamed" });
+    await handlers["shellModel.path.call"]({ path: "/panes/new", args: { kind: "browser" } });
+
+    // Preload path = shellModel sees caller.attachmentId, so implicit-current
+    // narrowing doesn't reject. External HTTP callers (no getCallerAttachmentId
+    // equivalent) are the ones that hit INVALID_VALUE at the model layer.
+    expect(pathGet).toHaveBeenCalledWith("/status/workspace", { attachmentId: "local" });
+    expect(pathList).toHaveBeenCalledWith("/panes", { attachmentId: "local" });
+    expect(pathSet).toHaveBeenCalledWith("/title", "Renamed", { attachmentId: "local" });
+    expect(pathCall).toHaveBeenCalledWith("/panes/new", { kind: "browser" }, { attachmentId: "local" });
   });
 
   it("desktop register returns {status: 'ok'} when no binding is passed (invariant guard)", () => {

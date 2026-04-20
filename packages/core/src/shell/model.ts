@@ -35,28 +35,28 @@ class ShellModel implements ShellModelAPI {
     this.terminal = deps.terminal;
   }
 
-  async pathGet(path: string): Promise<PathGetResult> {
+  async pathGet(path: string, caller: PathCallerContext = {}): Promise<PathGetResult> {
     try {
       const segments = parsePath(path);
-      return await this.getBySegments(segments);
+      return await this.getBySegments(segments, caller);
     } catch (error) {
       return toPathGetError(error);
     }
   }
 
-  async pathList(path: string): Promise<PathListResult> {
+  async pathList(path: string, caller: PathCallerContext = {}): Promise<PathListResult> {
     try {
       const segments = parsePath(path);
-      return await this.listBySegments(segments);
+      return await this.listBySegments(segments, caller);
     } catch (error) {
       return toPathListError(error);
     }
   }
 
-  async pathSet(path: string, value: unknown): Promise<PathSetResult> {
+  async pathSet(path: string, value: unknown, caller: PathCallerContext = {}): Promise<PathSetResult> {
     try {
       const segments = parsePath(path);
-      return await this.setBySegments(segments, value);
+      return await this.setBySegments(segments, value, caller);
     } catch (error) {
       return toPathMutationError(error);
     }
@@ -71,9 +71,9 @@ class ShellModel implements ShellModelAPI {
     }
   }
 
-  private async getBySegments(segments: string[]): Promise<PathGetResult> {
+  private async getBySegments(segments: string[], caller: PathCallerContext): Promise<PathGetResult> {
     if (segments.length === 0) {
-      return { ok: true, found: true, value: await this.getWorkspaceRootSnapshot() };
+      return { ok: true, found: true, value: await this.getWorkspaceRootSnapshot(caller) };
     }
 
     if (segments[0] === "app") {
@@ -86,7 +86,8 @@ class ShellModel implements ShellModelAPI {
         return notFoundGet();
       }
 
-      const workspace = await this.host.getWorkspaceStatus();
+      const slotKey = requireSlotKey(caller, `/${segments[0]}`, "/workspaces/{id}");
+      const workspace = await this.host.getWorkspaceStatus({ slotKey });
       return {
         ok: true,
         found: true,
@@ -103,17 +104,17 @@ class ShellModel implements ShellModelAPI {
     }
 
     if (segments[0] === "panes") {
-      return await this.getPaneStatePath(segments.slice(1));
+      return await this.getPaneStatePath(segments.slice(1), caller);
     }
 
     if (segments[0] === "status") {
-      return await this.getStatusPath(segments.slice(1));
+      return await this.getStatusPath(segments.slice(1), caller);
     }
 
     return notFoundGet();
   }
 
-  private async listBySegments(segments: string[]): Promise<PathListResult> {
+  private async listBySegments(segments: string[], caller: PathCallerContext): Promise<PathListResult> {
     if (segments.length === 0) {
       return {
         ok: true,
@@ -145,17 +146,17 @@ class ShellModel implements ShellModelAPI {
     }
 
     if (segments[0] === "panes") {
-      return await this.listPaneStatePath(segments.slice(1));
+      return await this.listPaneStatePath(segments.slice(1), caller);
     }
 
     if (segments[0] === "status") {
-      return await this.listStatusPath(segments.slice(1));
+      return await this.listStatusPath(segments.slice(1), caller);
     }
 
     return notFoundList();
   }
 
-  private async setBySegments(segments: string[], value: unknown): Promise<PathSetResult> {
+  private async setBySegments(segments: string[], value: unknown, caller: PathCallerContext): Promise<PathSetResult> {
     if (segments.length === 0 || segments[0] === "status" || segments[0] === "bus") {
       return throwPathError("NOT_WRITABLE", "Path is read-only");
     }
@@ -179,7 +180,17 @@ class ShellModel implements ShellModelAPI {
         return throwPathError("NOT_WRITABLE", "Path is not writable");
       }
 
-      const result = await this.setScopedProperty({ scope: "workspace" }, rootProperty, value);
+      // Resolve the current workspace from the caller's attachment before
+      // dispatching so the write targets the caller's slot (not the default).
+      // External callers without an attachment are refused — the explicit
+      // /workspaces/{id}/<property> path is the supported alternative.
+      const slotKey = requireSlotKey(caller, `/${segments[0]}`, `/workspaces/{id}/${segments[0]}`);
+      const workspace = await this.host.getWorkspaceStatus({ slotKey });
+      const result = await this.setScopedProperty(
+        { scope: "workspace", workspaceId: workspace.id },
+        rootProperty,
+        value
+      );
       return {
         ok: true,
         value: result.value
@@ -217,6 +228,30 @@ class ShellModel implements ShellModelAPI {
       }
 
       return throwPathError("NOT_WRITABLE", "Path is not writable");
+    }
+
+    // Explicit-target workspace property write — the external-caller
+    // alternative to the implicit-current /<property> aliases (/title, etc).
+    // Preflight the workspace existence so a missing id surfaces as
+    // NOT_FOUND rather than INTERNAL_ERROR from shellCore.requireWorkspace.
+    // (A delete racing between preflight and setScopedProperty degrades
+    // to INTERNAL_ERROR in the narrow window, which is acceptable given
+    // how rare concurrent delete-while-set is.)
+    if (segments[0] === "workspaces" && segments.length === 3) {
+      const workspaceProperty = getWorkspaceStateProperty(segments[2]);
+      if (workspaceProperty?.writable) {
+        const workspaceId = segments[1]!;
+        const workspaces = await this.host.listWorkspaces();
+        if (!workspaces.some((candidate) => candidate.id === workspaceId)) {
+          return throwPathError("NOT_FOUND", `Workspace '${workspaceId}' not found`);
+        }
+        const result = await this.setScopedProperty(
+          { scope: "workspace", workspaceId },
+          workspaceProperty,
+          value
+        );
+        return { ok: true, value: result.value };
+      }
     }
 
     return throwPathError("NOT_WRITABLE", "Path is not writable");
@@ -547,7 +582,7 @@ class ShellModel implements ShellModelAPI {
         found: true,
         entries: [
           leafEntry("id", `/workspaces/${workspace.id}/id`),
-          ...statePropertyEntries(WORKSPACE_STATE_PROPERTIES, `/workspaces/${workspace.id}`, "key", false),
+          ...statePropertyEntries(WORKSPACE_STATE_PROPERTIES, `/workspaces/${workspace.id}`, "key"),
           leafEntry("paneCount", `/workspaces/${workspace.id}/paneCount`)
         ]
       };
@@ -560,9 +595,10 @@ class ShellModel implements ShellModelAPI {
     return notFoundList();
   }
 
-  private async getPaneStatePath(segments: string[]): Promise<PathGetResult> {
+  private async getPaneStatePath(segments: string[], caller: PathCallerContext): Promise<PathGetResult> {
     if (segments.length === 0) {
-      const panes = await this.host.listPanes();
+      const slotKey = requireSlotKey(caller, "/panes", "/status/workspaces/{id}/panes");
+      const panes = await this.host.listPanes({ slotKey });
       return {
         ok: true,
         found: true,
@@ -615,9 +651,10 @@ class ShellModel implements ShellModelAPI {
     return notFoundGet();
   }
 
-  private async listPaneStatePath(segments: string[]): Promise<PathListResult> {
+  private async listPaneStatePath(segments: string[], caller: PathCallerContext): Promise<PathListResult> {
     if (segments.length === 0) {
-      const panes = await this.host.listPanes();
+      const slotKey = requireSlotKey(caller, "/panes", "/status/workspaces/{id}/panes");
+      const panes = await this.host.listPanes({ slotKey });
       return {
         ok: true,
         found: true,
@@ -684,13 +721,18 @@ class ShellModel implements ShellModelAPI {
     return notFoundList();
   }
 
-  private async getStatusPath(segments: string[]): Promise<PathGetResult> {
+  private async getStatusPath(segments: string[], caller: PathCallerContext): Promise<PathGetResult> {
     if (segments.length === 0) {
+      // `panes` here is slot-scoped (current workspace's panes); external
+      // callers without an attachment get the aggregate subtrees only
+      // (`app`, `attachments`, `workspaces`) and must compose their view
+      // via `/status/workspaces/{id}/panes` for pane details.
+      const slotKey = caller.attachmentId;
       const [app, attachments, workspaces, panes] = await Promise.all([
         this.host.getAppStatus(),
         this.host.listAttachmentSlots(),
         this.host.listWorkspaces(),
-        this.host.listPanes()
+        slotKey ? this.host.listPanes({ slotKey }) : []
       ]);
       return {
         ok: true,
@@ -699,9 +741,11 @@ class ShellModel implements ShellModelAPI {
           app,
           attachments: Object.fromEntries(attachments.map((entry) => [entry.attachmentId, entry])),
           workspaces: Object.fromEntries(workspaces.map((workspace) => [workspace.id, workspace])),
-          panes: Object.fromEntries(
-            panes.map((pane) => [pane.id, toPaneStatusSnapshot(pane)])
-          )
+          ...(slotKey ? {
+            panes: Object.fromEntries(
+              panes.map((pane) => [pane.id, toPaneStatusSnapshot(pane)])
+            )
+          } : {})
         }
       };
     }
@@ -715,7 +759,7 @@ class ShellModel implements ShellModelAPI {
     }
 
     if (segments[0] === "workspace") {
-      return await this.getStatusWorkspace(segments.slice(1));
+      return await this.getStatusWorkspace(segments.slice(1), caller);
     }
 
     if (segments[0] === "workspaces") {
@@ -723,13 +767,13 @@ class ShellModel implements ShellModelAPI {
     }
 
     if (segments[0] === "panes") {
-      return await this.getStatusPanes(segments.slice(1));
+      return await this.getStatusPanes(segments.slice(1), caller);
     }
 
     return notFoundGet();
   }
 
-  private async listStatusPath(segments: string[]): Promise<PathListResult> {
+  private async listStatusPath(segments: string[], caller: PathCallerContext): Promise<PathListResult> {
     if (segments.length === 0) {
       return {
         ok: true,
@@ -753,7 +797,7 @@ class ShellModel implements ShellModelAPI {
     }
 
     if (segments[0] === "workspace") {
-      return await this.listStatusWorkspace(segments.slice(1));
+      return await this.listStatusWorkspace(segments.slice(1), caller);
     }
 
     if (segments[0] === "workspaces") {
@@ -761,7 +805,7 @@ class ShellModel implements ShellModelAPI {
     }
 
     if (segments[0] === "panes") {
-      return await this.listStatusPanes(segments.slice(1));
+      return await this.listStatusPanes(segments.slice(1), caller);
     }
 
     return notFoundList();
@@ -801,8 +845,13 @@ class ShellModel implements ShellModelAPI {
     return notFoundList();
   }
 
-  private async getStatusWorkspace(segments: string[]): Promise<PathGetResult> {
-    const workspaceStatus = await this.host.getWorkspaceStatus();
+  private async getStatusWorkspace(segments: string[], caller: PathCallerContext): Promise<PathGetResult> {
+    const slotKey = requireSlotKey(
+      caller,
+      "/status/workspace",
+      "/status/attachments/{attachmentId}/currentWorkspace or /status/workspaces/{id}"
+    );
+    const workspaceStatus = await this.host.getWorkspaceStatus({ slotKey });
 
     if (segments.length === 0) {
       return { ok: true, found: true, value: workspaceStatus };
@@ -815,7 +864,12 @@ class ShellModel implements ShellModelAPI {
     return notFoundGet();
   }
 
-  private async listStatusWorkspace(segments: string[]): Promise<PathListResult> {
+  private async listStatusWorkspace(segments: string[], caller: PathCallerContext): Promise<PathListResult> {
+    requireSlotKey(
+      caller,
+      "/status/workspace",
+      "/status/attachments/{attachmentId}/currentWorkspace or /status/workspaces/{id}"
+    );
     if (segments.length === 0) {
       return {
         ok: true,
@@ -1014,9 +1068,10 @@ class ShellModel implements ShellModelAPI {
     return notFoundList();
   }
 
-  private async getStatusPanes(segments: string[]): Promise<PathGetResult> {
+  private async getStatusPanes(segments: string[], caller: PathCallerContext): Promise<PathGetResult> {
     if (segments.length === 0) {
-      const panes = await this.host.listPanes();
+      const slotKey = requireSlotKey(caller, "/status/panes", "/status/workspaces/{id}/panes");
+      const panes = await this.host.listPanes({ slotKey });
       return {
         ok: true,
         found: true,
@@ -1053,9 +1108,10 @@ class ShellModel implements ShellModelAPI {
     return notFoundGet();
   }
 
-  private async listStatusPanes(segments: string[]): Promise<PathListResult> {
+  private async listStatusPanes(segments: string[], caller: PathCallerContext): Promise<PathListResult> {
     if (segments.length === 0) {
-      const panes = await this.host.listPanes();
+      const slotKey = requireSlotKey(caller, "/status/panes", "/status/workspaces/{id}/panes");
+      const panes = await this.host.listPanes({ slotKey });
       return {
         ok: true,
         found: true,
@@ -1194,13 +1250,20 @@ class ShellModel implements ShellModelAPI {
     return { ok: true, value: result.value };
   }
 
-  private async getWorkspaceRootSnapshot() {
-    const workspace = await this.host.getWorkspaceStatus();
-    const workspaces = await this.host.listWorkspaces();
-    const panes = await this.host.listPanes();
-    const app = await this.host.getAppStatus();
+  private async getWorkspaceRootSnapshot(caller: PathCallerContext) {
+    // The root snapshot mixes implicit-current workspace/pane fields with
+    // aggregates. If caller has no attachment, omit those fields — external
+    // callers compose explicit subtrees (/status/workspaces/{id}, etc.)
+    // instead of receiving a half-populated default-slot snapshot.
+    const slotKey = caller.attachmentId;
+    const [workspace, workspaces, panes, app] = await Promise.all([
+      slotKey ? this.host.getWorkspaceStatus({ slotKey }) : null,
+      this.host.listWorkspaces(),
+      slotKey ? this.host.listPanes({ slotKey }) : [],
+      this.host.getAppStatus()
+    ]);
     return {
-      ...statePropertySnapshot(workspace, WORKSPACE_STATE_PROPERTIES, "alias"),
+      ...(workspace ? statePropertySnapshot(workspace, WORKSPACE_STATE_PROPERTIES, "alias") : {}),
       workspaces: Object.fromEntries(
         workspaces.map((entry) => [entry.id, entry])
       ),
@@ -1210,7 +1273,7 @@ class ShellModel implements ShellModelAPI {
       ),
       status: {
         app,
-        workspace,
+        ...(workspace ? { workspace } : {}),
         panes: Object.fromEntries(
           panes.map((pane) => [pane.id, toPaneStatusSnapshot(pane)])
         )
@@ -1717,4 +1780,20 @@ function toPathMutationError(error: unknown): PathSetResult & PathCallResult {
 
 function throwPathError<T>(code: PathErrorCode, message: string): T {
   throw new ModelPathError(code, message);
+}
+
+/**
+ * Implicit-current guard: paths like /status/workspace or /title only make
+ * sense for a caller with attachment context (preload/WS clients). External
+ * HTTP/CLI callers get INVALID_VALUE with a pointer at the explicit-target
+ * equivalent so they don't depend on transport-dependent semantics.
+ */
+function requireSlotKey(caller: PathCallerContext, attemptedPath: string, suggested: string): string {
+  if (!caller.attachmentId) {
+    throw new ModelPathError(
+      "INVALID_VALUE",
+      `${attemptedPath} requires attachment context; use ${suggested}`
+    );
+  }
+  return caller.attachmentId;
 }

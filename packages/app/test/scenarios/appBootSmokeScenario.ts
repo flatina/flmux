@@ -213,7 +213,7 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
         };
       }>(`${appOrigin}/api/model/path/get`, {
         clientId,
-        path: "/status/panes"
+        path: `/status/workspaces/${secondWorkspaceId}/panes`
       });
       return Object.values(panes.result.value).find((pane) => pane.kind === "inspector")?.id ?? null;
     }, { timeoutMs: 20_000, intervalMs: 250, label: "inspector pane id after popup pick" });

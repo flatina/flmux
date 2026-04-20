@@ -78,6 +78,12 @@ export function createFlmuxHostRequestHandlers(options: {
     return shellModel;
   };
 
+  const resolvePreloadCaller = (incoming?: PathCallerContext): PathCallerContext | undefined => {
+    const attachmentId = options.getCallerAttachmentId?.(options.getCallerViewId()) ?? null;
+    if (!attachmentId) return incoming;
+    return { ...(incoming ?? {}), attachmentId: incoming?.attachmentId ?? attachmentId };
+  };
+
   return {
     "flmux.getConfig": () => buildConfig(),
 
@@ -130,19 +136,23 @@ export function createFlmuxHostRequestHandlers(options: {
       return { ok: true as const };
     },
 
-    "shellModel.path.get": (params: { path: string }) => {
+    // Inject caller.attachmentId from the view's bound attachment on every
+    // shellModel.path.* RPC so the model layer can route slot-aware reads
+    // (/status/workspace/*) and mutations (setActive*, createPane with
+    // implicit ws, etc.) without relying on defaultSlotKey.
+    "shellModel.path.get": (params: { path: string; caller?: PathCallerContext }) => {
       const shellModel = requireShellModel("shellModel.path.get");
-      return shellModel.pathGet(params.path);
+      return shellModel.pathGet(params.path, resolvePreloadCaller(params.caller));
     },
 
-    "shellModel.path.list": (params: { path: string }) => {
+    "shellModel.path.list": (params: { path: string; caller?: PathCallerContext }) => {
       const shellModel = requireShellModel("shellModel.path.list");
-      return shellModel.pathList(params.path);
+      return shellModel.pathList(params.path, resolvePreloadCaller(params.caller));
     },
 
-    "shellModel.path.set": (params: { path: string; value: unknown }) => {
+    "shellModel.path.set": (params: { path: string; value: unknown; caller?: PathCallerContext }) => {
       const shellModel = requireShellModel("shellModel.path.set");
-      return shellModel.pathSet(params.path, params.value);
+      return shellModel.pathSet(params.path, params.value, resolvePreloadCaller(params.caller));
     },
 
     "shellModel.path.call": async (params: {
@@ -151,14 +161,7 @@ export function createFlmuxHostRequestHandlers(options: {
       caller?: PathCallerContext;
     }) => {
       const shellModel = requireShellModel("shellModel.path.call");
-      // Inject caller.attachmentId from the view's bound attachment so the
-      // model layer can route slot-aware mutations (setActive*, createPane
-      // with implicit ws, etc.) without relying on defaultSlotKey.
-      const attachmentId = options.getCallerAttachmentId?.(options.getCallerViewId()) ?? null;
-      const caller: PathCallerContext | undefined = attachmentId
-        ? { ...(params.caller ?? {}), attachmentId: params.caller?.attachmentId ?? attachmentId }
-        : params.caller;
-      const result = await shellModel.pathCall(params.path, params.args, caller);
+      const result = await shellModel.pathCall(params.path, params.args, resolvePreloadCaller(params.caller));
       if (result.ok) {
         const attachMatch = TERMINAL_ATTACH_PATH.exec(params.path);
         if (attachMatch) {

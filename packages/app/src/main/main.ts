@@ -110,7 +110,15 @@ const userAuthorityRegistry: WebModeUserAuthorityRegistry | null = runtimeMode =
  * this long before tearing down their authority. Gives legitimate tab
  * refresh + next-login windows time to reconnect without paying the
  * cost of a full ShellCore rebuild. Tunable; 5 min is the default dev
- * value. */
+ * value.
+ *
+ * When token revocation lands: narrowing a user's `allow_paths` should
+ * close each of that user's live WS attachments with close-code 4001
+ * (FLMUX_CLOSE_POLICY_CHANGED). The browser's WS close handler then
+ * triggers a fresh `/api/shell/bootstrap` → new attachmentId under new
+ * policy, piggybacking on the existing `rebootstrap-required` path.
+ * Intentionally NOT implemented as a synthetic shellCore.event — that
+ * would muddy the "events describe shell state" contract from B1b. */
 const AUTHORITY_EVICTION_GRACE_MS = 5 * 60 * 1000;
 const pendingAuthorityEvictionByUser = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -349,6 +357,9 @@ function releaseView(viewId: number) {
   if (attachmentId) {
     viewIdToAttachmentId.delete(viewId);
     attachmentRegistry.markDisconnected(attachmentId, (state) => {
+      // Order matters: read userId, delete the entry, THEN schedule.
+      // maybeScheduleAuthorityEviction → countUserAttachments reads the
+      // same map and relies on the entry being gone to count zero.
       const userId = attachmentIdToUserId.get(state.attachmentId);
       attachmentIdToUserId.delete(state.attachmentId);
       console.log(`[flmux] attachment ${state.attachmentId} evicted after grace period`);
@@ -518,6 +529,7 @@ const server = startFlmuxServer({
           ensureBufferSubscriber(attachmentId);
         }
         attachmentRegistry.markDisconnected(attachmentId, (state) => {
+          // Same read→delete→schedule ordering as releaseView's onEvict.
           const ownerId = attachmentIdToUserId.get(state.attachmentId);
           attachmentIdToUserId.delete(state.attachmentId);
           console.log(`[flmux] attachment ${state.attachmentId} evicted after grace`);

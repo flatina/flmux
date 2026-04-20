@@ -60,7 +60,7 @@ export async function runWorkspaceResetSmokeScenario(appHandles: AppProcessHandl
       result: { ok: true; value: string };
     }>(`${appOrigin}/api/model/path/set`, {
       clientId,
-      path: "/title",
+      path: `/workspaces/${secondWorkspaceId}/title`,
       value: "Workspace 2 Renamed"
     });
     expect(retitled.result.value).toBe("Workspace 2 Renamed");
@@ -119,7 +119,7 @@ export async function runWorkspaceResetSmokeScenario(appHandles: AppProcessHandl
         };
       }>(`${appOrigin}/api/model/path/get`, {
         clientId,
-        path: "/status/workspace"
+        path: `/status/workspaces/${secondWorkspaceId}`
       });
       return status.result.value.id === secondWorkspaceId &&
         status.result.value.title === "Workspace 2" &&

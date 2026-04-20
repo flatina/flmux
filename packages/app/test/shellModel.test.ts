@@ -26,7 +26,7 @@ describe("shell model direct", () => {
     });
     const model = host.createModel();
 
-    const workspaceStatus = await model.pathGet("/status/workspace");
+    const workspaceStatus = await model.pathGet("/status/workspace", { attachmentId: "test" });
     expect(workspaceStatus).toEqual({
       ok: true,
       found: true,
@@ -38,7 +38,7 @@ describe("shell model direct", () => {
       }
     });
 
-    const paneList = await model.pathList("/panes");
+    const paneList = await model.pathList("/panes", { attachmentId: "test" });
     expect(paneList).toMatchObject({ ok: true, found: true });
     if (paneList.ok && paneList.found) {
       expect(paneList.entries.map((entry) => entry.name)).toEqual(["pane.browser", "pane.term"]);
@@ -64,6 +64,21 @@ describe("shell model direct", () => {
         }
       }
     });
+  });
+
+  it("implicit-current reads/writes require caller.attachmentId; external callers get INVALID_VALUE (B3)", async () => {
+    const host = new TestShellModelHost({
+      workspaceId: "workspace.test",
+      workspaceTitle: "Workspace Test",
+      activePaneId: null,
+      panes: []
+    });
+    const model = host.createModel();
+
+    expect(await model.pathGet("/status/workspace")).toMatchObject({ ok: false, code: "INVALID_VALUE" });
+    expect(await model.pathList("/panes")).toMatchObject({ ok: false, code: "INVALID_VALUE" });
+    expect(await model.pathGet("/status/panes")).toMatchObject({ ok: false, code: "INVALID_VALUE" });
+    expect(await model.pathSet("/title", "Rename")).toMatchObject({ ok: false, code: "INVALID_VALUE" });
   });
 
   it("exposes /status/attachments/* and /status/workspaces/{id}/* explicit-target reads (B1e)", async () => {
@@ -176,7 +191,7 @@ describe("shell model direct", () => {
       found: true,
       value: createdValue.workspace
     });
-    expect(await model.pathGet("/status/workspace")).toEqual({
+    expect(await model.pathGet("/status/workspace", { attachmentId: "test" })).toEqual({
       ok: true,
       found: true,
       value: createdValue.workspace
@@ -224,7 +239,7 @@ describe("shell model direct", () => {
       }
     });
 
-    const status = await model.pathGet("/status/workspace");
+    const status = await model.pathGet("/status/workspace", { attachmentId: "test" });
     expect(status).toMatchObject({ ok: true, found: true, value: { id: "workspace.test", paneCount: 2 } });
   });
 
@@ -251,14 +266,13 @@ describe("shell model direct", () => {
       ok: true,
       value: "Flmux Test"
     });
-    expect(await model.pathSet("/title", "Workspace Renamed")).toEqual({
+    expect(await model.pathSet("/title", "Workspace Renamed", { attachmentId: "test" })).toEqual({
       ok: true,
       value: "Workspace Renamed"
     });
     expect(await model.pathSet("/workspaces/workspace.test/title", "Workspace Explicit")).toEqual({
-      ok: false,
-      code: "NOT_WRITABLE",
-      error: "Path is not writable"
+      ok: true,
+      value: "Workspace Explicit"
     });
     expect(await model.pathGet("/panes/pane.browser/browser")).toEqual({
       ok: true,
@@ -289,7 +303,7 @@ describe("shell model direct", () => {
       found: true,
       entries: [
         { name: "id", path: "/workspaces/workspace.test/id", kind: "leaf", writable: false },
-        { name: "title", path: "/workspaces/workspace.test/title", kind: "leaf", writable: false },
+        { name: "title", path: "/workspaces/workspace.test/title", kind: "leaf", writable: true },
         { name: "paneCount", path: "/workspaces/workspace.test/paneCount", kind: "leaf", writable: false }
       ]
     });
@@ -315,7 +329,8 @@ describe("shell model direct", () => {
 
     expect(host.calls.setScopedProperty).toEqual([
       { target: { scope: "app" }, key: "title", value: "Flmux Test" },
-      { target: { scope: "workspace" }, key: "title", value: "Workspace Renamed" }
+      { target: { scope: "workspace", workspaceId: "workspace.test" }, key: "title", value: "Workspace Renamed" },
+      { target: { scope: "workspace", workspaceId: "workspace.test" }, key: "title", value: "Workspace Explicit" }
     ]);
     expect(host.calls.setPaneParams).toEqual([
       {
@@ -327,13 +342,13 @@ describe("shell model direct", () => {
     ]);
     expect(await model.pathSet("/workspaces/workspace.missing/title", "Missing")).toEqual({
       ok: false,
-      code: "NOT_WRITABLE",
-      error: "Path is not writable"
+      code: "NOT_FOUND",
+      error: "Workspace 'workspace.missing' not found"
     });
     expect(await model.pathSet("/workspaces/new/title", "Reserved")).toEqual({
       ok: false,
-      code: "NOT_WRITABLE",
-      error: "Path is not writable"
+      code: "NOT_FOUND",
+      error: "Workspace 'new' not found"
     });
   });
 

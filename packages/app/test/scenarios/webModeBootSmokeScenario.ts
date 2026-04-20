@@ -192,7 +192,7 @@ export async function runWebModeBootSmokeScenario(
       };
     }>(`${origin}/api/model/path/get`, {
       clientId: authorityClientId,
-      path: "/status/panes"
+      path: "/status/workspaces/workspace.1/panes"
     }, {
       headers: { cookie: cookieHeader }
     });
@@ -255,7 +255,7 @@ export async function runWebModeBootSmokeScenario(
     };
   }>(`${origin}/api/model/path/get`, {
     clientId: betaClients.clients[0].clientId,
-    path: "/status/panes"
+    path: "/status/workspaces/workspace.1/panes"
   }, {
     headers: { authorization: `Bearer ${betaTokenResult.token}` }
   });

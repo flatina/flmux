@@ -49,6 +49,11 @@ export interface FlmuxSessionSaveLayouts {
 }
 
 // ── Host requests (renderer calls main) ──
+//
+// See internal docs — only `shellModel.path.*` mirrors to HTTP.
+// Other members (`flmux.*`) are preload-only; adding new RPCs defaults to
+// preload-only unless they slot into the ShellModelAPI path surface.
+//
 
 export interface FlmuxLocalExtensionLoadEntry {
   id: string;
@@ -112,15 +117,15 @@ export type FlmuxHostRequests = {
     response: FlmuxShellBootstrapResponse;
   };
   "shellModel.path.get": {
-    params: { path: string };
+    params: { path: string; caller?: PathCallerContext };
     response: PathGetResult;
   };
   "shellModel.path.list": {
-    params: { path: string };
+    params: { path: string; caller?: PathCallerContext };
     response: PathListResult;
   };
   "shellModel.path.set": {
-    params: { path: string; value: unknown };
+    params: { path: string; value: unknown; caller?: PathCallerContext };
     response: PathSetResult;
   };
   "shellModel.path.call": {
@@ -171,6 +176,12 @@ export type ClientRegistrationResult =
   | { status: "ok"; clientId: string }
   | { status: "rebootstrap-required" };
 
+// HTTP envelopes deliberately omit `caller` — only preload + post-auth WS
+// (which route through `hostRequests.ts`) are trusted to inject caller
+// context. External HTTP clients that try to forge attachmentId /
+// sourcePaneId via the request body would otherwise bypass the
+// implicit-current narrowing at the model layer.
+
 export interface ClientScopedPathGetInput {
   clientId: string;
   path: string;
@@ -191,5 +202,4 @@ export interface ClientScopedPathCallInput {
   clientId: string;
   path: string;
   args?: Record<string, unknown>;
-  caller?: PathCallerContext;
 }

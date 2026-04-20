@@ -27,11 +27,13 @@ export interface ShellPathEntry {
 export interface PathCallerContext {
   sourcePaneId?: string;
   // Phase B: routing/context hints. `attachmentId` names the attachment
-  // whose view-state a mutation targets (e.g. /workspaces/{id}/setActive);
-  // `workspaceId` resolves implicit-current-workspace paths (/panes/new,
-  // /status/workspace/*) for preload callers. Both optional here — wired
-  // in later Phase B steps. External callers (CLI, raw HTTP) without an
-  // attachment leave them unset and hit INVALID_VALUE on paths that need
+  // whose view-state a mutation/read targets — the slot key for
+  // implicit-current paths like /status/workspace/*, /panes list, /title
+  // set, and attachment-scoped mutations like /workspaces/{id}/setActive.
+  // `workspaceId` is a per-call hint for /panes/new's resolution chain
+  // (args > caller.workspaceId > slot active). Both populated by preload
+  // (via hostRequests.ts, view→attachmentId) or post-auth WS; external
+  // HTTP/CLI leave them unset and hit INVALID_VALUE on paths that need
   // the resolution.
   attachmentId?: string;
   workspaceId?: string;
@@ -204,9 +206,9 @@ export interface ShellTerminalDelegate {
 }
 
 export interface ShellModelAPI {
-  pathGet(path: string): Promise<PathGetResult>;
-  pathList(path: string): Promise<PathListResult>;
-  pathSet(path: string, value: unknown): Promise<PathSetResult>;
+  pathGet(path: string, caller?: PathCallerContext): Promise<PathGetResult>;
+  pathList(path: string, caller?: PathCallerContext): Promise<PathListResult>;
+  pathSet(path: string, value: unknown, caller?: PathCallerContext): Promise<PathSetResult>;
   pathCall(path: string, args?: Record<string, unknown>, caller?: PathCallerContext): Promise<PathCallResult>;
 }
 

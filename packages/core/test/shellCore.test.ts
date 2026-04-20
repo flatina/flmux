@@ -238,7 +238,7 @@ describe("ShellCore", () => {
     const terminal = core.createTerminalDelegate();
     const shellModel = createShellModel({ host: core, terminal });
 
-    const result = await shellModel.pathGet("/status/workspace");
+    const result = await shellModel.pathGet("/status/workspaces/workspace.1");
     expect(result).toMatchObject({
       ok: true,
       found: true,

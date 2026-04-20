@@ -337,7 +337,7 @@ describe("desktop shell authority bridge", () => {
     const bootstrap = authority.shellBootstrap("local");
     expect(bootstrap.snapshot.workspaces).toHaveLength(1);
     expect(bootstrap.snapshot.activeWorkspaceId).toBe(bootstrap.snapshot.workspaces[0].id);
-    const status = await authority.shellModel.pathGet("/status/workspace");
+    const status = await authority.shellModel.pathGet("/status/workspace", { attachmentId: "local" });
     expect(status).toMatchObject({ ok: true, found: true });
   });
 
@@ -382,19 +382,20 @@ describe("desktop shell authority bridge", () => {
       authority.shellBootstrap("local").snapshot.workspaces[0].id
     ][0].id;
 
-    const withoutCaller = await authority.router.pathCall({
-      clientId: authority.clientId,
-      path: "/bus/publish",
-      args: { topic: "demo.ping", payload: { n: 1 } }
-    });
+    // Router dropped caller on B3 cleanup — caller semantics live on the
+    // preload-side shellModel entry point. Go through shellModel directly
+    // to exercise /bus/publish's caller.sourcePaneId requirement.
+    const withoutCaller = await authority.shellModel.pathCall(
+      "/bus/publish",
+      { topic: "demo.ping", payload: { n: 1 } }
+    );
     expect(withoutCaller).toMatchObject({ ok: false });
 
-    const withCaller = await authority.router.pathCall({
-      clientId: authority.clientId,
-      path: "/bus/publish",
-      args: { topic: "demo.ping", payload: { n: 1 } },
-      caller: { sourcePaneId: paneId }
-    });
+    const withCaller = await authority.shellModel.pathCall(
+      "/bus/publish",
+      { topic: "demo.ping", payload: { n: 1 } },
+      { sourcePaneId: paneId }
+    );
     expect(withCaller).toMatchObject({ ok: true });
   });
 

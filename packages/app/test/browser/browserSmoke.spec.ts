@@ -22,7 +22,7 @@ test.beforeAll(async () => {
   const tokenProcess = spawn(
     "bun",
     ["src/cli.ts", "tokens", "bootstrap", "--auth-dir", authDir],
-    { cwd: APP_DIR, shell: process.platform === "win32" }
+    { cwd: APP_DIR }
   );
   const tokenOutput = await collectOutput(tokenProcess);
   const bootstrap = JSON.parse(tokenOutput) as { token: string };
@@ -33,7 +33,6 @@ test.beforeAll(async () => {
     {
       cwd: APP_DIR,
       env: { ...process.env, FLMUX_AUTH_DIR: authDir, FLMUX_DEV_MODE: "1" },
-      shell: process.platform === "win32"
     }
   );
 
@@ -315,7 +314,7 @@ test("C6 allow_paths.read gates broadcast forwarder (B3)", async ({ browser }) =
   const issueProc = spawn(
     "bun",
     ["src/cli.ts", "tokens", "issue", "--user", "restricted", "--auth-dir", handle.authDir],
-    { cwd: APP_DIR, shell: process.platform === "win32" }
+    { cwd: APP_DIR }
   );
   const { token: restrictedToken } = JSON.parse(await collectOutput(issueProc)) as { token: string };
 
@@ -386,7 +385,7 @@ test("C5 authority evicts after attachment+authority grace", async ({ browser })
   try {
     const tokenProc = spawn(
       "bun", ["src/cli.ts", "tokens", "bootstrap", "--auth-dir", authDir],
-      { cwd: APP_DIR, shell: process.platform === "win32" }
+      { cwd: APP_DIR }
     );
     const { token } = JSON.parse(await collectOutput(tokenProc)) as { token: string };
 
@@ -401,7 +400,6 @@ test("C5 authority evicts after attachment+authority grace", async ({ browser })
           FLMUX_ATTACHMENT_GRACE_MS: "300",
           FLMUX_AUTHORITY_EVICTION_GRACE_MS: "300"
         },
-        shell: process.platform === "win32"
       }
     );
     const origin = await waitForOrigin(appProc);

@@ -6,7 +6,6 @@ import type {
 import type { FlmuxRuntimeMode } from "../shared/runtimeMode";
 import { DESKTOP_ATTACHMENT_ID, type DesktopShellAuthority } from "./desktopShellAuthority";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
-import type { TerminalService } from "./terminal-service";
 import type { DiscoveredLocalExtension } from "./localExtensions";
 import { createLocalExtensionLoadEntries } from "./localExtensions";
 
@@ -39,7 +38,6 @@ export function createFlmuxHostRequestHandlers(options: {
   /** Resolve the caller's `FlmuxShellModelRouter` — used for clientId
    * minting at register time. Same input shape as `resolveShellModel`. */
   resolveShellModelRouter(viewId: number, hints?: { attachmentId?: string }): FlmuxShellModelRouter | null;
-  terminalService: TerminalService;
   localExtensions: DiscoveredLocalExtension[];
   desktopAuthority: DesktopShellAuthority | null;
   /** Bind a freshly-registered view to its attachment. Returning
@@ -197,60 +195,6 @@ export function createFlmuxHostRequestHandlers(options: {
       }
     },
 
-    "flmux.terminal.create": async (params: Parameters<TerminalService["create"]>[0]) => {
-      const viewId = options.getCallerViewId();
-      let addedSubscriber = false;
-      if (params.paneId) {
-        addedSubscriber = !options.paneSubscribers.get(params.paneId)?.has(viewId);
-        addPaneSubscriber(options.paneSubscribers, params.paneId, viewId);
-      }
-      try {
-        return await options.terminalService.create(params);
-      } catch (error) {
-        if (params.paneId && addedSubscriber) {
-          removePaneSubscriber(options.paneSubscribers, params.paneId, viewId);
-        }
-        throw error;
-      }
-    },
-
-    "flmux.terminal.adopt": async (params: Parameters<TerminalService["adoptByPaneId"]>[0]) => {
-      const viewId = options.getCallerViewId();
-      const addedSubscriber = !options.paneSubscribers.get(params.paneId)?.has(viewId);
-      addPaneSubscriber(options.paneSubscribers, params.paneId, viewId);
-      try {
-        const result = await options.terminalService.adoptByPaneId(params);
-        if (result.outcome !== "adopted" && addedSubscriber) {
-          removePaneSubscriber(options.paneSubscribers, params.paneId, viewId);
-        }
-        return result;
-      } catch (error) {
-        if (addedSubscriber) {
-          removePaneSubscriber(options.paneSubscribers, params.paneId, viewId);
-        }
-        throw error;
-      }
-    },
-
-    "flmux.terminal.write": (params: Parameters<TerminalService["write"]>[0]) => {
-      return options.terminalService.write(params);
-    },
-
-    "flmux.terminal.resize": (params: Parameters<TerminalService["resize"]>[0]) => {
-      return options.terminalService.resize(params);
-    },
-
-    "flmux.terminal.history": (params: Parameters<TerminalService["history"]>[0]) => {
-      return options.terminalService.history(params);
-    },
-
-    "flmux.terminal.kill": (params: Parameters<TerminalService["kill"]>[0]) => {
-      return options.terminalService.kill(params);
-    },
-
-    "flmux.terminal.listRoots": () => {
-      return options.terminalService.listRoots();
-    }
   };
 }
 

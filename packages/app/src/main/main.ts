@@ -446,7 +446,6 @@ const rendererRpc = BrowserView.defineRPC<FlmuxRendererBridgeSchema>({
       paneSubscribers,
       resolveShellModel,
       resolveShellModelRouter,
-      terminalService,
       localExtensions,
       desktopAuthority,
       onClientRegister: (viewId) => {
@@ -484,7 +483,6 @@ rendererRpc.webHandler.onWebClientConnected = (client) => {
     paneSubscribers,
     resolveShellModel,
     resolveShellModelRouter,
-    terminalService,
     localExtensions,
     desktopAuthority,
     onClientRegister: (registeredViewId, binding) => {

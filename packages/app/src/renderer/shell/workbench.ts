@@ -99,7 +99,7 @@ export class FlmuxWorkbench {
     private readonly hostProxy: FlmuxHostRequestProxy
   ) {
     this.lifecyclePolicy = getFlmuxRendererLifecyclePolicy(config.mode);
-    this.terminalHost = createTerminalHost(hostProxy);
+    this.terminalHost = createTerminalHost();
     registerBuiltinPaneDescriptors(this.paneRegistry, {
       installRoot: config.projectDir,
       resolveTerminalCwd: resolveTerminalCwdFromRoot

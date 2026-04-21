@@ -1,34 +1,13 @@
-import type { TerminalBackend } from "@flmux/core/terminal/backend";
 import type { TerminalRuntimeEvent } from "../shared/terminal";
-import type { FlmuxHostRequestProxy } from "../shared/rendererBridge";
 
-export interface TerminalHostAPI extends TerminalBackend {}
+export interface TerminalHostAPI {
+  subscribe(handler: (event: TerminalRuntimeEvent) => void): () => void;
+}
 
 const terminalEventSubscribers = new Set<(event: TerminalRuntimeEvent) => void>();
 
-export function createTerminalHost(proxy: FlmuxHostRequestProxy): TerminalHostAPI {
+export function createTerminalHost(): TerminalHostAPI {
   return {
-    adoptByPaneId(input) {
-      return proxy["flmux.terminal.adopt"](input);
-    },
-    create(input) {
-      return proxy["flmux.terminal.create"](input);
-    },
-    write(input) {
-      return proxy["flmux.terminal.write"](input);
-    },
-    resize(input) {
-      return proxy["flmux.terminal.resize"](input);
-    },
-    history(input) {
-      return proxy["flmux.terminal.history"](input);
-    },
-    kill(input) {
-      return proxy["flmux.terminal.kill"](input);
-    },
-    listRoots() {
-      return proxy["flmux.terminal.listRoots"]();
-    },
     subscribe(handler) {
       terminalEventSubscribers.add(handler);
       return () => {

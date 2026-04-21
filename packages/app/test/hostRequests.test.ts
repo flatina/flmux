@@ -3,48 +3,15 @@ import type { FlmuxSessionSaveLayouts } from "../src/shared/rendererBridge";
 import { createFlmuxHostRequestHandlers } from "../src/main/hostRequests";
 
 describe("flmux host requests", () => {
-  it("binds registration and terminal ownership to the caller view", async () => {
+  it("binds registration and /terminal/attach subscription to the caller view", async () => {
     const paneSubscribers = new Map<string, Set<number>>();
     const registerClient = mock((viewId: number) => ({ clientId: `client-${viewId}` }));
     const onClientRegister = mock((_viewId: number) => {});
-    const create = mock(async (input: { paneId?: string }) => ({
-      ok: true as const,
-      rootKey: "root_123",
-      runtimeId: "term_123",
-      history: "",
-      terminal: {
-        rootKey: "root_123",
-        rootDir: "C:/workspace",
-        runtimeId: "term_123",
-        cwd: "C:/workspace",
-        alive: true,
-        createdAt: "2026-04-16T00:00:00.000Z",
-        updatedAt: "2026-04-16T00:00:00.000Z",
-        commandCount: 0
-      }
-    }));
-    const adoptByPaneId = mock(async () => ({
-      ok: true as const,
-      outcome: "adopted" as const,
-      rootKey: "root_123",
-      runtimeId: "term_123",
-      history: "",
-      terminal: {
-        rootKey: "root_123",
-        rootDir: "C:/workspace",
-        runtimeId: "term_123",
-        cwd: "C:/workspace",
-        alive: true,
-        createdAt: "2026-04-16T00:00:00.000Z",
-        updatedAt: "2026-04-16T00:00:00.000Z",
-        commandCount: 0
-      }
-    }));
 
     const pathGet = mock(async () => ({ ok: true as const, found: false, value: undefined }));
     const pathList = mock(async () => ({ ok: true as const, found: false, entries: [] }));
     const pathSet = mock(async () => ({ ok: true as const, value: null }));
-    const pathCall = mock(async () => ({ ok: true as const, value: null }));
+    const pathCall = mock(async () => ({ ok: true as const, value: { runtimeId: "term_123" } }));
     const shellModelStub = {
       pathGet,
       pathList,
@@ -68,17 +35,6 @@ describe("flmux host requests", () => {
         pathCall: async () => ({ ok: true })
       }),
       resolveShellModel: () => shellModelStub,
-      terminalService: {
-        create,
-        adoptByPaneId,
-        write: async () => ({ ok: true, accepted: true, runtimeId: "term_123", history: "", terminal: null }),
-        resize: async () => ({ ok: true, accepted: true, runtimeId: "term_123", terminal: null }),
-        history: async () => ({ ok: true, runtimeId: "term_123", data: "" }),
-        kill: async () => ({ ok: true, rootKey: "root_123", runtimeId: "term_123", killed: true, terminal: null }),
-        listRoots: async () => [],
-        subscribe: () => () => {},
-        dispose: () => {}
-      },
       localExtensions: [],
       desktopAuthority: null,
       onClientRegister
@@ -95,22 +51,46 @@ describe("flmux host requests", () => {
       clientId: "client-77"
     });
     expect(onClientRegister).toHaveBeenCalledWith(77, undefined);
-
-    await handlers["flmux.terminal.create"]({
-      paneId: "pane.alpha",
-      rootDir: "C:/workspace",
-      cwd: "."
-    });
-    expect(paneSubscribers.get("pane.alpha")?.has(77)).toBe(true);
-
-    await handlers["flmux.terminal.adopt"]({
-      paneId: "pane.beta",
-      rootDir: "C:/workspace"
-    });
-    expect(paneSubscribers.get("pane.beta")?.has(77)).toBe(true);
     expect(registerClient).toHaveBeenCalledWith(77);
-    expect(create).toHaveBeenCalledTimes(1);
-    expect(adoptByPaneId).toHaveBeenCalledTimes(1);
+
+    // Attach path pre-subscribes the caller viewId before the RPC; the
+    // model layer then owns adopt-or-create routing through shellCore.
+    await handlers["shellModel.path.call"]({ path: "/panes/pane.alpha/terminal/attach" });
+    expect(paneSubscribers.get("pane.alpha")?.has(77)).toBe(true);
+    expect(pathCall).toHaveBeenCalledWith("/panes/pane.alpha/terminal/attach", undefined, undefined);
+  });
+
+  it("rolls back the attach pre-subscribe when the path.call fails", async () => {
+    const paneSubscribers = new Map<string, Set<number>>();
+    const pathCall = mock(async () => ({ ok: false as const, code: "NOT_FOUND" as const, error: "missing" }));
+    const handlers = createFlmuxHostRequestHandlers({
+      mode: "desktop",
+      getAppOrigin: () => "http://127.0.0.1:0",
+      getProjectDir: () => ".",
+      getAuthorityClientId: () => null,
+      getCallerViewId: () => 42,
+      paneSubscribers,
+      resolveShellModelRouter: () => ({
+        registerClient: () => ({ clientId: "client-42" }),
+        listClients: async () => [],
+        pathGet: async () => ({ ok: true }),
+        pathList: async () => ({ ok: true }),
+        pathSet: async () => ({ ok: true }),
+        pathCall: async () => ({ ok: true })
+      }),
+      resolveShellModel: () => ({
+        pathGet: async () => ({ ok: true, found: false, value: undefined }),
+        pathList: async () => ({ ok: true, found: false, entries: [] }),
+        pathSet: async () => ({ ok: true, value: null }),
+        pathCall
+      }),
+      localExtensions: [],
+      desktopAuthority: null
+    });
+
+    const result = await handlers["shellModel.path.call"]({ path: "/panes/pane.gone/terminal/attach" });
+    expect(result.ok).toBe(false);
+    expect(paneSubscribers.has("pane.gone")).toBe(false);
   });
 
   it("web mode: shellModel.path.* routes through the injected shellModel; bootstrap stays desktop-only", async () => {
@@ -140,19 +120,6 @@ describe("flmux host requests", () => {
         pathCall: async () => ({ ok: true })
       }),
       resolveShellModel: () => shellModelStub,
-      terminalService: {
-        create: async () => {
-          throw new Error("not used");
-        },
-        adoptByPaneId: async () => ({ ok: true, outcome: "not_found" }),
-        write: async () => ({ ok: true, accepted: true, runtimeId: "term_123", history: "", terminal: null }),
-        resize: async () => ({ ok: true, accepted: true, runtimeId: "term_123", terminal: null }),
-        history: async () => ({ ok: true, runtimeId: "term_123", data: "" }),
-        kill: async () => ({ ok: true, rootKey: "root_123", runtimeId: "term_123", killed: true, terminal: null }),
-        listRoots: async () => [],
-        subscribe: () => () => {},
-        dispose: () => {}
-      },
       localExtensions: [],
       desktopAuthority: null,
       onClientRegister
@@ -202,7 +169,6 @@ describe("flmux host requests", () => {
         pathCall: async () => ({ ok: true })
       }),
       resolveShellModel: () => ({ pathGet, pathList, pathSet, pathCall }),
-      terminalService: {} as never,
       localExtensions: [],
       desktopAuthority: null
     });
@@ -244,19 +210,6 @@ describe("flmux host requests", () => {
         pathSet: async () => ({ ok: true, value: null }),
         pathCall: async () => ({ ok: true, value: null })
       }),
-      terminalService: {
-        create: async () => {
-          throw new Error("not used");
-        },
-        adoptByPaneId: async () => ({ ok: true, outcome: "not_found" }),
-        write: async () => ({ ok: true, accepted: true, runtimeId: "term_x", history: "", terminal: null }),
-        resize: async () => ({ ok: true, accepted: true, runtimeId: "term_x", terminal: null }),
-        history: async () => ({ ok: true, runtimeId: "term_x", data: "" }),
-        kill: async () => ({ ok: true, rootKey: "root_x", runtimeId: "term_x", killed: true, terminal: null }),
-        listRoots: async () => [],
-        subscribe: () => () => {},
-        dispose: () => {}
-      },
       localExtensions: [],
       desktopAuthority: null,
       onClientRegister
@@ -295,19 +248,6 @@ describe("flmux host requests", () => {
         pathSet: async () => ({ ok: true, value: null }),
         pathCall: async () => ({ ok: true, value: null })
       }),
-      terminalService: {
-        create: async () => {
-          throw new Error("not used");
-        },
-        adoptByPaneId: async () => ({ ok: true, outcome: "not_found" }),
-        write: async () => ({ ok: true, accepted: true, runtimeId: "term_y", history: "", terminal: null }),
-        resize: async () => ({ ok: true, accepted: true, runtimeId: "term_y", terminal: null }),
-        history: async () => ({ ok: true, runtimeId: "term_y", data: "" }),
-        kill: async () => ({ ok: true, rootKey: "root_y", runtimeId: "term_y", killed: true, terminal: null }),
-        listRoots: async () => [],
-        subscribe: () => () => {},
-        dispose: () => {}
-      },
       localExtensions: [],
       desktopAuthority: null,
       onClientRegister
@@ -331,19 +271,6 @@ describe("flmux host requests", () => {
       paneSubscribers: new Map(),
       resolveShellModelRouter: () => null,
       resolveShellModel: () => null,
-      terminalService: {
-        create: async () => {
-          throw new Error("not used");
-        },
-        adoptByPaneId: async () => ({ ok: true, outcome: "not_found" }),
-        write: async () => ({ ok: true, accepted: true, runtimeId: "t", history: "", terminal: null }),
-        resize: async () => ({ ok: true, accepted: true, runtimeId: "t", terminal: null }),
-        history: async () => ({ ok: true, runtimeId: "t", data: "" }),
-        kill: async () => ({ ok: true, rootKey: "r", runtimeId: "t", killed: true, terminal: null }),
-        listRoots: async () => [],
-        subscribe: () => () => {},
-        dispose: () => {}
-      },
       localExtensions: [],
       desktopAuthority: null
     });
@@ -362,19 +289,6 @@ describe("flmux host requests", () => {
       paneSubscribers: new Map(),
       resolveShellModelRouter: () => null,
       resolveShellModel: () => null,
-      terminalService: {
-        create: async () => {
-          throw new Error("not used");
-        },
-        adoptByPaneId: async () => ({ ok: true, outcome: "not_found" }),
-        write: async () => ({ ok: true, accepted: true, runtimeId: "t", history: "", terminal: null }),
-        resize: async () => ({ ok: true, accepted: true, runtimeId: "t", terminal: null }),
-        history: async () => ({ ok: true, runtimeId: "t", data: "" }),
-        kill: async () => ({ ok: true, rootKey: "r", runtimeId: "t", killed: true, terminal: null }),
-        listRoots: async () => [],
-        subscribe: () => () => {},
-        dispose: () => {}
-      },
       localExtensions: [],
       desktopAuthority: null
     });

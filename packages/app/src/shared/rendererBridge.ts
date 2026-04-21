@@ -11,17 +11,7 @@ import type {
   WorkspaceStatusSnapshot
 } from "../renderer/shell/types";
 import type { FlmuxRuntimeMode } from "./runtimeMode";
-import type {
-  TerminalAdoptResult,
-  TerminalCreateInput,
-  TerminalCreateResult,
-  TerminalHistoryResult,
-  TerminalKillResult,
-  TerminalResizeResult,
-  TerminalRootStatus,
-  TerminalRuntimeEvent,
-  TerminalWriteResult
-} from "./terminal";
+import type { TerminalRuntimeEvent } from "./terminal";
 
 export interface FlmuxShellSnapshot {
   app: AppStatusSnapshot;
@@ -84,34 +74,6 @@ export type FlmuxHostRequests = {
   "flmux.layout.push": {
     params: FlmuxSessionSaveLayouts;
     response: { ok: true };
-  };
-  "flmux.terminal.create": {
-    params: TerminalCreateInput;
-    response: TerminalCreateResult;
-  };
-  "flmux.terminal.adopt": {
-    params: { rootDir: string; paneId: string };
-    response: TerminalAdoptResult;
-  };
-  "flmux.terminal.write": {
-    params: { rootKey: string; runtimeId: string; data: string };
-    response: TerminalWriteResult;
-  };
-  "flmux.terminal.resize": {
-    params: { rootKey: string; runtimeId: string; cols: number; rows: number };
-    response: TerminalResizeResult;
-  };
-  "flmux.terminal.history": {
-    params: { rootKey: string; runtimeId: string; maxBytes?: number };
-    response: TerminalHistoryResult;
-  };
-  "flmux.terminal.kill": {
-    params: { rootKey: string; runtimeId: string };
-    response: TerminalKillResult;
-  };
-  "flmux.terminal.listRoots": {
-    params: undefined;
-    response: TerminalRootStatus[];
   };
   "flmux.shellBootstrap": {
     params: undefined;

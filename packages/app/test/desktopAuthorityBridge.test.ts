@@ -254,7 +254,7 @@ describe("desktop shell authority bridge", () => {
   });
 
   it("shellModel.path.* preload handler and router.pathCall drive identical core state", async () => {
-    const { authority, terminalService } = await createTestAuthority();
+    const { authority } = await createTestAuthority();
     const preloadHandlers = createFlmuxHostRequestHandlers({
       mode: "desktop",
       getAppOrigin: () => "http://127.0.0.1:0",
@@ -264,7 +264,6 @@ describe("desktop shell authority bridge", () => {
       paneSubscribers: new Map(),
       resolveShellModelRouter: () => authority.router,
       resolveShellModel: () => authority.shellModel,
-      terminalService,
       localExtensions: [],
       desktopAuthority: authority
     });
@@ -303,7 +302,6 @@ describe("desktop shell authority bridge", () => {
       paneSubscribers: new Map(),
       resolveShellModelRouter: () => authority.router,
       resolveShellModel: () => authority.shellModel,
-      terminalService: createTerminalService(createInMemoryTerminalBackend()),
       localExtensions: [],
       desktopAuthority: authority,
       onClientRegister: (vId) => {
@@ -342,7 +340,7 @@ describe("desktop shell authority bridge", () => {
   });
 
   it("terminal attach via shellModel.path.call adds the caller's viewId to paneSubscribers for event forwarding", async () => {
-    const { authority, terminalService } = await createTestAuthority();
+    const { authority } = await createTestAuthority();
     const paneSubscribers = new Map<string, Set<number>>();
     const handlers = createFlmuxHostRequestHandlers({
       mode: "desktop",
@@ -353,7 +351,6 @@ describe("desktop shell authority bridge", () => {
       paneSubscribers,
       resolveShellModelRouter: () => authority.router,
       resolveShellModel: () => authority.shellModel,
-      terminalService,
       localExtensions: [],
       desktopAuthority: authority
     });
@@ -383,7 +380,6 @@ describe("desktop shell authority bridge", () => {
       paneSubscribers,
       resolveShellModelRouter: () => authority.router,
       resolveShellModel: () => authority.shellModel,
-      terminalService,
       localExtensions: [],
       desktopAuthority: authority
     });
@@ -439,7 +435,6 @@ describe("desktop shell authority bridge", () => {
       paneSubscribers: new Map(),
       resolveShellModelRouter: () => authority.router,
       resolveShellModel: () => authority.shellModel,
-      terminalService: createTerminalService(createInMemoryTerminalBackend()),
       localExtensions: [],
       desktopAuthority: authority
     });

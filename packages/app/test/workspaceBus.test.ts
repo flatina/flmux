@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { createWorkspaceBus } from "../src/renderer/shell/workspaceBus";
+import { createWorkspaceBus } from "@flmux/core/shell/workspaceBus";
 
 describe("workspace bus", () => {
   it("continues dispatching when one subscriber throws", () => {

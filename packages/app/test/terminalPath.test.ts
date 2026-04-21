@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { normalizeTerminalRootDir, resolveTerminalCwdFromRoot } from "../src/shared/terminalPath";
+import { normalizeTerminalRootDir, resolveTerminalCwdFromRoot } from "@flmux/core/terminal/path";
 
 describe("terminal path helpers", () => {
   it("normalizes windows roots and resolves relative cwd segments", () => {

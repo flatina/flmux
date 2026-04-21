@@ -1,4 +1,4 @@
-import type { TerminalRuntimeEvent } from "../shared/terminal";
+import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
 
 export interface TerminalHostAPI {
   subscribe(handler: (event: TerminalRuntimeEvent) => void): () => void;

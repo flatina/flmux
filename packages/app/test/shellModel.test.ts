@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { toTerminalRootKey } from "../src/main/terminal-service/rootKey";
+import { toTerminalRootKey } from "@flmux/core/terminal/rootKey";
 import { TestShellModelHost } from "./support/testShellModelHost";
 import { createSyntheticTerminalService } from "./support/syntheticTerminalService";
 
@@ -783,7 +783,7 @@ describe("shell model direct", () => {
         return kind === "sample.chart" || super.hasPaneKind(kind);
       }
 
-      override createPane(input: import("../src/renderer/shell/types").NewPaneInput) {
+      override createPane(input: import("@flmux/core/shell/types").NewPaneInput) {
         this.calls.createPane.push(input);
         return {
           id: "pane.custom",

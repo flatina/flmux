@@ -2,8 +2,8 @@ import type { FitAddon } from "@xterm/addon-fit";
 import type { Terminal as XtermTerminal } from "@xterm/xterm";
 import type { GroupPanelPartInitParameters, IContentRenderer } from "dockview-core";
 import type { TerminalHostAPI } from "../terminalHost";
-import type { ShellModelAPI } from "../shell/types";
-import type { TerminalCreateResult, TerminalRuntimeEvent, TerminalWriteResult } from "../../shared/terminal";
+import type { ShellModelAPI } from "@flmux/core/shell/types";
+import type { TerminalCreateResult, TerminalRuntimeEvent, TerminalWriteResult } from "@flmux/core/terminal/types";
 
 export interface TerminalPaneRendererDependencies {
   shellModel: ShellModelAPI;

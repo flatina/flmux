@@ -8,9 +8,9 @@ import type {
   ShellTerminalDelegate,
   WorkspaceBusEvent,
   WorkspaceStatusSnapshot
-} from "../../src/renderer/shell/types";
-import type { ShellModelAPI } from "../../src/renderer/shell/types";
-import { createShellModel } from "../../src/renderer/shell/model";
+} from "@flmux/core/shell/types";
+import type { ShellModelAPI } from "@flmux/core/shell/types";
+import { createShellModel } from "@flmux/core/shell/model";
 import type {
   TerminalCreateResult,
   TerminalHistoryResult,
@@ -18,8 +18,8 @@ import type {
   TerminalResizeResult,
   TerminalRuntimeEvent,
   TerminalWriteResult
-} from "../../src/shared/terminal";
-import { resolveTerminalCwdFromRoot } from "../../src/shared/terminalPath";
+} from "@flmux/core/terminal/types";
+import { resolveTerminalCwdFromRoot } from "@flmux/core/terminal/path";
 import { createSyntheticTerminalService } from "./syntheticTerminalService";
 
 export type StoredPane =

@@ -9,9 +9,9 @@ import type {
   SequencedShellCoreEvent,
   ShellPaneRecordSnapshot,
   WorkspaceStatusSnapshot
-} from "../renderer/shell/types";
+} from "@flmux/core/shell/types";
 import type { FlmuxRuntimeMode } from "./runtimeMode";
-import type { TerminalRuntimeEvent } from "./terminal";
+import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
 
 export interface FlmuxShellSnapshot {
   app: AppStatusSnapshot;

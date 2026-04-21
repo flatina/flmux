@@ -1,6 +1,6 @@
 import { expect } from "bun:test";
 import { rm } from "node:fs/promises";
-import { callJsonRpcIpc } from "../../src/main/ptyd/jsonRpcIpc";
+import { callJsonRpcIpc } from "@flmux/core/terminal/ptyd/jsonRpcIpc";
 import type { AppProcessHandle } from "../support/realAppSmokeSupport";
 import { loadPtydLockForRootDir } from "../support/ptydCleanup";
 import {

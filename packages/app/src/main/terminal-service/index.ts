@@ -1,4 +1,4 @@
-import type { TerminalBackend } from "./backend";
+import type { TerminalBackend } from "@flmux/core/terminal/backend";
 import { createPtydBackend } from "./ptydBackend";
 
 export interface TerminalService extends TerminalBackend {}
@@ -18,6 +18,6 @@ export function createTerminalService(backend: TerminalBackend = createPtydBacke
   };
 }
 
-export type { TerminalBackend } from "./backend";
+export type { TerminalBackend } from "@flmux/core/terminal/backend";
 export { createInMemoryTerminalBackend } from "./inMemoryBackend";
 export { createPtydBackend } from "./ptydBackend";

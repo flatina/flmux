@@ -10,10 +10,10 @@ import type {
   TerminalRuntimeEvent,
   TerminalRuntimeSummary,
   TerminalWriteResult
-} from "../../shared/terminal";
-import type { TerminalBackend } from "./backend";
-import { toTerminalRootKey } from "./rootKey";
-import { normalizeTerminalRootDir, resolveTerminalCwdFromRoot } from "../../shared/terminalPath";
+} from "@flmux/core/terminal/types";
+import type { TerminalBackend } from "@flmux/core/terminal/backend";
+import { toTerminalRootKey } from "@flmux/core/terminal/rootKey";
+import { normalizeTerminalRootDir, resolveTerminalCwdFromRoot } from "@flmux/core/terminal/path";
 
 interface TerminalRuntimeRecord {
   ownerPaneId: string | null;

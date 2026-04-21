@@ -5,9 +5,9 @@ import type {
   TerminalResizeResult,
   TerminalRuntimeSummary,
   TerminalWriteResult
-} from "../../src/shared/terminal";
-import { toTerminalRootKey } from "../../src/main/terminal-service/rootKey";
-import { normalizeTerminalRootDir, resolveTerminalCwdFromRoot } from "../../src/shared/terminalPath";
+} from "@flmux/core/terminal/types";
+import { toTerminalRootKey } from "@flmux/core/terminal/rootKey";
+import { normalizeTerminalRootDir, resolveTerminalCwdFromRoot } from "@flmux/core/terminal/path";
 
 export interface SyntheticTerminalService {
   create(input: { paneId?: string; rootDir: string; cwd?: string }): Promise<TerminalCreateResult>;

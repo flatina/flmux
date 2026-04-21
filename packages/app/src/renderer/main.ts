@@ -1,6 +1,6 @@
 import { BuniteView } from "bunite-core/view";
 import type { FlmuxRendererBridgeSchema } from "../shared/rendererBridge";
-import type { TerminalRuntimeEvent } from "../shared/terminal";
+import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
 import type { SequencedShellCoreEvent } from "@flmux/core/shell";
 import { registerLocalExternalPaneDescriptors } from "./external/registerLocalExternalPaneDescriptors";
 import { FlmuxWorkbench } from "./shell/workbench";

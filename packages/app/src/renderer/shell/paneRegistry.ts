@@ -15,7 +15,7 @@ import {
   isTerminalPaneStateRecord
 } from "@flmux/core/shell";
 import type { TerminalHostAPI } from "../terminalHost";
-import type { ShellModelAPI } from "./types";
+import type { ShellModelAPI } from "@flmux/core/shell/types";
 
 export type {
   PaneWorkspaceContext,

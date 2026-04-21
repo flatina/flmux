@@ -30,7 +30,7 @@ import type {
   FlmuxShellBootstrapResponse
 } from "../../shared/rendererBridge";
 import { getFlmuxRendererLifecyclePolicy } from "../../shared/runtimeMode";
-import { resolveTerminalCwdFromRoot } from "../../shared/terminalPath";
+import { resolveTerminalCwdFromRoot } from "@flmux/core/terminal/path";
 import { createShellModelClientOverPreload } from "./shellModelClient";
 import { subscribeShellCoreEvents } from "./shellEventBus";
 import { buildPaneWorkspaceContext } from "./workspaceContext";

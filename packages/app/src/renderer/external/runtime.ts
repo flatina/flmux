@@ -12,7 +12,7 @@ import type {
   PanelUpdateEvent
 } from "dockview-core";
 import type { PaneDescriptor, PaneRendererRuntimeContext, PaneWorkspaceContext } from "../shell/paneRegistry";
-import type { ShellModelAPI } from "../shell/types";
+import type { ShellModelAPI } from "@flmux/core/shell/types";
 import {
   adaptExtensionLifecycle,
   adaptExtensionPanePathMount,

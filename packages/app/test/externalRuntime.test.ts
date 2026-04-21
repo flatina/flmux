@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { ExtensionPaneContext } from "@flmux/extension-api";
 import { createExternalPaneDescriptor } from "../src/renderer/external/runtime";
 import { PaneRegistry, type PaneRendererRuntimeContext } from "../src/renderer/shell/paneRegistry";
-import type { PathCallerContext, ShellModelAPI, WorkspaceBus, WorkspaceBusEvent } from "../src/renderer/shell/types";
+import type { PathCallerContext, ShellModelAPI, WorkspaceBus, WorkspaceBusEvent } from "@flmux/core/shell/types";
 import { makePaneWorkspaceContext } from "./support/paneWorkspaceContext";
 
 const EXTERNAL_ID = "workspace.external";

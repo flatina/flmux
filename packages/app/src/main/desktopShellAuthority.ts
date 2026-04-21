@@ -14,7 +14,7 @@ import type {
   FlmuxShellSnapshot
 } from "../shared/rendererBridge";
 import type { FlmuxSessionSnapshot, FlmuxWorkspaceSessionSnapshot } from "../shared/session";
-import type { TerminalRuntimeEvent } from "../shared/terminal";
+import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
 import { createServerShellModelRouter } from "./serverShellModelRouter";
 import type { FlmuxClientRegistry } from "./clientRegistry";
 import type { DiscoveredLocalExtension } from "./localExtensions";

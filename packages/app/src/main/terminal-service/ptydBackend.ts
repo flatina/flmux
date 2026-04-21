@@ -9,11 +9,11 @@ import type {
   TerminalRootStatus,
   TerminalRuntimeEvent,
   TerminalWriteResult
-} from "../../shared/terminal";
+} from "@flmux/core/terminal/types";
 import { PtydClient } from "../ptyd/client";
-import type { TerminalBackend } from "./backend";
-import { toTerminalRootKey } from "./rootKey";
-import { normalizeTerminalRootDir, resolveTerminalCwdFromRoot } from "../../shared/terminalPath";
+import type { TerminalBackend } from "@flmux/core/terminal/backend";
+import { toTerminalRootKey } from "@flmux/core/terminal/rootKey";
+import { normalizeTerminalRootDir, resolveTerminalCwdFromRoot } from "@flmux/core/terminal/path";
 
 export function createPtydBackend(): TerminalBackend {
   return new PtydBackend();
@@ -231,7 +231,7 @@ class PtydBackend implements TerminalBackend {
     return client;
   }
 
-  private handlePtydEvent(event: import("../ptyd/controlPlane").PtydTerminalEvent) {
+  private handlePtydEvent(event: import("@flmux/core/terminal/ptyd/controlPlane").PtydTerminalEvent) {
     const paneId =
       event.type === "state"
         ? (this.runtimeOwners.get(event.terminal.runtimeId) ?? null)

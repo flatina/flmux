@@ -1,5 +1,5 @@
-import { callJsonRpcIpc } from "../../src/main/ptyd/jsonRpcIpc";
-import { PtydLockFile, type PtydLockEntry } from "../../src/main/ptyd/lockFile";
+import { callJsonRpcIpc } from "@flmux/core/terminal/ptyd/jsonRpcIpc";
+import { PtydLockFile, type PtydLockEntry } from "@flmux/core/terminal/ptyd/lockFile";
 import { waitFor } from "./waitFor";
 
 export async function loadPtydLockForRootDir(rootDir: string): Promise<PtydLockEntry | null> {

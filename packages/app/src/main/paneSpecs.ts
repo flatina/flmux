@@ -1,7 +1,7 @@
 import { createBrowserPaneSpec, isTerminalPaneStateRecord, type NewPaneInput, type PaneSpec } from "@flmux/core/shell";
 import type { ExtensionDefinition, ExtensionManifestPane, ExtensionPaneDefinition } from "@flmux/extension-api";
 import { pathToFileURL } from "node:url";
-import { resolveTerminalCwdFromRoot } from "../shared/terminalPath";
+import { resolveTerminalCwdFromRoot } from "@flmux/core/terminal/path";
 import {
   adaptExtensionLifecycle,
   adaptExtensionPanePathMount,

@@ -1,7 +1,7 @@
 import { expect } from "bun:test";
 import { rm } from "node:fs/promises";
 import { PtydClient } from "../../src/main/ptyd/client";
-import { PtydLockFile } from "../../src/main/ptyd/lockFile";
+import { PtydLockFile } from "@flmux/core/terminal/ptyd/lockFile";
 import type { AppProcessHandle } from "../support/realAppSmokeSupport";
 import {
   allocateFlmuxRootDir,

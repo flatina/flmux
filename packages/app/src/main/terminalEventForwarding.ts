@@ -1,4 +1,4 @@
-import type { TerminalRuntimeEvent } from "../shared/terminal";
+import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
 import type { FlmuxClientRegistry } from "./clientRegistry";
 
 /**

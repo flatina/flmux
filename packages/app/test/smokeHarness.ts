@@ -7,7 +7,7 @@ import { createServerShellModelRouter } from "../src/main/serverShellModelRouter
 import { forwardTerminalEventToSubscribers } from "../src/main/terminalEventForwarding";
 import { createTerminalService } from "../src/main/terminal-service";
 import type { FlmuxRendererBridge } from "../src/shared/rendererBridge";
-import type { TerminalRuntimeEvent } from "../src/shared/terminal";
+import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
 import { stopOwnedPtydDaemonsForRootDir } from "./support/ptydCleanup";
 import { TestShellModelHost } from "./support/testShellModelHost";
 import { waitFor } from "./support/waitFor";

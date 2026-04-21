@@ -9,7 +9,7 @@ import {
 } from "@flmux/core/shell";
 import type { FlmuxSessionSaveLayouts, FlmuxShellBootstrapResponse } from "../shared/rendererBridge";
 import { buildBootstrapResponse, composeSessionSnapshot, restoreFromSession } from "./desktopShellAuthority";
-import type { TerminalRuntimeEvent } from "../shared/terminal";
+import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
 import type { TerminalService } from "./terminal-service";
 import { createServerShellModelRouter } from "./serverShellModelRouter";
 import type { FlmuxClientRegistry } from "./clientRegistry";

@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { BrowserView, BrowserWindow, AppRuntime } from "bunite-core";
 import type { SequencedShellCoreEvent, ShellModelAPI } from "@flmux/core/shell";
 import type { FlmuxRendererBridgeSchema, FlmuxSessionSaveLayouts } from "../shared/rendererBridge";
@@ -42,12 +43,19 @@ process.env.BUNITE_REMOTE_DEBUGGING_PORT ??= "9227";
 process.env.FLMUX_DEV_MODE ??= Bun.argv.includes("--dev") ? "1" : "";
 const hiddenWindow = process.env.FLMUX_HIDDEN_WINDOW === "1";
 
-const app = new AppRuntime({ logLevel: "info" });
-await app.ready;
+// Only desktop mode needs the CEF runtime. Web mode runs as a headless
+// Bun server and instantiating AppRuntime eagerly would boot CEF for
+// nothing (bunite's `new AppRuntime` triggers `initNativeRuntime`).
+const app = runtimeMode === "desktop" ? new AppRuntime({ logLevel: "info" }) : null;
+if (app) await app.ready;
 
-const rendererDir = app.resolve("../dist/renderer");
-const projectDir = app.resolve("../../..");
-const localExtensionsRootDir = resolveConfiguredLocalExtensionsRootDir(app.resolve("../../../extensions"));
+// Path resolution used to go through `app.resolve(...)` whose base is the
+// `src/` directory one level above this file. We replicate that directly
+// so web mode can compute the same paths without booting CEF.
+const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const rendererDir = resolve(packageDir, "dist/renderer");
+const projectDir = resolve(packageDir, "../..");
+const localExtensionsRootDir = resolveConfiguredLocalExtensionsRootDir(resolve(packageDir, "../../extensions"));
 const clientRegistry = new FlmuxClientRegistry();
 const terminalService = createTerminalService();
 const sessionStore = runtimeMode === "desktop" ? createSessionStore() : null;
@@ -597,7 +605,7 @@ function stopRuntime() {
   server.stop();
 }
 
-if (runtimeMode === "desktop") {
+if (runtimeMode === "desktop" && app) {
   const win = new BrowserWindow({
     title: `flmux skeleton v${app.version} - CEF ${app.cefVersion ?? "unknown"}`,
     frame: { x: 80, y: 80, width: 1280, height: 860 },
@@ -615,6 +623,7 @@ if (runtimeMode === "desktop") {
     releaseView(win.webviewId);
     stopRuntime();
   });
+  app.run();
 } else {
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.once(signal, () => {
@@ -622,6 +631,6 @@ if (runtimeMode === "desktop") {
       process.exit(0);
     });
   }
+  // Bun.serve (invoked by `startFlmuxServer`) owns the event loop in
+  // web mode — no native runtime needed.
 }
-
-app.run();

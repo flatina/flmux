@@ -203,9 +203,18 @@ class PtydBackend implements TerminalBackend {
           continue;
         }
 
+        // Discovery is query-only: attach to already-running daemons,
+        // never launch. A stale lock from a prior session would otherwise
+        // trigger ensureStarted's launch-if-unreachable path and spawn a
+        // daemon for an unrelated rootDir — leaking processes that
+        // subsequent `stopOwnedPtydDaemonsForRootDir(ourRootDir)` can't see.
         const client = new PtydClient(rootKey, lock.rootDir, (event) => this.handlePtydEvent(event));
-        await client.ensureStarted();
-        this.clients.set(rootKey, client);
+        const connected = await client.connectIfRunning();
+        if (connected) {
+          this.clients.set(rootKey, client);
+        } else {
+          client.dispose();
+        }
       } catch {}
     }
   }

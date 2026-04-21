@@ -138,6 +138,44 @@ export class PtydClient {
     return this.ensureStartedPromise;
   }
 
+  /**
+   * Attach to an existing reachable daemon without launching a new one.
+   * Used by discovery paths (e.g. `listRoots`) that are query-only — they
+   * must not have the side effect of spawning a daemon for a rootDir the
+   * caller never asked about, which would leak processes if the lock file
+   * is stale (daemon dead but file lingering from a prior session).
+   * Returns `null` when no reachable daemon exists; also clears a stale
+   * lock file along the way so it stops triggering discovery.
+   */
+  async connectIfRunning(): Promise<PtydLockEntry | null> {
+    if (this.disposed) {
+      throw new Error(`PtydClient for root ${this.rootKey} is disposed`);
+    }
+
+    const existing = await this.lockFile.load();
+    if (existing && (await this.isReachable(existing.controlIpcPath))) {
+      this.controlIpcPath = existing.controlIpcPath;
+      this.eventsIpcPath = existing.eventsIpcPath;
+      this.connectEventStream();
+      return existing;
+    }
+
+    const identified = await this.identify(this.controlIpcPath);
+    if (identified && identified.protocolVersion === PTYD_PROTOCOL_VERSION) {
+      const recovered = this.toLockEntry(identified);
+      await this.lockFile.write(recovered);
+      this.controlIpcPath = recovered.controlIpcPath;
+      this.eventsIpcPath = recovered.eventsIpcPath;
+      this.connectEventStream();
+      return recovered;
+    }
+
+    if (existing) {
+      await this.lockFile.clear();
+    }
+    return null;
+  }
+
   private async performEnsureStarted() {
     const existing = await this.lockFile.load();
     if (existing && (await this.isReachable(existing.controlIpcPath))) {

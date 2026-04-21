@@ -96,6 +96,12 @@ export async function runPtydDaemonProcess(): Promise<void> {
     }
     shuttingDown = true;
 
+    // Watchdog: on Windows, `server.close()` can stall waiting for a
+    // named-pipe peer that doesn't fully end its side, stranding the
+    // daemon with its `try/finally` never reaching `process.exit`.
+    // Force-exit after 2s no matter what.
+    setTimeout(() => process.exit(0), 2_000);
+
     try {
       await lockFile.clearIfOwned({ daemonId, pid: process.pid });
       await controlServer.stop();

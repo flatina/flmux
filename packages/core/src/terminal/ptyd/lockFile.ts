@@ -1,5 +1,6 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { toTerminalRootKey } from "../rootKey";
 
 export interface PtydLockEntry {
   daemonId: string;
@@ -26,8 +27,10 @@ export function getPtydLockPath(rootDir: string) {
 
 export class PtydLockFile {
   readonly filePath: string;
+  private readonly rootDir: string;
 
   constructor(rootDir: string) {
+    this.rootDir = rootDir;
     this.filePath = getPtydLockPath(rootDir);
   }
 
@@ -35,7 +38,18 @@ export class PtydLockFile {
     try {
       const raw = await readFile(this.filePath, "utf8");
       const parsed = JSON.parse(raw) as unknown;
-      return isPtydLockEntry(parsed) ? parsed : null;
+      if (!isPtydLockEntry(parsed)) return null;
+      const expected = toTerminalRootKey(this.rootDir);
+      if (parsed.rootKey !== expected) {
+        // `.flmux/` is keyed to an absolute install path — moving the tree
+        // invalidates the lock's rootKey. Treat as stale so a fresh daemon
+        // spawns under the new rootKey; adoption cannot carry across moves.
+        console.warn(
+          `[ptyd] lock at ${this.filePath} has stale rootKey '${parsed.rootKey}'; expected '${expected}'. Ignoring — adoption will not carry.`
+        );
+        return null;
+      }
+      return parsed;
     } catch {
       return null;
     }

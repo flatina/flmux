@@ -9,8 +9,8 @@
   "scripts": {
     "build:extension-api-runtime": "bun run --filter @flmux/extension-api build:runtime",
     "build:extensions": "bun run --filter @flmux/extension-devkit build ../../extensions/cowsay ../../extensions/counter ../../extensions/inspector ../../extensions/scratchpad",
-    "build": "bun run build:extension-api-runtime && bun run build:extensions && bun run --filter @flmux/app build",
-    "dev": "bun run build:extension-api-runtime && bun run build:extensions && bun run --filter @flmux/app dev",
+    "build": "bun run --filter @flmux/app build",
+    "dev": "bun run --filter @flmux/app dev",
     "test:direct": "bun run --filter @flmux/app test:direct",
     "test:smoke": "bun run --filter @flmux/app test:smoke",
     "test:harness-smoke": "bun run --filter @flmux/app test:harness-smoke",

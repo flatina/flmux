@@ -1,4 +1,4 @@
-import type { TerminalRuntimeSummary } from "../terminal/terminal";
+import type { TerminalRuntimeSummary } from "../terminal/types";
 import type { Awaitable, NewPaneInput, ShellPaneRecordSnapshot, WorkspaceBus } from "./types";
 
 export interface PaneWorkspaceContext {

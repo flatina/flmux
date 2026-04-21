@@ -1,2 +1,2 @@
-export * from "./terminal";
-export * from "./terminalPath";
+export * from "./types";
+export * from "./path";

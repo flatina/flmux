@@ -8,7 +8,7 @@ import type {
   TerminalRootStatus,
   TerminalRuntimeEvent,
   TerminalWriteResult
-} from "./terminal";
+} from "./types";
 
 export interface TerminalBackend {
   /** `rootDir` is the daemon scope dir (= install root). */

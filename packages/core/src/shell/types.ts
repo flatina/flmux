@@ -4,7 +4,7 @@ import type {
   TerminalKillResult,
   TerminalResizeResult,
   TerminalWriteResult
-} from "../terminal/terminal";
+} from "../terminal/types";
 
 export type ShellPathNodeKind = "leaf" | "object" | "collection" | "action";
 

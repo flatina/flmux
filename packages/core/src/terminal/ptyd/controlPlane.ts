@@ -7,7 +7,7 @@ import type {
   TerminalRootStatus,
   TerminalRuntimeSummary,
   TerminalWriteResult
-} from "../terminal";
+} from "../types";
 
 export const PTYD_PROTOCOL_VERSION = "1";
 

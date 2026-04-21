@@ -1,5 +1,5 @@
 import { setTimeout as delay } from "node:timers/promises";
-import type { TerminalRootStatus } from "../terminal";
+import type { TerminalRootStatus } from "../types";
 import {
   PTYD_PROTOCOL_VERSION,
   type PtydTerminalEvent,

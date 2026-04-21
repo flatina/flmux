@@ -10,7 +10,7 @@ import {
   type PaneSpec
 } from "../src/shell";
 import type { TerminalBackend, TerminalCreateInput } from "../src/terminal/backend";
-import type { TerminalRuntimeEvent, TerminalRuntimeSummary } from "../src/terminal/terminal";
+import type { TerminalRuntimeEvent, TerminalRuntimeSummary } from "../src/terminal/types";
 
 const PROJECT_DIR = "/flmux-test";
 const ORIGIN = "http://127.0.0.1:7000";

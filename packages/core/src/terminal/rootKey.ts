@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { normalizeTerminalRootDir } from "./terminalPath";
+import { normalizeTerminalRootDir } from "./path";
 
 export function toTerminalRootKey(rootDir: string) {
   const normalized = normalizeTerminalRootDir(rootDir);

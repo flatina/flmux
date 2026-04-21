@@ -1,6 +1,6 @@
 import type { TerminalBackend } from "../terminal/backend";
-import type { TerminalRuntimeEvent } from "../terminal/terminal";
-import { resolveTerminalCwdFromRoot } from "../terminal/terminalPath";
+import type { TerminalRuntimeEvent } from "../terminal/types";
+import { resolveTerminalCwdFromRoot } from "../terminal/path";
 import {
   PLACEHOLDER_PANE_KIND,
   createPaneSnapshot as createPaneSnapshotHelper,

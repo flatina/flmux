@@ -1,5 +1,5 @@
 import { spawn, type IPty } from "bun-pty";
-import type { TerminalRuntimeSummary } from "../terminal";
+import type { TerminalRuntimeSummary } from "../types";
 import type {
   PtydTerminalRecord,
   PtydTerminalCreateParams,

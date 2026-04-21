@@ -57,6 +57,10 @@ export interface ShellCoreOptions {
   projectDir: string;
   terminalBackend: TerminalBackend;
   initialAppOrigin?: string;
+  /** CEF remote debugging port — desktop mode only. Surfaced through
+   * `/status/app/cefCdpPort` so external tools can drive browser panes via
+   * CDP without a private channel. */
+  cefCdpPort?: number;
   /**
    * Slot key used when a mutation/read doesn't pass an explicit slot — i.e.
    * the "owner" attachment for initialize(), restoreWorkspace, and the
@@ -367,7 +371,8 @@ export class ShellCore implements ShellModelHost {
     return {
       title: this.appTitle,
       origin: this.appOrigin,
-      runtimeLabel: this.options.runtimeLabel
+      runtimeLabel: this.options.runtimeLabel,
+      cefCdpPort: this.options.cefCdpPort
     };
   }
 
@@ -607,7 +612,8 @@ export class ShellCore implements ShellModelHost {
     return {
       title: this.appTitle,
       origin: this.appOrigin,
-      runtimeLabel: this.options.runtimeLabel
+      runtimeLabel: this.options.runtimeLabel,
+      cefCdpPort: this.options.cefCdpPort
     };
   }
 

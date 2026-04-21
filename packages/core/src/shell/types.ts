@@ -63,6 +63,10 @@ export interface AppStatusSnapshot {
   title: string;
   origin: string;
   runtimeLabel: string;
+  /** CEF remote debugging port (desktop mode only). External tools can query
+   * `http://127.0.0.1:{cefCdpPort}/json/list` and match a browser pane's URL
+   * (see `/status/panes/{id}/browser/url`) to drive it via CDP. */
+  cefCdpPort?: number;
 }
 
 export interface WorkspaceStatusSnapshot {

@@ -51,6 +51,7 @@ export async function createDesktopShellAuthority(options: {
   clientRegistry: FlmuxClientRegistry;
   localExtensions?: readonly DiscoveredLocalExtension[];
   extensionModuleImporter?: ExtensionModuleImporter;
+  cefCdpPort?: number;
 }): Promise<DesktopShellAuthority> {
   const paneRegistry = new PaneRegistry<PaneSpec>();
   paneRegistry.register(createPlaceholderPaneSpec());
@@ -66,6 +67,7 @@ export async function createDesktopShellAuthority(options: {
     runtimeLabel: options.runtimeLabel,
     projectDir: options.projectDir,
     terminalBackend: options.terminalService,
+    cefCdpPort: options.cefCdpPort,
     // Phase B: the CEF renderer is a single attachment; name its slot
     // `"local"` so scope=attachment event envelopes are self-describing.
     // B2 switches to per-attachment slotKey = real attachmentId.

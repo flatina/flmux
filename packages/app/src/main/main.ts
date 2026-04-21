@@ -45,6 +45,11 @@ process.env.BUNITE_REMOTE_DEBUGGING_PORT ??= "9227";
 process.env.FLMUX_DEV_MODE ??= Bun.argv.includes("--dev") || devAuthAs ? "1" : "";
 const hiddenWindow = process.env.FLMUX_HIDDEN_WINDOW === "1";
 
+function parseOptionalPort(value: string | undefined): number | undefined {
+  const n = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(n) && n > 0 && n < 65536 ? n : undefined;
+}
+
 function readDevAuthAsFlag(argv: readonly string[]): string | undefined {
   const i = argv.indexOf("--dev-auth-as");
   if (i < 0 || i + 1 >= argv.length) return undefined;
@@ -116,7 +121,8 @@ const desktopAuthority: DesktopShellAuthority | null =
         terminalService,
         sessionStore,
         clientRegistry,
-        localExtensions
+        localExtensions,
+        cefCdpPort: parseOptionalPort(process.env.BUNITE_REMOTE_DEBUGGING_PORT)
       })
     : null;
 

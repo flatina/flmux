@@ -1,5 +1,5 @@
+import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { BrowserView, BrowserWindow, AppRuntime } from "bunite-core";
 import type { SequencedShellCoreEvent, ShellModelAPI } from "@flmux/core/shell";
 import type { FlmuxRendererBridgeSchema, FlmuxSessionSaveLayouts } from "../shared/rendererBridge";
@@ -49,13 +49,15 @@ const hiddenWindow = process.env.FLMUX_HIDDEN_WINDOW === "1";
 const app = runtimeMode === "desktop" ? new AppRuntime({ logLevel: "info" }) : null;
 if (app) await app.ready;
 
-// Path resolution used to go through `app.resolve(...)` whose base is the
-// `src/` directory one level above this file. We replicate that directly
-// so web mode can compute the same paths without booting CEF.
-const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const rendererDir = resolve(packageDir, "dist/renderer");
-const projectDir = resolve(packageDir, "../..");
-const localExtensionsRootDir = resolveConfiguredLocalExtensionsRootDir(resolve(packageDir, "../../extensions"));
+// Mirrors bunite's internal `getBaseDir()` (shared/paths.ts): use the
+// entry-script dir in dev, the binary dir when compiled. This lets web
+// mode resolve renderer assets without constructing `AppRuntime` (which
+// boots CEF). Desktop mode would normally pull the same result through
+// `app.resolve(...)`; we keep one code path so both modes agree.
+const baseDir = Bun.main && existsSync(Bun.main) ? dirname(Bun.main) : dirname(process.execPath);
+const rendererDir = resolve(baseDir, "../dist/renderer");
+const projectDir = resolve(baseDir, "../../..");
+const localExtensionsRootDir = resolveConfiguredLocalExtensionsRootDir(resolve(baseDir, "../../../extensions"));
 const clientRegistry = new FlmuxClientRegistry();
 const terminalService = createTerminalService();
 const sessionStore = runtimeMode === "desktop" ? createSessionStore() : null;

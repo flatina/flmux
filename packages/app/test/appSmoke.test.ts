@@ -7,9 +7,11 @@ import { cleanupAppHandles, stopAppWorkspaceDaemons, type AppProcessHandle } fro
 
 const appHandles: AppProcessHandle[] = [];
 
+// 30s cap covers CEF cache-lock release (a few hundred ms × retries)
+// + daemon.stop IPC + rm-rf of the per-test rootDir.
 afterEach(async () => {
   await cleanupAppHandles(appHandles);
-});
+}, 30_000);
 
 afterAll(() => {
   void stopAppWorkspaceDaemons();

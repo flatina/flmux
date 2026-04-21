@@ -1,5 +1,4 @@
 import { expect } from "bun:test";
-import { rm } from "node:fs/promises";
 import { callJsonRpcIpc } from "@flmux/core/terminal/ptyd/jsonRpcIpc";
 import type { AppProcessHandle } from "../support/realAppSmokeSupport";
 import { loadPtydLockForRootDir } from "../support/ptydCleanup";
@@ -571,6 +570,8 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
 
     await session.close();
   } finally {
-    await rm(rootDir, { recursive: true, force: true });
+    // rootDir teardown happens in `cleanupAppHandles` (afterEach) — it
+    // wraps the rm with retry for Windows CEF cache locks that linger
+    // briefly after the app process exits.
   }
 }

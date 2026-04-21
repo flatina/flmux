@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { BrowserView, BrowserWindow, AppRuntime } from "bunite-core";
 import type { SequencedShellCoreEvent, ShellModelAPI } from "@flmux/core/shell";
@@ -73,6 +73,12 @@ const localExtensionsRootDir = resolveConfiguredLocalExtensionsRootDir(resolve(b
 // CEF's userDataDir to our `.flmux/cef-userdata/` so cookies / shader
 // cache live alongside the rest of flmux state (tests override via
 // BUNITE_USER_DATA_DIR for per-run isolation).
+// CEF native code requires userDataDir to exist before boot — the mkdtemp
+// tests used to provide this implicitly. `mkdirSync` here recursively
+// creates `<rootDir>/.flmux/cef-userdata/` if absent.
+if (runtimeMode === "desktop") {
+  mkdirSync(flmuxPaths.cefUserDataDir, { recursive: true });
+}
 const app =
   runtimeMode === "desktop" ? new AppRuntime({ logLevel: "info", userDataDir: flmuxPaths.cefUserDataDir }) : null;
 if (app) await app.ready;

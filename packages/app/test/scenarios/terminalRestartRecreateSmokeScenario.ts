@@ -1,5 +1,5 @@
 import { expect } from "bun:test";
-import { rm } from "node:fs/promises";
+import { stopOwnedPtydDaemonsForRootDir } from "../support/ptydCleanup";
 import type { AppProcessHandle } from "../support/realAppSmokeSupport";
 import {
   allocateFlmuxRootDir,
@@ -102,7 +102,11 @@ export async function runTerminalRestartRecreateSmokeScenario(appHandles: AppPro
       { timeoutMs: 20_000, intervalMs: 250, label: "recreate first app shutdown" }
     );
 
-    await stopAppWorkspaceDaemons();
+    // This scenario's "no surviving daemon" premise: stop the daemon
+    // that served firstApp so secondApp re-launches a fresh runtime
+    // (different runtimeId) instead of adopting. Targets rootDir, not
+    // the install root — daemon is scoped to the test's FLMUX_ROOT_DIR.
+    await stopOwnedPtydDaemonsForRootDir(rootDir);
 
     const secondApp = launchFlmuxApp(secondPort, rootDir);
     appHandles.push(secondApp);
@@ -172,6 +176,6 @@ export async function runTerminalRestartRecreateSmokeScenario(appHandles: AppPro
     );
     expect(recreatedHistory.runtimeId).toBe(recreatedRuntimeId);
   } finally {
-    await rm(rootDir, { recursive: true, force: true });
+    // rootDir teardown happens in cleanupAppHandles (afterEach).
   }
 }

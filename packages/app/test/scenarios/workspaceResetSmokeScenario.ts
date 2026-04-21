@@ -1,5 +1,4 @@
 import { expect } from "bun:test";
-import { rm } from "node:fs/promises";
 import { callJsonRpcIpc } from "@flmux/core/terminal/ptyd/jsonRpcIpc";
 import type { AppProcessHandle } from "../support/realAppSmokeSupport";
 import { loadPtydLockForRootDir } from "../support/ptydCleanup";
@@ -189,6 +188,6 @@ export async function runWorkspaceResetSmokeScenario(appHandles: AppProcessHandl
 
     await session.close();
   } finally {
-    await rm(rootDir, { recursive: true, force: true });
+    // rootDir teardown happens in cleanupAppHandles (afterEach).
   }
 }

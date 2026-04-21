@@ -40,7 +40,7 @@ test.afterAll(async () => {
   await new Promise((r) => setTimeout(r, 500));
   if (!handle.process.killed) handle.process.kill("SIGKILL");
   try {
-    rmSync(handle.rootDir, { recursive: true, force: true });
+    rmSync(handle.rootDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   } catch {
     // best-effort
   }
@@ -448,7 +448,7 @@ test("C5 authority evicts after attachment+authority grace", async ({ browser })
       if (!appProc.killed) appProc.kill("SIGKILL");
     }
     try {
-      rmSync(rootDir, { recursive: true, force: true });
+      rmSync(rootDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     } catch {
       /* best-effort */
     }

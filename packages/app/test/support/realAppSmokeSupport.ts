@@ -40,9 +40,12 @@ export async function cleanupAppHandles(appHandles: AppProcessHandle[]) {
       /* best-effort */
     }
     try {
-      rmSync(handle.rootDir, { recursive: true, force: true });
+      // maxRetries handles the Windows CEF-cache EBUSY window — after
+      // killProcessTree, CEF native workers may still hold locks on
+      // `<rootDir>/.flmux/cef-userdata/` for a few hundred ms.
+      rmSync(handle.rootDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     } catch {
-      // CEF may still be releasing handles at kill; best-effort cleanup.
+      // Best-effort; leftover temp dirs are harmless (cleaned on reboot).
     }
   }
 }

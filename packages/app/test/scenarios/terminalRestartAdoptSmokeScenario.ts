@@ -1,5 +1,4 @@
 import { expect } from "bun:test";
-import { rm } from "node:fs/promises";
 import { PtydClient } from "../../src/main/ptyd/client";
 import { PtydLockFile } from "@flmux/core/terminal/ptyd/lockFile";
 import type { AppProcessHandle } from "../support/realAppSmokeSupport";
@@ -338,8 +337,10 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
       },
       { timeoutMs: 20_000, intervalMs: 250, label: "restored terminal pane state" }
     );
+    // cwd is restored to rootDir (== projectDir in FLMUX_ROOT_DIR-scoped tests).
+    // The scenario's rootDir is mkdtemp'd as `flmux-session-<suffix>`.
     expect(paneState).toEqual({
-      cwd: expect.stringContaining("project")
+      cwd: expect.stringContaining("flmux-session-")
     });
 
     const paneStatus = await waitFor(
@@ -550,6 +551,6 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
     if (secondSession) {
       await secondSession.close();
     }
-    await rm(rootDir, { recursive: true, force: true });
+    // rootDir teardown happens in cleanupAppHandles (afterEach).
   }
 }

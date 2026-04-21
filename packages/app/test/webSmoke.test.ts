@@ -13,7 +13,7 @@ const appHandles: AppProcessHandle[] = [];
 
 afterEach(async () => {
   await cleanupAppHandles(appHandles);
-});
+}, 30_000);
 
 describe("flmux web smoke", () => {
   it("boots web mode and keeps browser attach, HTTP model calls, and CLI token calls on the same server authority", async () => {

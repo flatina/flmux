@@ -23,6 +23,8 @@ import { eventToReadPath } from "./auth/eventAclPath";
 import { resolveFlmuxServerPort } from "./auth/serverConfig";
 import { resolveFlmuxRuntimeMode } from "./runtimeMode";
 import { resolveFlmuxRootDir, resolveFlmuxPaths } from "./flmuxPaths";
+import { PtydLockFile } from "./ptyd/lockFile";
+import { callJsonRpcIpc } from "./ptyd/jsonRpcIpc";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
 import {
   discoverConfiguredLocalExtensions,
@@ -644,7 +646,17 @@ terminalService.subscribe((event: TerminalRuntimeEvent) => {
   });
 });
 
-function stopRuntime() {
+async function stopRuntime() {
+  // Graceful shutdown is the user's explicit "I'm done" — also tell the
+  // install-scoped daemon to stop. The tmux-style "daemon survives to
+  // adopt on next launch" invariant covers crash/SIGKILL paths that
+  // bypass this handler, not deliberate Ctrl+C. See internal notes
+  try {
+    const lock = await new PtydLockFile(flmuxPaths.rootDir).load();
+    if (lock) {
+      await callJsonRpcIpc(lock.controlIpcPath, "daemon.stop", undefined, 2_000);
+    }
+  } catch { /* best-effort */ }
   terminalService.dispose?.();
   server.stop();
 }
@@ -665,13 +677,15 @@ if (runtimeMode === "desktop" && app) {
 
   win.on("close", () => {
     releaseView(win.webviewId);
-    stopRuntime();
+    // Fire-and-forget: CEF native teardown keeps the process alive long
+    // enough for the daemon-stop IPC (typically <100ms) to complete.
+    void stopRuntime();
   });
   app.run();
 } else {
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
-    process.once(signal, () => {
-      stopRuntime();
+    process.once(signal, async () => {
+      await stopRuntime();
       process.exit(0);
     });
   }

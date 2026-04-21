@@ -99,10 +99,13 @@ describe("ptyd backend", () => {
         }, { timeoutMs: 15_000, intervalMs: 250, label: "ptyd runtime count after kill" });
         expect(rootsAfterKill.runtimeCount).toBe(0);
       } finally {
+        // Dispose clients BEFORE stopping the daemon — otherwise the
+        // event-socket close triggered by daemon shutdown schedules a
+        // reconnect that races the cleanup and respawns the daemon.
         unsubscribe();
-        await stopOwnedPtydDaemonsForRootDir(rootDir);
         observerBackend.dispose?.();
         backend.dispose?.();
+        await stopOwnedPtydDaemonsForRootDir(rootDir);
         await rm(rootDir, { recursive: true, force: true });
       }
     },

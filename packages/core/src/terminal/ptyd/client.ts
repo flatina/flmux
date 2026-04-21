@@ -37,6 +37,7 @@ export class PtydClient {
   private ensureStartedPromise: Promise<PtydLockEntry> | null = null;
   private eventSocket: ReturnType<typeof createConnection> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private disposed = false;
   private readonly onEvent?: (event: PtydTerminalEvent) => void;
   private readonly resolveLaunchPlan?: () => PtydLaunchPlan;
 
@@ -90,6 +91,7 @@ export class PtydClient {
   }
 
   dispose() {
+    this.disposed = true;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -123,6 +125,9 @@ export class PtydClient {
   }
 
   async ensureStarted() {
+    if (this.disposed) {
+      throw new Error(`PtydClient for root ${this.rootKey} is disposed`);
+    }
     if (this.ensureStartedPromise) {
       return this.ensureStartedPromise;
     }
@@ -265,12 +270,13 @@ export class PtydClient {
   }
 
   private scheduleReconnect() {
-    if (this.reconnectTimer) {
+    if (this.disposed || this.reconnectTimer) {
       return;
     }
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
+      if (this.disposed) return;
       void this.ensureStarted().catch(() => {
         this.scheduleReconnect();
       });

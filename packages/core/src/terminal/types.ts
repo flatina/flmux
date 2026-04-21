@@ -3,6 +3,12 @@ export interface TerminalCreateInput {
   rootDir: string;
   cwd?: string;
   paneId?: string;
+  /** App server origin — injected into the PTY env as `FLMUX_ORIGIN` so CLI
+   * commands run from inside the terminal reach the right server without the
+   * `--origin` flag. Set by trusted main-side callers; never threaded from
+   * public path.call args. Only applies to fresh spawns (adopted runtimes
+   * keep their original env). */
+  appOrigin?: string;
 }
 
 export interface TerminalRuntimeSummary {

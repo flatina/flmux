@@ -67,7 +67,7 @@ export class TerminalRuntimeManager {
       cols: DEFAULT_COLS,
       rows: DEFAULT_ROWS,
       name: resolveTerminalName(),
-      env: createTerminalEnv(this.rootDir)
+      env: createTerminalEnv(this.rootDir, params.appOrigin)
     });
     const now = new Date().toISOString();
 
@@ -246,7 +246,7 @@ function resolveTerminalName() {
   return process.platform === "win32" ? "xterm-color" : "xterm-256color";
 }
 
-function createTerminalEnv(rootDir: string) {
+function createTerminalEnv(rootDir: string, appOrigin: string | undefined) {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (typeof value === "string") {
@@ -255,6 +255,9 @@ function createTerminalEnv(rootDir: string) {
   }
   env.FLMUX_ROOT = rootDir;
   env.TERM = resolveTerminalName();
+  if (appOrigin) {
+    env.FLMUX_ORIGIN = appOrigin;
+  }
   return env;
 }
 

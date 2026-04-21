@@ -533,7 +533,8 @@ export class ShellCore implements ShellModelHost {
         const result = await backend.create({
           paneId,
           rootDir: projectDir,
-          cwd: resolveTerminalCwdFromRoot(projectDir, input.cwd ?? pane.cwd)
+          cwd: resolveTerminalCwdFromRoot(projectDir, input.cwd ?? pane.cwd),
+          appOrigin: this.appOrigin
         });
         pane.cwd = result.terminal.cwd;
         pane.rootKey = result.rootKey;

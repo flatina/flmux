@@ -80,7 +80,8 @@ class PtydBackend implements TerminalBackend {
         runtimeId,
         rootDir,
         cwd,
-        paneId: input.paneId
+        paneId: input.paneId,
+        appOrigin: input.appOrigin
       });
     } catch (error) {
       this.runtimeOwners.delete(runtimeId);

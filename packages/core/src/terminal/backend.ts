@@ -19,6 +19,9 @@ export interface TerminalBackend {
   history(input: { rootKey: string; runtimeId: string; maxBytes?: number }): Promise<TerminalHistoryResult>;
   kill(input: { rootKey: string; runtimeId: string }): Promise<TerminalKillResult>;
   listRoots(): Promise<TerminalRootStatus[]>;
+  /** Attach to the daemon for `rootDir` if one is already running, without
+   * launching. Returns null when no daemon exists for that rootDir. */
+  probeRoot(rootDir: string): Promise<TerminalRootStatus | null>;
   subscribe(handler: (event: TerminalRuntimeEvent) => void): () => void;
   dispose?(): Promise<void> | void;
 }

@@ -300,7 +300,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
         return true;
       }
     }, { timeoutMs: 20_000, intervalMs: 250, label: "first app shutdown" });
-    const lock = await new PtydLockFile(rootKey).load();
+    const lock = await new PtydLockFile(rootDir).load();
     expect(lock?.rootKey).toBe(rootKey);
 
     const secondApp = launchFlmuxApp(secondPort, sessionFile);

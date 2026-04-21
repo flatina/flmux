@@ -1,6 +1,5 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { tmpdir } from "node:os";
 
 export interface PtydLockEntry {
   daemonId: string;
@@ -13,11 +12,26 @@ export interface PtydLockEntry {
   protocolVersion: string;
 }
 
+/**
+ * Lock file location: `<rootDir>/.flmux/ptyd.lock`.
+ *
+ * Scoping the lock to the rootDir (rather than a shared tmpdir keyed by
+ * rootKey hash) means stale locks die with their rootDir — when a test's
+ * `mkdtemp` dir is removed or a dev install is wiped, the lock goes with
+ * it. That's important because the lock file is the single source of
+ * truth for "a daemon exists for this rootDir"; a stale lock in tmpdir
+ * from a prior session would otherwise invite re-adoption or respawn of
+ * a daemon for an unrelated rootDir.
+ */
+export function getPtydLockPath(rootDir: string) {
+  return join(rootDir, ".flmux", "ptyd.lock");
+}
+
 export class PtydLockFile {
   readonly filePath: string;
 
-  constructor(rootKey: string) {
-    this.filePath = join(tmpdir(), `flmux-ptyd-${rootKey}.lock`);
+  constructor(rootDir: string) {
+    this.filePath = getPtydLockPath(rootDir);
   }
 
   async load(): Promise<PtydLockEntry | null> {

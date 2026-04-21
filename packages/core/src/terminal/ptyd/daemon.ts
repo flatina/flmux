@@ -24,7 +24,7 @@ export async function runPtydDaemonProcess(): Promise<void> {
   const startedAt = new Date().toISOString();
   const controlIpcPath = getPtydControlIpcPath(rootKey);
   const eventsIpcPath = getPtydEventsIpcPath(rootKey);
-  const lockFile = new PtydLockFile(rootKey);
+  const lockFile = new PtydLockFile(rootDir);
   const subscribers = new Set<Socket>();
   const outputHistory = new Map<string, string>();
   let shuttingDown = false;

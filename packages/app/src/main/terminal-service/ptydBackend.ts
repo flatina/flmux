@@ -1,6 +1,3 @@
-import { readdir } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { mkdir } from "node:fs/promises";
 import type {
   TerminalAdoptResult,
@@ -25,6 +22,7 @@ export function createPtydBackend(): TerminalBackend {
 class PtydBackend implements TerminalBackend {
   private readonly clients = new Map<string, PtydClient>();
   private readonly pendingClients = new Map<string, Promise<PtydClient>>();
+  private readonly pendingProbes = new Map<string, Promise<TerminalRootStatus | null>>();
   private readonly runtimeOwners = new Map<string, string | null>();
   private readonly subscribers = new Set<(event: TerminalRuntimeEvent) => void>();
 
@@ -123,10 +121,55 @@ class PtydBackend implements TerminalBackend {
   }
 
   async listRoots(): Promise<TerminalRootStatus[]> {
-    await this.discoverExistingClients();
     return Promise.all(
       [...this.clients.values()].map((client) => client.getRootStatus())
     );
+  }
+
+  /**
+   * Query-only: attach to the daemon for `rootDir` if one is already
+   * running, without launching. Returns `null` when no daemon exists
+   * for that rootDir. Used by observers/test-harnesses that need to
+   * inspect a daemon started by a different backend instance.
+   */
+  async probeRoot(rootDir: string): Promise<TerminalRootStatus | null> {
+    const rootKey = toTerminalRootKey(rootDir);
+    const existing = this.clients.get(rootKey);
+    if (existing) {
+      return existing.getRootStatus();
+    }
+    const pendingLaunch = this.pendingClients.get(rootKey);
+    if (pendingLaunch) {
+      return (await pendingLaunch).getRootStatus();
+    }
+    // Dedupe concurrent probes — stranded event sockets otherwise.
+    const pendingProbe = this.pendingProbes.get(rootKey);
+    if (pendingProbe) {
+      return pendingProbe;
+    }
+
+    const next = (async () => {
+      // Probe is strictly query-only: create a throwaway client, connect
+      // if a daemon is already running, read status, then dispose. Never
+      // cache the client — `PtydClient.call` falls back to `ensureStarted`
+      // on transport errors, which would silently relaunch a daemon that
+      // had been intentionally stopped after a prior successful probe.
+      const client = new PtydClient(rootKey, rootDir, (event) => this.handlePtydEvent(event));
+      try {
+        const connected = await client.connectIfRunning();
+        if (!connected) return null;
+        return await client.getRootStatus();
+      } finally {
+        client.dispose();
+      }
+    })();
+
+    this.pendingProbes.set(rootKey, next);
+    try {
+      return await next;
+    } finally {
+      this.pendingProbes.delete(rootKey);
+    }
   }
 
   subscribe(handler: (event: TerminalRuntimeEvent) => void) {
@@ -181,42 +224,6 @@ class PtydBackend implements TerminalBackend {
     }
 
     return client;
-  }
-
-  private async discoverExistingClients() {
-    const directory = tmpdir();
-    const entries = await readdir(directory, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isFile() || !entry.name.startsWith("flmux-ptyd-root_") || !entry.name.endsWith(".lock")) {
-        continue;
-      }
-
-      const rootKey = entry.name.slice("flmux-ptyd-".length, -".lock".length);
-      if (this.clients.has(rootKey) || this.pendingClients.has(rootKey)) {
-        continue;
-      }
-
-      try {
-        const raw = await Bun.file(join(directory, entry.name)).text();
-        const lock = JSON.parse(raw) as { rootDir?: string };
-        if (typeof lock.rootDir !== "string") {
-          continue;
-        }
-
-        // Discovery is query-only: attach to already-running daemons,
-        // never launch. A stale lock from a prior session would otherwise
-        // trigger ensureStarted's launch-if-unreachable path and spawn a
-        // daemon for an unrelated rootDir — leaking processes that
-        // subsequent `stopOwnedPtydDaemonsForRootDir(ourRootDir)` can't see.
-        const client = new PtydClient(rootKey, lock.rootDir, (event) => this.handlePtydEvent(event));
-        const connected = await client.connectIfRunning();
-        if (connected) {
-          this.clients.set(rootKey, client);
-        } else {
-          client.dispose();
-        }
-      } catch {}
-    }
   }
 
   private handlePtydEvent(event: import("../ptyd/controlPlane").PtydTerminalEvent) {

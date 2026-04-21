@@ -13,6 +13,7 @@ export function createTerminalService(backend: TerminalBackend = createPtydBacke
     history: (input) => backend.history(input),
     kill: (input) => backend.kill(input),
     listRoots: () => backend.listRoots(),
+    probeRoot: (rootDir) => backend.probeRoot(rootDir),
     subscribe: (handler) => backend.subscribe(handler),
     dispose: () => backend.dispose?.()
   };

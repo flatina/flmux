@@ -50,7 +50,7 @@ export class PtydClient {
       typeof onEventOrOptions === "function"
         ? { onEvent: onEventOrOptions }
         : (onEventOrOptions ?? {});
-    this.lockFile = new PtydLockFile(rootKey);
+    this.lockFile = new PtydLockFile(rootDir);
     this.controlIpcPath = getPtydControlIpcPath(rootKey);
     this.eventsIpcPath = getPtydEventsIpcPath(rootKey);
     this.onEvent = options.onEvent;

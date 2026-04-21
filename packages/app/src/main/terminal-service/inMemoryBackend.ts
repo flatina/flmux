@@ -249,6 +249,12 @@ class InMemoryTerminalBackend implements TerminalBackend {
     return [...this.roots.values()].map((root) => ({ ...root.status }));
   }
 
+  async probeRoot(rootDir: string): Promise<TerminalRootStatus | null> {
+    const rootKey = toTerminalRootKey(rootDir);
+    const root = this.roots.get(rootKey);
+    return root ? { ...root.status } : null;
+  }
+
   subscribe(handler: (event: TerminalRuntimeEvent) => void) {
     this.subscribers.add(handler);
     return () => {

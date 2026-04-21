@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { callJsonRpcIpc } from "../../src/main/ptyd/jsonRpcIpc";
 import type { AppProcessHandle } from "../support/realAppSmokeSupport";
-import { findOwnedPtydLocksForRootDir } from "../support/ptydCleanup";
+import { loadPtydLockForRootDir } from "../support/ptydCleanup";
 import {
   connectCdp,
   fetchJson,
@@ -500,30 +500,25 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
     // instead of total runtime count so sibling workspace terminals cannot
     // mask a leak of this specific runtime.
     await waitFor(async () => {
-      const locks = await findOwnedPtydLocksForRootDir(installRoot);
-      if (locks.length === 0) {
+      const lock = await loadPtydLockForRootDir(installRoot);
+      if (!lock) {
         return true;
       }
 
-      const terminalLists = await Promise.all(
-        locks.map(async (lock) => {
-          try {
-            return await callJsonRpcIpc<{ terminals: Array<{ ownerPaneId: string | null }> }>(
-              lock.controlIpcPath,
-              "terminal.list",
-              undefined,
-              2_000
-            );
-          } catch {
-            return null;
-          }
-        })
-      );
+      let listing: { terminals: Array<{ ownerPaneId: string | null }> } | null;
+      try {
+        listing = await callJsonRpcIpc<{ terminals: Array<{ ownerPaneId: string | null }> }>(
+          lock.controlIpcPath,
+          "terminal.list",
+          undefined,
+          2_000
+        );
+      } catch {
+        listing = null;
+      }
 
-      return terminalLists.every((listing) =>
-        listing === null ||
+      return listing === null ||
         listing.terminals.every((terminal) => terminal.ownerPaneId !== terminalPaneId)
-      )
         ? true
         : null;
     }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 terminal runtime cleared from install-scoped daemon" });

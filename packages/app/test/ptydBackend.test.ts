@@ -38,8 +38,7 @@ describe("ptyd backend", () => {
         expect(created.terminal.rootDir).toBe(rootDir);
 
         const discoveredRoots = await waitFor(async () => {
-          const roots = await observerBackend.listRoots();
-          return roots.find((root) => root.rootKey === created.rootKey) ?? null;
+          return (await observerBackend.probeRoot(rootDir)) ?? null;
         }, { timeoutMs: 15_000, intervalMs: 250, label: "observer root discovery" });
         expect(discoveredRoots).toMatchObject({
           rootKey: created.rootKey,
@@ -93,8 +92,7 @@ describe("ptyd backend", () => {
         }, { timeoutMs: 15_000, intervalMs: 250, label: "ptyd removed event" });
 
         const rootsAfterKill = await waitFor(async () => {
-          const roots = await observerBackend.listRoots();
-          const root = roots.find((candidate) => candidate.rootKey === created.rootKey);
+          const root = await observerBackend.probeRoot(rootDir);
           return root && root.runtimeCount === 0 ? root : null;
         }, { timeoutMs: 15_000, intervalMs: 250, label: "ptyd runtime count after kill" });
         expect(rootsAfterKill.runtimeCount).toBe(0);

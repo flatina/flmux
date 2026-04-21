@@ -21,6 +21,7 @@ import { createFlmuxHostRequestHandlers } from "./hostRequests";
 import { createFlmuxWebModeAuthorizer, type FlmuxAuthorizationContext, type FlmuxWebModeAuthorizer } from "./webModeAuth";
 import { eventToReadPath } from "./auth/eventAclPath";
 import { resolveFlmuxAuthDir, resolveFlmuxAuthPaths } from "./auth/authConfig";
+import { resolveFlmuxServerPort } from "./auth/serverConfig";
 import { resolveFlmuxRuntimeMode } from "./runtimeMode";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
 import {
@@ -509,10 +510,15 @@ rendererRpc.webHandler.onWebClientDisconnected = (client) => {
   releaseView(viewId);
 };
 
+const portResolution = resolveFlmuxServerPort({
+  authDir: webModeAuthPaths?.authDir ?? null
+});
+
 const server = startFlmuxServer({
   rendererDir,
   resolveShellModelRouter: resolveShellModelRouterForRequest,
   localExtensions,
+  port: portResolution.port,
   saveSession: desktopAuthority
     ? (_context, layouts) => desktopAuthority.persistSession(layouts)
     : userAuthorityRegistry
@@ -579,7 +585,10 @@ if (desktopAuthority) {
   await desktopAuthority.start(server.origin);
 }
 
-console.log(`[flmux] ${runtimeMode} mode server listening at ${server.origin}`);
+console.log(
+  `[flmux] ${runtimeMode} mode server listening at ${server.origin}`
+    + (portResolution.source !== "default" ? ` (port from ${portResolution.source})` : "")
+);
 if (webModeAuthPaths) {
   console.log(`[flmux] auth dir: ${webModeAuthPaths.authDir}`);
   console.log(`[flmux] web origin: ${server.origin} (append ?token=<issued-token> on first attach)`);

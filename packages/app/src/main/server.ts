@@ -54,6 +54,8 @@ export function startFlmuxServer(options: {
     existingAttachmentId: string | null
   ): Promise<FlmuxShellBootstrapResponse>;
   authorizer?: FlmuxWebModeAuthorizer;
+  /** Explicit listen port. Undefined → OS-assigned (current default). */
+  port?: number;
   rpcWebHandler?: {
     open(ws: { send(data: Uint8Array | ArrayBuffer): void | number }): void;
     message(ws: { send(data: Uint8Array | ArrayBuffer): void | number }, raw: string | Buffer | ArrayBuffer | Uint8Array): void;
@@ -240,7 +242,7 @@ export function startFlmuxServer(options: {
     });
   }
 
-  app.listen({ hostname, port: 0 });
+  app.listen({ hostname, port: options.port ?? 0 });
   const server = app.server;
   if (!server) {
     throw new Error("Elysia server failed to start");

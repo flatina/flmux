@@ -40,9 +40,20 @@ type ShellAuthority = Pick<
 };
 
 const runtimeMode = resolveFlmuxRuntimeMode();
+const devAuthAs = readDevAuthAsFlag(Bun.argv);
 process.env.BUNITE_REMOTE_DEBUGGING_PORT ??= "9227";
-process.env.FLMUX_DEV_MODE ??= Bun.argv.includes("--dev") ? "1" : "";
+process.env.FLMUX_DEV_MODE ??= (Bun.argv.includes("--dev") || devAuthAs) ? "1" : "";
 const hiddenWindow = process.env.FLMUX_HIDDEN_WINDOW === "1";
+
+function readDevAuthAsFlag(argv: readonly string[]): string | undefined {
+  const i = argv.indexOf("--dev-auth-as");
+  if (i < 0 || i + 1 >= argv.length) return undefined;
+  const value = argv[i + 1]?.trim();
+  // Reject the next arg if it looks like another flag — prevents
+  // `--dev-auth-as --web` from silently enabling the bypass as user "--web".
+  if (!value || value.startsWith("--")) return undefined;
+  return value;
+}
 
 // Only desktop mode needs the CEF runtime. Web mode runs as a headless
 // Bun server and instantiating AppRuntime eagerly would boot CEF for
@@ -70,7 +81,16 @@ const sessionStore = runtimeMode === "desktop" ? createSessionStore() : null;
 const paneSubscribers = new Map<string, Set<number>>();
 const localExtensions = await discoverConfiguredLocalExtensions(localExtensionsRootDir);
 const webModeAuthPaths = runtimeMode === "web" ? resolveFlmuxAuthPaths(resolveFlmuxAuthDir()) : null;
-const webModeAuthorizer = webModeAuthPaths ? createFlmuxWebModeAuthorizer(webModeAuthPaths) : null;
+const webModeAuthorizer = webModeAuthPaths
+  ? createFlmuxWebModeAuthorizer(webModeAuthPaths, { devAuthAs })
+  : null;
+if (devAuthAs && runtimeMode === "web") {
+  console.warn(
+    `[flmux] [!] DEV AUTH: all web requests authenticated as '${devAuthAs}' — do not use in production`
+  );
+} else if (devAuthAs) {
+  console.warn(`[flmux] --dev-auth-as has no effect in ${runtimeMode} mode; ignored`);
+}
 
 const desktopAuthority: DesktopShellAuthority | null = runtimeMode === "desktop" && sessionStore
   ? await createDesktopShellAuthority({

@@ -28,21 +28,37 @@ export interface FlmuxWebModeAuthorizer {
   isPathAllowed(user: FlmuxUser, method: PathAccessMethod, path: string): boolean;
 }
 
-export function createFlmuxWebModeAuthorizer(paths: FlmuxAuthPaths): FlmuxWebModeAuthorizer {
+export function createFlmuxWebModeAuthorizer(
+  paths: FlmuxAuthPaths,
+  options: { devAuthAs?: string } = {}
+): FlmuxWebModeAuthorizer {
   const userStore = createUserStore(paths.usersFile);
   const tokenStore = createTokenStore(paths.tokensFile);
 
-  return createAuthorizerFromStores({ userStore, tokenStore });
+  return createAuthorizerFromStores({ userStore, tokenStore, devAuthAs: options.devAuthAs });
 }
 
 export function createAuthorizerFromStores(options: {
   userStore: UserStore;
   tokenStore: TokenStore;
+  /** Dev-only bypass: when set, every call to `authorize` returns the named
+   * user regardless of token. Resolves against `userStore` first so an
+   * existing TOML user's ACL still applies; missing entry → synthesize
+   * `allowPaneKinds = "*"`, `allowPaths = "*"`. Must be gated at the call
+   * site — the authorizer itself doesn't know it's running in dev mode. */
+  devAuthAs?: string;
 }): FlmuxWebModeAuthorizer {
+  const devAuthAsName = options.devAuthAs?.trim() || undefined;
+
   return {
     cookieName: "flmux_web_token",
     queryParam: "token",
     authorize(tokenValue) {
+      if (devAuthAsName) {
+        // Resolve on every request so edits to users.toml take effect
+        // without a restart — mirrors the regular token path.
+        return resolveDevContext(options.userStore, devAuthAsName);
+      }
       if (!tokenValue) {
         return null;
       }
@@ -86,4 +102,14 @@ export function createAuthorizerFromStores(options: {
       return matchAnyPathGlob(patterns, path);
     }
   };
+}
+
+function resolveDevContext(userStore: UserStore, name: string): FlmuxAuthorizationContext {
+  const existing = userStore.getUser(name);
+  const user: FlmuxUser = existing ?? {
+    name,
+    allowPaneKinds: "*",
+    allowPaths: "*"
+  };
+  return { user, tokenId: "dev-auth-as" };
 }

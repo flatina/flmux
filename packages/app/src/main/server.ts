@@ -275,16 +275,14 @@ function authorizeRequest(
   const queryToken = url.searchParams.get(authorizer.queryParam);
   const presentedToken = cookieToken ?? bearerToken ?? queryToken ?? "";
 
-  if (!presentedToken) {
-    return denyUnauthorized(set);
-  }
-
+  // `authorize("")` normally returns null; dev-auth-as mode makes it return
+  // a synthetic context. The denial below still fires in the normal path.
   const context = authorizer.authorize(presentedToken);
   if (!context) {
     return denyUnauthorized(set);
   }
 
-  if (queryToken === presentedToken && cookieToken !== presentedToken) {
+  if (queryToken && queryToken === presentedToken && cookieToken !== presentedToken) {
     setHeader(set, "set-cookie", serializeCookie(authorizer.cookieName, presentedToken));
   }
 

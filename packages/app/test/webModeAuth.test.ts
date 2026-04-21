@@ -179,6 +179,136 @@ describe("web mode auth (users + tokens store)", () => {
     }
   });
 
+  it("--dev-auth-as bypasses the token check and adopts users.toml ACL when the user exists", async () => {
+    const { rendererDir, authDir } = await createFixture();
+    // Seed a scoped user so the dev bypass still respects their ACL.
+    await writeFile(
+      join(authDir, "users.toml"),
+      [
+        `[[users]]`,
+        `name = "scoped"`,
+        `allow_pane_kinds = ["browser"]`,
+        `allow_paths.read = ["/status/**"]`,
+        ``
+      ].join("\n"),
+      "utf8"
+    );
+
+    const server = startFlmuxServer({
+      rendererDir,
+      resolveShellModelRouter: async () => createStubShellModelRouter(),
+      authorizer: createFlmuxWebModeAuthorizer(
+        resolveFlmuxAuthPaths(authDir),
+        { devAuthAs: "scoped" }
+      )
+    });
+
+    try {
+      // No token, no cookie — dev bypass still authorizes as 'scoped'.
+      const clients = await fetch(`${server.origin}/api/clients`);
+      expect(clients.status).toBe(200);
+
+      // Seeded user's ACL allows read under /status/** but nothing else.
+      const allowed = await fetch(`${server.origin}/api/model/path/get`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ clientId: "c", path: "/status/app" })
+      });
+      expect(allowed.status).toBe(200);
+
+      const denied = await fetch(`${server.origin}/api/model/path/get`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ clientId: "c", path: "/workspaces" })
+      });
+      expect(denied.status).toBe(403);
+    } finally {
+      server.stop();
+    }
+  });
+
+  it("--dev-auth-as reflects live users.toml edits without a server restart", async () => {
+    const { rendererDir, authDir } = await createFixture();
+    const usersPath = join(authDir, "users.toml");
+
+    const server = startFlmuxServer({
+      rendererDir,
+      resolveShellModelRouter: async () => createStubShellModelRouter(),
+      authorizer: createFlmuxWebModeAuthorizer(
+        resolveFlmuxAuthPaths(authDir),
+        { devAuthAs: "scoped" }
+      )
+    });
+
+    try {
+      // Before any users.toml — synthesized `*` user allows /workspaces read.
+      const before = await fetch(`${server.origin}/api/model/path/get`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ clientId: "c", path: "/workspaces" })
+      });
+      expect(before.status).toBe(200);
+
+      // Write users.toml narrowing 'scoped' — next request must see the new ACL.
+      await writeFile(
+        usersPath,
+        [
+          `[[users]]`,
+          `name = "scoped"`,
+          `allow_pane_kinds = "*"`,
+          `allow_paths.read = ["/status/**"]`,
+          ``
+        ].join("\n"),
+        "utf8"
+      );
+
+      const afterDenied = await fetch(`${server.origin}/api/model/path/get`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ clientId: "c", path: "/workspaces" })
+      });
+      expect(afterDenied.status).toBe(403);
+
+      const afterAllowed = await fetch(`${server.origin}/api/model/path/get`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ clientId: "c", path: "/status/app" })
+      });
+      expect(afterAllowed.status).toBe(200);
+    } finally {
+      server.stop();
+    }
+  });
+
+  it("--dev-auth-as synthesizes a `*`-permission user when the name is absent from users.toml", async () => {
+    const { rendererDir, authDir } = await createFixture();
+    // Leave users.toml absent entirely — dev bypass must still succeed.
+
+    const server = startFlmuxServer({
+      rendererDir,
+      resolveShellModelRouter: async () => createStubShellModelRouter(),
+      authorizer: createFlmuxWebModeAuthorizer(
+        resolveFlmuxAuthPaths(authDir),
+        { devAuthAs: "anon" }
+      )
+    });
+
+    try {
+      const clients = await fetch(`${server.origin}/api/clients`);
+      expect(clients.status).toBe(200);
+
+      // Path ACL is "*" → any path goes through.
+      const call = await fetch(`${server.origin}/api/model/path/call`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ clientId: "c", path: "/panes/new", args: { kind: "terminal" } })
+      });
+      expect(call.status).toBe(200);
+    } finally {
+      server.stop();
+    }
+  });
+
   it("enforces allow_paths.{read,write,call} on /api/model/path/* (B3 ACL)", async () => {
     const { rendererDir, authDir } = await createFixture();
     const bootstrap = await runTokensCli([

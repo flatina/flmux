@@ -16,10 +16,7 @@ export async function stopOwnedPtydDaemonsForRootDir(rootDir: string) {
   } catch {}
 
   try {
-    await waitFor(
-      async () => ((await lockFile.load()) ? null : true),
-      { timeoutMs: 5_000, intervalMs: 200 }
-    );
+    await waitFor(async () => ((await lockFile.load()) ? null : true), { timeoutMs: 5_000, intervalMs: 200 });
   } catch {
     await lockFile.clear();
   }

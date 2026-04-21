@@ -117,16 +117,19 @@ describe("flmux harness smoke", () => {
       }
     });
 
-    const runtimeStatus = await harness.waitFor(async () => {
-      const payload = await harness.runCliJson<
-        ModelEnvelope<{
-          ok: true;
-          found: true;
-          value: string | null;
-        }>
-      >(["get", `/status/panes/${paneId}/terminal/runtimeId`]);
-      return payload.result.value ? payload.result : null;
-    }, { label: `runtimeId for ${paneId}` });
+    const runtimeStatus = await harness.waitFor(
+      async () => {
+        const payload = await harness.runCliJson<
+          ModelEnvelope<{
+            ok: true;
+            found: true;
+            value: string | null;
+          }>
+        >(["get", `/status/panes/${paneId}/terminal/runtimeId`]);
+        return payload.result.value ? payload.result : null;
+      },
+      { label: `runtimeId for ${paneId}` }
+    );
     expect(runtimeStatus.value).toBe(runtimeId);
 
     const terminalStatus = await harness.runCliJson<
@@ -186,19 +189,22 @@ describe("flmux harness smoke", () => {
       runtimeId
     });
 
-    const historyResult = await harness.waitFor(async () => {
-      const payload = await harness.runCliJson<
-        ModelEnvelope<{
-          ok: true;
-          value: {
+    const historyResult = await harness.waitFor(
+      async () => {
+        const payload = await harness.runCliJson<
+          ModelEnvelope<{
             ok: true;
-            runtimeId: string;
-            data: string;
-          };
-        }>
-      >(["call", `/panes/${paneId}/terminal/history`, "maxBytes=20000"]);
-      return payload.result.value.data.includes(marker) ? payload.result.value : null;
-    }, { timeoutMs: 15_000, intervalMs: 250, label: `terminal history for ${paneId}` });
+            value: {
+              ok: true;
+              runtimeId: string;
+              data: string;
+            };
+          }>
+        >(["call", `/panes/${paneId}/terminal/history`, "maxBytes=20000"]);
+        return payload.result.value.data.includes(marker) ? payload.result.value : null;
+      },
+      { timeoutMs: 15_000, intervalMs: 250, label: `terminal history for ${paneId}` }
+    );
     expect(historyResult).toMatchObject({
       ok: true,
       runtimeId
@@ -222,16 +228,19 @@ describe("flmux harness smoke", () => {
       killed: true
     });
 
-    await harness.waitFor(async () => {
-      const payload = await harness.runCliJson<
-        ModelEnvelope<{
-          ok: true;
-          found: true;
-          value: string | null;
-        }>
-      >(["get", `/status/panes/${paneId}/terminal/runtimeId`]);
-      return payload.result.value === null ? true : null;
-    }, { label: `terminal kill propagation for ${paneId}` });
+    await harness.waitFor(
+      async () => {
+        const payload = await harness.runCliJson<
+          ModelEnvelope<{
+            ok: true;
+            found: true;
+            value: string | null;
+          }>
+        >(["get", `/status/panes/${paneId}/terminal/runtimeId`]);
+        return payload.result.value === null ? true : null;
+      },
+      { label: `terminal kill propagation for ${paneId}` }
+    );
 
     const detachedStatus = await harness.runCliJson<
       ModelEnvelope<{
@@ -262,21 +271,19 @@ describe("flmux harness smoke", () => {
   }, 30_000);
 
   it("dispatches a local extension CLI command through the real CLI entrypoint", async () => {
-    const result = await harness.runCliJson<
-      {
-        ok: true;
-        value: {
-          paneId: string;
-          path: string;
-          pane: {
-            id: string;
-            kind: string;
-            title: string;
-            active: boolean;
-          };
+    const result = await harness.runCliJson<{
+      ok: true;
+      value: {
+        paneId: string;
+        path: string;
+        pane: {
+          id: string;
+          kind: string;
+          title: string;
+          active: boolean;
         };
-      }
-    >(["cowsay", "hello", "from", "cli"]);
+      };
+    }>(["cowsay", "hello", "from", "cli"]);
 
     const paneId = result.value.paneId;
     expect(result.value).toMatchObject({

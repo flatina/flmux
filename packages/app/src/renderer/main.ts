@@ -35,9 +35,11 @@ async function bootstrap() {
   await workbench.start();
 
   if (config.devMode) {
-    (window as unknown as {
-      __flmuxTest: { setActiveWorkspace(id: string): void };
-    }).__flmuxTest = {
+    (
+      window as unknown as {
+        __flmuxTest: { setActiveWorkspace(id: string): void };
+      }
+    ).__flmuxTest = {
       setActiveWorkspace: (id: string) => workbench.setActiveWorkspace(id)
     };
   }

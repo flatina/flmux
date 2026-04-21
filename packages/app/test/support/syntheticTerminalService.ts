@@ -21,9 +21,14 @@ export interface SyntheticTerminalServiceOptions {
   rootKey?: string;
 }
 
-export function createSyntheticTerminalService(options: SyntheticTerminalServiceOptions = {}): SyntheticTerminalService {
+export function createSyntheticTerminalService(
+  options: SyntheticTerminalServiceOptions = {}
+): SyntheticTerminalService {
   let nextId = 1;
-  const runtimes = new Map<string, { rootKey: string; rootDir: string; cwd: string; alive: boolean; commandCount: number }>();
+  const runtimes = new Map<
+    string,
+    { rootKey: string; rootDir: string; cwd: string; alive: boolean; commandCount: number }
+  >();
 
   return {
     async create(input) {

@@ -11,9 +11,7 @@ export function pushShellCoreEvent(event: SequencedShellCoreEvent) {
   }
 }
 
-export function subscribeShellCoreEvents(
-  handler: (event: SequencedShellCoreEvent) => void
-): () => void {
+export function subscribeShellCoreEvents(handler: (event: SequencedShellCoreEvent) => void): () => void {
   subscribers.add(handler);
   return () => {
     subscribers.delete(handler);

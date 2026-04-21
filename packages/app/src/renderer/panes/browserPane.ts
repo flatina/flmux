@@ -62,17 +62,14 @@ export class BrowserPaneRenderer implements IContentRenderer {
       this.navigateTo(nextUrl);
     });
 
-    this.webview.addEventListener(
-      "did-navigate",
-      ((event: CustomEvent<{ url: string }>) => {
-        this.currentUrl = event.detail.url;
-        if (this.urlInput) {
-          this.urlInput.value = this.currentUrl;
-        }
+    this.webview.addEventListener("did-navigate", ((event: CustomEvent<{ url: string }>) => {
+      this.currentUrl = event.detail.url;
+      if (this.urlInput) {
+        this.urlInput.value = this.currentUrl;
+      }
 
-        this.deps.onUrlChange(this.paneId, this.currentUrl);
-      }) as EventListener
-    );
+      this.deps.onUrlChange(this.paneId, this.currentUrl);
+    }) as EventListener);
   }
 
   update(event: PanelUpdateEvent<BrowserPaneParams>) {

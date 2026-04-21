@@ -55,8 +55,12 @@ class CounterPaneRenderer implements ExtensionPaneInstance {
       this.render();
     };
 
-    this.host.querySelector<HTMLButtonElement>('[data-action="dec"]')!.addEventListener("click", () => setCount(this.count - 1));
-    this.host.querySelector<HTMLButtonElement>('[data-action="inc"]')!.addEventListener("click", () => setCount(this.count + 1));
+    this.host
+      .querySelector<HTMLButtonElement>('[data-action="dec"]')!
+      .addEventListener("click", () => setCount(this.count - 1));
+    this.host
+      .querySelector<HTMLButtonElement>('[data-action="inc"]')!
+      .addEventListener("click", () => setCount(this.count + 1));
     this.host.querySelector<HTMLButtonElement>('[data-action="reset"]')!.addEventListener("click", () => setCount(0));
   }
 

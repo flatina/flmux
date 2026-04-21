@@ -6,11 +6,7 @@ import type {
   ClientScopedPathListInput,
   ClientScopedPathSetInput
 } from "../shared/rendererBridge";
-import type {
-  ClientRegistration,
-  FlmuxClientSummary,
-  FlmuxShellModelRouter
-} from "./shellModelBridge";
+import type { ClientRegistration, FlmuxClientSummary, FlmuxShellModelRouter } from "./shellModelBridge";
 
 export function createServerShellModelRouter(options: {
   authorityClientId: string;

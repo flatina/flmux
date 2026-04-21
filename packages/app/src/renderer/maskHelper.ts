@@ -1,8 +1,9 @@
 type WebviewElement = HTMLElement & { _surfaceId?: number | null };
 
-declare const window: Window & typeof globalThis & {
-  bunite?: { invoke: (method: string, params?: unknown) => Promise<unknown> };
-};
+declare const window: Window &
+  typeof globalThis & {
+    bunite?: { invoke: (method: string, params?: unknown) => Promise<unknown> };
+  };
 
 export function setupDropIndicatorMasks() {
   if (!window.bunite?.invoke) return;
@@ -13,9 +14,7 @@ export function setupDropIndicatorMasks() {
 
   function syncMasks() {
     const dpr = window.devicePixelRatio || 1;
-    const indicators = document.querySelectorAll<HTMLElement>(
-      ".dv-drop-target-anchor, .dv-drop-target-selection"
-    );
+    const indicators = document.querySelectorAll<HTMLElement>(".dv-drop-target-anchor, .dv-drop-target-selection");
 
     for (const webview of document.querySelectorAll<HTMLElement>("bunite-webview")) {
       const webviewRect = webview.getBoundingClientRect();
@@ -60,19 +59,27 @@ export function setupDropIndicatorMasks() {
     clearMasks();
   }
 
-  document.addEventListener("dragstart", () => {
-    dragging = true;
-    syncMasks();
-  }, true);
+  document.addEventListener(
+    "dragstart",
+    () => {
+      dragging = true;
+      syncMasks();
+    },
+    true
+  );
 
-  document.addEventListener("dragover", () => {
-    if (scheduled) return;
-    scheduled = true;
-    requestAnimationFrame(() => {
-      scheduled = false;
-      if (dragging) syncMasks();
-    });
-  }, true);
+  document.addEventListener(
+    "dragover",
+    () => {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => {
+        scheduled = false;
+        if (dragging) syncMasks();
+      });
+    },
+    true
+  );
 
   document.addEventListener("dragend", endDrag, true);
   document.addEventListener("drop", endDrag, true);

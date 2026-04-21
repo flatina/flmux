@@ -42,8 +42,6 @@ describe("buildPaneWorkspaceContext", () => {
       appOrigin: "http://127.0.0.1:0"
     });
     expect(ctx.id).toBe("workspace with space");
-    expect(ctx.defaultBrowserPath).toBe(
-      "/__flmux/internal/start?workspace=workspace%20with%20space"
-    );
+    expect(ctx.defaultBrowserPath).toBe("/__flmux/internal/start?workspace=workspace%20with%20space");
   });
 });

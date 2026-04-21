@@ -49,13 +49,9 @@ export type PathListResult =
   | { ok: true; found: boolean; entries: ShellPathEntry[] }
   | { ok: false; code: PathErrorCode; error: string };
 
-export type PathSetResult =
-  | { ok: true; value: unknown }
-  | { ok: false; code: PathErrorCode; error: string };
+export type PathSetResult = { ok: true; value: unknown } | { ok: false; code: PathErrorCode; error: string };
 
-export type PathCallResult =
-  | { ok: true; value: unknown }
-  | { ok: false; code: PathErrorCode; error: string };
+export type PathCallResult = { ok: true; value: unknown } | { ok: false; code: PathErrorCode; error: string };
 
 export type BuiltinPaneKind = "browser" | "terminal";
 
@@ -231,10 +227,28 @@ export type ShellCoreEvent =
   | { topic: "workspace.removed"; payload: { id: string } }
   | { topic: "workspace.titleChanged"; payload: { id: string; title: string } }
   | { topic: "workspace.activeChanged"; payload: { id: string | null } }
-  | { topic: "pane.added"; payload: { paneId: string; workspaceId: string; snapshot: ShellPaneRecordSnapshot; params: Record<string, unknown> | undefined; place?: PanePlacement; referencePaneId?: string } }
+  | {
+      topic: "pane.added";
+      payload: {
+        paneId: string;
+        workspaceId: string;
+        snapshot: ShellPaneRecordSnapshot;
+        params: Record<string, unknown> | undefined;
+        place?: PanePlacement;
+        referencePaneId?: string;
+      };
+    }
   | { topic: "pane.removed"; payload: { paneId: string; workspaceId: string } }
   | { topic: "pane.titleChanged"; payload: { paneId: string; workspaceId: string; title: string } }
-  | { topic: "pane.paramsChanged"; payload: { paneId: string; workspaceId: string; params: Record<string, unknown> | undefined; snapshot: ShellPaneRecordSnapshot } }
+  | {
+      topic: "pane.paramsChanged";
+      payload: {
+        paneId: string;
+        workspaceId: string;
+        params: Record<string, unknown> | undefined;
+        snapshot: ShellPaneRecordSnapshot;
+      };
+    }
   | { topic: "pane.activeChanged"; payload: { workspaceId: string; paneId: string | null } };
 
 export type ShellCoreEventTopic = ShellCoreEvent["topic"];

@@ -1,5 +1,5 @@
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, extname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import type { ExtensionManifest } from "../../extension-api/src/manifest";
 import { validateExtensionDirectory } from "./validate";
 
@@ -53,10 +53,7 @@ export async function buildExtensionDirectory(extensionDir: string): Promise<Ext
 
 export function formatExtensionBuildResult(result: ExtensionBuildResult) {
   if (!result.ok) {
-    return [
-      `ERR ${result.extensionDir}`,
-      ...result.errors.map((error) => `  - ${error}`)
-    ].join("\n");
+    return [`ERR ${result.extensionDir}`, ...result.errors.map((error) => `  - ${error}`)].join("\n");
   }
 
   return [
@@ -110,8 +107,12 @@ function createRuntimeManifest(sourceManifest: ExtensionManifest): ExtensionMani
   return {
     ...sourceManifest,
     entrypoints: {
-      renderer: sourceManifest.entrypoints.renderer ? replaceTsExtension(stripRelativePrefix(sourceManifest.entrypoints.renderer)) : undefined,
-      cli: sourceManifest.entrypoints.cli ? replaceTsExtension(stripRelativePrefix(sourceManifest.entrypoints.cli)) : undefined
+      renderer: sourceManifest.entrypoints.renderer
+        ? replaceTsExtension(stripRelativePrefix(sourceManifest.entrypoints.renderer))
+        : undefined,
+      cli: sourceManifest.entrypoints.cli
+        ? replaceTsExtension(stripRelativePrefix(sourceManifest.entrypoints.cli))
+        : undefined
     }
   };
 }
@@ -120,11 +121,13 @@ function rewriteRelativeTsImports(source: string) {
   return source
     .replace(
       /((?:import|export)[\s\S]*?\sfrom\s+["'])(\.{1,2}\/[^"']+?)(["'])/g,
-      (_match, prefix: string, specifier: string, suffix: string) => `${prefix}${maybeRewriteTsExtension(specifier)}${suffix}`
+      (_match, prefix: string, specifier: string, suffix: string) =>
+        `${prefix}${maybeRewriteTsExtension(specifier)}${suffix}`
     )
     .replace(
       /(import\(\s*["'])(\.{1,2}\/[^"']+?)(["']\s*\))/g,
-      (_match, prefix: string, specifier: string, suffix: string) => `${prefix}${maybeRewriteTsExtension(specifier)}${suffix}`
+      (_match, prefix: string, specifier: string, suffix: string) =>
+        `${prefix}${maybeRewriteTsExtension(specifier)}${suffix}`
     );
 }
 

@@ -2,12 +2,7 @@ import { expect } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { AppProcessHandle } from "../support/realAppSmokeSupport";
-import {
-  fetchJson,
-  postJson,
-  waitFor,
-  waitForWebOrigin
-} from "../support/realAppSmokeSupport";
+import { fetchJson, postJson, waitFor, waitForWebOrigin } from "../support/realAppSmokeSupport";
 import { runTokensCli } from "../../src/cliTokens";
 import { stringifyUsersToml } from "../../src/main/auth/tomlWriter";
 
@@ -16,10 +11,7 @@ export interface WebBootSmokeOptions {
   authDir: string;
 }
 
-export async function runWebModeBootSmokeScenario(
-  appHandles: AppProcessHandle[],
-  options: WebBootSmokeOptions
-) {
+export async function runWebModeBootSmokeScenario(appHandles: AppProcessHandle[], options: WebBootSmokeOptions) {
   const handle = appHandles[appHandles.length - 1];
   if (!handle) {
     throw new Error("web app handle is required");
@@ -58,7 +50,7 @@ export async function runWebModeBootSmokeScenario(
   expect(attachmentCookie).toContain("flmux-attachment=");
   expect(attachmentCookie).toContain("HttpOnly");
   expect(attachmentCookie).toContain("Path=/");
-  const shellBootstrap = await shellBootstrapRes.json() as {
+  const shellBootstrap = (await shellBootstrapRes.json()) as {
     attachmentId: string;
     snapshot: { activeWorkspaceId: string | null };
     outerLayout: unknown;
@@ -83,7 +75,7 @@ export async function runWebModeBootSmokeScenario(
     headers: { cookie: `${cookieHeader}; flmux-attachment=${shellBootstrap.attachmentId}` }
   });
   expect(continuityRes.status).toBe(200);
-  const continuityBody = await continuityRes.json() as { attachmentId: string };
+  const continuityBody = (await continuityRes.json()) as { attachmentId: string };
   expect(continuityBody.attachmentId).toBe(shellBootstrap.attachmentId);
 
   // Bogus cookie → server falls back to minting fresh (isolation preserved).
@@ -92,7 +84,7 @@ export async function runWebModeBootSmokeScenario(
     headers: { cookie: `${cookieHeader}; flmux-attachment=web_unknown` }
   });
   expect(bogusRes.status).toBe(200);
-  const bogusBody = await bogusRes.json() as { attachmentId: string };
+  const bogusBody = (await bogusRes.json()) as { attachmentId: string };
   expect(bogusBody.attachmentId).not.toBe("web_unknown");
   expect(bogusBody.attachmentId).toMatch(/^web_/);
 
@@ -126,17 +118,21 @@ export async function runWebModeBootSmokeScenario(
         };
       };
     };
-  }>(`${origin}/api/model/path/call`, {
-    clientId: authorityClientId,
-    path: "/panes/new",
-    args: {
-      kind: "browser",
-      url: "/__flmux/internal/start?workspace=workspace.1",
-      place: "right"
+  }>(
+    `${origin}/api/model/path/call`,
+    {
+      clientId: authorityClientId,
+      path: "/panes/new",
+      args: {
+        kind: "browser",
+        url: "/__flmux/internal/start?workspace=workspace.1",
+        place: "right"
+      }
+    },
+    {
+      headers: { cookie: cookieHeader }
     }
-  }, {
-    headers: { cookie: cookieHeader }
-  });
+  );
   expect(createdBrowser.result.value.pane.kind).toBe("browser");
 
   const cliCreatedTerminal = await runCliJson([
@@ -172,36 +168,49 @@ export async function runWebModeBootSmokeScenario(
         };
       };
     };
-  }>(`${origin}/api/model/path/call`, {
-    clientId: authorityClientId,
-    path: "/panes/new",
-    args: { kind: "cowsay" }
-  }, {
-    headers: { cookie: cookieHeader }
-  });
+  }>(
+    `${origin}/api/model/path/call`,
+    {
+      clientId: authorityClientId,
+      path: "/panes/new",
+      args: { kind: "cowsay" }
+    },
+    {
+      headers: { cookie: cookieHeader }
+    }
+  );
   expect(createdCowsay.result.value.pane.kind).toBe("cowsay");
   expect(createdCowsay.result.value.pane.title).toBe("Cowsay");
 
-  await waitFor(async () => {
-    const panes = await postJson<{
-      ok: true;
-      result: {
+  await waitFor(
+    async () => {
+      const panes = await postJson<{
         ok: true;
-        found: true;
-        value: Record<string, { kind: string; title: string }>;
-      };
-    }>(`${origin}/api/model/path/get`, {
-      clientId: authorityClientId,
-      path: "/status/workspaces/workspace.1/panes"
-    }, {
-      headers: { cookie: cookieHeader }
-    });
+        result: {
+          ok: true;
+          found: true;
+          value: Record<string, { kind: string; title: string }>;
+        };
+      }>(
+        `${origin}/api/model/path/get`,
+        {
+          clientId: authorityClientId,
+          path: "/status/workspaces/workspace.1/panes"
+        },
+        {
+          headers: { cookie: cookieHeader }
+        }
+      );
 
-    const paneKinds = Object.values(panes.result.value).map((pane) => pane.kind);
-    return paneKinds.filter((kind) => kind === "browser").length >= 2 && paneKinds.includes("terminal") && paneKinds.includes("cowsay")
-      ? panes.result.value
-      : null;
-  }, { timeoutMs: 15_000, intervalMs: 250, label: "web mode pane list after API and CLI calls" });
+      const paneKinds = Object.values(panes.result.value).map((pane) => pane.kind);
+      return paneKinds.filter((kind) => kind === "browser").length >= 2 &&
+        paneKinds.includes("terminal") &&
+        paneKinds.includes("cowsay")
+        ? panes.result.value
+        : null;
+    },
+    { timeoutMs: 15_000, intervalMs: 250, label: "web mode pane list after API and CLI calls" }
+  );
 
   // ── Multi-user isolation (B2 Phase 1) ─────────────────────────────
   // Second user's authority is a distinct ShellCore; nothing from admin
@@ -217,16 +226,16 @@ export async function runWebModeBootSmokeScenario(
     ]),
     "utf8"
   );
-  const betaTokenResult = await runTokensCli([
-    "issue", "--user", "beta", "--auth-dir", options.authDir
-  ]) as { token: string };
+  const betaTokenResult = (await runTokensCli(["issue", "--user", "beta", "--auth-dir", options.authDir])) as {
+    token: string;
+  };
 
   const betaBootstrapRes = await fetch(`${origin}/api/shell/bootstrap`, {
     method: "POST",
     headers: { authorization: `Bearer ${betaTokenResult.token}` }
   });
   expect(betaBootstrapRes.status).toBe(200);
-  const betaBootstrap = await betaBootstrapRes.json() as {
+  const betaBootstrap = (await betaBootstrapRes.json()) as {
     attachmentId: string;
     snapshot: { activeWorkspaceId: string | null };
   };
@@ -253,13 +262,19 @@ export async function runWebModeBootSmokeScenario(
       found: true;
       value: Record<string, { kind: string }>;
     };
-  }>(`${origin}/api/model/path/get`, {
-    clientId: betaClients.clients[0].clientId,
-    path: "/status/workspaces/workspace.1/panes"
-  }, {
-    headers: { authorization: `Bearer ${betaTokenResult.token}` }
-  });
-  const betaPaneKinds = Object.values(betaPanes.result.value).map((pane) => pane.kind).sort();
+  }>(
+    `${origin}/api/model/path/get`,
+    {
+      clientId: betaClients.clients[0].clientId,
+      path: "/status/workspaces/workspace.1/panes"
+    },
+    {
+      headers: { authorization: `Bearer ${betaTokenResult.token}` }
+    }
+  );
+  const betaPaneKinds = Object.values(betaPanes.result.value)
+    .map((pane) => pane.kind)
+    .sort();
   expect(betaPaneKinds).toEqual(["browser", "cowsay"]);
 
   // Cross-user clientId rejection: admin's clientId on beta's route is
@@ -278,7 +293,7 @@ export async function runWebModeBootSmokeScenario(
   // 400 — the router rejects the admin clientId presented on beta's
   // authenticated route via `assertAuthorityClientId`.
   expect(crossUserRes.status).toBe(400);
-  const crossUserBody = await crossUserRes.json() as { ok: false; error: string };
+  const crossUserBody = (await crossUserRes.json()) as { ok: false; error: string };
   expect(crossUserBody.error).toContain("Unknown flmux client");
 
   // Cookie-continuity cross-user safety: presenting admin's attachmentId
@@ -292,7 +307,7 @@ export async function runWebModeBootSmokeScenario(
     }
   });
   expect(crossUserReuseRes.status).toBe(200);
-  const crossUserReuseBody = await crossUserReuseRes.json() as { attachmentId: string };
+  const crossUserReuseBody = (await crossUserReuseRes.json()) as { attachmentId: string };
   expect(crossUserReuseBody.attachmentId).not.toBe(shellBootstrap.attachmentId);
   expect(crossUserReuseBody.attachmentId).not.toBe(betaBootstrap.attachmentId);
 }

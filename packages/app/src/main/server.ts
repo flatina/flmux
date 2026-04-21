@@ -58,7 +58,10 @@ export function startFlmuxServer(options: {
   port?: number;
   rpcWebHandler?: {
     open(ws: { send(data: Uint8Array | ArrayBuffer): void | number }): void;
-    message(ws: { send(data: Uint8Array | ArrayBuffer): void | number }, raw: string | Buffer | ArrayBuffer | Uint8Array): void;
+    message(
+      ws: { send(data: Uint8Array | ArrayBuffer): void | number },
+      raw: string | Buffer | ArrayBuffer | Uint8Array
+    ): void;
     close(ws: { send(data: Uint8Array | ArrayBuffer): void | number }): void;
   };
 }): FlmuxServerHandle {
@@ -210,7 +213,11 @@ export function startFlmuxServer(options: {
       }
 
       const pathname = decodeURIComponent(new URL(request.url).pathname);
-      const extensionRuntimeResponse = maybeHandleLocalExtensionRuntimeRequest(pathname, set, options.localExtensions ?? []);
+      const extensionRuntimeResponse = maybeHandleLocalExtensionRuntimeRequest(
+        pathname,
+        set,
+        options.localExtensions ?? []
+      );
       if (extensionRuntimeResponse) {
         return extensionRuntimeResponse;
       }
@@ -236,9 +243,15 @@ export function startFlmuxServer(options: {
           return "Unauthorized";
         }
       },
-      open(ws) { rpcHandler.open(ws.raw); },
-      message(ws, message) { rpcHandler.message(ws.raw, message as string | Buffer); },
-      close(ws) { rpcHandler.close(ws.raw); }
+      open(ws) {
+        rpcHandler.open(ws.raw);
+      },
+      message(ws, message) {
+        rpcHandler.message(ws.raw, message as string | Buffer);
+      },
+      close(ws) {
+        rpcHandler.close(ws.raw);
+      }
     });
   }
 
@@ -256,9 +269,7 @@ export function startFlmuxServer(options: {
   };
 }
 
-type AuthResult =
-  | { ok: true; context: FlmuxAuthorizationContext | null }
-  | { ok: false };
+type AuthResult = { ok: true; context: FlmuxAuthorizationContext | null } | { ok: false };
 
 function authorizeRequest(
   request: Request,
@@ -289,9 +300,7 @@ function authorizeRequest(
   return { ok: true, context };
 }
 
-function denyUnauthorized(
-  set: { status?: number | string; headers?: unknown } & Record<string, unknown>
-): AuthResult {
+function denyUnauthorized(set: { status?: number | string; headers?: unknown } & Record<string, unknown>): AuthResult {
   set.status = 401;
   setHeader(set, "www-authenticate", 'Bearer realm="flmux-web"');
   return { ok: false };
@@ -308,9 +317,7 @@ function assertPathAllowed(
   // have been rejected earlier; defensive fall-through.
   if (!authorizer || !context) return;
   if (authorizer.isPathAllowed(context.user, method, path)) return;
-  throw new FlmuxAuthzError(
-    `User '${context.user.name}' is not allowed to ${method} '${path}'`
-  );
+  throw new FlmuxAuthzError(`User '${context.user.name}' is not allowed to ${method} '${path}'`);
 }
 
 function checkPaneKindAuthz(
@@ -338,11 +345,7 @@ function checkPaneKindAuthz(
   return `User '${context.user.name}' is not allowed to create pane kind '${kind}'`;
 }
 
-function setHeader(
-  set: { headers?: unknown } & Record<string, unknown>,
-  name: string,
-  value: string
-) {
+function setHeader(set: { headers?: unknown } & Record<string, unknown>, name: string, value: string) {
   const current = isPlainHeaderRecord(set.headers) ? set.headers : {};
   set.headers = {
     ...current,
@@ -471,7 +474,7 @@ function handleLocalExtensionRuntimeRequest(
     return "Not Found";
   }
 
-  const { extension, filePath } = resolved;
+  const { filePath } = resolved;
   const contentType = MIME_TYPES[extname(filePath)] ?? "application/octet-stream";
 
   return new Response(Bun.file(filePath), {
@@ -479,10 +482,7 @@ function handleLocalExtensionRuntimeRequest(
   });
 }
 
-function resolveLocalExtensionRuntimeFile(
-  pathname: string,
-  localExtensions: DiscoveredLocalExtension[]
-) {
+function resolveLocalExtensionRuntimeFile(pathname: string, localExtensions: DiscoveredLocalExtension[]) {
   const parts = pathname.split("/").filter(Boolean);
   if (parts.length < 5) {
     return null;
@@ -527,10 +527,7 @@ function resolveExtensionRuntimePath(rootDir: string, relativePath: string) {
   return normalizedFullPath;
 }
 
-async function handleExtensionApiRuntimeModuleRequest(
-  moduleName: string,
-  set: { status?: number | string }
-) {
+async function handleExtensionApiRuntimeModuleRequest(moduleName: string, set: { status?: number | string }) {
   const builtPath = resolveExtensionApiRuntimeBuiltPath(moduleName);
   if (builtPath) {
     return new Response(Bun.file(builtPath), {
@@ -609,7 +606,11 @@ function isSessionSaveLayouts(value: unknown): value is FlmuxSessionSaveLayouts 
   if (!("outerLayout" in candidate) || !("innerLayouts" in candidate)) {
     return false;
   }
-  if (candidate.innerLayouts === null || typeof candidate.innerLayouts !== "object" || Array.isArray(candidate.innerLayouts)) {
+  if (
+    candidate.innerLayouts === null ||
+    typeof candidate.innerLayouts !== "object" ||
+    Array.isArray(candidate.innerLayouts)
+  ) {
     return false;
   }
   return true;
@@ -620,6 +621,6 @@ function escapeHtml(value: string) {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
-    .replaceAll("\"", "&quot;")
+    .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }

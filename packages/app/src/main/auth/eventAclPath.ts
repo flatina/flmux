@@ -20,18 +20,14 @@ export function eventToReadPath(event: SequencedShellCoreEvent): string | null {
     case "workspace.activeChanged":
       // Slot-scoped — observing the active-change of your own attachment
       // requires read on /status/attachments/{yourId}/currentWorkspace.
-      return event.targetAttachmentId
-        ? `/status/attachments/${event.targetAttachmentId}/currentWorkspace`
-        : null;
+      return event.targetAttachmentId ? `/status/attachments/${event.targetAttachmentId}/currentWorkspace` : null;
     case "pane.added":
     case "pane.removed":
     case "pane.titleChanged":
     case "pane.paramsChanged":
       return `/status/panes/${event.payload.paneId}`;
     case "pane.activeChanged":
-      return event.targetAttachmentId
-        ? `/status/attachments/${event.targetAttachmentId}/currentWorkspace`
-        : null;
+      return event.targetAttachmentId ? `/status/attachments/${event.targetAttachmentId}/currentWorkspace` : null;
   }
   return null;
 }

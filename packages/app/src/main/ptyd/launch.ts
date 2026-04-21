@@ -63,7 +63,8 @@ function launchDetachedProcess(
 ) {
   const shouldHideViaPowerShell = process.platform === "win32" && !isDevLikeProcess();
   if (shouldHideViaPowerShell) {
-    const powerShell = Bun.which("pwsh.exe") ?? Bun.which("pwsh") ?? Bun.which("powershell.exe") ?? Bun.which("powershell");
+    const powerShell =
+      Bun.which("pwsh.exe") ?? Bun.which("pwsh") ?? Bun.which("powershell.exe") ?? Bun.which("powershell");
     if (powerShell) {
       const command = [
         "Start-Process",
@@ -93,7 +94,10 @@ function launchDetachedProcess(
 }
 
 function isDevLikeProcess() {
-  return process.env.FLMUX_DEV_MODE === "1" || [...process.argv, ...Bun.argv].some((arg) => arg.endsWith(".test.ts") || arg.endsWith(".test.js"));
+  return (
+    process.env.FLMUX_DEV_MODE === "1" ||
+    [...process.argv, ...Bun.argv].some((arg) => arg.endsWith(".test.ts") || arg.endsWith(".test.js"))
+  );
 }
 
 function quotePowerShell(value: string) {

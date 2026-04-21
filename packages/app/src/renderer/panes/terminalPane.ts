@@ -3,11 +3,7 @@ import type { Terminal as XtermTerminal } from "@xterm/xterm";
 import type { GroupPanelPartInitParameters, IContentRenderer } from "dockview-core";
 import type { TerminalHostAPI } from "../terminalHost";
 import type { ShellModelAPI } from "../shell/types";
-import type {
-  TerminalCreateResult,
-  TerminalRuntimeEvent,
-  TerminalWriteResult
-} from "../../shared/terminal";
+import type { TerminalCreateResult, TerminalRuntimeEvent, TerminalWriteResult } from "../../shared/terminal";
 
 export interface TerminalPaneRendererDependencies {
   shellModel: ShellModelAPI;
@@ -84,10 +80,7 @@ export class TerminalPaneRenderer implements IContentRenderer {
     }
 
     this.xtermReady = (async () => {
-      const [{ Terminal }, { FitAddon }] = await Promise.all([
-        import("@xterm/xterm"),
-        import("@xterm/addon-fit")
-      ]);
+      const [{ Terminal }, { FitAddon }] = await Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit")]);
 
       if (!this.viewportEl || this.xterm) {
         return;
@@ -133,7 +126,7 @@ export class TerminalPaneRenderer implements IContentRenderer {
 
     try {
       const result = await this.deps.shellModel.pathCall(`/panes/${this.paneId}/terminal/attach`, {
-        cwd: this.cwd,
+        cwd: this.cwd
       });
       if (!result.ok) {
         throw new Error(result.error);
@@ -259,7 +252,5 @@ export class TerminalPaneRenderer implements IContentRenderer {
 }
 
 function clampHistory(history: string) {
-  return history.length > MAX_RENDER_HISTORY_CHARS
-    ? history.slice(-MAX_RENDER_HISTORY_CHARS)
-    : history;
+  return history.length > MAX_RENDER_HISTORY_CHARS ? history.slice(-MAX_RENDER_HISTORY_CHARS) : history;
 }

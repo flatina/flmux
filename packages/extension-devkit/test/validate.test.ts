@@ -3,11 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { buildExtensionDirectory } from "../src/build";
-import {
-  formatExtensionValidationResult,
-  resolveValidateTargets,
-  validateExtensionDirectory
-} from "../src/validate";
+import { formatExtensionValidationResult, resolveValidateTargets, validateExtensionDirectory } from "../src/validate";
 import { FLMUX_EXTENSION_API_VERSION, validateExtensionManifest } from "../../extension-api/src/manifest";
 
 const tempDirs: string[] = [];
@@ -114,9 +110,7 @@ describe("extension-devkit validate", () => {
 
     const result = await validateExtensionDirectory(extensionDir);
     expect(result.ok).toBe(false);
-    expect(result.errors).toEqual([
-      "Renderer entrypoint does not exist: ./dist/index.js"
-    ]);
+    expect(result.errors).toEqual(["Renderer entrypoint does not exist: ./dist/index.js"]);
   });
 
   it("defaults validate targets to the current working directory", () => {
@@ -195,15 +189,19 @@ async function createExtensionFixture(input: {
 
   await writeFile(
     join(extensionDir, "manifest.json"),
-    JSON.stringify({
-      id: input.id,
-      name: input.name,
-      version: input.version,
-      apiVersion: input.apiVersion,
-      entrypoints: {
-        renderer: input.rendererEntry
-      }
-    }, null, 2),
+    JSON.stringify(
+      {
+        id: input.id,
+        name: input.name,
+        version: input.version,
+        apiVersion: input.apiVersion,
+        entrypoints: {
+          renderer: input.rendererEntry
+        }
+      },
+      null,
+      2
+    ),
     "utf8"
   );
 

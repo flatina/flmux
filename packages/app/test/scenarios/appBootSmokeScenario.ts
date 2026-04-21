@@ -33,24 +33,30 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
     const firstWorkspaceStartUrl = `${appOrigin}/__flmux/internal/start?workspace=${firstWorkspaceId}`;
     const secondWorkspaceStartUrl = `${appOrigin}/__flmux/internal/start?workspace=${secondWorkspaceId}`;
 
-    await waitFor(async () => {
-      const targets = await fetchTargets(port);
-      return targets.some((target) => target.url === firstWorkspaceStartUrl) ? true : null;
-    }, { timeoutMs: 20_000, intervalMs: 500, label: "default start browser target" });
+    await waitFor(
+      async () => {
+        const targets = await fetchTargets(port);
+        return targets.some((target) => target.url === firstWorkspaceStartUrl) ? true : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 500, label: "default start browser target" }
+    );
 
     const session = await connectCdp(mainTarget.webSocketDebuggerUrl!);
     await session.send("Runtime.enable");
 
-    const initialState = await waitFor(async () => {
-      const state = await session.evaluate<{
-        title: string;
-        workspacePanelCount: number;
-      }>(`(() => ({
+    const initialState = await waitFor(
+      async () => {
+        const state = await session.evaluate<{
+          title: string;
+          workspacePanelCount: number;
+        }>(`(() => ({
         title: document.title,
         workspacePanelCount: document.querySelectorAll('.workspace-panel[data-workspace-id="${firstWorkspaceId}"]').length
       }))()`);
-      return state.workspacePanelCount === 1 && state.title.includes("Workspace 1") ? state : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "initial workbench state" });
+        return state.workspacePanelCount === 1 && state.title.includes("Workspace 1") ? state : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "initial workbench state" }
+    );
     expect(initialState.title).toContain("Workspace 1");
 
     const initialClients = await fetchJson<{
@@ -64,19 +70,22 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
       title: "Workspace 1"
     });
 
-    const initialCowsay = await waitFor(async () => {
-      const state = await session.evaluate<{
-        cowsayCount: number;
-        probeTitle: string;
-      }>(`(() => {
+    const initialCowsay = await waitFor(
+      async () => {
+        const state = await session.evaluate<{
+          cowsayCount: number;
+          probeTitle: string;
+        }>(`(() => {
         const panel = document.querySelector('.workspace-panel[data-workspace-id="${firstWorkspaceId}"]');
         return {
           cowsayCount: panel?.querySelectorAll('.cowsay-panel').length ?? 0,
           probeTitle: panel?.querySelector('.cowsay-panel strong')?.textContent ?? ''
         };
       })()`);
-      return state.cowsayCount >= 1 && state.probeTitle.includes("cowsay probe") ? state : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "default cowsay panel" });
+        return state.cowsayCount >= 1 && state.probeTitle.includes("cowsay probe") ? state : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "default cowsay panel" }
+    );
     expect(initialCowsay.cowsayCount).toBeGreaterThanOrEqual(1);
 
     const clientId = await waitForSingleClientId(appOrigin, "workspace client id");
@@ -97,13 +106,14 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
     })()`);
     expect(outerAddClicked).toBe(true);
 
-    const createdWorkspaceState = await waitFor(async () => {
-      const state = await session.evaluate<{
-        title: string;
-        workspacePanelCount: number;
-        secondWorkspacePresent: boolean;
-        cowsayCount: number;
-      }>(`(() => {
+    const createdWorkspaceState = await waitFor(
+      async () => {
+        const state = await session.evaluate<{
+          title: string;
+          workspacePanelCount: number;
+          secondWorkspacePresent: boolean;
+          cowsayCount: number;
+        }>(`(() => {
         const second = document.querySelector('.workspace-panel[data-workspace-id="${secondWorkspaceId}"]');
         return {
           title: document.title,
@@ -112,30 +122,36 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
           cowsayCount: second?.querySelectorAll('.cowsay-panel').length ?? 0
         };
       })()`);
-      return (
-        state.secondWorkspacePresent &&
-        state.workspacePanelCount === 2 &&
-        state.title.includes("Workspace 2") &&
-        state.cowsayCount >= 1
-      )
-        ? state
-        : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "created workspace state" });
+        return state.secondWorkspacePresent &&
+          state.workspacePanelCount === 2 &&
+          state.title.includes("Workspace 2") &&
+          state.cowsayCount >= 1
+          ? state
+          : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "created workspace state" }
+    );
     expect(createdWorkspaceState.title).toContain("Workspace 2");
 
-    await waitFor(async () => {
-      const clients = await fetchJson<{
-        ok: true;
-        clients: Array<{ workspace: { id: string; title: string } | null }>;
-      }>(`${appOrigin}/api/clients`);
-      const workspace = clients.clients[0]?.workspace;
-      return workspace?.id === secondWorkspaceId ? workspace : null;
-    }, { timeoutMs: 20_000, intervalMs: 500, label: "workspace 2 client status" });
+    await waitFor(
+      async () => {
+        const clients = await fetchJson<{
+          ok: true;
+          clients: Array<{ workspace: { id: string; title: string } | null }>;
+        }>(`${appOrigin}/api/clients`);
+        const workspace = clients.clients[0]?.workspace;
+        return workspace?.id === secondWorkspaceId ? workspace : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 500, label: "workspace 2 client status" }
+    );
 
-    await waitFor(async () => {
-      const targets = await fetchTargets(port);
-      return targets.some((target) => target.url === secondWorkspaceStartUrl) ? true : null;
-    }, { timeoutMs: 20_000, intervalMs: 500, label: "workspace 2 start browser target" });
+    await waitFor(
+      async () => {
+        const targets = await fetchTargets(port);
+        return targets.some((target) => target.url === secondWorkspaceStartUrl) ? true : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 500, label: "workspace 2 start browser target" }
+    );
 
     const switchedBackToOne = await session.evaluate<boolean>(`(() => {
       const tab = Array.from(document.querySelectorAll('.dv-tab'))
@@ -148,10 +164,13 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
     })()`);
     expect(switchedBackToOne).toBe(true);
 
-    await waitFor(async () => {
-      const title = await session.evaluate<string>(`document.title`);
-      return title.includes("Workspace 1") ? title : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 1 title after switch" });
+    await waitFor(
+      async () => {
+        const title = await session.evaluate<string>(`document.title`);
+        return title.includes("Workspace 1") ? title : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "workspace 1 title after switch" }
+    );
 
     const switchedToTwo = await session.evaluate<boolean>(`(() => {
       const tab = Array.from(document.querySelectorAll('.dv-tab'))
@@ -164,10 +183,13 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
     })()`);
     expect(switchedToTwo).toBe(true);
 
-    await waitFor(async () => {
-      const title = await session.evaluate<string>(`document.title`);
-      return title.includes("Workspace 2") ? title : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 title after switch" });
+    await waitFor(
+      async () => {
+        const title = await session.evaluate<string>(`document.title`);
+        return title.includes("Workspace 2") ? title : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 title after switch" }
+    );
 
     const innerAddClicked = await session.evaluate<boolean>(`(() => {
       const panel = document.querySelector('.workspace-panel[data-workspace-id="${secondWorkspaceId}"]');
@@ -202,28 +224,32 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
     })()`);
     expect(inspectorPicked).toBe(true);
 
-    const inspectorPaneId = await waitFor(async () => {
-      const panes = await postJson<{
-        ok: true;
-        result: {
+    const inspectorPaneId = await waitFor(
+      async () => {
+        const panes = await postJson<{
           ok: true;
-          found: true;
-          value: Record<string, { id: string; kind: string }>;
-        };
-      }>(`${appOrigin}/api/model/path/get`, {
-        clientId,
-        path: `/status/workspaces/${secondWorkspaceId}/panes`
-      });
-      return Object.values(panes.result.value).find((pane) => pane.kind === "inspector")?.id ?? null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "inspector pane id after popup pick" });
+          result: {
+            ok: true;
+            found: true;
+            value: Record<string, { id: string; kind: string }>;
+          };
+        }>(`${appOrigin}/api/model/path/get`, {
+          clientId,
+          path: `/status/workspaces/${secondWorkspaceId}/panes`
+        });
+        return Object.values(panes.result.value).find((pane) => pane.kind === "inspector")?.id ?? null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "inspector pane id after popup pick" }
+    );
 
-    await waitFor(async () => {
-      const state = await session.evaluate<{
-        workspaceId: string;
-        appTitle: string;
-        paneCount: string;
-        subscription: string;
-      }>(`(() => {
+    await waitFor(
+      async () => {
+        const state = await session.evaluate<{
+          workspaceId: string;
+          appTitle: string;
+          paneCount: string;
+          subscription: string;
+        }>(`(() => {
         const panel = document.querySelector('.workspace-panel[data-workspace-id="${secondWorkspaceId}"] .inspector-panel');
         return {
           workspaceId: panel?.querySelector('[data-role="workspace-id"]')?.textContent ?? '',
@@ -232,15 +258,15 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
           subscription: panel?.querySelector('[data-role="subscription"]')?.textContent ?? ''
         };
       })()`);
-      return (
-        state.workspaceId === secondWorkspaceId &&
-        state.appTitle === "flmux" &&
-        state.paneCount.length > 0 &&
-        state.subscription === "*"
-      )
-        ? state
-        : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "inspector snapshot on workspace 2" });
+        return state.workspaceId === secondWorkspaceId &&
+          state.appTitle === "flmux" &&
+          state.paneCount.length > 0 &&
+          state.subscription === "*"
+          ? state
+          : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "inspector snapshot on workspace 2" }
+    );
 
     const inspectorState = await postJson<{
       ok: true;
@@ -305,15 +331,18 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
     })()`);
     expect(pingedInspector).toBe(true);
 
-    await waitFor(async () => {
-      const state = await session.evaluate<{ lastEvent: string }>(`(() => {
+    await waitFor(
+      async () => {
+        const state = await session.evaluate<{ lastEvent: string }>(`(() => {
         const panel = document.querySelector('.workspace-panel[data-workspace-id="${secondWorkspaceId}"] .inspector-panel');
         return {
           lastEvent: panel?.querySelector('[data-role="last-event"]')?.textContent ?? ''
         };
       })()`);
-      return state.lastEvent === "inspector.ping" ? state : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "inspector ping event" });
+        return state.lastEvent === "inspector.ping" ? state : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "inspector ping event" }
+    );
 
     const scratchpadPane = await postJson<{
       ok: true;
@@ -328,19 +357,22 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
     });
     const scratchpadPaneId = scratchpadPane.result.value.paneId;
 
-    await waitFor(async () => {
-      const state = await session.evaluate<{
-        workspaceId: string;
-        note: string;
-      }>(`(() => {
+    await waitFor(
+      async () => {
+        const state = await session.evaluate<{
+          workspaceId: string;
+          note: string;
+        }>(`(() => {
         const panel = document.querySelector('.workspace-panel[data-workspace-id="${secondWorkspaceId}"] .scratchpad-panel');
         return {
           workspaceId: panel?.querySelector('[data-role="workspace-id"]')?.textContent ?? '',
           note: panel?.querySelector('textarea')?.value ?? ''
         };
       })()`);
-      return state.workspaceId === secondWorkspaceId && state.note === "" ? state : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "scratchpad panel on workspace 2" });
+        return state.workspaceId === secondWorkspaceId && state.note === "" ? state : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "scratchpad panel on workspace 2" }
+    );
 
     const scratchpadMarker = `scratchpad-${crypto.randomUUID()}`;
     const updatedScratchpad = await postJson<{
@@ -356,23 +388,26 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
     });
     expect(updatedScratchpad.result.value).toBe(scratchpadMarker);
 
-    await waitFor(async () => {
-      const state = await session.evaluate<{
-        note: string;
-        counter: string;
-      }>(`(() => {
+    await waitFor(
+      async () => {
+        const state = await session.evaluate<{
+          note: string;
+          counter: string;
+        }>(`(() => {
         const panel = document.querySelector('.workspace-panel[data-workspace-id="${secondWorkspaceId}"] .scratchpad-panel');
         return {
           note: panel?.querySelector('textarea')?.value ?? '',
           counter: panel?.querySelector('[data-role="counter"]')?.textContent ?? ''
         };
       })()`);
-      return state.note === scratchpadMarker && state.counter.includes("chars") ? state : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "scratchpad note update" });
+        return state.note === scratchpadMarker && state.counter.includes("chars") ? state : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "scratchpad note update" }
+    );
 
-    const secondWorkspaceStartTargetCountBefore = (await fetchTargets(port))
-      .filter((target) => target.url === secondWorkspaceStartUrl)
-      .length;
+    const secondWorkspaceStartTargetCountBefore = (await fetchTargets(port)).filter(
+      (target) => target.url === secondWorkspaceStartUrl
+    ).length;
 
     await postJson(`${appOrigin}/api/model/path/call`, {
       clientId,
@@ -380,12 +415,16 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
       args: { kind: "browser", place: "right" }
     });
 
-    await waitFor(async () => {
-      const targets = await fetchTargets(port);
-      return targets.filter((target) => target.url === secondWorkspaceStartUrl).length > secondWorkspaceStartTargetCountBefore
-        ? true
-        : null;
-    }, { timeoutMs: 20_000, intervalMs: 500, label: "new workspace 2 browser target" });
+    await waitFor(
+      async () => {
+        const targets = await fetchTargets(port);
+        return targets.filter((target) => target.url === secondWorkspaceStartUrl).length >
+          secondWorkspaceStartTargetCountBefore
+          ? true
+          : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 500, label: "new workspace 2 browser target" }
+    );
 
     const terminalPane = await postJson<{
       ok: true;
@@ -404,27 +443,30 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
     });
     const terminalPaneId = terminalPane.result.value.paneId;
 
-    await waitFor(async () => {
-      const status = await postJson<{
-        ok: true;
-        result: {
+    await waitFor(
+      async () => {
+        const status = await postJson<{
           ok: true;
-          found: true;
-          value: {
-            attached: boolean;
-            rootKey: string | null;
-            runtimeId: string | null;
+          result: {
+            ok: true;
+            found: true;
+            value: {
+              attached: boolean;
+              rootKey: string | null;
+              runtimeId: string | null;
+            };
           };
-        };
-      }>(`${appOrigin}/api/model/path/get`, {
-        clientId,
-        path: `/status/panes/${terminalPaneId}/terminal`
-      });
+        }>(`${appOrigin}/api/model/path/get`, {
+          clientId,
+          path: `/status/panes/${terminalPaneId}/terminal`
+        });
 
-      return status.result.value.attached && status.result.value.rootKey && status.result.value.runtimeId
-        ? status.result.value
-        : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 terminal attach" });
+        return status.result.value.attached && status.result.value.rootKey && status.result.value.runtimeId
+          ? status.result.value
+          : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 terminal attach" }
+    );
 
     const closedWorkspace = await session.evaluate<boolean>(`(() => {
       const tab = Array.from(document.querySelectorAll('.dv-tab'))
@@ -441,84 +483,91 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
     })()`);
     expect(closedWorkspace).toBe(true);
 
-    await waitFor(async () => {
-      const state = await session.evaluate<{
-        title: string;
-        workspacePanelCount: number;
-        secondPresent: boolean;
-      }>(`(() => ({
+    await waitFor(
+      async () => {
+        const state = await session.evaluate<{
+          title: string;
+          workspacePanelCount: number;
+          secondPresent: boolean;
+        }>(`(() => ({
         title: document.title,
         workspacePanelCount: document.querySelectorAll('.workspace-panel').length,
         secondPresent: Boolean(document.querySelector('.workspace-panel[data-workspace-id="${secondWorkspaceId}"]'))
       }))()`);
-      return (
-        state.workspacePanelCount === 1 &&
-        !state.secondPresent &&
-        state.title.includes("Workspace 1")
-      )
-        ? state
-        : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 close fallback to workspace 1" });
+        return state.workspacePanelCount === 1 && !state.secondPresent && state.title.includes("Workspace 1")
+          ? state
+          : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 close fallback to workspace 1" }
+    );
 
-    await waitFor(async () => {
-      const clients = await fetchJson<{
-        ok: true;
-        clients: Array<{ workspace: { id: string; title: string } | null }>;
-      }>(`${appOrigin}/api/clients`);
-      const workspace = clients.clients[0]?.workspace;
-      return workspace?.id === firstWorkspaceId ? workspace : null;
-    }, { timeoutMs: 20_000, intervalMs: 500, label: "workspace 1 client status after close" });
+    await waitFor(
+      async () => {
+        const clients = await fetchJson<{
+          ok: true;
+          clients: Array<{ workspace: { id: string; title: string } | null }>;
+        }>(`${appOrigin}/api/clients`);
+        const workspace = clients.clients[0]?.workspace;
+        return workspace?.id === firstWorkspaceId ? workspace : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 500, label: "workspace 1 client status after close" }
+    );
 
-    await waitFor(async () => {
-      try {
-        const saved = (await Bun.file(sessionFile).json()) as {
-          version: number;
-          outerLayout: { panels?: Record<string, unknown> } | null;
-          workspaces: Record<string, unknown>;
-        };
-        if (saved.version !== 4) {
+    await waitFor(
+      async () => {
+        try {
+          const saved = (await Bun.file(sessionFile).json()) as {
+            version: number;
+            outerLayout: { panels?: Record<string, unknown> } | null;
+            workspaces: Record<string, unknown>;
+          };
+          if (saved.version !== 4) {
+            return null;
+          }
+          if (!(firstWorkspaceId in saved.workspaces) || secondWorkspaceId in saved.workspaces) {
+            return null;
+          }
+          const outerPanels = saved.outerLayout?.panels ?? null;
+          if (!outerPanels || !(firstWorkspaceId in outerPanels) || secondWorkspaceId in outerPanels) {
+            return null;
+          }
+          return true;
+        } catch {
           return null;
         }
-        if (!(firstWorkspaceId in saved.workspaces) || secondWorkspaceId in saved.workspaces) {
-          return null;
-        }
-        const outerPanels = saved.outerLayout?.panels ?? null;
-        if (!outerPanels || !(firstWorkspaceId in outerPanels) || secondWorkspaceId in outerPanels) {
-          return null;
-        }
-        return true;
-      } catch {
-        return null;
-      }
-    }, { timeoutMs: 10_000, intervalMs: 100, label: "workspace close persisted session file" });
+      },
+      { timeoutMs: 10_000, intervalMs: 100, label: "workspace close persisted session file" }
+    );
 
     // Closing workspace.2 kills its terminal pane; verify no runtime owned by
     // that pane remains on the install-scoped daemon. Filter by ownerPaneId
     // instead of total runtime count so sibling workspace terminals cannot
     // mask a leak of this specific runtime.
-    await waitFor(async () => {
-      const lock = await loadPtydLockForRootDir(rootDir);
-      if (!lock) {
-        return true;
-      }
+    await waitFor(
+      async () => {
+        const lock = await loadPtydLockForRootDir(rootDir);
+        if (!lock) {
+          return true;
+        }
 
-      let listing: { terminals: Array<{ ownerPaneId: string | null }> } | null;
-      try {
-        listing = await callJsonRpcIpc<{ terminals: Array<{ ownerPaneId: string | null }> }>(
-          lock.controlIpcPath,
-          "terminal.list",
-          undefined,
-          2_000
-        );
-      } catch {
-        listing = null;
-      }
+        let listing: { terminals: Array<{ ownerPaneId: string | null }> } | null;
+        try {
+          listing = await callJsonRpcIpc<{ terminals: Array<{ ownerPaneId: string | null }> }>(
+            lock.controlIpcPath,
+            "terminal.list",
+            undefined,
+            2_000
+          );
+        } catch {
+          listing = null;
+        }
 
-      return listing === null ||
-        listing.terminals.every((terminal) => terminal.ownerPaneId !== terminalPaneId)
-        ? true
-        : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 terminal runtime cleared from install-scoped daemon" });
+        return listing === null || listing.terminals.every((terminal) => terminal.ownerPaneId !== terminalPaneId)
+          ? true
+          : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 terminal runtime cleared from install-scoped daemon" }
+    );
 
     await session.close();
   } finally {

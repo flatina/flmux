@@ -21,22 +21,14 @@ let handle: WebAppHandle | null = null;
 test.beforeAll(async () => {
   const rootDir = mkdtempSync(resolve(tmpdir(), "flmux-browser-smoke-"));
   const authDir = join(rootDir, ".flmux", "auth");
-  const tokenProcess = spawn(
-    "bun",
-    ["src/cli.ts", "tokens", "bootstrap", "--auth-dir", authDir],
-    { cwd: APP_DIR }
-  );
+  const tokenProcess = spawn("bun", ["src/cli.ts", "tokens", "bootstrap", "--auth-dir", authDir], { cwd: APP_DIR });
   const tokenOutput = await collectOutput(tokenProcess);
   const bootstrap = JSON.parse(tokenOutput) as { token: string };
 
-  const appProcess = spawn(
-    "bun",
-    ["run", "dev", "--", "--web"],
-    {
-      cwd: APP_DIR,
-      env: { ...process.env, FLMUX_ROOT_DIR: rootDir, FLMUX_DEV_MODE: "1" },
-    }
-  );
+  const appProcess = spawn("bun", ["run", "dev", "--", "--web"], {
+    cwd: APP_DIR,
+    env: { ...process.env, FLMUX_ROOT_DIR: rootDir, FLMUX_DEV_MODE: "1" }
+  });
 
   const origin = await waitForOrigin(appProcess);
   handle = { process: appProcess, rootDir, authDir, origin, token: bootstrap.token };
@@ -103,7 +95,7 @@ test("C1 WS reconnect replays buffered events (B1c)", async ({ browser }) => {
     const clientsRes = await fetch(`${handle.origin}/api/clients`, {
       headers: { cookie: cookieHeader }
     });
-    const clients = await clientsRes.json() as { clients: Array<{ clientId: string }> };
+    const clients = (await clientsRes.json()) as { clients: Array<{ clientId: string }> };
     const authorityClientId = clients.clients[0]!.clientId;
 
     const createRes = await fetch(`${handle.origin}/api/model/path/call`, {
@@ -140,8 +132,7 @@ test("C2 tab refresh reuses attachmentId + preserves slot state (B2P3)", async (
     await page.goto(`${handle.origin}/?token=${encodeURIComponent(handle.token)}`);
     await expect(page.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
 
-    const attachmentIdBefore = (await context.cookies(handle.origin))
-      .find((c) => c.name === "flmux-attachment")?.value;
+    const attachmentIdBefore = (await context.cookies(handle.origin)).find((c) => c.name === "flmux-attachment")?.value;
     expect(attachmentIdBefore).toMatch(/^web_/);
 
     // Mutate slot state so the reload's preservation is observable:
@@ -149,24 +140,29 @@ test("C2 tab refresh reuses attachmentId + preserves slot state (B2P3)", async (
     // the slot's activeWorkspaceId across the refresh.
     const cookies = await context.cookies(handle.origin);
     const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
-    const clientId = ((await (await fetch(`${handle.origin}/api/clients`, {
-      headers: { cookie: cookieHeader }
-    })).json()) as { clients: Array<{ clientId: string }> }).clients[0]!.clientId;
+    const clientId = (
+      (await (
+        await fetch(`${handle.origin}/api/clients`, {
+          headers: { cookie: cookieHeader }
+        })
+      ).json()) as { clients: Array<{ clientId: string }> }
+    ).clients[0]!.clientId;
 
-    const created = await (await fetch(`${handle.origin}/api/model/path/call`, {
-      method: "POST",
-      headers: { "content-type": "application/json", cookie: cookieHeader },
-      body: JSON.stringify({ clientId, path: "/workspaces/new", args: { title: "Continuity" } })
-    })).json() as { result: { value: { workspaceId: string } } };
+    const created = (await (
+      await fetch(`${handle.origin}/api/model/path/call`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: cookieHeader },
+        body: JSON.stringify({ clientId, path: "/workspaces/new", args: { title: "Continuity" } })
+      })
+    ).json()) as { result: { value: { workspaceId: string } } };
     const ws2 = created.result.value.workspaceId;
 
     await expect(page.locator(`.workspace-panel[data-workspace-id="${ws2}"]`)).toBeVisible({ timeout: 10_000 });
 
     await page.reload();
-    await expect(page.locator('.dockview-shell')).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(".dockview-shell")).toBeVisible({ timeout: 20_000 });
 
-    const attachmentIdAfter = (await context.cookies(handle.origin))
-      .find((c) => c.name === "flmux-attachment")?.value;
+    const attachmentIdAfter = (await context.cookies(handle.origin)).find((c) => c.name === "flmux-attachment")?.value;
     expect(attachmentIdAfter).toBe(attachmentIdBefore);
 
     // Cross-user: isolated context presenting user A's attachment cookie
@@ -188,7 +184,7 @@ test("C2 tab refresh reuses attachmentId + preserves slot state (B2P3)", async (
           cookie: `flmux_web_token=${handle.token}; flmux-attachment=web_bogus_does_not_exist`
         }
       });
-      const bogusBody = await bogusRes.json() as { attachmentId: string };
+      const bogusBody = (await bogusRes.json()) as { attachmentId: string };
       expect(bogusBody.attachmentId).not.toBe("web_bogus_does_not_exist");
     } finally {
       await userBContext.close();
@@ -224,21 +220,25 @@ test("C3 two tabs of the same user keep independent active workspaces (B1b)", as
     await pageA.goto(`${handle.origin}/?token=${encodeURIComponent(handle.token)}`);
     await expect(pageA.locator(".dockview-shell")).toBeVisible({ timeout: 20_000 });
 
-    const cookieHeaderA = (await contextA.cookies(handle.origin))
-      .map((c) => `${c.name}=${c.value}`).join("; ");
-    const attachA = (await contextA.cookies(handle.origin))
-      .find((c) => c.name === "flmux-attachment")!.value;
-    const clientId = ((await (await fetch(`${handle.origin}/api/clients`, {
-      headers: { cookie: cookieHeaderA }
-    })).json()) as { clients: Array<{ clientId: string }> }).clients[0]!.clientId;
+    const cookieHeaderA = (await contextA.cookies(handle.origin)).map((c) => `${c.name}=${c.value}`).join("; ");
+    const attachA = (await contextA.cookies(handle.origin)).find((c) => c.name === "flmux-attachment")!.value;
+    const clientId = (
+      (await (
+        await fetch(`${handle.origin}/api/clients`, {
+          headers: { cookie: cookieHeaderA }
+        })
+      ).json()) as { clients: Array<{ clientId: string }> }
+    ).clients[0]!.clientId;
 
     // Create workspace.2 while only tab A exists — both attachments will
     // see it via scope=all workspace.added, but only A's slot is on ws.2.
-    const created = await (await fetch(`${handle.origin}/api/model/path/call`, {
-      method: "POST",
-      headers: { "content-type": "application/json", cookie: cookieHeaderA },
-      body: JSON.stringify({ clientId, path: "/workspaces/new", args: { title: "Divergence" } })
-    })).json() as { result: { value: { workspaceId: string } } };
+    const created = (await (
+      await fetch(`${handle.origin}/api/model/path/call`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: cookieHeaderA },
+        body: JSON.stringify({ clientId, path: "/workspaces/new", args: { title: "Divergence" } })
+      })
+    ).json()) as { result: { value: { workspaceId: string } } };
     const ws2 = created.result.value.workspaceId;
 
     // Tab B bootstraps into the same user but a fresh attachment.
@@ -246,8 +246,7 @@ test("C3 two tabs of the same user keep independent active workspaces (B1b)", as
     await pageB.goto(`${handle.origin}/?token=${encodeURIComponent(handle.token)}`);
     await expect(pageB.locator(".dockview-shell")).toBeVisible({ timeout: 20_000 });
 
-    const attachB = (await contextB.cookies(handle.origin))
-      .find((c) => c.name === "flmux-attachment")!.value;
+    const attachB = (await contextB.cookies(handle.origin)).find((c) => c.name === "flmux-attachment")!.value;
     expect(attachB).not.toBe(attachA);
 
     // Both tabs start on workspace.1 (seed) — document.title reflects the
@@ -259,9 +258,12 @@ test("C3 two tabs of the same user keep independent active workspaces (B1b)", as
     // programmatic path that mirrors what a real click *would* do if
     // dockview fired its change event for synthetic input.
     await pageA.evaluate(
-      (id) => (window as unknown as {
-        __flmuxTest: { setActiveWorkspace(id: string): void };
-      }).__flmuxTest.setActiveWorkspace(id),
+      (id) =>
+        (
+          window as unknown as {
+            __flmuxTest: { setActiveWorkspace(id: string): void };
+          }
+        ).__flmuxTest.setActiveWorkspace(id),
       ws2
     );
 
@@ -326,11 +328,14 @@ test("C6 allow_paths.read gates broadcast forwarder (B3)", async ({ browser }) =
     await page.goto(`${handle.origin}/?token=${encodeURIComponent(restrictedToken)}`);
     await expect(page.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
 
-    const cookieHeader = (await context.cookies(handle.origin))
-      .map((c) => `${c.name}=${c.value}`).join("; ");
-    const clientId = ((await (await fetch(`${handle.origin}/api/clients`, {
-      headers: { cookie: cookieHeader }
-    })).json()) as { clients: Array<{ clientId: string }> }).clients[0]!.clientId;
+    const cookieHeader = (await context.cookies(handle.origin)).map((c) => `${c.name}=${c.value}`).join("; ");
+    const clientId = (
+      (await (
+        await fetch(`${handle.origin}/api/clients`, {
+          headers: { cookie: cookieHeader }
+        })
+      ).json()) as { clients: Array<{ clientId: string }> }
+    ).clients[0]!.clientId;
 
     // Positive control — rename workspace.1 (in read scope). Confirms the
     // forwarder is alive and events reach the DOM. Without this the
@@ -345,24 +350,26 @@ test("C6 allow_paths.read gates broadcast forwarder (B3)", async ({ browser }) =
         value: renamedTitle
       })
     });
-    await expect(page.locator('.dv-tab', { hasText: renamedTitle })).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator(".dv-tab", { hasText: renamedTitle })).toBeVisible({ timeout: 10_000 });
 
     // Negative — create a new workspace. Event `workspace.added` maps to
     // `/status/workspaces/<newId>` which isn't in read scope.
-    const created = await (await fetch(`${handle.origin}/api/model/path/call`, {
-      method: "POST",
-      headers: { "content-type": "application/json", cookie: cookieHeader },
-      body: JSON.stringify({
-        clientId,
-        path: "/workspaces/new",
-        args: { title: "ShouldBeHidden-c6" }
+    const created = (await (
+      await fetch(`${handle.origin}/api/model/path/call`, {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: cookieHeader },
+        body: JSON.stringify({
+          clientId,
+          path: "/workspaces/new",
+          args: { title: "ShouldBeHidden-c6" }
+        })
       })
-    })).json() as { result: { value: { workspaceId: string } } };
+    ).json()) as { result: { value: { workspaceId: string } } };
     const hiddenWsId = created.result.value.workspaceId;
 
     await page.waitForTimeout(1500);
     await expect(page.locator(`.workspace-panel[data-workspace-id="${hiddenWsId}"]`)).toHaveCount(0);
-    await expect(page.locator('.dv-tab', { hasText: "ShouldBeHidden-c6" })).toHaveCount(0);
+    await expect(page.locator(".dv-tab", { hasText: "ShouldBeHidden-c6" })).toHaveCount(0);
   } finally {
     await context.close();
   }
@@ -386,30 +393,23 @@ test("C5 authority evicts after attachment+authority grace", async ({ browser })
   let appProc: ChildProcess | null = null;
 
   try {
-    const tokenProc = spawn(
-      "bun", ["src/cli.ts", "tokens", "bootstrap", "--auth-dir", authDir],
-      { cwd: APP_DIR }
-    );
+    const tokenProc = spawn("bun", ["src/cli.ts", "tokens", "bootstrap", "--auth-dir", authDir], { cwd: APP_DIR });
     const { token } = JSON.parse(await collectOutput(tokenProc)) as { token: string };
 
-    appProc = spawn(
-      "bun", ["src/main.ts", "--web"],
-      {
-        cwd: APP_DIR,
-        env: {
-          ...process.env,
-          FLMUX_ROOT_DIR: rootDir,
-          FLMUX_DEV_MODE: "1",
-          FLMUX_ATTACHMENT_GRACE_MS: "300",
-          FLMUX_AUTHORITY_EVICTION_GRACE_MS: "300"
-        },
+    appProc = spawn("bun", ["src/main.ts", "--web"], {
+      cwd: APP_DIR,
+      env: {
+        ...process.env,
+        FLMUX_ROOT_DIR: rootDir,
+        FLMUX_DEV_MODE: "1",
+        FLMUX_ATTACHMENT_GRACE_MS: "300",
+        FLMUX_AUTHORITY_EVICTION_GRACE_MS: "300"
       }
-    );
+    });
     const origin = await waitForOrigin(appProc);
 
     const getAuthorityClientId = async (ctx: import("@playwright/test").BrowserContext) => {
-      const cookieHeader = (await ctx.cookies(origin))
-        .map((c) => `${c.name}=${c.value}`).join("; ");
+      const cookieHeader = (await ctx.cookies(origin)).map((c) => `${c.name}=${c.value}`).join("; ");
       const res = await fetch(`${origin}/api/clients`, { headers: { cookie: cookieHeader } });
       return ((await res.json()) as { clients: Array<{ clientId: string }> }).clients[0]!.clientId;
     };
@@ -419,7 +419,7 @@ test("C5 authority evicts after attachment+authority grace", async ({ browser })
     try {
       const page = await contextBefore.newPage();
       await page.goto(`${origin}/?token=${encodeURIComponent(token)}`);
-      await expect(page.locator('.dockview-shell')).toBeVisible({ timeout: 20_000 });
+      await expect(page.locator(".dockview-shell")).toBeVisible({ timeout: 20_000 });
       clientIdBefore = await getAuthorityClientId(contextBefore);
     } finally {
       await contextBefore.close();
@@ -435,7 +435,7 @@ test("C5 authority evicts after attachment+authority grace", async ({ browser })
     try {
       const page = await contextAfter.newPage();
       await page.goto(`${origin}/?token=${encodeURIComponent(token)}`);
-      await expect(page.locator('.dockview-shell')).toBeVisible({ timeout: 20_000 });
+      await expect(page.locator(".dockview-shell")).toBeVisible({ timeout: 20_000 });
       const clientIdAfter = await getAuthorityClientId(contextAfter);
       expect(clientIdAfter).not.toBe(clientIdBefore);
     } finally {
@@ -447,7 +447,11 @@ test("C5 authority evicts after attachment+authority grace", async ({ browser })
       await new Promise((r) => setTimeout(r, 300));
       if (!appProc.killed) appProc.kill("SIGKILL");
     }
-    try { rmSync(rootDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+    try {
+      rmSync(rootDir, { recursive: true, force: true });
+    } catch {
+      /* best-effort */
+    }
   }
 });
 
@@ -472,11 +476,14 @@ test("C7 terminal runtime survives browser WS drop across page.reload", async ({
     await page.goto(`${handle.origin}/?token=${encodeURIComponent(handle.token)}`);
     await expect(page.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
 
-    const cookieHeader = (await context.cookies(handle.origin))
-      .map((c) => `${c.name}=${c.value}`).join("; ");
-    const clientId = ((await (await fetch(`${handle.origin}/api/clients`, {
-      headers: { cookie: cookieHeader }
-    })).json()) as { clients: Array<{ clientId: string }> }).clients[0]!.clientId;
+    const cookieHeader = (await context.cookies(handle.origin)).map((c) => `${c.name}=${c.value}`).join("; ");
+    const clientId = (
+      (await (
+        await fetch(`${handle.origin}/api/clients`, {
+          headers: { cookie: cookieHeader }
+        })
+      ).json()) as { clients: Array<{ clientId: string }> }
+    ).clients[0]!.clientId;
 
     const origin = handle.origin;
     const httpPath = async (method: "get" | "call" | "set", path: string, extra: Record<string, unknown> = {}) => {
@@ -485,7 +492,9 @@ test("C7 terminal runtime survives browser WS drop across page.reload", async ({
         headers: { "content-type": "application/json", cookie: cookieHeader },
         body: JSON.stringify({ clientId, path, ...extra })
       });
-      return (await res.json()) as { result: { ok: true; value: unknown } | { ok: false; error: string; code: string } };
+      return (await res.json()) as {
+        result: { ok: true; value: unknown } | { ok: false; error: string; code: string };
+      };
     };
 
     const created = (await httpPath("call", "/panes/new", {
@@ -493,7 +502,9 @@ test("C7 terminal runtime survives browser WS drop across page.reload", async ({
     })) as unknown as { result: { ok: true; value: { paneId: string } } };
     expect(created.result.ok).toBe(true);
     const paneId = created.result.value.paneId;
-    await expect(page.locator('.workspace-panel[data-workspace-id="workspace.1"] .terminal-panel')).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('.workspace-panel[data-workspace-id="workspace.1"] .terminal-panel')).toBeVisible({
+      timeout: 10_000
+    });
 
     // Renderer mounts the terminal pane and calls `/terminal/attach` over
     // its WS — wait for the runtime to settle on the server side.
@@ -508,11 +519,12 @@ test("C7 terminal runtime survives browser WS drop across page.reload", async ({
     expect(historyBefore).toContain(marker);
 
     await page.reload();
-    await expect(page.locator('.dockview-shell')).toBeVisible({ timeout: 20_000 });
-    await expect(page.locator('.workspace-panel[data-workspace-id="workspace.1"] .terminal-panel')).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(".dockview-shell")).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('.workspace-panel[data-workspace-id="workspace.1"] .terminal-panel')).toBeVisible({
+      timeout: 15_000
+    });
 
-    const cookieHeaderAfter = (await context.cookies(handle.origin))
-      .map((c) => `${c.name}=${c.value}`).join("; ");
+    const cookieHeaderAfter = (await context.cookies(handle.origin)).map((c) => `${c.name}=${c.value}`).join("; ");
     // Same user/authority → same clientId (structural, not proof of the
     // reloaded view's WS state).
     const runtimeIdAfter = await waitForRuntimeId(handle.origin, cookieHeaderAfter, clientId, paneId);
@@ -564,12 +576,7 @@ async function waitForRuntimeId(
   throw new Error(`waitForRuntimeId(${paneId}): no runtime attached within 15s`);
 }
 
-async function readHistory(
-  origin: string,
-  cookieHeader: string,
-  clientId: string,
-  paneId: string
-): Promise<string> {
+async function readHistory(origin: string, cookieHeader: string, clientId: string, paneId: string): Promise<string> {
   const res = await fetch(`${origin}/api/model/path/call`, {
     method: "POST",
     headers: { "content-type": "application/json", cookie: cookieHeader },
@@ -583,8 +590,12 @@ async function collectOutput(proc: ChildProcess): Promise<string> {
   return new Promise((resolveFn, reject) => {
     let stdout = "";
     let stderr = "";
-    proc.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
-    proc.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+    proc.stdout?.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    proc.stderr?.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
     proc.on("close", (code) => {
       if (code === 0) resolveFn(stdout);
       else reject(new Error(`process exited ${code}: ${stderr}`));
@@ -613,4 +624,3 @@ async function waitForOrigin(proc: ChildProcess): Promise<string> {
     });
   });
 }
-

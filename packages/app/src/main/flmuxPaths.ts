@@ -24,10 +24,7 @@ export interface FlmuxPaths {
   serverConfigFile: string;
 }
 
-export function resolveFlmuxRootDir(
-  installRoot: string,
-  env: NodeJS.ProcessEnv = process.env
-): string {
+export function resolveFlmuxRootDir(installRoot: string, env: NodeJS.ProcessEnv = process.env): string {
   const override = env.FLMUX_ROOT_DIR?.trim();
   return override ? resolve(override) : resolve(installRoot);
 }

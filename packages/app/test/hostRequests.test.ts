@@ -127,18 +127,21 @@ describe("flmux host requests", () => {
 
     // Browser-mounted FlmuxWorkbench needs shellModel.path.* to work in
     // web mode — the mutation path that lives inside workbench.ts.
-    expect(await handlers["shellModel.path.get"]({ path: "/status/app" }))
-      .toEqual({ ok: true, found: true, value: { title: "Test" } });
+    expect(await handlers["shellModel.path.get"]({ path: "/status/app" })).toEqual({
+      ok: true,
+      found: true,
+      value: { title: "Test" }
+    });
     expect(pathGet).toHaveBeenCalledWith("/status/app", undefined);
 
-    expect(await handlers["shellModel.path.call"]({ path: "/panes/new", args: { kind: "browser" } }))
-      .toEqual({ ok: true, value: null });
+    expect(await handlers["shellModel.path.call"]({ path: "/panes/new", args: { kind: "browser" } })).toEqual({
+      ok: true,
+      value: null
+    });
 
     // `flmux.shellBootstrap` is preload-RPC-only and requires the desktop
     // authority — web clients reach it via HTTP `/api/shell/bootstrap`.
-    expect(() => handlers["flmux.shellBootstrap"]()).toThrow(
-      "flmux.shellBootstrap is only available in desktop mode"
-    );
+    expect(() => handlers["flmux.shellBootstrap"]()).toThrow("flmux.shellBootstrap is only available in desktop mode");
 
     // Web `flmux.client.register` requires an attachmentId binding —
     // bare `{}` is a protocol violation (browser must have done HTTP
@@ -222,11 +225,16 @@ describe("flmux host requests", () => {
   });
 
   it("web register without binding rejects with a clear 'must POST /api/shell/bootstrap' error", () => {
-    const onClientRegister = mock((_viewId: number, _binding?: { attachmentId: string; lastAppliedSeq: number }): "rebootstrap-required" | void => {
-      throw new Error(
-        "flmux.client.register: web clients must pass {attachmentId, lastAppliedSeq} obtained from /api/shell/bootstrap"
-      );
-    });
+    const onClientRegister = mock(
+      (
+        _viewId: number,
+        _binding?: { attachmentId: string; lastAppliedSeq: number }
+      ): "rebootstrap-required" | undefined => {
+        throw new Error(
+          "flmux.client.register: web clients must pass {attachmentId, lastAppliedSeq} obtained from /api/shell/bootstrap"
+        );
+      }
+    );
     const handlers = createFlmuxHostRequestHandlers({
       mode: "web",
       getAppOrigin: () => "http://127.0.0.1:0",
@@ -275,8 +283,9 @@ describe("flmux host requests", () => {
       desktopAuthority: null
     });
 
-    expect(handlers["flmux.client.register"]({ attachmentId: "web_bogus", lastAppliedSeq: 0 }))
-      .toEqual({ status: "rebootstrap-required" });
+    expect(handlers["flmux.client.register"]({ attachmentId: "web_bogus", lastAppliedSeq: 0 })).toEqual({
+      status: "rebootstrap-required"
+    });
   });
 
   it("web shellModel.path.* rejects before register (attachment not bound)", async () => {
@@ -295,7 +304,6 @@ describe("flmux host requests", () => {
 
     // Throws synchronously (requireShellModel is called before the
     // handler returns a Promise) — use the sync `toThrow` matcher.
-    expect(() => handlers["shellModel.path.get"]({ path: "/workspaces" }))
-      .toThrow("attachment not bound");
+    expect(() => handlers["shellModel.path.get"]({ path: "/workspaces" })).toThrow("attachment not bound");
   });
 });

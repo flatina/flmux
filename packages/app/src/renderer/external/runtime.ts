@@ -11,11 +11,7 @@ import type {
   IContentRenderer,
   PanelUpdateEvent
 } from "dockview-core";
-import type {
-  PaneDescriptor,
-  PaneRendererRuntimeContext,
-  PaneWorkspaceContext
-} from "../shell/paneRegistry";
+import type { PaneDescriptor, PaneRendererRuntimeContext, PaneWorkspaceContext } from "../shell/paneRegistry";
 import type { ShellModelAPI } from "../shell/types";
 import {
   adaptExtensionLifecycle,
@@ -36,11 +32,14 @@ export function createExternalPaneDescriptor(options: ExtensionPaneDefinition): 
   };
 }
 
-function createExternalPaneContext(args: {
-  workspace: PaneWorkspaceContext;
-  options: CreateComponentOptions;
-  runtime: PaneRendererRuntimeContext;
-}, state: PaneStateStore): ExtensionPaneContext {
+function createExternalPaneContext(
+  args: {
+    workspace: PaneWorkspaceContext;
+    options: CreateComponentOptions;
+    runtime: PaneRendererRuntimeContext;
+  },
+  state: PaneStateStore
+): ExtensionPaneContext {
   const paneId = args.options.id;
 
   return {
@@ -157,7 +156,7 @@ function disposeExternalPaneState(state: PaneStateStore) {
 }
 
 function cloneParams(value: Record<string, unknown> | undefined) {
-  return value ? JSON.parse(JSON.stringify(value)) as Record<string, unknown> : {};
+  return value ? (JSON.parse(JSON.stringify(value)) as Record<string, unknown>) : {};
 }
 
 class ExternalPaneStateController implements PaneStateStore {

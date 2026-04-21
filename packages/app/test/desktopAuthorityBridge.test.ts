@@ -167,7 +167,7 @@ describe("desktop shell authority bridge", () => {
   it("persistSession drops workspaces not in outerLayout (self-consistent save)", async () => {
     const { authority, sessionStore } = await createTestAuthority();
     // Create a second workspace in core
-    const result = await authority.shellModel.pathCall("/workspaces/new") as { value: { workspaceId: string } };
+    const result = (await authority.shellModel.pathCall("/workspaces/new")) as { value: { workspaceId: string } };
     const orphanWorkspaceId = result.value.workspaceId;
 
     // Layouts only mention workspace.1 — orphan should be filtered out of saved workspaces
@@ -403,17 +403,17 @@ describe("desktop shell authority bridge", () => {
   // which external surfaces will hit first.
   it("router.pathCall forwards PathCallerContext to bus.publish", async () => {
     const { authority } = await createTestAuthority();
-    const paneId = authority.shellBootstrap("local").snapshot.panes[
-      authority.shellBootstrap("local").snapshot.workspaces[0].id
-    ][0].id;
+    const paneId =
+      authority.shellBootstrap("local").snapshot.panes[authority.shellBootstrap("local").snapshot.workspaces[0].id][0]
+        .id;
 
     // Router dropped caller on B3 cleanup — caller semantics live on the
     // preload-side shellModel entry point. Go through shellModel directly
     // to exercise /bus/publish's caller.sourcePaneId requirement.
-    const withoutCaller = await authority.shellModel.pathCall(
-      "/bus/publish",
-      { topic: "demo.ping", payload: { n: 1 } }
-    );
+    const withoutCaller = await authority.shellModel.pathCall("/bus/publish", {
+      topic: "demo.ping",
+      payload: { n: 1 }
+    });
     expect(withoutCaller).toMatchObject({ ok: false });
 
     const withCaller = await authority.shellModel.pathCall(
@@ -439,7 +439,9 @@ describe("desktop shell authority bridge", () => {
       desktopAuthority: authority
     });
 
-    const paneId = authority.shellBootstrap("local").snapshot.panes[authority.shellBootstrap("local").snapshot.workspaces[0].id][0].id;
+    const paneId =
+      authority.shellBootstrap("local").snapshot.panes[authority.shellBootstrap("local").snapshot.workspaces[0].id][0]
+        .id;
 
     const withoutCaller = await handlers["shellModel.path.call"]({
       path: "/bus/publish",
@@ -460,9 +462,9 @@ describe("desktop shell authority bridge", () => {
     const captured: SequencedShellCoreEvent[] = [];
     authority.subscribe((event) => captured.push(event));
 
-    const reference = authority.shellBootstrap("local").snapshot.panes[
-      authority.shellBootstrap("local").snapshot.workspaces[0].id
-    ][0].id;
+    const reference =
+      authority.shellBootstrap("local").snapshot.panes[authority.shellBootstrap("local").snapshot.workspaces[0].id][0]
+        .id;
 
     await authority.shellModel.pathCall("/panes/new", {
       kind: "browser",

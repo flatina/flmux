@@ -53,10 +53,7 @@ function readServerConfigPort(filePath: string): number | undefined {
 }
 
 function normalizePort(value: unknown): number | undefined {
-  const n = typeof value === "number"
-    ? value
-    : typeof value === "string"
-      ? Number.parseInt(value.trim(), 10)
-      : Number.NaN;
+  const n =
+    typeof value === "number" ? value : typeof value === "string" ? Number.parseInt(value.trim(), 10) : Number.NaN;
   return Number.isInteger(n) && n >= 0 && n <= 65535 ? n : undefined;
 }

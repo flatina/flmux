@@ -13,7 +13,10 @@ export type WorkspaceBusEvent<T = unknown> = CoreWorkspaceBusEvent<T>;
  * in A3b and arrives in Phase B via the server broadcast channel.
  */
 export interface WorkspaceBusClient {
-  publish(topic: string, payload?: unknown): Promise<{
+  publish(
+    topic: string,
+    payload?: unknown
+  ): Promise<{
     ok: true;
     value: {
       ok: true;

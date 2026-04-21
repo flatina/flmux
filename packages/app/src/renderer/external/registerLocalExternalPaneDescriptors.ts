@@ -59,7 +59,9 @@ export async function loadLocalExtensionDefinitions(
   );
 
   return discovered
-    .filter((entry): entry is { loadEntry: FlmuxLocalExtensionLoadEntry; definition: ExtensionDefinition } => entry !== null)
+    .filter(
+      (entry): entry is { loadEntry: FlmuxLocalExtensionLoadEntry; definition: ExtensionDefinition } => entry !== null
+    )
     .sort((left, right) => left.loadEntry.id.localeCompare(right.loadEntry.id));
 }
 

@@ -14,11 +14,7 @@ import type { TerminalService } from "./terminal-service";
 import { createServerShellModelRouter } from "./serverShellModelRouter";
 import type { FlmuxClientRegistry } from "./clientRegistry";
 import type { DiscoveredLocalExtension } from "./localExtensions";
-import {
-  createBuiltinPaneSpecs,
-  createExtensionPaneSpecs,
-  type ExtensionModuleImporter
-} from "./paneSpecs";
+import { createBuiltinPaneSpecs, createExtensionPaneSpecs, type ExtensionModuleImporter } from "./paneSpecs";
 import type { FlmuxSessionStore } from "./sessionStore";
 
 export interface WebModeShellAuthority {

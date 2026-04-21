@@ -7,9 +7,7 @@ const noopBus: WorkspaceBus = {
   }
 };
 
-export function makePaneWorkspaceContext(
-  overrides: Partial<PaneWorkspaceContext> = {}
-): PaneWorkspaceContext {
+export function makePaneWorkspaceContext(overrides: Partial<PaneWorkspaceContext> = {}): PaneWorkspaceContext {
   const id = overrides.id ?? "workspace.test";
   return {
     id,

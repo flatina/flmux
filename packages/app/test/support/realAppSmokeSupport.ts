@@ -36,7 +36,9 @@ export async function cleanupAppHandles(appHandles: AppProcessHandle[]) {
     // is spawned detached so it'd survive otherwise.
     try {
       await stopOwnedPtydDaemonsForRootDir(handle.rootDir);
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
     try {
       rmSync(handle.rootDir, { recursive: true, force: true });
     } catch {
@@ -95,27 +97,36 @@ export function resolveLaunchAuthDir(rootDir: string): string {
 }
 
 export async function waitForMainTarget(port: number, label: string) {
-  return waitFor(async () => {
-    const targets = await fetchTargets(port);
-    return targets.find((target) => target.url.endsWith("/") && target.webSocketDebuggerUrl) ?? null;
-  }, { timeoutMs: 30_000, intervalMs: 500, label });
+  return waitFor(
+    async () => {
+      const targets = await fetchTargets(port);
+      return targets.find((target) => target.url.endsWith("/") && target.webSocketDebuggerUrl) ?? null;
+    },
+    { timeoutMs: 30_000, intervalMs: 500, label }
+  );
 }
 
 export async function waitForSingleClientId(origin: string, label: string) {
-  return waitFor(async () => {
-    const clients = await fetchJson<{
-      ok: true;
-      clients: Array<{ clientId: string }>;
-    }>(`${origin}/api/clients`);
-    return clients.clients[0]?.clientId ?? null;
-  }, { timeoutMs: 20_000, intervalMs: 250, label });
+  return waitFor(
+    async () => {
+      const clients = await fetchJson<{
+        ok: true;
+        clients: Array<{ clientId: string }>;
+      }>(`${origin}/api/clients`);
+      return clients.clients[0]?.clientId ?? null;
+    },
+    { timeoutMs: 20_000, intervalMs: 250, label }
+  );
 }
 
 export async function waitForWebOrigin(handle: AppProcessHandle, label: string) {
-  const matched = await waitFor(async () => {
-    const match = /\[flmux\] web origin: (http:\/\/127\.0\.0\.1:\d+)/.exec(handle.stdout);
-    return match ? { origin: match[1] } : null;
-  }, { timeoutMs: 30_000, intervalMs: 100, label });
+  const matched = await waitFor(
+    async () => {
+      const match = /\[flmux\] web origin: (http:\/\/127\.0\.0\.1:\d+)/.exec(handle.stdout);
+      return match ? { origin: match[1] } : null;
+    },
+    { timeoutMs: 30_000, intervalMs: 100, label }
+  );
 
   return matched;
 }
@@ -145,7 +156,7 @@ export async function postJson<T>(url: string, body: unknown, init?: RequestInit
     ...init,
     method: "POST",
     headers: {
-      ...(init?.headers as Record<string, string> | undefined ?? {}),
+      ...((init?.headers as Record<string, string> | undefined) ?? {}),
       "content-type": "application/json"
     },
     body: JSON.stringify(body)
@@ -300,10 +311,7 @@ function resolveBunCommand() {
 
 export { waitFor };
 
-function createAppProcessHandle(
-  process: Bun.Subprocess<"ignore", "pipe", "pipe">,
-  rootDir: string
-): AppProcessHandle {
+function createAppProcessHandle(process: Bun.Subprocess<"ignore", "pipe", "pipe">, rootDir: string): AppProcessHandle {
   const handle: AppProcessHandle = {
     process,
     stdout: "",
@@ -321,10 +329,7 @@ function createAppProcessHandle(
   return handle;
 }
 
-async function pumpStream(
-  stream: ReadableStream<Uint8Array>,
-  onChunk: (chunk: string) => void
-) {
+async function pumpStream(stream: ReadableStream<Uint8Array>, onChunk: (chunk: string) => void) {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
 

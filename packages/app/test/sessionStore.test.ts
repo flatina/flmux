@@ -12,56 +12,66 @@ afterEach(async () => {
 
 describe("session store", () => {
   it("accepts only version 4 session snapshots", () => {
-    expect(isSessionSnapshot({
-      version: 4,
-      appTitle: "flmux",
-      outerLayout: null,
-      workspaces: {
-        "workspace.alpha": {
-          defaultTitle: "Workspace Alpha",
-          title: "Workspace Alpha",
-          innerLayout: null
+    expect(
+      isSessionSnapshot({
+        version: 4,
+        appTitle: "flmux",
+        outerLayout: null,
+        workspaces: {
+          "workspace.alpha": {
+            defaultTitle: "Workspace Alpha",
+            title: "Workspace Alpha",
+            innerLayout: null
+          }
         }
-      }
-    })).toBe(true);
+      })
+    ).toBe(true);
 
-    expect(isSessionSnapshot({
-      version: 3,
-      appTitle: "flmux",
-      workspaces: {
-        "workspace.alpha": {
-          title: "Workspace Alpha",
-          innerLayout: null
+    expect(
+      isSessionSnapshot({
+        version: 3,
+        appTitle: "flmux",
+        workspaces: {
+          "workspace.alpha": {
+            title: "Workspace Alpha",
+            innerLayout: null
+          }
         }
-      }
-    })).toBe(false);
+      })
+    ).toBe(false);
   });
 
   it("rejects array-valued outerLayout and workspaces", () => {
-    expect(isSessionSnapshot({
-      version: 4,
-      appTitle: "flmux",
-      outerLayout: [],
-      workspaces: {
-        "workspace.alpha": { title: "Workspace Alpha", innerLayout: null }
-      }
-    })).toBe(false);
+    expect(
+      isSessionSnapshot({
+        version: 4,
+        appTitle: "flmux",
+        outerLayout: [],
+        workspaces: {
+          "workspace.alpha": { title: "Workspace Alpha", innerLayout: null }
+        }
+      })
+    ).toBe(false);
 
-    expect(isSessionSnapshot({
-      version: 4,
-      appTitle: "flmux",
-      outerLayout: null,
-      workspaces: []
-    })).toBe(false);
+    expect(
+      isSessionSnapshot({
+        version: 4,
+        appTitle: "flmux",
+        outerLayout: null,
+        workspaces: []
+      })
+    ).toBe(false);
 
-    expect(isSessionSnapshot({
-      version: 4,
-      appTitle: "flmux",
-      outerLayout: null,
-      workspaces: {
-        "workspace.alpha": { title: "Workspace Alpha", innerLayout: [] }
-      }
-    })).toBe(false);
+    expect(
+      isSessionSnapshot({
+        version: 4,
+        appTitle: "flmux",
+        outerLayout: null,
+        workspaces: {
+          "workspace.alpha": { title: "Workspace Alpha", innerLayout: [] }
+        }
+      })
+    ).toBe(false);
   });
 
   it("ignores persisted pre-v4 snapshots on load", async () => {
@@ -69,16 +79,24 @@ describe("session store", () => {
     tempDirs.push(dir);
     const sessionFile = join(dir, "session.json");
 
-    await writeFile(sessionFile, JSON.stringify({
-      version: 3,
-      appTitle: "legacy flmux",
-      workspaces: {
-        "workspace.alpha": {
-          title: "Legacy Workspace",
-          innerLayout: null
-        }
-      }
-    }, null, 2), "utf8");
+    await writeFile(
+      sessionFile,
+      JSON.stringify(
+        {
+          version: 3,
+          appTitle: "legacy flmux",
+          workspaces: {
+            "workspace.alpha": {
+              title: "Legacy Workspace",
+              innerLayout: null
+            }
+          }
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
 
     const store = createSessionStore({ filePath: sessionFile });
     expect(await store.load()).toBeNull();

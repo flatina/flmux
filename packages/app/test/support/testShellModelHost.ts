@@ -20,7 +20,7 @@ import type {
   TerminalWriteResult
 } from "../../src/shared/terminal";
 import { resolveTerminalCwdFromRoot } from "../../src/shared/terminalPath";
-import { createSyntheticTerminalService, type SyntheticTerminalService } from "./syntheticTerminalService";
+import { createSyntheticTerminalService } from "./syntheticTerminalService";
 
 export type StoredPane =
   | { id: string; kind: "browser"; title: string; url: string }
@@ -101,9 +101,11 @@ export class TestShellModelHost implements ShellModelHost {
     this.runtimeLabel = options.runtimeLabel ?? "test-host";
     this.workspaceTitle = options.workspaceTitle ?? "Workspace Test";
     this.workspaceRootDir = options.workspaceRootDir ?? "C:\\workspace";
-    this.terminalService = options.terminalService ?? createSyntheticTerminalService({
-      rootKey: options.terminalRootKey
-    });
+    this.terminalService =
+      options.terminalService ??
+      createSyntheticTerminalService({
+        rootKey: options.terminalRootKey
+      });
     this.onTerminalCreate = options.onTerminalCreate;
     this.activePaneId = options.activePaneId ?? null;
     this.workspaceOrder.push(this.workspaceId);
@@ -300,9 +302,7 @@ export class TestShellModelHost implements ShellModelHost {
       {
         attachmentId: "test",
         activeWorkspaceId: this.workspaceId,
-        activePaneIdByWorkspace: this.activePaneId
-          ? { [this.workspaceId]: this.activePaneId }
-          : {}
+        activePaneIdByWorkspace: this.activePaneId ? { [this.workspaceId]: this.activePaneId } : {}
       }
     ];
   }
@@ -320,7 +320,9 @@ export class TestShellModelHost implements ShellModelHost {
   }
 
   hasPaneKind(kind: string): boolean {
-    return kind === "browser" || kind === "cowsay" || kind === "terminal" || kind === "inspector" || kind === "scratchpad";
+    return (
+      kind === "browser" || kind === "cowsay" || kind === "terminal" || kind === "inspector" || kind === "scratchpad"
+    );
   }
 
   setScopedProperty(target: ScopedPropertyTarget, key: string, value: unknown) {
@@ -430,8 +432,7 @@ export class TestShellModelHost implements ShellModelHost {
           getStateSnapshot: () => ({
             url: pane.url
           }),
-          canSetStatePath: (relativePath) =>
-            relativePath.length === 1 && relativePath[0] === "url",
+          canSetStatePath: (relativePath) => relativePath.length === 1 && relativePath[0] === "url",
           setState: (relativePath, value) => {
             if (relativePath.length !== 1 || relativePath[0] !== "url") {
               throw new Error(`Unsupported browser path '${relativePath.join("/")}'`);
@@ -810,11 +811,14 @@ export class TestShellModelHost implements ShellModelHost {
     if (browser.kind !== "browser") {
       throw new Error("expected seeded browser pane");
     }
-    this.paneParams.set(browserId, this.createPaneParamsFromInput(browser, {
-      kind: "browser",
-      title: "Start",
-      url: browser.url
-    }));
+    this.paneParams.set(
+      browserId,
+      this.createPaneParamsFromInput(browser, {
+        kind: "browser",
+        title: "Start",
+        url: browser.url
+      })
+    );
     this.activePaneId = browserId;
     this.syncCurrentWorkspaceSnapshot();
   }
@@ -861,7 +865,7 @@ export class TestShellModelHost implements ShellModelHost {
 
 function cloneJsonObject(value: unknown) {
   return value && typeof value === "object"
-    ? JSON.parse(JSON.stringify(value)) as Record<string, unknown>
+    ? (JSON.parse(JSON.stringify(value)) as Record<string, unknown>)
     : undefined;
 }
 

@@ -1,9 +1,6 @@
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import {
-  resolveFlmuxAuthPaths,
-  type FlmuxAuthPaths
-} from "./main/auth/authConfig";
+import { resolveFlmuxAuthPaths, type FlmuxAuthPaths } from "./main/auth/authConfig";
 import { resolveFlmuxPaths } from "./main/flmuxPaths";
 import { generateToken } from "./main/auth/tokenFormat";
 import { createTokenStore } from "./main/auth/tokenStore";
@@ -78,9 +75,7 @@ function bootstrap(paths: FlmuxAuthPaths, argv: string[]) {
 
   const userStore = createUserStore(paths.usersFile);
   if (userStore.listUsers().length > 0) {
-    throw new Error(
-      `Auth already bootstrapped (${paths.usersFile} exists). Use 'tokens issue' to add more tokens.`
-    );
+    throw new Error(`Auth already bootstrapped (${paths.usersFile} exists). Use 'tokens issue' to add more tokens.`);
   }
 
   const user: FlmuxUser = {
@@ -159,11 +154,7 @@ function listUsers(paths: FlmuxAuthPaths) {
   };
 }
 
-function issueTokenFor(
-  paths: FlmuxAuthPaths,
-  userName: string,
-  options: { label?: string; expiresAt?: string }
-) {
+function issueTokenFor(paths: FlmuxAuthPaths, userName: string, options: { label?: string; expiresAt?: string }) {
   const generated = generateToken();
   const tokenStore = createTokenStore(paths.tokensFile);
   tokenStore.append({
@@ -227,9 +218,7 @@ function extractAuthDirFlag(argv: string[]): { authDir: string | null; argv: str
 function resolveCliAuthDir(): string {
   const rootOverride = process.env.FLMUX_ROOT_DIR?.trim();
   if (!rootOverride) {
-    throw new Error(
-      "tokens: --auth-dir <dir> is required (or set FLMUX_ROOT_DIR to derive <rootDir>/.flmux/auth)"
-    );
+    throw new Error("tokens: --auth-dir <dir> is required (or set FLMUX_ROOT_DIR to derive <rootDir>/.flmux/auth)");
   }
   return resolveFlmuxPaths(resolve(rootOverride)).authDir;
 }

@@ -45,26 +45,38 @@ async function main(command: string | undefined, args: string[]) {
       return printJson(await apiGet<{ ok: true; clients: unknown[] }>(origin, "/api/clients", flags));
 
     case "get":
-      return printJson(await modelPost(origin, "/api/model/path/get", {
-        clientId: await resolveClientId(origin, flags),
-        path: requirePositional(positionals, 0, "get <path> requires a path")
-      }, flags));
+      return printJson(
+        await modelPost(
+          origin,
+          "/api/model/path/get",
+          {
+            clientId: await resolveClientId(origin, flags),
+            path: requirePositional(positionals, 0, "get <path> requires a path")
+          },
+          flags
+        )
+      );
 
     case "ls":
-      return printJson(await modelPost(origin, "/api/model/path/list", {
-        clientId: await resolveClientId(origin, flags),
-        path: requirePositional(positionals, 0, "ls <path> requires a path")
-      }, flags));
+      return printJson(
+        await modelPost(
+          origin,
+          "/api/model/path/list",
+          {
+            clientId: await resolveClientId(origin, flags),
+            path: requirePositional(positionals, 0, "ls <path> requires a path")
+          },
+          flags
+        )
+      );
 
     case "ls-each-get": {
       const clientId = await resolveClientId(origin, flags);
       const path = requirePositional(positionals, 0, "ls-each-get <path> requires a path");
-      const listed = await modelPost<{ ok: true; result: { ok: boolean; found?: boolean; entries?: Array<{ path: string }> } }>(
-        origin,
-        "/api/model/path/list",
-        { clientId, path },
-        flags
-      );
+      const listed = await modelPost<{
+        ok: true;
+        result: { ok: boolean; found?: boolean; entries?: Array<{ path: string }> };
+      }>(origin, "/api/model/path/list", { clientId, path }, flags);
 
       if (!listed.ok || !listed.result.ok || listed.result.found === false || !listed.result.entries) {
         return printJson(listed);
@@ -73,10 +85,15 @@ async function main(command: string | undefined, args: string[]) {
       const values = Object.fromEntries(
         await Promise.all(
           listed.result.entries.map(async (entry) => {
-            const value = await modelPost(origin, "/api/model/path/get", {
-              clientId,
-              path: entry.path
-            }, flags);
+            const value = await modelPost(
+              origin,
+              "/api/model/path/get",
+              {
+                clientId,
+                path: entry.path
+              },
+              flags
+            );
             return [entry.path, value];
           })
         )
@@ -232,24 +249,48 @@ async function resolveClientId(origin: string, flags: Flags) {
 
 function createShellClient(origin: string, flags: Flags, explicitClientId?: string): ShellClient {
   return {
-    get: async (path: string): Promise<ShellPathGetResult> => await modelResultPost(origin, "/api/model/path/get", {
-      clientId: await resolveClientId(origin, { ...flags, clientId: explicitClientId ?? flags.clientId }),
-      path
-    }, flags),
-    list: async (path: string): Promise<ShellPathListResult> => await modelResultPost(origin, "/api/model/path/list", {
-      clientId: await resolveClientId(origin, { ...flags, clientId: explicitClientId ?? flags.clientId }),
-      path
-    }, flags),
-    set: async (path: string, value: unknown): Promise<ShellPathSetResult> => await modelResultPost(origin, "/api/model/path/set", {
-      clientId: await resolveClientId(origin, { ...flags, clientId: explicitClientId ?? flags.clientId }),
-      path,
-      value
-    }, flags),
-    call: async (path: string, args?: Record<string, unknown>): Promise<ShellPathCallResult> => await modelResultPost(origin, "/api/model/path/call", {
-      clientId: await resolveClientId(origin, { ...flags, clientId: explicitClientId ?? flags.clientId }),
-      path,
-      args
-    }, flags)
+    get: async (path: string): Promise<ShellPathGetResult> =>
+      await modelResultPost(
+        origin,
+        "/api/model/path/get",
+        {
+          clientId: await resolveClientId(origin, { ...flags, clientId: explicitClientId ?? flags.clientId }),
+          path
+        },
+        flags
+      ),
+    list: async (path: string): Promise<ShellPathListResult> =>
+      await modelResultPost(
+        origin,
+        "/api/model/path/list",
+        {
+          clientId: await resolveClientId(origin, { ...flags, clientId: explicitClientId ?? flags.clientId }),
+          path
+        },
+        flags
+      ),
+    set: async (path: string, value: unknown): Promise<ShellPathSetResult> =>
+      await modelResultPost(
+        origin,
+        "/api/model/path/set",
+        {
+          clientId: await resolveClientId(origin, { ...flags, clientId: explicitClientId ?? flags.clientId }),
+          path,
+          value
+        },
+        flags
+      ),
+    call: async (path: string, args?: Record<string, unknown>): Promise<ShellPathCallResult> =>
+      await modelResultPost(
+        origin,
+        "/api/model/path/call",
+        {
+          clientId: await resolveClientId(origin, { ...flags, clientId: explicitClientId ?? flags.clientId }),
+          path,
+          args
+        },
+        flags
+      )
   };
 }
 
@@ -294,10 +335,7 @@ function coerceScalar(rawValue: string): unknown {
     return Number(rawValue);
   }
 
-  if (
-    (rawValue.startsWith("{") && rawValue.endsWith("}")) ||
-    (rawValue.startsWith("[") && rawValue.endsWith("]"))
-  ) {
+  if ((rawValue.startsWith("{") && rawValue.endsWith("}")) || (rawValue.startsWith("[") && rawValue.endsWith("]"))) {
     try {
       return JSON.parse(rawValue);
     } catch {
@@ -322,7 +360,7 @@ function usage() {
     "  bun src/cli.ts set /workspaces/workspace.1/title Renamed --origin http://127.0.0.1:PORT",
     "  bun src/cli.ts call /panes/new kind=cowsay place=right --origin http://127.0.0.1:PORT",
     "  bun src/cli.ts cowsay hello from cli --origin http://127.0.0.1:PORT",
-    "  bun src/cli.ts tokens bootstrap [--name admin] [--allow-pane-kinds \"*\"] [--auth-dir <dir>]",
+    '  bun src/cli.ts tokens bootstrap [--name admin] [--allow-pane-kinds "*"] [--auth-dir <dir>]',
     "  bun src/cli.ts tokens issue --user <name> [--label <label>] [--expires-at <iso>] [--auth-dir <dir>]",
     "  bun src/cli.ts tokens revoke <tokenId> [--auth-dir <dir>]",
     "  bun src/cli.ts tokens list [--auth-dir <dir>]",

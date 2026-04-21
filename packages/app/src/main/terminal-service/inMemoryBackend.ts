@@ -79,7 +79,10 @@ class InMemoryTerminalBackend implements TerminalBackend {
     await mkdir(cwd, { recursive: true });
     const now = new Date().toISOString();
 
-    if (input.paneId && [...root.runtimes.values()].some((runtime) => runtime.ownerPaneId === input.paneId && runtime.summary.alive)) {
+    if (
+      input.paneId &&
+      [...root.runtimes.values()].some((runtime) => runtime.ownerPaneId === input.paneId && runtime.summary.alive)
+    ) {
       throw new Error(`Terminal pane '${input.paneId}' already has a live runtime`);
     }
 
@@ -168,7 +171,12 @@ class InMemoryTerminalBackend implements TerminalBackend {
     };
   }
 
-  async resize(input: { rootKey: string; runtimeId: string; cols: number; rows: number }): Promise<TerminalResizeResult> {
+  async resize(input: {
+    rootKey: string;
+    runtimeId: string;
+    cols: number;
+    rows: number;
+  }): Promise<TerminalResizeResult> {
     const runtime = this.requireRuntime(input.rootKey, input.runtimeId);
     if (!runtime.summary.alive) {
       return {
@@ -198,10 +206,7 @@ class InMemoryTerminalBackend implements TerminalBackend {
 
   async history(input: { rootKey: string; runtimeId: string; maxBytes?: number }): Promise<TerminalHistoryResult> {
     const runtime = this.requireRuntime(input.rootKey, input.runtimeId);
-    const history =
-      input.maxBytes && input.maxBytes > 0
-        ? runtime.history.slice(-input.maxBytes)
-        : runtime.history;
+    const history = input.maxBytes && input.maxBytes > 0 ? runtime.history.slice(-input.maxBytes) : runtime.history;
 
     return {
       ok: true,
@@ -338,10 +343,7 @@ class InMemoryTerminalBackend implements TerminalBackend {
   }
 }
 
-function emit(
-  subscribers: Set<(event: TerminalRuntimeEvent) => void>,
-  event: TerminalRuntimeEvent
-) {
+function emit(subscribers: Set<(event: TerminalRuntimeEvent) => void>, event: TerminalRuntimeEvent) {
   for (const subscriber of subscribers) {
     subscriber(event);
   }

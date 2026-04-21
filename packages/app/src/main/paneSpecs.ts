@@ -1,14 +1,5 @@
-import {
-  createBrowserPaneSpec,
-  isTerminalPaneStateRecord,
-  type NewPaneInput,
-  type PaneSpec
-} from "@flmux/core/shell";
-import type {
-  ExtensionDefinition,
-  ExtensionManifestPane,
-  ExtensionPaneDefinition
-} from "@flmux/extension-api";
+import { createBrowserPaneSpec, isTerminalPaneStateRecord, type NewPaneInput, type PaneSpec } from "@flmux/core/shell";
+import type { ExtensionDefinition, ExtensionManifestPane, ExtensionPaneDefinition } from "@flmux/extension-api";
 import { pathToFileURL } from "node:url";
 import { resolveTerminalCwdFromRoot } from "../shared/terminalPath";
 import {
@@ -64,8 +55,7 @@ export function createBuiltinPaneSpecs(projectDir: string): PaneSpec[] {
       subtreeMounts: [
         {
           mountKey: "terminal",
-          getStateSnapshot: ({ record }) =>
-            isTerminalPaneStateRecord(record) ? { cwd: record.cwd } : undefined,
+          getStateSnapshot: ({ record }) => (isTerminalPaneStateRecord(record) ? { cwd: record.cwd } : undefined),
           getStatusSnapshot: ({ record }) =>
             isTerminalPaneStateRecord(record)
               ? {
@@ -142,12 +132,13 @@ function createExtensionPaneSpec(
 
   const lifecycle = adaptExtensionLifecycle(definition);
   const hasFallbackTitle = Boolean(defaultTitle);
-  const mergedLifecycle = hasFallbackTitle && !lifecycle?.getTitle
-    ? {
-        ...(lifecycle ?? {}),
-        getTitle: ({ input }: { input: NewPaneInput }) => input.title?.trim() || defaultTitle!
-      }
-    : lifecycle;
+  const mergedLifecycle =
+    hasFallbackTitle && !lifecycle?.getTitle
+      ? {
+          ...(lifecycle ?? {}),
+          getTitle: ({ input }: { input: NewPaneInput }) => input.title?.trim() || defaultTitle!
+        }
+      : lifecycle;
 
   return {
     kind: manifestPane.kind,

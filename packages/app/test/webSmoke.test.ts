@@ -16,28 +16,24 @@ afterEach(async () => {
 });
 
 describe("flmux web smoke", () => {
-  it(
-    "boots web mode and keeps browser attach, HTTP model calls, and CLI token calls on the same server authority",
-    async () => {
-      const rootDir = allocateFlmuxRootDir("web-smoke");
-      const authDir = resolveLaunchAuthDir(rootDir);
+  it("boots web mode and keeps browser attach, HTTP model calls, and CLI token calls on the same server authority", async () => {
+    const rootDir = allocateFlmuxRootDir("web-smoke");
+    const authDir = resolveLaunchAuthDir(rootDir);
 
-      const bootstrap = await runTokensCli(["bootstrap", "--auth-dir", authDir]) as {
-        token: string;
-      };
+    const bootstrap = (await runTokensCli(["bootstrap", "--auth-dir", authDir])) as {
+      token: string;
+    };
 
-      const app = launchFlmuxWebApp({ rootDir });
-      appHandles.push(app);
+    const app = launchFlmuxWebApp({ rootDir });
+    appHandles.push(app);
 
-      try {
-        await runWebModeBootSmokeScenario(appHandles, {
-          token: bootstrap.token,
-          authDir
-        });
-      } finally {
-        // rootDir is removed by cleanupAppHandles via the AppProcessHandle.
-      }
-    },
-    90_000
-  );
+    try {
+      await runWebModeBootSmokeScenario(appHandles, {
+        token: bootstrap.token,
+        authDir
+      });
+    } finally {
+      // rootDir is removed by cleanupAppHandles via the AppProcessHandle.
+    }
+  }, 90_000);
 });

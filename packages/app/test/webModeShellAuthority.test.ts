@@ -78,10 +78,12 @@ describe("web mode shell authority", () => {
       }
     });
 
-    await expect(authority.router.pathGet({
-      clientId: rendererClient.clientId,
-      path: "/status/workspace"
-    })).rejects.toThrow(`Unknown flmux client: ${rendererClient.clientId}`);
+    await expect(
+      authority.router.pathGet({
+        clientId: rendererClient.clientId,
+        path: "/status/workspace"
+      })
+    ).rejects.toThrow(`Unknown flmux client: ${rendererClient.clientId}`);
   });
 
   it("shellBootstrap(attachmentId) seeds a fresh slot and captures seqStart after mutation", async () => {
@@ -175,10 +177,11 @@ describe("web mode shell authority", () => {
       }
     });
 
-    const panes = await authority.shellModel.pathGet(
-      "/status/panes",
-      { attachmentId: "server" }
-    ) as { ok: true; found: true; value: Record<string, { kind: string }> };
+    const panes = (await authority.shellModel.pathGet("/status/panes", { attachmentId: "server" })) as {
+      ok: true;
+      found: true;
+      value: Record<string, { kind: string }>;
+    };
     const kinds = Object.values(panes.value).map((pane) => pane.kind);
     expect(kinds).toContain("cowsay");
   });
@@ -219,11 +222,11 @@ describe("web mode shell authority", () => {
 
     await authority.start("http://127.0.0.1:4324");
 
-    const created = await authority.router.pathCall({
+    const created = (await authority.router.pathCall({
       clientId: authority.clientId,
       path: "/panes/new",
       args: { kind: "counter", count: 7 }
-    }) as { ok: true; value: { pane: { id: string } } };
+    })) as { ok: true; value: { pane: { id: string } } };
     const paneId = created.value.pane.id;
 
     const initialState = await authority.router.pathGet({
@@ -264,11 +267,11 @@ describe("web mode shell authority", () => {
 
     await authority.start("http://127.0.0.1:4323");
 
-    const result = await authority.router.pathCall({
+    const result = (await authority.router.pathCall({
       clientId: authority.clientId,
       path: "/panes/new",
       args: { kind: "cowsay" }
-    }) as { ok: boolean; error?: string };
+    })) as { ok: boolean; error?: string };
     expect(result.ok).toBe(false);
     expect(result.error ?? "").toMatch(/pane kind/i);
   });

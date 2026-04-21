@@ -1,8 +1,5 @@
 import type { PathCallerContext, ShellModelAPI } from "@flmux/core/shell";
-import type {
-  FlmuxRendererBootstrapConfig,
-  FlmuxSessionSaveLayouts
-} from "../shared/rendererBridge";
+import type { FlmuxRendererBootstrapConfig, FlmuxSessionSaveLayouts } from "../shared/rendererBridge";
 import type { FlmuxRuntimeMode } from "../shared/runtimeMode";
 import { DESKTOP_ATTACHMENT_ID, type DesktopShellAuthority } from "./desktopShellAuthority";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
@@ -89,10 +86,7 @@ export function createFlmuxHostRequestHandlers(options: {
   return {
     "flmux.getConfig": () => buildConfig(),
 
-    "flmux.client.register": (params: {
-      attachmentId?: string;
-      lastAppliedSeq?: number;
-    }) => {
+    "flmux.client.register": (params: { attachmentId?: string; lastAppliedSeq?: number }) => {
       const viewId = options.getCallerViewId();
       const binding = params?.attachmentId
         ? {
@@ -193,8 +187,7 @@ export function createFlmuxHostRequestHandlers(options: {
         }
         throw error;
       }
-    },
-
+    }
   };
 }
 

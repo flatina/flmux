@@ -11,9 +11,7 @@ export function createWorkspaceBus(workspaceId: string): WorkspaceBus {
   return {
     publish(event) {
       if (event.workspaceId !== workspaceId) {
-        throw new Error(
-          `WorkspaceBus scope mismatch: expected '${workspaceId}', received '${event.workspaceId}'`
-        );
+        throw new Error(`WorkspaceBus scope mismatch: expected '${workspaceId}', received '${event.workspaceId}'`);
       }
 
       for (const subscription of subscriptions) {

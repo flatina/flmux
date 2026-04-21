@@ -1,9 +1,6 @@
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { FlmuxExtensionCliContext, FlmuxExtensionCliRunner, ShellClient } from "@flmux/extension-api";
-import {
-  discoverConfiguredLocalExtensions,
-  resolveConfiguredLocalExtensionsRootDir
-} from "./main/localExtensions";
+import { discoverConfiguredLocalExtensions, resolveConfiguredLocalExtensionsRootDir } from "./main/localExtensions";
 
 export interface DiscoveredLocalCliCommand {
   commandId: string;
@@ -28,10 +25,11 @@ type CliModule = {
   default?: FlmuxExtensionCliRunner;
 };
 
-export async function dispatchLocalCliExtensionCommand(
-  options: FlmuxCliExtensionDispatchOptions
-): Promise<boolean> {
-  const command = await resolveLocalCliCommand(options.extensionsRootDir ?? defaultExtensionsRootDir(), options.commandId);
+export async function dispatchLocalCliExtensionCommand(options: FlmuxCliExtensionDispatchOptions): Promise<boolean> {
+  const command = await resolveLocalCliCommand(
+    options.extensionsRootDir ?? defaultExtensionsRootDir(),
+    options.commandId
+  );
   if (!command) {
     return false;
   }
@@ -39,9 +37,7 @@ export async function dispatchLocalCliExtensionCommand(
   const module = await importCliModule(command.cliEntryPath);
   const runner = module.run ?? module.default;
   if (typeof runner !== "function") {
-    throw new Error(
-      `CLI extension '${command.extensionId}' must export named 'run(ctx)' or a default function`
-    );
+    throw new Error(`CLI extension '${command.extensionId}' must export named 'run(ctx)' or a default function`);
   }
 
   const context: FlmuxExtensionCliContext = {
@@ -97,5 +93,5 @@ export function defaultExtensionsRootDir() {
 }
 
 export async function importCliModule(cliEntryPath: string): Promise<CliModule> {
-  return await import(pathToFileURL(cliEntryPath).href) as CliModule;
+  return (await import(pathToFileURL(cliEntryPath).href)) as CliModule;
 }

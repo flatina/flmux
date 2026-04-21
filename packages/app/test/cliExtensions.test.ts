@@ -109,9 +109,13 @@ describe("cli extension dispatch", () => {
     const rootDir = await createCliExtensionFixture();
     await writeFile(
       join(rootDir, "catalog.json"),
-      JSON.stringify({
-        disabled: ["sample.cowsay"]
-      }, null, 2),
+      JSON.stringify(
+        {
+          disabled: ["sample.cowsay"]
+        },
+        null,
+        2
+      ),
       "utf8"
     );
 
@@ -135,47 +139,55 @@ async function createCliExtensionFixture() {
   await mkdir(dirname(runtimeCliEntryPath), { recursive: true });
   await writeFile(
     join(extensionDir, "manifest.json"),
-    JSON.stringify({
-      id: "sample.cowsay",
-      name: "Cowsay",
-      version: "0.1.0",
-      apiVersion: FLMUX_EXTENSION_API_VERSION,
-      entrypoints: {
-        cli: "./cli.ts"
+    JSON.stringify(
+      {
+        id: "sample.cowsay",
+        name: "Cowsay",
+        version: "0.1.0",
+        apiVersion: FLMUX_EXTENSION_API_VERSION,
+        entrypoints: {
+          cli: "./cli.ts"
+        },
+        commands: [
+          {
+            id: "cowsay",
+            description: "Open a cowsay pane"
+          }
+        ]
       },
-      commands: [
-        {
-          id: "cowsay",
-          description: "Open a cowsay pane"
-        }
-      ]
-    }, null, 2),
+      null,
+      2
+    ),
     "utf8"
   );
   await writeFile(
     join(extensionDir, "dist", "manifest.json"),
-    JSON.stringify({
-      id: "sample.cowsay",
-      name: "Cowsay",
-      version: "0.1.0",
-      apiVersion: FLMUX_EXTENSION_API_VERSION,
-      entrypoints: {
-        cli: "cli.js"
+    JSON.stringify(
+      {
+        id: "sample.cowsay",
+        name: "Cowsay",
+        version: "0.1.0",
+        apiVersion: FLMUX_EXTENSION_API_VERSION,
+        entrypoints: {
+          cli: "cli.js"
+        },
+        commands: [
+          {
+            id: "cowsay",
+            description: "Open a cowsay pane"
+          }
+        ]
       },
-      commands: [
-        {
-          id: "cowsay",
-          description: "Open a cowsay pane"
-        }
-      ]
-    }, null, 2),
+      null,
+      2
+    ),
     "utf8"
   );
   await writeFile(
     sourceCliEntryPath,
     [
-      'export async function run(context) {',
-      '  const client = await context.getClient();',
+      "export async function run(context) {",
+      "  const client = await context.getClient();",
       '  const result = await client.call("/panes/new", {',
       '    kind: "cowsay",',
       '    place: "right",',
@@ -190,8 +202,8 @@ async function createCliExtensionFixture() {
   await writeFile(
     runtimeCliEntryPath,
     [
-      'export async function run(context) {',
-      '  const client = await context.getClient();',
+      "export async function run(context) {",
+      "  const client = await context.getClient();",
       '  const result = await client.call("/panes/new", {',
       '    kind: "cowsay",',
       '    place: "right",',

@@ -79,7 +79,9 @@ export async function discoverLocalExtensions(rootDir: string): Promise<Discover
           });
 
           if (!rendererEntryPath && !cliEntryPath) {
-            console.warn(`[flmux] local extension has no usable built renderer or cli entrypoint: ${runtimeManifestPath}`);
+            console.warn(
+              `[flmux] local extension has no usable built renderer or cli entrypoint: ${runtimeManifestPath}`
+            );
             return null;
           }
 
@@ -95,10 +97,7 @@ export async function discoverLocalExtensions(rootDir: string): Promise<Discover
             version: runtimeManifest.version
           } satisfies DiscoveredLocalExtension;
         } catch (error) {
-          console.warn(
-            `[flmux] failed to read built local extension manifest: ${runtimeManifestPath}`,
-            error
-          );
+          console.warn(`[flmux] failed to read built local extension manifest: ${runtimeManifestPath}`, error);
           return null;
         }
       })
@@ -212,10 +211,7 @@ async function loadLocalExtensionCatalogPolicy(rootDir: string): Promise<LocalEx
 
     parsedConfig = JSON.parse(await readFile(configPath, "utf8"));
   } catch (error) {
-    console.warn(
-      `[flmux] failed to read local extension catalog config: ${configPath}`,
-      error
-    );
+    console.warn(`[flmux] failed to read local extension catalog config: ${configPath}`, error);
     return {
       rootDir,
       additionalRoots: [],
@@ -246,12 +242,7 @@ async function loadLocalExtensionCatalogPolicy(rootDir: string): Promise<LocalEx
   };
 }
 
-function resolveCatalogRoots(
-  rootDir: string,
-  value: unknown,
-  configPath: string,
-  label: "additionalRoots"
-) {
+function resolveCatalogRoots(rootDir: string, value: unknown, configPath: string, label: "additionalRoots") {
   if (value === undefined) {
     return [];
   }
@@ -264,7 +255,9 @@ function resolveCatalogRoots(
   const resolvedRoots: string[] = [];
   for (const entry of value) {
     if (typeof entry !== "string" || !entry.trim()) {
-      console.warn(`[flmux] invalid local extension catalog config: '${label}' entries must be non-empty strings in ${configPath}`);
+      console.warn(
+        `[flmux] invalid local extension catalog config: '${label}' entries must be non-empty strings in ${configPath}`
+      );
       continue;
     }
 
@@ -274,11 +267,7 @@ function resolveCatalogRoots(
   return dedupePreservingOrder(resolvedRoots);
 }
 
-function normalizeCatalogSelectors(
-  value: unknown,
-  configPath: string,
-  label: "enabled" | "disabled"
-) {
+function normalizeCatalogSelectors(value: unknown, configPath: string, label: "enabled" | "disabled") {
   if (value === undefined) {
     return [];
   }
@@ -291,7 +280,9 @@ function normalizeCatalogSelectors(
   const selectors: string[] = [];
   for (const entry of value) {
     if (typeof entry !== "string" || !entry.trim()) {
-      console.warn(`[flmux] invalid local extension catalog config: '${label}' entries must be non-empty strings in ${configPath}`);
+      console.warn(
+        `[flmux] invalid local extension catalog config: '${label}' entries must be non-empty strings in ${configPath}`
+      );
       continue;
     }
 

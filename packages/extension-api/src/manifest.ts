@@ -89,21 +89,21 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
     return { ok: false, errors };
   }
 
-    return {
-      ok: true,
-      manifest: {
-        id,
-        name,
+  return {
+    ok: true,
+    manifest: {
+      id,
+      name,
       version,
-        apiVersion: FLMUX_EXTENSION_API_VERSION,
-        entrypoints: {
-          renderer: typeof renderer === "string" ? renderer.trim() : undefined,
-          cli: typeof cli === "string" ? cli.trim() : undefined
-        },
-        commands: commandsResult.ok ? commandsResult.commands : undefined,
-        panes: panesResult.ok ? panesResult.panes : undefined
-      }
-    };
+      apiVersion: FLMUX_EXTENSION_API_VERSION,
+      entrypoints: {
+        renderer: typeof renderer === "string" ? renderer.trim() : undefined,
+        cli: typeof cli === "string" ? cli.trim() : undefined
+      },
+      commands: commandsResult.ok ? commandsResult.commands : undefined,
+      panes: panesResult.ok ? panesResult.panes : undefined
+    }
+  };
 }
 
 function validateManifestEntrypointPath(value: unknown, label: string) {
@@ -135,7 +135,10 @@ function asNonEmptyString(value: unknown) {
 function validateManifestCommands(value: unknown, hasCliEntrypoint: boolean) {
   if (value === undefined) {
     return hasCliEntrypoint
-      ? { ok: false as const, errors: ["Manifest field 'commands' must be a non-empty array when 'entrypoints.cli' is set"] }
+      ? {
+          ok: false as const,
+          errors: ["Manifest field 'commands' must be a non-empty array when 'entrypoints.cli' is set"]
+        }
       : { ok: true as const, commands: undefined };
   }
 
@@ -144,7 +147,10 @@ function validateManifestCommands(value: unknown, hasCliEntrypoint: boolean) {
   }
 
   if (!Array.isArray(value) || value.length === 0) {
-    return { ok: false as const, errors: ["Manifest field 'commands' must be a non-empty array when 'entrypoints.cli' is set"] };
+    return {
+      ok: false as const,
+      errors: ["Manifest field 'commands' must be a non-empty array when 'entrypoints.cli' is set"]
+    };
   }
 
   const commands: ExtensionManifestCommand[] = [];
@@ -158,10 +164,7 @@ function validateManifestCommands(value: unknown, hasCliEntrypoint: boolean) {
     }
 
     const id = asNonEmptyString(entry.id);
-    const description =
-      entry.description === undefined
-        ? undefined
-        : asNonEmptyString(entry.description);
+    const description = entry.description === undefined ? undefined : asNonEmptyString(entry.description);
 
     if (!id) {
       errors.push(`Manifest field 'commands[${index}].id' must be a non-empty string`);
@@ -180,9 +183,7 @@ function validateManifestCommands(value: unknown, hasCliEntrypoint: boolean) {
     commands.push(description ? { id, description } : { id });
   });
 
-  return errors.length > 0
-    ? { ok: false as const, errors }
-    : { ok: true as const, commands };
+  return errors.length > 0 ? { ok: false as const, errors } : { ok: true as const, commands };
 }
 
 function validateManifestPanes(value: unknown) {
@@ -205,10 +206,7 @@ function validateManifestPanes(value: unknown) {
     }
 
     const kind = asNonEmptyString(entry.kind);
-    const defaultTitle =
-      entry.defaultTitle === undefined
-        ? undefined
-        : asNonEmptyString(entry.defaultTitle);
+    const defaultTitle = entry.defaultTitle === undefined ? undefined : asNonEmptyString(entry.defaultTitle);
 
     if (!kind) {
       errors.push(`Manifest field 'panes[${index}].kind' must be a non-empty string`);
@@ -227,9 +225,7 @@ function validateManifestPanes(value: unknown) {
     panes.push(defaultTitle ? { kind, defaultTitle } : { kind });
   });
 
-  return errors.length > 0
-    ? { ok: false as const, errors }
-    : { ok: true as const, panes };
+  return errors.length > 0 ? { ok: false as const, errors } : { ok: true as const, panes };
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

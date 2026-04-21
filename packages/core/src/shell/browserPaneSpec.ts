@@ -34,12 +34,9 @@ export function createBrowserPaneSpec(): PaneSpec<BrowserPaneStateRecord> {
     subtreeMounts: [
       {
         mountKey: "browser",
-        getStateSnapshot: ({ record }) =>
-          isBrowserPaneStateRecord(record) ? { url: record.url } : undefined,
+        getStateSnapshot: ({ record }) => (isBrowserPaneStateRecord(record) ? { url: record.url } : undefined),
         canSetStatePath: ({ record }, relativePath) =>
-          isBrowserPaneStateRecord(record) &&
-          relativePath.length === 1 &&
-          relativePath[0] === "url",
+          isBrowserPaneStateRecord(record) && relativePath.length === 1 && relativePath[0] === "url",
         setState: async ({ record, currentParams, setParams, workspace }, relativePath, value) => {
           if (!isBrowserPaneStateRecord(record)) {
             throw new Error("browser subtree only applies to browser panes");
@@ -52,8 +49,7 @@ export function createBrowserPaneSpec(): PaneSpec<BrowserPaneStateRecord> {
           await setParams({ ...(currentParams ?? {}), url: nextUrl });
           return { value: nextUrl };
         },
-        getStatusSnapshot: ({ record }) =>
-          isBrowserPaneStateRecord(record) ? { url: record.url } : undefined
+        getStatusSnapshot: ({ record }) => (isBrowserPaneStateRecord(record) ? { url: record.url } : undefined)
       }
     ],
     persistence: {
@@ -61,9 +57,7 @@ export function createBrowserPaneSpec(): PaneSpec<BrowserPaneStateRecord> {
         url: resolveBrowserUrl(workspace, optionalStringParam(params?.url) ?? workspace.defaultBrowserPath)
       }),
       serializeParams: ({ record, workspace }) =>
-        isBrowserPaneStateRecord(record)
-          ? { url: stripAppOrigin(record.url, workspace.appOrigin) }
-          : undefined
+        isBrowserPaneStateRecord(record) ? { url: stripAppOrigin(record.url, workspace.appOrigin) } : undefined
     }
   };
 }

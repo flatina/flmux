@@ -19,7 +19,10 @@ export interface SmokeHarness {
   readonly workspaceRootDir: string;
   fetchJson<T>(pathname: string, init?: RequestInit): Promise<T>;
   runCliJson<T>(args: string[], options?: { withClient?: boolean }): Promise<T>;
-  waitFor<T>(probe: () => Promise<T | null>, options?: { timeoutMs?: number; intervalMs?: number; label?: string }): Promise<T>;
+  waitFor<T>(
+    probe: () => Promise<T | null>,
+    options?: { timeoutMs?: number; intervalMs?: number; label?: string }
+  ): Promise<T>;
   dispose(): Promise<void>;
 }
 
@@ -61,7 +64,10 @@ export async function createSmokeHarness(): Promise<SmokeHarness> {
     clientRegistry: registry
   });
 
-  registry.attachRenderer(viewId, createHarnessBridge((event) => host.applyTerminalEvent(event)));
+  registry.attachRenderer(
+    viewId,
+    createHarnessBridge((event) => host.applyTerminalEvent(event))
+  );
 
   const server = startFlmuxServer({
     rendererDir,
@@ -106,9 +112,7 @@ export async function createSmokeHarness(): Promise<SmokeHarness> {
   };
 }
 
-function createHarnessBridge(
-  onTerminalEvent: (event: TerminalRuntimeEvent) => void
-): FlmuxRendererBridge {
+function createHarnessBridge(onTerminalEvent: (event: TerminalRuntimeEvent) => void): FlmuxRendererBridge {
   return {
     sendProxy: {
       "terminal.event": (payload) => onTerminalEvent(payload),

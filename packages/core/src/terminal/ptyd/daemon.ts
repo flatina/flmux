@@ -1,7 +1,7 @@
 import { createServer, type Server, type Socket } from "node:net";
 import { randomUUID } from "node:crypto";
 import { getPtydControlIpcPath, getPtydEventsIpcPath } from "./ipcPaths";
-import { createJsonLineParser, toJsonLine } from "./jsonLines";
+import { toJsonLine } from "./jsonLines";
 import { startJsonRpcIpcServer } from "./jsonRpcIpc";
 import {
   PTYD_PROTOCOL_VERSION,

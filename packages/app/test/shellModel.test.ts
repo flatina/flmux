@@ -86,9 +86,7 @@ describe("shell model direct", () => {
       workspaceId: "workspace.test",
       workspaceTitle: "Workspace Test",
       activePaneId: "pane.alpha",
-      panes: [
-        { id: "pane.alpha", kind: "cowsay", title: "Cowsay" }
-      ]
+      panes: [{ id: "pane.alpha", kind: "cowsay", title: "Cowsay" }]
     });
     const model = host.createModel();
 
@@ -294,9 +292,7 @@ describe("shell model direct", () => {
     expect(await model.pathList("/panes/pane.browser/browser")).toEqual({
       ok: true,
       found: true,
-      entries: [
-        { name: "url", path: "/panes/pane.browser/browser/url", kind: "leaf", writable: true }
-      ]
+      entries: [{ name: "url", path: "/panes/pane.browser/browser/url", kind: "leaf", writable: true }]
     });
     expect(await model.pathList("/workspaces/workspace.test")).toEqual({
       ok: true,
@@ -686,9 +682,7 @@ describe("shell model direct", () => {
       workspaceId: "workspace.test",
       workspaceTitle: "Workspace Test",
       activePaneId: "pane.browser",
-      panes: [
-        { id: "pane.browser", kind: "browser", title: "Browser", url: "https://example.test" }
-      ]
+      panes: [{ id: "pane.browser", kind: "browser", title: "Browser", url: "https://example.test" }]
     });
     const browserCurrentModel = browserCurrent.createModel();
     expect(await browserCurrentModel.pathCall("/panes/current/terminal/attach", { cwd: "." })).toEqual({
@@ -929,9 +923,7 @@ describe("shell model direct", () => {
     expect(await model.pathList("/panes/pane.scratchpad/scratchpad")).toEqual({
       ok: true,
       found: true,
-      entries: [
-        { name: "note", path: "/panes/pane.scratchpad/scratchpad/note", kind: "leaf", writable: true }
-      ]
+      entries: [{ name: "note", path: "/panes/pane.scratchpad/scratchpad/note", kind: "leaf", writable: true }]
     });
     expect(await model.pathGet("/status/panes/pane.scratchpad/scratchpad")).toEqual({
       ok: true,
@@ -944,7 +936,12 @@ describe("shell model direct", () => {
       ok: true,
       found: true,
       entries: [
-        { name: "noteLength", path: "/status/panes/pane.scratchpad/scratchpad/noteLength", kind: "leaf", writable: false }
+        {
+          name: "noteLength",
+          path: "/status/panes/pane.scratchpad/scratchpad/noteLength",
+          kind: "leaf",
+          writable: false
+        }
       ]
     });
     expect(await model.pathGet("/panes/pane.scratchpad/note")).toEqual({
@@ -1045,8 +1042,7 @@ describe("shell model direct", () => {
             writableLeaf: "ok",
             readonlyLeaf: "nope"
           }),
-          canSetStatePath: (relativePath: string[]) =>
-            relativePath.length === 1 && relativePath[0] === "writableLeaf",
+          canSetStatePath: (relativePath: string[]) => relativePath.length === 1 && relativePath[0] === "writableLeaf",
           setState: (relativePath: string[], value: unknown) => {
             if (relativePath.length !== 1 || relativePath[0] !== "writableLeaf") {
               throw new Error(`unexpected path '${relativePath.join("/")}'`);
@@ -1149,10 +1145,12 @@ describe("shell model direct", () => {
     });
     expect(created.rootKey).toBe(WORKSPACE_ROOT_KEY);
 
-    expect(await service.kill({
-      rootKey: created.rootKey,
-      runtimeId: created.runtimeId
-    })).toEqual({
+    expect(
+      await service.kill({
+        rootKey: created.rootKey,
+        runtimeId: created.runtimeId
+      })
+    ).toEqual({
       ok: true,
       rootKey: WORKSPACE_ROOT_KEY,
       runtimeId: created.runtimeId,
@@ -1160,11 +1158,13 @@ describe("shell model direct", () => {
       terminal: null
     });
 
-    expect(await service.write({
-      rootKey: created.rootKey,
-      runtimeId: created.runtimeId,
-      data: "echo hi\r"
-    })).toEqual({
+    expect(
+      await service.write({
+        rootKey: created.rootKey,
+        runtimeId: created.runtimeId,
+        data: "echo hi\r"
+      })
+    ).toEqual({
       ok: true,
       accepted: false,
       runtimeId: created.runtimeId,
@@ -1172,10 +1172,12 @@ describe("shell model direct", () => {
       terminal: null
     });
 
-    expect(await service.kill({
-      rootKey: created.rootKey,
-      runtimeId: created.runtimeId
-    })).toEqual({
+    expect(
+      await service.kill({
+        rootKey: created.rootKey,
+        runtimeId: created.runtimeId
+      })
+    ).toEqual({
       ok: true,
       rootKey: WORKSPACE_ROOT_KEY,
       runtimeId: created.runtimeId,

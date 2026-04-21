@@ -18,11 +18,7 @@ import type { TerminalRuntimeEvent } from "../shared/terminal";
 import { createServerShellModelRouter } from "./serverShellModelRouter";
 import type { FlmuxClientRegistry } from "./clientRegistry";
 import type { DiscoveredLocalExtension } from "./localExtensions";
-import {
-  createBuiltinPaneSpecs,
-  createExtensionPaneSpecs,
-  type ExtensionModuleImporter
-} from "./paneSpecs";
+import { createBuiltinPaneSpecs, createExtensionPaneSpecs, type ExtensionModuleImporter } from "./paneSpecs";
 import type { FlmuxSessionStore } from "./sessionStore";
 import type { TerminalService } from "./terminal-service";
 
@@ -181,11 +177,7 @@ export function restoreFromSession(
   return { outerLayout: snapshot.outerLayout, innerLayouts };
 }
 
-function rebuildPaneRecordsFromLayout(
-  shellCore: ShellCore,
-  workspaceId: string,
-  layout: unknown
-): unknown {
+function rebuildPaneRecordsFromLayout(shellCore: ShellCore, workspaceId: string, layout: unknown): unknown {
   if (!isPlainObject(layout)) {
     return layout;
   }
@@ -257,10 +249,7 @@ export function buildBootstrapResponse(options: {
   };
 }
 
-export function composeSessionSnapshot(
-  shellCore: ShellCore,
-  layouts: FlmuxSessionSaveLayouts
-): FlmuxSessionSnapshot {
+export function composeSessionSnapshot(shellCore: ShellCore, layouts: FlmuxSessionSaveLayouts): FlmuxSessionSnapshot {
   const outerPanelIds = extractOuterPanelIds(layouts.outerLayout);
   const workspaces: Record<string, FlmuxWorkspaceSessionSnapshot> = {};
   for (const workspaceId of shellCore.getWorkspaceIds()) {
@@ -283,11 +272,7 @@ export function composeSessionSnapshot(
   };
 }
 
-function overlaySerializedParams(
-  shellCore: ShellCore,
-  workspaceId: string,
-  layout: unknown
-): unknown {
+function overlaySerializedParams(shellCore: ShellCore, workspaceId: string, layout: unknown): unknown {
   if (!isPlainObject(layout)) {
     return layout;
   }
@@ -326,9 +311,7 @@ function pruneGridPaneRefs(node: Record<string, unknown>, validPaneIds: Set<stri
   if (node.type === "leaf" && isPlainObject(node.data)) {
     const data = node.data;
     if (Array.isArray(data.views)) {
-      data.views = data.views.filter((view): view is string =>
-        typeof view === "string" && validPaneIds.has(view)
-      );
+      data.views = data.views.filter((view): view is string => typeof view === "string" && validPaneIds.has(view));
     }
     if (typeof data.activeView === "string" && !validPaneIds.has(data.activeView)) {
       delete data.activeView;
@@ -363,11 +346,13 @@ function defaultWorkspaceTitle(workspaceId: string): string {
   if (numbered) {
     return `Workspace ${numbered[1]}`;
   }
-  return workspaceId
-    .split(/[./_-]/g)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ") || "Workspace";
+  return (
+    workspaceId
+      .split(/[./_-]/g)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ") || "Workspace"
+  );
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

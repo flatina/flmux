@@ -418,8 +418,8 @@ describe("ShellCore", () => {
       return acc;
     }, {});
     // Order inside each slot: null → "workspace.1".
-    expect(perSlot[core["defaultSlotKey"]]).toEqual(["null", "workspace.1"]);
-    expect(perSlot["other"]).toEqual(["null", "workspace.1"]);
+    expect(perSlot[core.defaultSlotKey]).toEqual(["null", "workspace.1"]);
+    expect(perSlot.other).toEqual(["null", "workspace.1"]);
 
     // workspace.removed precedes the intermediate null activeChanged; reseed's
     // workspace.added precedes the "workspace.1" activeChanged events.
@@ -557,7 +557,12 @@ describe("ShellCore", () => {
     await core.createWorkspace({ title: "Second" });
     const captured: Array<{ topic: string; scope: string; targetAttachmentId?: string; payload: any }> = [];
     core.subscribe((event) =>
-      captured.push({ topic: event.topic, scope: event.scope, targetAttachmentId: event.targetAttachmentId, payload: event.payload })
+      captured.push({
+        topic: event.topic,
+        scope: event.scope,
+        targetAttachmentId: event.targetAttachmentId,
+        payload: event.payload
+      })
     );
 
     core.setActiveWorkspace("workspace.1", { slotKey: "other.attachment" });
@@ -599,9 +604,9 @@ describe("ShellCore", () => {
     });
 
     // Slot-only option (no args.workspaceId, slot has no active) also fails.
-    await expect(
-      core.createPane({ kind: "browser" }, { slotKey: "never.bootstrapped" })
-    ).rejects.toMatchObject({ code: "INVALID_VALUE" });
+    await expect(core.createPane({ kind: "browser" }, { slotKey: "never.bootstrapped" })).rejects.toMatchObject({
+      code: "INVALID_VALUE"
+    });
   });
 
   it("closing active pane emits pane.removed + scope=attachment pane.activeChanged", async () => {
@@ -705,7 +710,12 @@ function builtinSpecs(): PaneSpec[] {
       kind: "browser",
       lifecycle: {
         createParams: ({ workspace, input }) => ({
-          url: normalizeBrowserUrl("", workspace.appOrigin, input.url ?? workspace.defaultBrowserPath, workspace.defaultBrowserPath)
+          url: normalizeBrowserUrl(
+            "",
+            workspace.appOrigin,
+            input.url ?? workspace.defaultBrowserPath,
+            workspace.defaultBrowserPath
+          )
         }),
         getTitle: ({ input }) => input.title?.trim() || "Browser",
         createRecord: ({ workspace, params }) => ({

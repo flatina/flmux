@@ -14,10 +14,7 @@ export class PtydClient extends CorePtydClient {
     rootDir: string,
     onEventOrOptions?: ((event: PtydTerminalEvent) => void) | PtydClientOptions
   ) {
-    const options =
-      typeof onEventOrOptions === "function"
-        ? { onEvent: onEventOrOptions }
-        : (onEventOrOptions ?? {});
+    const options = typeof onEventOrOptions === "function" ? { onEvent: onEventOrOptions } : (onEventOrOptions ?? {});
     super(rootKey, rootDir, {
       ...options,
       launch: options.launch ?? createAppPtydLaunchPlan

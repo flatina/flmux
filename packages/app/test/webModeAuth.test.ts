@@ -16,7 +16,7 @@ afterEach(async () => {
 describe("web mode auth (users + tokens store)", () => {
   it("authorizes via cookie, bearer, and query while keeping /health public", async () => {
     const { rendererDir, authDir } = await createFixture();
-    const bootstrap = await runTokensCli(["bootstrap", "--auth-dir", authDir]) as {
+    const bootstrap = (await runTokensCli(["bootstrap", "--auth-dir", authDir])) as {
       user: string;
       token: string;
       tokenId: string;
@@ -51,13 +51,7 @@ describe("web mode auth (users + tokens store)", () => {
       });
       expect(withBearer.status).toBe(200);
 
-      const cliResult = await runCliJson([
-        "clients",
-        "--origin",
-        server.origin,
-        "--token",
-        bootstrap.token
-      ]);
+      const cliResult = await runCliJson(["clients", "--origin", server.origin, "--token", bootstrap.token]);
       expect(cliResult).toMatchObject({ ok: true });
     } finally {
       server.stop();
@@ -66,12 +60,12 @@ describe("web mode auth (users + tokens store)", () => {
 
   it("rejects tokens with unparseable expires_at (defense in depth)", async () => {
     const { rendererDir, authDir } = await createFixture();
-    const bootstrap = await runTokensCli(["bootstrap", "--auth-dir", authDir]) as { token: string; tokenId: string };
+    const bootstrap = (await runTokensCli(["bootstrap", "--auth-dir", authDir])) as { token: string; tokenId: string };
 
     // Corrupt the tokens.toml to inject a malformed expires_at — simulates hand-edit.
     const tokensPath = join(authDir, "users.tokens.toml");
     const original = await readFile(tokensPath, "utf8");
-    await writeFile(tokensPath, original.replace("label = ", "expires_at = \"not-a-date\"\nlabel = "), "utf8");
+    await writeFile(tokensPath, original.replace("label = ", 'expires_at = "not-a-date"\nlabel = '), "utf8");
 
     const server = startFlmuxServer({
       rendererDir,
@@ -91,7 +85,7 @@ describe("web mode auth (users + tokens store)", () => {
 
   it("rejects revoked tokens and tokens for removed users", async () => {
     const { rendererDir, authDir } = await createFixture();
-    const bootstrap = await runTokensCli(["bootstrap", "--auth-dir", authDir]) as { token: string; tokenId: string };
+    const bootstrap = (await runTokensCli(["bootstrap", "--auth-dir", authDir])) as { token: string; tokenId: string };
 
     const server = startFlmuxServer({
       rendererDir,
@@ -118,7 +112,7 @@ describe("web mode auth (users + tokens store)", () => {
 
   it("enforces allow_pane_kinds on /panes/new calls", async () => {
     const { rendererDir, authDir } = await createFixture();
-    const issued = await runTokensCli([
+    const issued = (await runTokensCli([
       "bootstrap",
       "--name",
       "alice",
@@ -126,7 +120,7 @@ describe("web mode auth (users + tokens store)", () => {
       "browser",
       "--auth-dir",
       authDir
-    ]) as { token: string };
+    ])) as { token: string };
 
     const calls: Array<{ path: string; args?: Record<string, unknown> }> = [];
     const server = startFlmuxServer({
@@ -170,7 +164,7 @@ describe("web mode auth (users + tokens store)", () => {
         })
       });
       expect(denied.status).toBe(403);
-      const deniedBody = await denied.json() as { ok: boolean; error: string };
+      const deniedBody = (await denied.json()) as { ok: boolean; error: string };
       expect(deniedBody.ok).toBe(false);
       expect(deniedBody.error).toContain("terminal");
       expect(calls).toHaveLength(1);
@@ -184,23 +178,16 @@ describe("web mode auth (users + tokens store)", () => {
     // Seed a scoped user so the dev bypass still respects their ACL.
     await writeFile(
       join(authDir, "users.toml"),
-      [
-        `[[users]]`,
-        `name = "scoped"`,
-        `allow_pane_kinds = ["browser"]`,
-        `allow_paths.read = ["/status/**"]`,
-        ``
-      ].join("\n"),
+      [`[[users]]`, `name = "scoped"`, `allow_pane_kinds = ["browser"]`, `allow_paths.read = ["/status/**"]`, ``].join(
+        "\n"
+      ),
       "utf8"
     );
 
     const server = startFlmuxServer({
       rendererDir,
       resolveShellModelRouter: async () => createStubShellModelRouter(),
-      authorizer: createFlmuxWebModeAuthorizer(
-        resolveFlmuxAuthPaths(authDir),
-        { devAuthAs: "scoped" }
-      )
+      authorizer: createFlmuxWebModeAuthorizer(resolveFlmuxAuthPaths(authDir), { devAuthAs: "scoped" })
     });
 
     try {
@@ -234,10 +221,7 @@ describe("web mode auth (users + tokens store)", () => {
     const server = startFlmuxServer({
       rendererDir,
       resolveShellModelRouter: async () => createStubShellModelRouter(),
-      authorizer: createFlmuxWebModeAuthorizer(
-        resolveFlmuxAuthPaths(authDir),
-        { devAuthAs: "scoped" }
-      )
+      authorizer: createFlmuxWebModeAuthorizer(resolveFlmuxAuthPaths(authDir), { devAuthAs: "scoped" })
     });
 
     try {
@@ -252,13 +236,7 @@ describe("web mode auth (users + tokens store)", () => {
       // Write users.toml narrowing 'scoped' — next request must see the new ACL.
       await writeFile(
         usersPath,
-        [
-          `[[users]]`,
-          `name = "scoped"`,
-          `allow_pane_kinds = "*"`,
-          `allow_paths.read = ["/status/**"]`,
-          ``
-        ].join("\n"),
+        [`[[users]]`, `name = "scoped"`, `allow_pane_kinds = "*"`, `allow_paths.read = ["/status/**"]`, ``].join("\n"),
         "utf8"
       );
 
@@ -287,10 +265,7 @@ describe("web mode auth (users + tokens store)", () => {
     const server = startFlmuxServer({
       rendererDir,
       resolveShellModelRouter: async () => createStubShellModelRouter(),
-      authorizer: createFlmuxWebModeAuthorizer(
-        resolveFlmuxAuthPaths(authDir),
-        { devAuthAs: "anon" }
-      )
+      authorizer: createFlmuxWebModeAuthorizer(resolveFlmuxAuthPaths(authDir), { devAuthAs: "anon" })
     });
 
     try {
@@ -311,13 +286,9 @@ describe("web mode auth (users + tokens store)", () => {
 
   it("enforces allow_paths.{read,write,call} on /api/model/path/* (B3 ACL)", async () => {
     const { rendererDir, authDir } = await createFixture();
-    const bootstrap = await runTokensCli([
-      "bootstrap",
-      "--name",
-      "scoped",
-      "--auth-dir",
-      authDir
-    ]) as { token: string };
+    const bootstrap = (await runTokensCli(["bootstrap", "--name", "scoped", "--auth-dir", authDir])) as {
+      token: string;
+    };
 
     // Hand-edit users.toml to narrow the user's path ACL: reads allowed
     // everywhere under /status, writes denied entirely, calls only on
@@ -339,9 +310,18 @@ describe("web mode auth (users + tokens store)", () => {
       rendererDir,
       resolveShellModelRouter: async () => ({
         ...createStubShellModelRouter(),
-        pathGet: async (input) => { calls.push({ path: input.path, method: "get" }); return { ok: true, found: true, value: null }; },
-        pathSet: async (input) => { calls.push({ path: input.path, method: "set" }); return { ok: true, value: null }; },
-        pathCall: async (input) => { calls.push({ path: input.path, method: "call" }); return { ok: true, value: null }; }
+        pathGet: async (input) => {
+          calls.push({ path: input.path, method: "get" });
+          return { ok: true, found: true, value: null };
+        },
+        pathSet: async (input) => {
+          calls.push({ path: input.path, method: "set" });
+          return { ok: true, value: null };
+        },
+        pathCall: async (input) => {
+          calls.push({ path: input.path, method: "call" });
+          return { ok: true, value: null };
+        }
       }),
       authorizer: createFlmuxWebModeAuthorizer(resolveFlmuxAuthPaths(authDir))
     });
@@ -363,7 +343,7 @@ describe("web mode auth (users + tokens store)", () => {
       // read denied outside /status (allow_paths.read doesn't cover it)
       const readDenied = await post("/api/model/path/get", { path: "/workspaces" });
       expect(readDenied.status).toBe(403);
-      expect((await readDenied.json() as { error: string }).error).toContain("read");
+      expect(((await readDenied.json()) as { error: string }).error).toContain("read");
 
       // write denied everywhere — allow_paths.write is absent (empty)
       const writeDenied = await post("/api/model/path/set", { path: "/status/app/title", value: "x" });
@@ -373,7 +353,7 @@ describe("web mode auth (users + tokens store)", () => {
       expect((await post("/api/model/path/call", { path: "/panes/pane.xyz/close" })).status).toBe(200);
       const callDenied = await post("/api/model/path/call", { path: "/panes/new", args: { kind: "browser" } });
       expect(callDenied.status).toBe(403);
-      expect((await callDenied.json() as { error: string }).error).toContain("call");
+      expect(((await callDenied.json()) as { error: string }).error).toContain("call");
 
       // Router was only invoked on the allowed requests (2).
       expect(calls.map((c) => c.method).sort()).toEqual(["call", "get"]);
@@ -386,16 +366,18 @@ describe("web mode auth (users + tokens store)", () => {
 function createStubShellModelRouter() {
   return {
     registerClient: () => ({ clientId: "server-client" }),
-    listClients: async () => [{
-      clientId: "server-client",
-      viewId: 0,
-      workspace: {
-        id: "workspace.1",
-        title: "Workspace 1",
-        defaultTitle: "Workspace 1",
-        paneCount: 1
+    listClients: async () => [
+      {
+        clientId: "server-client",
+        viewId: 0,
+        workspace: {
+          id: "workspace.1",
+          title: "Workspace 1",
+          defaultTitle: "Workspace 1",
+          paneCount: 1
+        }
       }
-    }],
+    ],
     pathGet: async () => ({ ok: true, found: true, value: null }),
     pathList: async () => ({ ok: true, found: true, entries: [] }),
     pathSet: async () => ({ ok: true, value: null }),

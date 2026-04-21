@@ -1,5 +1,4 @@
 import type { TerminalBackend } from "./backend";
-import { createInMemoryTerminalBackend } from "./inMemoryBackend";
 import { createPtydBackend } from "./ptydBackend";
 
 export interface TerminalService extends TerminalBackend {}

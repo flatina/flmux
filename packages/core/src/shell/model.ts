@@ -62,7 +62,11 @@ class ShellModel implements ShellModelAPI {
     }
   }
 
-  async pathCall(path: string, args: Record<string, unknown> = {}, caller: PathCallerContext = {}): Promise<PathCallResult> {
+  async pathCall(
+    path: string,
+    args: Record<string, unknown> = {},
+    caller: PathCallerContext = {}
+  ): Promise<PathCallResult> {
     try {
       const segments = parsePath(path);
       return await this.callBySegments(segments, args, caller);
@@ -245,11 +249,7 @@ class ShellModel implements ShellModelAPI {
         if (!workspaces.some((candidate) => candidate.id === workspaceId)) {
           return throwPathError("NOT_FOUND", `Workspace '${workspaceId}' not found`);
         }
-        const result = await this.setScopedProperty(
-          { scope: "workspace", workspaceId },
-          workspaceProperty,
-          value
-        );
+        const result = await this.setScopedProperty({ scope: "workspace", workspaceId }, workspaceProperty, value);
         return { ok: true, value: result.value };
       }
     }
@@ -306,10 +306,7 @@ class ShellModel implements ShellModelAPI {
       const slotOptions = slotKey ? { slotKey } : undefined;
 
       if (segments.length === 2 && segments[1] === "new") {
-        const createdWorkspace = await this.host.createWorkspace(
-          { title: optionalString(args.title) },
-          slotOptions
-        );
+        const createdWorkspace = await this.host.createWorkspace({ title: optionalString(args.title) }, slotOptions);
         return {
           ok: true,
           value: {
@@ -358,10 +355,7 @@ class ShellModel implements ShellModelAPI {
       // Host throws INVALID_VALUE when all three are absent.
       const workspaceId = argsWorkspaceId ?? caller.workspaceId;
       const slotKey = caller.attachmentId;
-      const pane = await this.host.createPane(
-        input,
-        workspaceId || slotKey ? { workspaceId, slotKey } : undefined
-      );
+      const pane = await this.host.createPane(input, workspaceId || slotKey ? { workspaceId, slotKey } : undefined);
       return {
         ok: true,
         value: {
@@ -498,9 +492,7 @@ class ShellModel implements ShellModelAPI {
       return {
         ok: true,
         found: true,
-        value: Object.fromEntries(
-          workspaces.map((workspace) => [workspace.id, workspace])
-        )
+        value: Object.fromEntries(workspaces.map((workspace) => [workspace.id, workspace]))
       };
     }
 
@@ -602,9 +594,7 @@ class ShellModel implements ShellModelAPI {
       return {
         ok: true,
         found: true,
-        value: Object.fromEntries(
-          panes.map((pane) => [pane.id, toPaneStateSnapshot(pane)])
-        )
+        value: Object.fromEntries(panes.map((pane) => [pane.id, toPaneStateSnapshot(pane)]))
       };
     }
 
@@ -630,7 +620,12 @@ class ShellModel implements ShellModelAPI {
       };
     }
 
-    if (segments.length === 3 && segments[1] === "terminal" && pane.kind === "terminal" && isTerminalActionSegment(segments[2])) {
+    if (
+      segments.length === 3 &&
+      segments[1] === "terminal" &&
+      pane.kind === "terminal" &&
+      isTerminalActionSegment(segments[2])
+    ) {
       return throwPathError("INVALID_PATH", "Action path cannot be read");
     }
 
@@ -673,7 +668,11 @@ class ShellModel implements ShellModelAPI {
       return {
         ok: true,
         found: true,
-        entries: withMountEntries(paneStateEntries(pane, `/panes/${segments[0]}`), [...subtreeMounts, ...(mount ? [mount] : [])], `/panes/${segments[0]}`)
+        entries: withMountEntries(
+          paneStateEntries(pane, `/panes/${segments[0]}`),
+          [...subtreeMounts, ...(mount ? [mount] : [])],
+          `/panes/${segments[0]}`
+        )
       };
     }
 
@@ -688,7 +687,12 @@ class ShellModel implements ShellModelAPI {
           return notFoundList();
         }
 
-        const listed = await this.listPaneMountPath(subtreeMount, [], `/panes/${segments[0]}/${subtreeMount.mountKey}`, "state");
+        const listed = await this.listPaneMountPath(
+          subtreeMount,
+          [],
+          `/panes/${segments[0]}/${subtreeMount.mountKey}`,
+          "state"
+        );
         if (!listed.ok || !listed.found) {
           return listed;
         }
@@ -696,16 +700,18 @@ class ShellModel implements ShellModelAPI {
         return {
           ok: true,
           found: true,
-          entries: [
-            ...listed.entries,
-            ...terminalActionEntries(`/panes/${segments[0]}/terminal`)
-          ]
+          entries: [...listed.entries, ...terminalActionEntries(`/panes/${segments[0]}/terminal`)]
         };
       }
 
       const subtreeMount = await this.resolvePaneSubtreeMount(pane.id, segments[1]);
       if (subtreeMount) {
-        return await this.listPaneMountPath(subtreeMount, [], `/panes/${segments[0]}/${subtreeMount.mountKey}`, "state");
+        return await this.listPaneMountPath(
+          subtreeMount,
+          [],
+          `/panes/${segments[0]}/${subtreeMount.mountKey}`,
+          "state"
+        );
       }
 
       if (segments[1] === "close") {
@@ -741,11 +747,11 @@ class ShellModel implements ShellModelAPI {
           app,
           attachments: Object.fromEntries(attachments.map((entry) => [entry.attachmentId, entry])),
           workspaces: Object.fromEntries(workspaces.map((workspace) => [workspace.id, workspace])),
-          ...(slotKey ? {
-            panes: Object.fromEntries(
-              panes.map((pane) => [pane.id, toPaneStatusSnapshot(pane)])
-            )
-          } : {})
+          ...(slotKey
+            ? {
+                panes: Object.fromEntries(panes.map((pane) => [pane.id, toPaneStatusSnapshot(pane)]))
+              }
+            : {})
         }
       };
     }
@@ -938,7 +944,9 @@ class ShellModel implements ShellModelAPI {
       return {
         ok: true,
         found: true,
-        entries: attachments.map((entry) => objectEntry(entry.attachmentId, `/status/attachments/${entry.attachmentId}`))
+        entries: attachments.map((entry) =>
+          objectEntry(entry.attachmentId, `/status/attachments/${entry.attachmentId}`)
+        )
       };
     }
 
@@ -954,7 +962,10 @@ class ShellModel implements ShellModelAPI {
         entries: [
           leafEntry("attachmentId", `/status/attachments/${attachment.attachmentId}/attachmentId`),
           leafEntry("activeWorkspaceId", `/status/attachments/${attachment.attachmentId}/activeWorkspaceId`),
-          leafEntry("activePaneIdByWorkspace", `/status/attachments/${attachment.attachmentId}/activePaneIdByWorkspace`),
+          leafEntry(
+            "activePaneIdByWorkspace",
+            `/status/attachments/${attachment.attachmentId}/activePaneIdByWorkspace`
+          ),
           objectEntry("currentWorkspace", `/status/attachments/${attachment.attachmentId}/currentWorkspace`)
         ]
       };
@@ -1075,9 +1086,7 @@ class ShellModel implements ShellModelAPI {
       return {
         ok: true,
         found: true,
-        value: Object.fromEntries(
-          panes.map((pane) => [pane.id, toPaneStatusSnapshot(pane)])
-        )
+        value: Object.fromEntries(panes.map((pane) => [pane.id, toPaneStatusSnapshot(pane)]))
       };
     }
 
@@ -1182,9 +1191,7 @@ class ShellModel implements ShellModelAPI {
     }
 
     const resolved = readSnapshotPath(snapshot, relativePath);
-    return resolved.found
-      ? { ok: true, found: true, value: resolved.value }
-      : notFoundGet();
+    return resolved.found ? { ok: true, found: true, value: resolved.value } : notFoundGet();
   }
 
   private async listPaneMountPath(
@@ -1198,9 +1205,8 @@ class ShellModel implements ShellModelAPI {
       return notFoundList();
     }
 
-    const resolved = relativePath.length === 0
-      ? { found: true, value: snapshot }
-      : readSnapshotPath(snapshot, relativePath);
+    const resolved =
+      relativePath.length === 0 ? { found: true, value: snapshot } : readSnapshotPath(snapshot, relativePath);
     if (!resolved.found) {
       return notFoundList();
     }
@@ -1223,7 +1229,7 @@ class ShellModel implements ShellModelAPI {
   }
 
   private async setPaneMountStatePath(
-    paneId: string,
+    _paneId: string,
     mount: Awaited<ReturnType<ShellModelHost["getPanePathMount"]>>,
     relativePath: string[],
     value: unknown
@@ -1242,7 +1248,7 @@ class ShellModel implements ShellModelAPI {
       return throwPathError("NOT_WRITABLE", "Path is not writable");
     }
 
-    if (!(await mount.canSetStatePath?.(relativePath) ?? false)) {
+    if (!((await mount.canSetStatePath?.(relativePath)) ?? false)) {
       return throwPathError("NOT_WRITABLE", "Path is not writable");
     }
 
@@ -1264,19 +1270,13 @@ class ShellModel implements ShellModelAPI {
     ]);
     return {
       ...(workspace ? statePropertySnapshot(workspace, WORKSPACE_STATE_PROPERTIES, "alias") : {}),
-      workspaces: Object.fromEntries(
-        workspaces.map((entry) => [entry.id, entry])
-      ),
+      workspaces: Object.fromEntries(workspaces.map((entry) => [entry.id, entry])),
       bus: {},
-      panes: Object.fromEntries(
-        panes.map((pane) => [pane.id, toPaneStateSnapshot(pane)])
-      ),
+      panes: Object.fromEntries(panes.map((pane) => [pane.id, toPaneStateSnapshot(pane)])),
       status: {
         app,
         ...(workspace ? { workspace } : {}),
-        panes: Object.fromEntries(
-          panes.map((pane) => [pane.id, toPaneStatusSnapshot(pane)])
-        )
+        panes: Object.fromEntries(panes.map((pane) => [pane.id, toPaneStatusSnapshot(pane)]))
       }
     };
   }
@@ -1352,7 +1352,9 @@ const APP_STATE_PROPERTIES: readonly ScopedStatePropertyDescriptor<AppStatusSnap
   }
 ];
 
-const WORKSPACE_STATE_PROPERTIES: readonly ScopedStatePropertyDescriptor<Awaited<ReturnType<ShellModelHost["getWorkspaceStatus"]>>>[] = [
+const WORKSPACE_STATE_PROPERTIES: readonly ScopedStatePropertyDescriptor<
+  Awaited<ReturnType<ShellModelHost["getWorkspaceStatus"]>>
+>[] = [
   {
     key: "title",
     label: "Workspace title",
@@ -1394,12 +1396,8 @@ function statePropertyEntries(
   writableOverride?: boolean
 ) {
   return properties.map((property) => {
-    const leafName = pathMode === "alias" ? property.alias ?? property.key : property.key;
-    return leafEntry(
-      leafName,
-      `${basePath}/${leafName}`.replace(/\/+/g, "/"),
-      writableOverride ?? property.writable
-    );
+    const leafName = pathMode === "alias" ? (property.alias ?? property.key) : property.key;
+    return leafEntry(leafName, `${basePath}/${leafName}`.replace(/\/+/g, "/"), writableOverride ?? property.writable);
   });
 }
 
@@ -1409,7 +1407,10 @@ function statePropertySnapshot(
   keyMode: "key" | "alias" = "key"
 ) {
   return Object.fromEntries(
-    properties.map((property) => [keyMode === "alias" ? property.alias ?? property.key : property.key, property.read(target)])
+    properties.map((property) => [
+      keyMode === "alias" ? (property.alias ?? property.key) : property.key,
+      property.read(target)
+    ])
   );
 }
 
@@ -1452,15 +1453,16 @@ function parseNewPaneArgs(args: Record<string, unknown>): { input: NewPaneInput;
   const referencePaneId = optionalString(args.referencePaneId);
   const workspaceId = optionalString(args.workspaceId);
   const params = Object.fromEntries(
-    Object.entries(args).filter(([key]) => (
-      key !== "kind" &&
-      key !== "title" &&
-      key !== "url" &&
-      key !== "cwd" &&
-      key !== "place" &&
-      key !== "referencePaneId" &&
-      key !== "workspaceId"
-    ))
+    Object.entries(args).filter(
+      ([key]) =>
+        key !== "kind" &&
+        key !== "title" &&
+        key !== "url" &&
+        key !== "cwd" &&
+        key !== "place" &&
+        key !== "referencePaneId" &&
+        key !== "workspaceId"
+    )
   );
 
   return {
@@ -1501,10 +1503,7 @@ function parsePublishArgs(args: Record<string, unknown>) {
   const payloadEntries = Object.entries(args).filter(([key]) => key !== "topic");
   return {
     topic,
-    payload:
-      payloadEntries.length === 0
-        ? null
-        : Object.fromEntries(payloadEntries)
+    payload: payloadEntries.length === 0 ? null : Object.fromEntries(payloadEntries)
   };
 }
 
@@ -1563,7 +1562,7 @@ function toPaneStateSnapshot(pane: ShellPaneRecordSnapshot) {
           title: pane.title,
           terminal: toTerminalStateSnapshot(pane)
         }
-    : { kind: pane.kind, title: pane.title };
+      : { kind: pane.kind, title: pane.title };
 }
 
 function toPaneStatusSnapshot(pane: ShellPaneRecordSnapshot) {
@@ -1581,25 +1580,17 @@ function toPaneStatusSnapshot(pane: ShellPaneRecordSnapshot) {
           title: pane.title,
           terminal: toTerminalStatusSnapshot(pane)
         }
-    : { id: pane.id, kind: pane.kind, title: pane.title };
+      : { id: pane.id, kind: pane.kind, title: pane.title };
 }
 
 function paneStateEntries(_pane: ShellPaneRecordSnapshot, basePath: string): ShellPathEntry[] {
   const propertyEntries = statePropertyEntries(PANE_STATE_PROPERTIES, basePath);
-  return [
-    leafEntry("kind", `${basePath}/kind`),
-    ...propertyEntries,
-    actionEntry("close", `${basePath}/close`)
-  ];
+  return [leafEntry("kind", `${basePath}/kind`), ...propertyEntries, actionEntry("close", `${basePath}/close`)];
 }
 
 function paneStatusEntries(_pane: ShellPaneRecordSnapshot, basePath: string): ShellPathEntry[] {
   const propertyEntries = statePropertyEntries(PANE_STATE_PROPERTIES, basePath, "key", false);
-  return [
-    leafEntry("id", `${basePath}/id`),
-    leafEntry("kind", `${basePath}/kind`),
-    ...propertyEntries
-  ];
+  return [leafEntry("id", `${basePath}/id`), leafEntry("kind", `${basePath}/kind`), ...propertyEntries];
 }
 
 function leafEntry(name: string, path: string, writable = false): ShellPathEntry {
@@ -1684,7 +1675,9 @@ function readTerminalRuntimeId(pane: ShellPaneRecordSnapshot) {
 }
 
 function isTerminalActionSegment(segment: string) {
-  return segment === "attach" || segment === "write" || segment === "resize" || segment === "history" || segment === "kill";
+  return (
+    segment === "attach" || segment === "write" || segment === "resize" || segment === "history" || segment === "kill"
+  );
 }
 
 function terminalActionEntries(basePath: string) {
@@ -1697,16 +1690,9 @@ function terminalActionEntries(basePath: string) {
   ];
 }
 
-function withMountEntries(
-  entries: ShellPathEntry[],
-  mounts: Array<ShellResolvedPaneSubtreeMount>,
-  basePath: string
-) {
+function withMountEntries(entries: ShellPathEntry[], mounts: Array<ShellResolvedPaneSubtreeMount>, basePath: string) {
   return mounts.length > 0
-    ? [
-        ...entries,
-        ...mounts.map((mount) => objectEntry(mount.mountKey, `${basePath}/${mount.mountKey}`))
-      ]
+    ? [...entries, ...mounts.map((mount) => objectEntry(mount.mountKey, `${basePath}/${mount.mountKey}`))]
     : entries;
 }
 
@@ -1790,10 +1776,7 @@ function throwPathError<T>(code: PathErrorCode, message: string): T {
  */
 function requireSlotKey(caller: PathCallerContext, attemptedPath: string, suggested: string): string {
   if (!caller.attachmentId) {
-    throw new ModelPathError(
-      "INVALID_VALUE",
-      `${attemptedPath} requires attachment context; use ${suggested}`
-    );
+    throw new ModelPathError("INVALID_VALUE", `${attemptedPath} requires attachment context; use ${suggested}`);
   }
   return caller.attachmentId;
 }

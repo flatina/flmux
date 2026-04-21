@@ -6,7 +6,6 @@ import type { AppProcessHandle } from "../support/realAppSmokeSupport";
 import {
   allocateFlmuxRootDir,
   connectCdp,
-  fetchJson,
   fetchTargets,
   killMainProcessOnly,
   launchFlmuxApp,
@@ -52,26 +51,29 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
     });
     const paneId = newPane.result.value.paneId;
 
-    const attached = await waitFor(async () => {
-      const status = await postJson<{
-        ok: true;
-        result: {
+    const attached = await waitFor(
+      async () => {
+        const status = await postJson<{
           ok: true;
-          found: true;
-          value: {
-            attached: boolean;
-            rootKey: string | null;
-            runtimeId: string | null;
+          result: {
+            ok: true;
+            found: true;
+            value: {
+              attached: boolean;
+              rootKey: string | null;
+              runtimeId: string | null;
+            };
           };
-        };
-      }>(`${firstOrigin}/api/model/path/get`, {
-        clientId: firstClientId,
-        path: `/status/panes/${paneId}/terminal`
-      });
-      return status.result.value.attached && status.result.value.rootKey && status.result.value.runtimeId
-        ? { rootKey: status.result.value.rootKey, runtimeId: status.result.value.runtimeId }
-        : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "initial terminal auto-attach" });
+        }>(`${firstOrigin}/api/model/path/get`, {
+          clientId: firstClientId,
+          path: `/status/panes/${paneId}/terminal`
+        });
+        return status.result.value.attached && status.result.value.rootKey && status.result.value.runtimeId
+          ? { rootKey: status.result.value.rootKey, runtimeId: status.result.value.runtimeId }
+          : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "initial terminal auto-attach" }
+    );
     const rootKey = attached.rootKey;
     const runtimeId = attached.runtimeId;
 
@@ -232,28 +234,29 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
     });
     expect(scratchpadStatus.result.value.noteLength).toBe(scratchpadMarker.length);
 
-    await waitFor(async () => {
-      const status = await postJson<{
-        ok: true;
-        result: {
+    await waitFor(
+      async () => {
+        const status = await postJson<{
           ok: true;
-          found: true;
-          value: {
-            attached: boolean;
-            rootKey: string | null;
-            cwd: string;
-            runtimeId: string | null;
+          result: {
+            ok: true;
+            found: true;
+            value: {
+              attached: boolean;
+              rootKey: string | null;
+              cwd: string;
+              runtimeId: string | null;
+            };
           };
-        };
-      }>(`${firstOrigin}/api/model/path/get`, {
-        clientId: firstClientId,
-        path: `/status/panes/${paneId}/terminal`
-      });
+        }>(`${firstOrigin}/api/model/path/get`, {
+          clientId: firstClientId,
+          path: `/status/panes/${paneId}/terminal`
+        });
 
-      return status.result.value.attached && status.result.value.rootKey === rootKey
-        ? status.result.value
-        : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "attached terminal before restart" });
+        return status.result.value.attached && status.result.value.rootKey === rootKey ? status.result.value : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "attached terminal before restart" }
+    );
 
     const ptydClient = new PtydClient(rootKey, rootDir);
     try {
@@ -267,37 +270,41 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
       ptydClient.dispose();
     }
 
-    await waitFor(async () => {
-      try {
-        const saved = await Bun.file(sessionFile).text();
-        return (
-          saved.includes("\"version\": 4") &&
-          saved.includes(paneId) &&
-          saved.includes(browserPaneId) &&
-          saved.includes(cowsayPaneId) &&
-          saved.includes(inspectorPaneId) &&
-          saved.includes(scratchpadPaneId)
-        )
-          ? true
-          : null;
-      } catch {
-        return null;
+    await waitFor(
+      async () => {
+        try {
+          const saved = await Bun.file(sessionFile).text();
+          return saved.includes('"version": 4') &&
+            saved.includes(paneId) &&
+            saved.includes(browserPaneId) &&
+            saved.includes(cowsayPaneId) &&
+            saved.includes(inspectorPaneId) &&
+            saved.includes(scratchpadPaneId)
+            ? true
+            : null;
+        } catch {
+          return null;
+        }
+      },
+      {
+        timeoutMs: 10_000,
+        intervalMs: 100,
+        label: "persisted session file"
       }
-    }, {
-      timeoutMs: 10_000,
-      intervalMs: 100,
-      label: "persisted session file"
-    });
+    );
 
     await killMainProcessOnly(firstApp.process);
-    await waitFor(async () => {
-      try {
-        await fetchTargets(port);
-        return null;
-      } catch {
-        return true;
-      }
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "first app shutdown" });
+    await waitFor(
+      async () => {
+        try {
+          await fetchTargets(port);
+          return null;
+        } catch {
+          return true;
+        }
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "first app shutdown" }
+    );
     const lock = await new PtydLockFile(rootDir).load();
     expect(lock?.rootKey).toBe(rootKey);
 
@@ -311,52 +318,56 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
     await connectedSecondSession.send("Runtime.enable");
     const secondClientId = await waitForSingleClientId(secondOrigin, "second client id");
 
-    const paneState = await waitFor(async () => {
-      const state = await postJson<{
-        ok: true;
-        result: {
+    const paneState = await waitFor(
+      async () => {
+        const state = await postJson<{
           ok: true;
-          found: boolean;
-          value: {
-            cwd: string;
-          } | null;
-        };
-      }>(`${secondOrigin}/api/model/path/get`, {
-        clientId: secondClientId,
-        path: `/panes/${paneId}/terminal`
-      });
+          result: {
+            ok: true;
+            found: boolean;
+            value: {
+              cwd: string;
+            } | null;
+          };
+        }>(`${secondOrigin}/api/model/path/get`, {
+          clientId: secondClientId,
+          path: `/panes/${paneId}/terminal`
+        });
 
-      return state.result.found ? state.result.value : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "restored terminal pane state" });
+        return state.result.found ? state.result.value : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "restored terminal pane state" }
+    );
     expect(paneState).toEqual({
       cwd: expect.stringContaining("project")
     });
 
-    const paneStatus = await waitFor(async () => {
-      const status = await postJson<{
-        ok: true;
-        result: {
+    const paneStatus = await waitFor(
+      async () => {
+        const status = await postJson<{
           ok: true;
-          found: true;
-          value: {
-            attached: boolean;
-            rootKey: string | null;
-            cwd: string;
-            runtimeId: string | null;
-            alive: boolean | null;
-            commandCount: number | null;
-            createdAt: string | null;
-            updatedAt: string | null;
+          result: {
+            ok: true;
+            found: true;
+            value: {
+              attached: boolean;
+              rootKey: string | null;
+              cwd: string;
+              runtimeId: string | null;
+              alive: boolean | null;
+              commandCount: number | null;
+              createdAt: string | null;
+              updatedAt: string | null;
+            };
           };
-        };
-      }>(`${secondOrigin}/api/model/path/get`, {
-        clientId: secondClientId,
-        path: `/status/panes/${paneId}/terminal`
-      });
-      return status.result.value.attached && status.result.value.rootKey === rootKey
-        ? status.result.value
-        : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "restored terminal attach surface" });
+        }>(`${secondOrigin}/api/model/path/get`, {
+          clientId: secondClientId,
+          path: `/status/panes/${paneId}/terminal`
+        });
+        return status.result.value.attached && status.result.value.rootKey === rootKey ? status.result.value : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "restored terminal attach surface" }
+    );
     expect(paneStatus).toMatchObject({
       attached: true,
       rootKey,
@@ -364,27 +375,30 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
       alive: true
     });
 
-    const restoredHistory = await waitFor(async () => {
-      const history = await postJson<{
-        ok: true;
-        result: {
+    const restoredHistory = await waitFor(
+      async () => {
+        const history = await postJson<{
           ok: true;
-          value: {
+          result: {
             ok: true;
-            runtimeId: string;
-            data: string;
+            value: {
+              ok: true;
+              runtimeId: string;
+              data: string;
+            };
           };
-        };
-      }>(`${secondOrigin}/api/model/path/call`, {
-        clientId: secondClientId,
-        path: `/panes/${paneId}/terminal/history`,
-        args: {
-          maxBytes: 20_000
-        }
-      });
+        }>(`${secondOrigin}/api/model/path/call`, {
+          clientId: secondClientId,
+          path: `/panes/${paneId}/terminal/history`,
+          args: {
+            maxBytes: 20_000
+          }
+        });
 
-      return history.result.value.data.includes(marker) ? history.result.value : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "restored terminal history" });
+        return history.result.value.data.includes(marker) ? history.result.value : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "restored terminal history" }
+    );
     expect(restoredHistory.runtimeId).toBe(runtimeId);
     expect(restoredHistory.data).toContain(marker);
 
@@ -484,26 +498,30 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
       title: "Persisted Scratchpad"
     });
 
-    const restoredCowsay = await waitFor(async () => {
-      const state = await connectedSecondSession.evaluate<{
-        cowsayCount: number;
-        probeTitle: string;
-      }>(`(() => {
+    const restoredCowsay = await waitFor(
+      async () => {
+        const state = await connectedSecondSession.evaluate<{
+          cowsayCount: number;
+          probeTitle: string;
+        }>(`(() => {
         const surface = document.querySelector('.workspace-panel');
         return {
           cowsayCount: surface?.querySelectorAll('.cowsay-panel').length ?? 0,
           probeTitle: surface?.querySelector('.cowsay-panel strong')?.textContent ?? ''
         };
       })()`);
-      return state.cowsayCount >= 2 && state.probeTitle.includes("cowsay probe") ? state : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "restored cowsay panel" });
+        return state.cowsayCount >= 2 && state.probeTitle.includes("cowsay probe") ? state : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "restored cowsay panel" }
+    );
     expect(restoredCowsay.cowsayCount).toBeGreaterThanOrEqual(2);
 
-    const restoredScratchpad = await waitFor(async () => {
-      const state = await connectedSecondSession.evaluate<{
-        note: string;
-        counter: string;
-      }>(`(() => {
+    const restoredScratchpad = await waitFor(
+      async () => {
+        const state = await connectedSecondSession.evaluate<{
+          note: string;
+          counter: string;
+        }>(`(() => {
         const surface = document.querySelector('.workspace-panel');
         const panel = surface?.querySelector('.scratchpad-panel');
         return {
@@ -511,14 +529,23 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
           counter: panel?.querySelector('[data-role="counter"]')?.textContent ?? ''
         };
       })()`);
-      return state.note === scratchpadMarker && state.counter.includes("chars") ? state : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "restored scratchpad note" });
+        return state.note === scratchpadMarker && state.counter.includes("chars") ? state : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "restored scratchpad note" }
+    );
     expect(restoredScratchpad.note).toBe(scratchpadMarker);
 
-    await waitFor(async () => {
-      const targets = await fetchTargets(secondPort);
-      return targets.some((target) => target.url === `${secondOrigin}/__flmux/internal/start?workspace=restored-browser`) ? true : null;
-    }, { timeoutMs: 20_000, intervalMs: 500, label: "restored start browser target" });
+    await waitFor(
+      async () => {
+        const targets = await fetchTargets(secondPort);
+        return targets.some(
+          (target) => target.url === `${secondOrigin}/__flmux/internal/start?workspace=restored-browser`
+        )
+          ? true
+          : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 500, label: "restored start browser target" }
+    );
   } finally {
     if (secondSession) {
       await secondSession.close();

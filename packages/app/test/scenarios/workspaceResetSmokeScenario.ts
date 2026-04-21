@@ -41,15 +41,21 @@ export async function runWorkspaceResetSmokeScenario(appHandles: AppProcessHandl
     });
     expect(created.result.value.workspaceId).toBe(secondWorkspaceId);
 
-    await waitFor(async () => {
-      const title = await session.evaluate<string>(`document.title`);
-      return title.includes("Workspace 2") ? title : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 active before reset" });
+    await waitFor(
+      async () => {
+        const title = await session.evaluate<string>(`document.title`);
+        return title.includes("Workspace 2") ? title : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 active before reset" }
+    );
 
-    await waitFor(async () => {
-      const targets = await fetchTargets(port);
-      return targets.some((target) => target.url === secondWorkspaceStartUrl) ? true : null;
-    }, { timeoutMs: 20_000, intervalMs: 500, label: "workspace 2 start target before reset" });
+    await waitFor(
+      async () => {
+        const targets = await fetchTargets(port);
+        return targets.some((target) => target.url === secondWorkspaceStartUrl) ? true : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 500, label: "workspace 2 start target before reset" }
+    );
 
     const retitled = await postJson<{
       ok: true;
@@ -71,22 +77,25 @@ export async function runWorkspaceResetSmokeScenario(appHandles: AppProcessHandl
     });
     const terminalPaneId = terminalPane.result.value.paneId;
 
-    const attached = await waitFor(async () => {
-      const status = await postJson<{
-        ok: true;
-        result: {
+    const attached = await waitFor(
+      async () => {
+        const status = await postJson<{
           ok: true;
-          found: true;
-          value: { attached: boolean; rootKey: string | null; runtimeId: string | null };
-        };
-      }>(`${appOrigin}/api/model/path/get`, {
-        clientId,
-        path: `/status/panes/${terminalPaneId}/terminal`
-      });
-      return status.result.value.attached && status.result.value.runtimeId
-        ? { runtimeId: status.result.value.runtimeId }
-        : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 terminal auto-attach before reset" });
+          result: {
+            ok: true;
+            found: true;
+            value: { attached: boolean; rootKey: string | null; runtimeId: string | null };
+          };
+        }>(`${appOrigin}/api/model/path/get`, {
+          clientId,
+          path: `/status/panes/${terminalPaneId}/terminal`
+        });
+        return status.result.value.attached && status.result.value.runtimeId
+          ? { runtimeId: status.result.value.runtimeId }
+          : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 terminal auto-attach before reset" }
+    );
     const runtimeId = attached.runtimeId;
     expect(runtimeId).toBeTruthy();
 
@@ -100,29 +109,32 @@ export async function runWorkspaceResetSmokeScenario(appHandles: AppProcessHandl
     })()`);
     expect(resetClicked).toBe(true);
 
-    const workspaceStatus = await waitFor(async () => {
-      const status = await postJson<{
-        ok: true;
-        result: {
+    const workspaceStatus = await waitFor(
+      async () => {
+        const status = await postJson<{
           ok: true;
-          found: true;
-          value: {
-            id: string;
-            title: string;
-            defaultTitle: string;
-            paneCount: number;
+          result: {
+            ok: true;
+            found: true;
+            value: {
+              id: string;
+              title: string;
+              defaultTitle: string;
+              paneCount: number;
+            };
           };
-        };
-      }>(`${appOrigin}/api/model/path/get`, {
-        clientId,
-        path: `/status/workspaces/${secondWorkspaceId}`
-      });
-      return status.result.value.id === secondWorkspaceId &&
-        status.result.value.title === "Workspace 2" &&
-        status.result.value.paneCount === 2
-        ? status.result.value
-        : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 reset to default" });
+        }>(`${appOrigin}/api/model/path/get`, {
+          clientId,
+          path: `/status/workspaces/${secondWorkspaceId}`
+        });
+        return status.result.value.id === secondWorkspaceId &&
+          status.result.value.title === "Workspace 2" &&
+          status.result.value.paneCount === 2
+          ? status.result.value
+          : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 reset to default" }
+    );
     expect(workspaceStatus.paneCount).toBe(2);
 
     const removedTerminal = await postJson<{
@@ -138,37 +150,42 @@ export async function runWorkspaceResetSmokeScenario(appHandles: AppProcessHandl
       value: null
     });
 
-    await waitFor(async () => {
-      const title = await session.evaluate<string>(`document.title`);
-      return title.includes("Workspace 2") && !title.includes("Renamed") ? title : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace title reset" });
+    await waitFor(
+      async () => {
+        const title = await session.evaluate<string>(`document.title`);
+        return title.includes("Workspace 2") && !title.includes("Renamed") ? title : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "workspace title reset" }
+    );
 
     // Reset must leave no runtime owned by the workspace.2 terminal pane we
     // just killed. Filter by ownerPaneId rather than checking total runtime
     // count so sibling workspace terminals (if any) don't mask a leak.
-    await waitFor(async () => {
-      const lock = await loadPtydLockForRootDir(rootDir);
-      if (!lock) {
-        return true;
-      }
+    await waitFor(
+      async () => {
+        const lock = await loadPtydLockForRootDir(rootDir);
+        if (!lock) {
+          return true;
+        }
 
-      let listing: { terminals: Array<{ ownerPaneId: string | null }> } | null;
-      try {
-        listing = await callJsonRpcIpc<{ terminals: Array<{ ownerPaneId: string | null }> }>(
-          lock.controlIpcPath,
-          "terminal.list",
-          undefined,
-          2_000
-        );
-      } catch {
-        listing = null;
-      }
+        let listing: { terminals: Array<{ ownerPaneId: string | null }> } | null;
+        try {
+          listing = await callJsonRpcIpc<{ terminals: Array<{ ownerPaneId: string | null }> }>(
+            lock.controlIpcPath,
+            "terminal.list",
+            undefined,
+            2_000
+          );
+        } catch {
+          listing = null;
+        }
 
-      return listing === null ||
-        listing.terminals.every((terminal) => terminal.ownerPaneId !== terminalPaneId)
-        ? true
-        : null;
-    }, { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 terminal runtime cleared from install-scoped daemon" });
+        return listing === null || listing.terminals.every((terminal) => terminal.ownerPaneId !== terminalPaneId)
+          ? true
+          : null;
+      },
+      { timeoutMs: 20_000, intervalMs: 250, label: "workspace 2 terminal runtime cleared from install-scoped daemon" }
+    );
 
     await session.close();
   } finally {

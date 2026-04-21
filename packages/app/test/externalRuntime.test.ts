@@ -68,7 +68,7 @@ describe("external pane runtime", () => {
         browserPanelTemplate: null as never,
         terminalHost: null as never,
         normalizeBrowserUrl: () => null,
-        onBrowserUrlChange() {},
+        onBrowserUrlChange() {}
       } satisfies PaneRendererRuntimeContext
     });
     renderer.init?.({
@@ -183,7 +183,7 @@ describe("external pane runtime", () => {
         browserPanelTemplate: null as never,
         terminalHost: null as never,
         normalizeBrowserUrl: () => null,
-        onBrowserUrlChange() {},
+        onBrowserUrlChange() {}
       }
     });
 
@@ -320,7 +320,7 @@ describe("external pane runtime", () => {
         browserPanelTemplate: null as never,
         terminalHost: null as never,
         normalizeBrowserUrl: () => null,
-        onBrowserUrlChange() {},
+        onBrowserUrlChange() {}
       }
     });
     renderer.init?.({
@@ -372,36 +372,44 @@ describe("external pane runtime", () => {
     }
 
     expect(pathMount.mountKey).toBe("sample-mount");
-    expect(await pathMount.getStateSnapshot?.({
-      paneId: "pane.mount",
-      workspace: makePaneWorkspaceContext({ id: EXTERNAL_ID }),
-      record: {
-        kind: "sample.mount"
-      },
-      currentParams: {
-        note: "seed"
-      },
-      setParams: async (nextParams) => nextParams,
-      patchParams: async (patch) => patch
-    })).toEqual({
+    expect(
+      await pathMount.getStateSnapshot?.({
+        paneId: "pane.mount",
+        workspace: makePaneWorkspaceContext({ id: EXTERNAL_ID }),
+        record: {
+          kind: "sample.mount"
+        },
+        currentParams: {
+          note: "seed"
+        },
+        setParams: async (nextParams) => nextParams,
+        patchParams: async (patch) => patch
+      })
+    ).toEqual({
       paneId: "pane.mount",
       note: "seed"
     });
-    expect(await pathMount.setState?.({
-      paneId: "pane.mount",
-      workspace: makePaneWorkspaceContext({ id: EXTERNAL_ID }),
-      record: {
-        kind: "sample.mount"
-      },
-      currentParams: {
-        note: "seed"
-      },
-      setParams: async (nextParams) => {
-        setParamsCalls.push(nextParams);
-        return nextParams;
-      },
-      patchParams: async (patch) => patch
-    }, ["note"], "patched")).toEqual({
+    expect(
+      await pathMount.setState?.(
+        {
+          paneId: "pane.mount",
+          workspace: makePaneWorkspaceContext({ id: EXTERNAL_ID }),
+          record: {
+            kind: "sample.mount"
+          },
+          currentParams: {
+            note: "seed"
+          },
+          setParams: async (nextParams) => {
+            setParamsCalls.push(nextParams);
+            return nextParams;
+          },
+          patchParams: async (patch) => patch
+        },
+        ["note"],
+        "patched"
+      )
+    ).toEqual({
       value: "patched"
     });
     expect(setParamsCalls).toEqual([
@@ -409,18 +417,20 @@ describe("external pane runtime", () => {
         note: "patched"
       }
     ]);
-    expect(await pathMount.getStatusSnapshot?.({
-      paneId: "pane.mount",
-      workspace: makePaneWorkspaceContext({ id: EXTERNAL_ID }),
-      record: {
-        kind: "sample.mount"
-      },
-      currentParams: {
-        note: "patched"
-      },
-      setParams: async (nextParams) => nextParams,
-      patchParams: async (patch) => patch
-    })).toEqual({
+    expect(
+      await pathMount.getStatusSnapshot?.({
+        paneId: "pane.mount",
+        workspace: makePaneWorkspaceContext({ id: EXTERNAL_ID }),
+        record: {
+          kind: "sample.mount"
+        },
+        currentParams: {
+          note: "patched"
+        },
+        setParams: async (nextParams) => nextParams,
+        patchParams: async (patch) => patch
+      })
+    ).toEqual({
       noteLength: 7
     });
   });

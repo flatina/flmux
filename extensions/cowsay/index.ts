@@ -283,7 +283,11 @@ function coerceScalar(rawValue: string): unknown {
   if (rawValue === "null") return null;
   if (/^-?\d+(\.\d+)?$/.test(rawValue)) return Number(rawValue);
   if ((rawValue.startsWith("{") && rawValue.endsWith("}")) || (rawValue.startsWith("[") && rawValue.endsWith("]"))) {
-    try { return JSON.parse(rawValue); } catch { return rawValue; }
+    try {
+      return JSON.parse(rawValue);
+    } catch {
+      return rawValue;
+    }
   }
   return rawValue;
 }

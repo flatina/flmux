@@ -1,5 +1,5 @@
 import { setTimeout as delay } from "node:timers/promises";
-import type { TerminalRootStatus, TerminalRuntimeSummary } from "../terminal";
+import type { TerminalRootStatus } from "../terminal";
 import {
   PTYD_PROTOCOL_VERSION,
   type PtydTerminalEvent,
@@ -46,10 +46,7 @@ export class PtydClient {
     readonly rootDir: string,
     onEventOrOptions?: ((event: PtydTerminalEvent) => void) | PtydClientOptions
   ) {
-    const options =
-      typeof onEventOrOptions === "function"
-        ? { onEvent: onEventOrOptions }
-        : (onEventOrOptions ?? {});
+    const options = typeof onEventOrOptions === "function" ? { onEvent: onEventOrOptions } : (onEventOrOptions ?? {});
     this.lockFile = new PtydLockFile(rootDir);
     this.controlIpcPath = getPtydControlIpcPath(rootKey);
     this.eventsIpcPath = getPtydEventsIpcPath(rootKey);
@@ -116,11 +113,7 @@ export class PtydClient {
     }
   }
 
-  private callOnce<Method extends PtydMethod>(
-    method: Method,
-    params: PtydParams<Method>,
-    timeoutMs?: number
-  ) {
+  private callOnce<Method extends PtydMethod>(method: Method, params: PtydParams<Method>, timeoutMs?: number) {
     return callJsonRpcIpc<PtydResult<Method>>(this.controlIpcPath, method, params, timeoutMs);
   }
 
@@ -213,8 +206,8 @@ export class PtydClient {
     } catch (error) {
       throw new Error(
         `Failed to launch flmux ptyd for root ${this.rootKey}\n` +
-        `  launch: ${formatLaunchPlan(launch)}\n` +
-        `  error: ${String(error)}`
+          `  launch: ${formatLaunchPlan(launch)}\n` +
+          `  error: ${String(error)}`
       );
     }
 
@@ -243,8 +236,8 @@ export class PtydClient {
 
     throw new Error(
       `flmux ptyd did not become ready for root ${this.rootKey}\n` +
-      `  launch: ${formatLaunchPlan(launch)}\n` +
-      `  lockFile: ${JSON.stringify(await this.lockFile.load())}`
+        `  launch: ${formatLaunchPlan(launch)}\n` +
+        `  lockFile: ${JSON.stringify(await this.lockFile.load())}`
     );
   }
 
@@ -259,12 +252,7 @@ export class PtydClient {
 
   private async identify(controlIpcPath: string) {
     try {
-      return await callJsonRpcIpc<PtydIdentifyResult>(
-        controlIpcPath,
-        "system.identify",
-        undefined,
-        PING_TIMEOUT_MS
-      );
+      return await callJsonRpcIpc<PtydIdentifyResult>(controlIpcPath, "system.identify", undefined, PING_TIMEOUT_MS);
     } catch {
       return null;
     }

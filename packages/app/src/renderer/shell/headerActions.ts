@@ -170,9 +170,11 @@ export class NewPaneHeaderAction extends HeaderActionButton implements IHeaderAc
 }
 
 export function humanizePaneKind(kind: string): string {
-  return kind
-    .split(/[./_-]/g)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ") || kind;
+  return (
+    kind
+      .split(/[./_-]/g)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ") || kind
+  );
 }

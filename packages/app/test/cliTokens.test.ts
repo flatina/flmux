@@ -14,7 +14,7 @@ describe("cli tokens", () => {
   it("bootstraps an admin user and issues the first token", async () => {
     const authDir = await createTempAuthDir();
 
-    const result = await runTokensCli(["bootstrap", "--auth-dir", authDir]) as {
+    const result = (await runTokensCli(["bootstrap", "--auth-dir", authDir])) as {
       ok: true;
       user: string;
       tokenId: string;
@@ -48,50 +48,38 @@ describe("cli tokens", () => {
     const authDir = await createTempAuthDir();
     await runTokensCli(["bootstrap", "--auth-dir", authDir]);
 
-    const issued = await runTokensCli([
-      "issue",
-      "--user",
-      "admin",
-      "--label",
-      "second",
-      "--auth-dir",
-      authDir
-    ]) as { ok: true; tokenId: string };
+    const issued = (await runTokensCli(["issue", "--user", "admin", "--label", "second", "--auth-dir", authDir])) as {
+      ok: true;
+      tokenId: string;
+    };
     expect(issued.tokenId).toMatch(/^tok_/);
 
-    await expect(runTokensCli([
-      "issue",
-      "--user",
-      "ghost",
-      "--auth-dir",
-      authDir
-    ])).rejects.toThrow(/User 'ghost' not found/);
+    await expect(runTokensCli(["issue", "--user", "ghost", "--auth-dir", authDir])).rejects.toThrow(
+      /User 'ghost' not found/
+    );
   });
 
   it("revokes tokens by id and refuses unknown ids", async () => {
     const authDir = await createTempAuthDir();
-    const bootstrap = await runTokensCli(["bootstrap", "--auth-dir", authDir]) as { tokenId: string };
+    const bootstrap = (await runTokensCli(["bootstrap", "--auth-dir", authDir])) as { tokenId: string };
 
-    const revoked = await runTokensCli([
-      "revoke",
-      bootstrap.tokenId,
-      "--auth-dir",
-      authDir
-    ]) as { ok: true; tokenId: string };
+    const revoked = (await runTokensCli(["revoke", bootstrap.tokenId, "--auth-dir", authDir])) as {
+      ok: true;
+      tokenId: string;
+    };
     expect(revoked.tokenId).toBe(bootstrap.tokenId);
 
-    const listed = await runTokensCli(["list", "--auth-dir", authDir]) as { tokens: unknown[] };
+    const listed = (await runTokensCli(["list", "--auth-dir", authDir])) as { tokens: unknown[] };
     expect(listed.tokens).toHaveLength(0);
 
-    await expect(runTokensCli(["revoke", bootstrap.tokenId, "--auth-dir", authDir]))
-      .rejects.toThrow(/not found/);
+    await expect(runTokensCli(["revoke", bootstrap.tokenId, "--auth-dir", authDir])).rejects.toThrow(/not found/);
   });
 
   it("lists tokens without exposing plaintext values", async () => {
     const authDir = await createTempAuthDir();
-    const issued = await runTokensCli(["bootstrap", "--auth-dir", authDir]) as { token: string };
+    const issued = (await runTokensCli(["bootstrap", "--auth-dir", authDir])) as { token: string };
 
-    const listed = await runTokensCli(["list", "--auth-dir", authDir]) as {
+    const listed = (await runTokensCli(["list", "--auth-dir", authDir])) as {
       tokens: Array<{ id: string; prefix: string; token?: string }>;
     };
 
@@ -102,7 +90,7 @@ describe("cli tokens", () => {
 
   it("supports narrow allow_pane_kinds for bootstrap", async () => {
     const authDir = await createTempAuthDir();
-    const bootstrap = await runTokensCli([
+    const bootstrap = (await runTokensCli([
       "bootstrap",
       "--name",
       "alice",
@@ -110,10 +98,10 @@ describe("cli tokens", () => {
       "browser,terminal",
       "--auth-dir",
       authDir
-    ]) as { user: string };
+    ])) as { user: string };
     expect(bootstrap.user).toBe("alice");
 
-    const users = await runTokensCli(["users", "--auth-dir", authDir]) as {
+    const users = (await runTokensCli(["users", "--auth-dir", authDir])) as {
       users: Array<{ name: string; allowPaneKinds: string | string[] }>;
     };
     expect(users.users).toHaveLength(1);
@@ -125,24 +113,15 @@ describe("cli tokens", () => {
     const authDir = await createTempAuthDir();
     await runTokensCli(["bootstrap", "--auth-dir", authDir]);
 
-    await expect(runTokensCli([
-      "issue",
-      "--user",
-      "admin",
-      "--expires-at",
-      "not-a-date",
-      "--auth-dir",
-      authDir
-    ])).rejects.toThrow(/not a valid ISO timestamp/);
+    await expect(
+      runTokensCli(["issue", "--user", "admin", "--expires-at", "not-a-date", "--auth-dir", authDir])
+    ).rejects.toThrow(/not a valid ISO timestamp/);
   });
 
   it("builds attach urls for tokens qr and rejects non-http origins", () => {
-    expect(buildAttachUrl("http://127.0.0.1:1234", "abc"))
-      .toBe("http://127.0.0.1:1234/?token=abc");
-    expect(buildAttachUrl("http://127.0.0.1:1234/", "abc"))
-      .toBe("http://127.0.0.1:1234/?token=abc");
-    expect(buildAttachUrl("https://example.com/base", "a b/c"))
-      .toBe("https://example.com/base/?token=a%20b%2Fc");
+    expect(buildAttachUrl("http://127.0.0.1:1234", "abc")).toBe("http://127.0.0.1:1234/?token=abc");
+    expect(buildAttachUrl("http://127.0.0.1:1234/", "abc")).toBe("http://127.0.0.1:1234/?token=abc");
+    expect(buildAttachUrl("https://example.com/base", "a b/c")).toBe("https://example.com/base/?token=a%20b%2Fc");
     expect(() => buildAttachUrl("file:///foo", "t")).toThrow(/must start with http/);
     expect(() => buildAttachUrl("127.0.0.1", "t")).toThrow(/must start with http/);
   });
@@ -154,24 +133,14 @@ describe("cli tokens", () => {
 
   it("rejects newline injection in user name and label", async () => {
     const authDir = await createTempAuthDir();
-    await expect(runTokensCli([
-      "bootstrap",
-      "--name",
-      "admin\n[[users]]\nname = \"evil\"",
-      "--auth-dir",
-      authDir
-    ])).rejects.toThrow(/control characters/);
+    await expect(
+      runTokensCli(["bootstrap", "--name", 'admin\n[[users]]\nname = "evil"', "--auth-dir", authDir])
+    ).rejects.toThrow(/control characters/);
 
     await runTokensCli(["bootstrap", "--auth-dir", authDir]);
-    await expect(runTokensCli([
-      "issue",
-      "--user",
-      "admin",
-      "--label",
-      "first\nsecond",
-      "--auth-dir",
-      authDir
-    ])).rejects.toThrow(/control characters/);
+    await expect(
+      runTokensCli(["issue", "--user", "admin", "--label", "first\nsecond", "--auth-dir", authDir])
+    ).rejects.toThrow(/control characters/);
   });
 });
 

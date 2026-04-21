@@ -32,7 +32,9 @@ class PtydBackend implements TerminalBackend {
     const matches = (await client.list()).filter((runtime) => runtime.ownerPaneId === input.paneId);
     if (matches.length !== 1) {
       if (matches.length > 1) {
-        console.warn(`multiple runtimes matched ownerPaneId '${input.paneId}' in root '${matches[0]?.rootKey ?? "unknown"}'`);
+        console.warn(
+          `multiple runtimes matched ownerPaneId '${input.paneId}' in root '${matches[0]?.rootKey ?? "unknown"}'`
+        );
       }
       return {
         ok: true,
@@ -94,7 +96,12 @@ class PtydBackend implements TerminalBackend {
     });
   }
 
-  async resize(input: { rootKey: string; runtimeId: string; cols: number; rows: number }): Promise<TerminalResizeResult> {
+  async resize(input: {
+    rootKey: string;
+    runtimeId: string;
+    cols: number;
+    rows: number;
+  }): Promise<TerminalResizeResult> {
     const client = this.requireClient(input.rootKey);
     return client.resize({
       runtimeId: input.runtimeId,
@@ -121,9 +128,7 @@ class PtydBackend implements TerminalBackend {
   }
 
   async listRoots(): Promise<TerminalRootStatus[]> {
-    return Promise.all(
-      [...this.clients.values()].map((client) => client.getRootStatus())
-    );
+    return Promise.all([...this.clients.values()].map((client) => client.getRootStatus()));
   }
 
   /**

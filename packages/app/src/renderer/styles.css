@@ -1,6 +1,10 @@
 @import "@xterm/xterm/css/xterm.css";
 
-*, *::before, *::after { box-sizing: border-box; }
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
 
 :root {
   color-scheme: dark;
@@ -24,7 +28,9 @@ body {
     radial-gradient(circle at top right, rgba(92, 171, 196, 0.18), transparent 26%),
     radial-gradient(circle at left center, rgba(206, 144, 66, 0.12), transparent 24%),
     linear-gradient(180deg, #0a1220 0%, #070d16 100%);
-  font: 13px/1.45 system-ui, sans-serif;
+  font:
+    13px / 1.45 system-ui,
+    sans-serif;
 }
 
 button,
@@ -40,7 +46,10 @@ button {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 6px 11px;
-  transition: border-color 120ms ease, transform 120ms ease, background 120ms ease;
+  transition:
+    border-color 120ms ease,
+    transform 120ms ease,
+    background 120ms ease;
 }
 
 button:hover {
@@ -88,7 +97,10 @@ select:focus {
 .browser-nav__url {
   flex: 1;
   min-width: 0;
-  font: 12px/1.4 ui-monospace, "SFMono-Regular", monospace;
+  font:
+    12px / 1.4 ui-monospace,
+    "SFMono-Regular",
+    monospace;
 }
 
 .dockview-shell {
@@ -211,7 +223,10 @@ select:focus {
 .cowsay-panel__cow {
   margin: 0;
   color: var(--accent-2);
-  font: 12px/1.15 ui-monospace, "SFMono-Regular", monospace;
+  font:
+    12px / 1.15 ui-monospace,
+    "SFMono-Regular",
+    monospace;
   white-space: pre;
 }
 
@@ -258,7 +273,10 @@ select:focus {
 .cowsay-subscription__input {
   flex: 1;
   min-width: 0;
-  font: 12px/1.4 ui-monospace, "SFMono-Regular", monospace;
+  font:
+    12px / 1.4 ui-monospace,
+    "SFMono-Regular",
+    monospace;
 }
 
 .cowsay-examples {
@@ -318,7 +336,10 @@ select:focus {
 
 .cowsay-log__meta {
   color: var(--muted);
-  font: 11px/1.2 ui-monospace, "SFMono-Regular", monospace;
+  font:
+    11px / 1.2 ui-monospace,
+    "SFMono-Regular",
+    monospace;
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -328,7 +349,10 @@ select:focus {
   color: var(--text);
   white-space: pre-wrap;
   word-break: break-word;
-  font: 12px/1.45 ui-monospace, "SFMono-Regular", monospace;
+  font:
+    12px / 1.45 ui-monospace,
+    "SFMono-Regular",
+    monospace;
 }
 
 .inspector-panel {
@@ -369,7 +393,10 @@ select:focus {
 .inspector-log__body,
 .inspector-stats dt,
 .inspector-stats dd {
-  font: 12px/1.35 ui-monospace, "SFMono-Regular", monospace;
+  font:
+    12px / 1.35 ui-monospace,
+    "SFMono-Regular",
+    monospace;
 }
 
 .inspector-identities span,
@@ -518,7 +545,10 @@ select:focus {
   border: 1px solid rgba(45, 65, 94, 0.88);
   border-radius: 999px;
   background: rgba(10, 18, 30, 0.92);
-  font: 12px/1.35 ui-monospace, "SFMono-Regular", monospace;
+  font:
+    12px / 1.35 ui-monospace,
+    "SFMono-Regular",
+    monospace;
 }
 
 .scratchpad-card {
@@ -554,7 +584,10 @@ select:focus {
   border-radius: 14px;
   padding: 14px;
   outline: none;
-  font: 12px/1.5 ui-monospace, "SFMono-Regular", monospace;
+  font:
+    12px / 1.5 ui-monospace,
+    "SFMono-Regular",
+    monospace;
 }
 
 .scratchpad-textarea:focus {
@@ -567,7 +600,10 @@ select:focus {
   justify-content: space-between;
   gap: 10px;
   color: var(--muted);
-  font: 12px/1.35 ui-monospace, "SFMono-Regular", monospace;
+  font:
+    12px / 1.35 ui-monospace,
+    "SFMono-Regular",
+    monospace;
 }
 
 .terminal-panel {

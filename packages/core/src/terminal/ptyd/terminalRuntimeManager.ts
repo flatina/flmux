@@ -1,5 +1,5 @@
 import { spawn, type IPty } from "bun-pty";
-import type { TerminalCreateInput, TerminalRuntimeSummary } from "../terminal";
+import type { TerminalRuntimeSummary } from "../terminal";
 import type {
   PtydTerminalRecord,
   PtydTerminalCreateParams,
@@ -32,10 +32,13 @@ export class TerminalRuntimeManager {
   ) {}
 
   list() {
-    return Array.from(this.runtimes.values(), (record): PtydTerminalRecord => ({
-      ...record.summary,
-      ownerPaneId: record.ownerPaneId
-    }));
+    return Array.from(
+      this.runtimes.values(),
+      (record): PtydTerminalRecord => ({
+        ...record.summary,
+        ownerPaneId: record.ownerPaneId
+      })
+    );
   }
 
   createTerminal(params: PtydTerminalCreateParams): PtydTerminalCreateResult {
@@ -50,7 +53,10 @@ export class TerminalRuntimeManager {
       };
     }
 
-    if (params.paneId && [...this.runtimes.values()].some((record) => record.ownerPaneId === params.paneId && record.summary.alive)) {
+    if (
+      params.paneId &&
+      [...this.runtimes.values()].some((record) => record.ownerPaneId === params.paneId && record.summary.alive)
+    ) {
       throw new Error(`Terminal pane '${params.paneId}' already has a live runtime`);
     }
 

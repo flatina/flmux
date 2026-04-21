@@ -35,11 +35,13 @@ printUsage();
 process.exit(0);
 
 function printUsage() {
-  console.log([
-    "Usage:",
-    "  flmux-ext validate [extension-dir ...]",
-    "  flmux-ext build [extension-dir ...]",
-    "",
-    "Defaults to the current working directory when no path is provided."
-  ].join("\n"));
+  console.log(
+    [
+      "Usage:",
+      "  flmux-ext validate [extension-dir ...]",
+      "  flmux-ext build [extension-dir ...]",
+      "",
+      "Defaults to the current working directory when no path is provided."
+    ].join("\n")
+  );
 }

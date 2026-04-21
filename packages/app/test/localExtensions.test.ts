@@ -420,29 +420,37 @@ async function writeExtensionFixture(
 
   await writeFile(
     join(extensionDir, "manifest.json"),
-    JSON.stringify({
-      id: manifest.id,
-      name: manifest.name,
-      version: manifest.version,
-      apiVersion: manifest.apiVersion ?? FLMUX_EXTENSION_API_VERSION,
-      entrypoints: {
-        renderer: sourceRendererEntry
-      }
-    }, null, 2),
+    JSON.stringify(
+      {
+        id: manifest.id,
+        name: manifest.name,
+        version: manifest.version,
+        apiVersion: manifest.apiVersion ?? FLMUX_EXTENSION_API_VERSION,
+        entrypoints: {
+          renderer: sourceRendererEntry
+        }
+      },
+      null,
+      2
+    ),
     "utf8"
   );
 
   await writeFile(
     join(extensionDir, "dist", "manifest.json"),
-    JSON.stringify({
-      id: manifest.id,
-      name: manifest.name,
-      version: manifest.version,
-      apiVersion: manifest.runtimeApiVersion ?? manifest.apiVersion ?? FLMUX_EXTENSION_API_VERSION,
-      entrypoints: {
-        renderer: runtimeRendererEntry
-      }
-    }, null, 2),
+    JSON.stringify(
+      {
+        id: manifest.id,
+        name: manifest.name,
+        version: manifest.version,
+        apiVersion: manifest.runtimeApiVersion ?? manifest.apiVersion ?? FLMUX_EXTENSION_API_VERSION,
+        entrypoints: {
+          renderer: runtimeRendererEntry
+        }
+      },
+      null,
+      2
+    ),
     "utf8"
   );
 
@@ -465,18 +473,26 @@ async function writeExtensionFixture(
     await writeFile(runtimeAssetPath, manifest.assetContents ?? "", "utf8");
   }
 
-  await writeFile(sourceRendererEntryPath, buildRendererEntrySource({
-    id: manifest.id,
-    helperModule: manifest.helperSourceModule,
-    assetPath: manifest.assetSourcePath,
-    runtimeImport: false
-  }), "utf8");
-  await writeFile(runtimeRendererEntryPath, buildRendererEntrySource({
-    id: manifest.id,
-    helperModule: manifest.helperRuntimeModule,
-    assetPath: manifest.assetRuntimePath,
-    runtimeImport: true
-  }), "utf8");
+  await writeFile(
+    sourceRendererEntryPath,
+    buildRendererEntrySource({
+      id: manifest.id,
+      helperModule: manifest.helperSourceModule,
+      assetPath: manifest.assetSourcePath,
+      runtimeImport: false
+    }),
+    "utf8"
+  );
+  await writeFile(
+    runtimeRendererEntryPath,
+    buildRendererEntrySource({
+      id: manifest.id,
+      helperModule: manifest.helperRuntimeModule,
+      assetPath: manifest.assetRuntimePath,
+      runtimeImport: true
+    }),
+    "utf8"
+  );
 
   return {
     extensionDir,

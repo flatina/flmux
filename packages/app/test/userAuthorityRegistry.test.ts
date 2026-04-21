@@ -28,10 +28,7 @@ describe("web-mode user authority registry (B2 Phase 1)", () => {
   it("lazily mints a distinct ShellCore per userId and dedupes concurrent bootstrap", async () => {
     const registry = makeRegistry();
 
-    const [alpha1, alpha2] = await Promise.all([
-      registry.getOrCreate("alpha"),
-      registry.getOrCreate("alpha")
-    ]);
+    const [alpha1, alpha2] = await Promise.all([registry.getOrCreate("alpha"), registry.getOrCreate("alpha")]);
     expect(alpha1).toBe(alpha2);
 
     const beta = await registry.getOrCreate("beta");
@@ -51,14 +48,14 @@ describe("web-mode user authority registry (B2 Phase 1)", () => {
       path: "/workspaces/new"
     });
 
-    const alphaWorkspaces = await alpha.router.pathGet({
+    const alphaWorkspaces = (await alpha.router.pathGet({
       clientId: alpha.clientId,
       path: "/workspaces"
-    }) as { ok: true; found: true; value: Record<string, unknown> };
-    const betaWorkspaces = await beta.router.pathGet({
+    })) as { ok: true; found: true; value: Record<string, unknown> };
+    const betaWorkspaces = (await beta.router.pathGet({
       clientId: beta.clientId,
       path: "/workspaces"
-    }) as { ok: true; found: true; value: Record<string, unknown> };
+    })) as { ok: true; found: true; value: Record<string, unknown> };
 
     expect(Object.keys(alphaWorkspaces.value)).toHaveLength(2);
     expect(Object.keys(betaWorkspaces.value)).toHaveLength(1);
@@ -73,10 +70,12 @@ describe("web-mode user authority registry (B2 Phase 1)", () => {
     // alpha's clientId can't call into beta's router — each router pins
     // its own authority clientId, so leaking alpha's id to beta's route
     // fails closed.
-    await expect(beta.router.pathGet({
-      clientId: alpha.clientId,
-      path: "/status/app"
-    })).rejects.toThrow(`Unknown flmux client: ${alpha.clientId}`);
+    await expect(
+      beta.router.pathGet({
+        clientId: alpha.clientId,
+        path: "/status/app"
+      })
+    ).rejects.toThrow(`Unknown flmux client: ${alpha.clientId}`);
   });
 
   it("emits scope=attachment events to the slot targeted by the mutation, not cross-user", async () => {
@@ -108,10 +107,10 @@ describe("web-mode user authority registry (B2 Phase 1)", () => {
 
     const alpha = await registry.getOrCreate("alpha");
     expect(alpha.persistSession).toBeDefined();
-    const createRes = await alpha.router.pathCall({
+    const createRes = (await alpha.router.pathCall({
       clientId: alpha.clientId,
       path: "/workspaces/new"
-    }) as { ok: true; value: { workspaceId: string } };
+    })) as { ok: true; value: { workspaceId: string } };
     const newWorkspaceId = createRes.value.workspaceId;
     // Simulate the renderer layout push — composeSessionSnapshot only
     // persists workspaces present in outerLayout.panels.
@@ -187,10 +186,10 @@ describe("web-mode user authority registry (B2 Phase 1)", () => {
     // Session 1 — alpha creates a second workspace and persists.
     const registry1 = makeRegistry({ sessionsDir });
     const alpha1 = await registry1.getOrCreate("alpha");
-    const createRes = await alpha1.router.pathCall({
+    const createRes = (await alpha1.router.pathCall({
       clientId: alpha1.clientId,
       path: "/workspaces/new"
-    }) as { ok: true; value: { workspaceId: string } };
+    })) as { ok: true; value: { workspaceId: string } };
     await alpha1.persistSession!({
       outerLayout: {
         panels: {
@@ -205,14 +204,11 @@ describe("web-mode user authority registry (B2 Phase 1)", () => {
     // should restore the two workspaces from disk instead of seeding one.
     const registry2 = makeRegistry({ sessionsDir });
     const alpha2 = await registry2.getOrCreate("alpha");
-    const workspaces = await alpha2.router.pathGet({
+    const workspaces = (await alpha2.router.pathGet({
       clientId: alpha2.clientId,
       path: "/workspaces"
-    }) as { ok: true; found: true; value: Record<string, unknown> };
-    expect(Object.keys(workspaces.value).sort()).toEqual([
-      "workspace.1",
-      createRes.value.workspaceId
-    ].sort());
+    })) as { ok: true; found: true; value: Record<string, unknown> };
+    expect(Object.keys(workspaces.value).sort()).toEqual(["workspace.1", createRes.value.workspaceId].sort());
 
     // The restored authority also exposes the layout via shellBootstrap
     // so browser attachments get the saved outer/inner layouts.

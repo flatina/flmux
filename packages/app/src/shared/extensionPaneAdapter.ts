@@ -1,12 +1,5 @@
-import type {
-  ExtensionPaneDefinition,
-  ExtensionPanePathMount
-} from "@flmux/extension-api";
-import type {
-  PaneLifecycleHooks,
-  PanePathMount,
-  PanePersistenceHooks
-} from "@flmux/core/shell";
+import type { ExtensionPaneDefinition, ExtensionPanePathMount } from "@flmux/extension-api";
+import type { PaneLifecycleHooks, PanePathMount, PanePersistenceHooks } from "@flmux/core/shell";
 
 export function adaptExtensionLifecycle(definition: ExtensionPaneDefinition): PaneLifecycleHooks | undefined {
   if (!definition.createParams && !definition.getTitle) {

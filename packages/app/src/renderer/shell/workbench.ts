@@ -20,10 +20,7 @@ import {
   type ShellPaneRecordSnapshot,
   type WorkspaceBus
 } from "@flmux/core/shell";
-import {
-  PaneRegistry,
-  type PaneDescriptor
-} from "./paneRegistry";
+import { PaneRegistry, type PaneDescriptor } from "./paneRegistry";
 import { registerBuiltinPaneDescriptors } from "./builtinPaneDescriptors";
 import { NewPaneHeaderAction, WorkspaceHeaderActions, humanizePaneKind } from "./headerActions";
 import type {
@@ -163,9 +160,7 @@ export class FlmuxWorkbench {
       // in `hostRequests.test.ts` guards the invariant.
       const registration = await this.hostProxy["flmux.client.register"]({});
       if (registration.status !== "ok") {
-        throw new Error(
-          `flmux.client.register: desktop preload returned unexpected status '${registration.status}'`
-        );
+        throw new Error(`flmux.client.register: desktop preload returned unexpected status '${registration.status}'`);
       }
       const bootstrap = await this.hostProxy["flmux.shellBootstrap"]();
       this.applyBootstrap(bootstrap);
@@ -197,7 +192,7 @@ export class FlmuxWorkbench {
     if (!response.ok) {
       throw new Error(`/api/shell/bootstrap failed: ${response.status} ${response.statusText}`);
     }
-    return await response.json() as FlmuxShellBootstrapResponse;
+    return (await response.json()) as FlmuxShellBootstrapResponse;
   }
 
   // ── Bootstrap ──
@@ -325,11 +320,7 @@ export class FlmuxWorkbench {
     this.pushLayout();
   }
 
-  private applyWorkspaceAdded(payload: {
-    id: string;
-    title: string;
-    defaultTitle: string;
-  }) {
+  private applyWorkspaceAdded(payload: { id: string; title: string; defaultTitle: string }) {
     if (this.workspaces.has(payload.id)) {
       return;
     }
@@ -380,7 +371,7 @@ export class FlmuxWorkbench {
     // innerApi is attached synchronously during WorkspaceOuterPanelRenderer.init;
     // if it is missing here, the outer panel for this workspace hasn't been
     // materialized yet — drop silently (pane re-materializes on later mount).
-    if (!record || !record.innerApi) {
+    if (!record?.innerApi) {
       return;
     }
     if (record.innerApi.getPanel(payload.paneId)) {
@@ -388,9 +379,7 @@ export class FlmuxWorkbench {
     }
     const referencePanel =
       (payload.referencePaneId && record.innerApi.getPanel(payload.referencePaneId)) ?? record.innerApi.activePanel;
-    const position = referencePanel && payload.place
-      ? { referencePanel, direction: payload.place }
-      : undefined;
+    const position = referencePanel && payload.place ? { referencePanel, direction: payload.place } : undefined;
     record.innerApi.addPanel({
       id: payload.paneId,
       component: payload.snapshot.kind,
@@ -439,15 +428,17 @@ export class FlmuxWorkbench {
       theme: themeAbyss,
       disableFloatingGroups: true,
       createComponent: (options) => this.createInnerPanelRenderer(record, options),
-      createRightHeaderActionComponent: (group) => new NewPaneHeaderAction(group, {
-        listKinds: () => this.paneRegistry.list().map((descriptor) => ({
-          kind: descriptor.kind,
-          label: humanizePaneKind(descriptor.kind)
-        })),
-        onSelect: (kind) => {
-          void this.shellModel.pathCall("/panes/new", { kind, place: "right" });
-        }
-      })
+      createRightHeaderActionComponent: (group) =>
+        new NewPaneHeaderAction(group, {
+          listKinds: () =>
+            this.paneRegistry.list().map((descriptor) => ({
+              kind: descriptor.kind,
+              label: humanizePaneKind(descriptor.kind)
+            })),
+          onSelect: (kind) => {
+            void this.shellModel.pathCall("/panes/new", { kind, place: "right" });
+          }
+        })
     });
     record.innerApi = innerApi;
 
@@ -564,17 +555,18 @@ export class FlmuxWorkbench {
       disableFloatingGroups: true,
       defaultRenderer: "always",
       createComponent: (options) => this.createOuterPanelRenderer(options),
-      createRightHeaderActionComponent: (group) => new WorkspaceHeaderActions(group, {
-        onAdd: () => {
-          void this.shellModel.pathCall("/workspaces/new");
-        },
-        onResetActive: () => {
-          if (!this.activeWorkspaceId) {
-            return;
+      createRightHeaderActionComponent: (group) =>
+        new WorkspaceHeaderActions(group, {
+          onAdd: () => {
+            void this.shellModel.pathCall("/workspaces/new");
+          },
+          onResetActive: () => {
+            if (!this.activeWorkspaceId) {
+              return;
+            }
+            void this.shellModel.pathCall(`/workspaces/${this.activeWorkspaceId}/reset`);
           }
-          void this.shellModel.pathCall(`/workspaces/${this.activeWorkspaceId}/reset`);
-        }
-      })
+        })
     });
 
     this.outerApi.onDidActivePanelChange((panel) => {
@@ -769,7 +761,10 @@ export class FlmuxWorkbench {
 class WorkspaceOuterPanelRenderer implements IContentRenderer {
   readonly element: HTMLElement;
 
-  constructor(private readonly workspaceId: string, private readonly workbench: FlmuxWorkbench) {
+  constructor(
+    private readonly workspaceId: string,
+    private readonly workbench: FlmuxWorkbench
+  ) {
     this.element = document.createElement("div");
     this.element.className = "workspace-panel";
     this.element.dataset.workspaceId = workspaceId;

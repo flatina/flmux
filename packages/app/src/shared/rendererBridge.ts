@@ -111,7 +111,7 @@ export type FlmuxRendererBridgeSchema = {
     requests: FlmuxHostRequests;
     messages: FlmuxHostMessages;
   }>;
-  webview: RPCSchema<{}>;
+  webview: RPCSchema<Record<string, never>>;
 };
 
 // ── Host request proxy (used by renderer to call main) ──
@@ -135,9 +135,7 @@ export interface FlmuxRendererBridge {
 
 // ── Shared types ──
 
-export type ClientRegistrationResult =
-  | { status: "ok"; clientId: string }
-  | { status: "rebootstrap-required" };
+export type ClientRegistrationResult = { status: "ok"; clientId: string } | { status: "rebootstrap-required" };
 
 // HTTP envelopes deliberately omit `caller` — only preload + post-auth WS
 // (which route through `hostRequests.ts`) are trusted to inject caller

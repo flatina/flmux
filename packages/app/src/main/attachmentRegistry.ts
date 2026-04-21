@@ -105,11 +105,7 @@ export class AttachmentRegistry {
   }
 
   /** Bind a live transport to an attachment. Cancels any pending GC timer. */
-  attachLive(
-    attachmentId: string,
-    viewId: number,
-    unsubscribeLive: () => void
-  ): void {
+  attachLive(attachmentId: string, viewId: number, unsubscribeLive: () => void): void {
     const state = this.ensure(attachmentId);
     if (state.disconnectTimer) {
       clearTimeout(state.disconnectTimer);

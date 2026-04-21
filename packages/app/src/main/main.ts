@@ -18,7 +18,11 @@ import { startFlmuxServer } from "./server";
 import { forwardTerminalEventToSubscribers } from "./terminalEventForwarding";
 import { createTerminalService } from "./terminal-service";
 import { createFlmuxHostRequestHandlers } from "./hostRequests";
-import { createFlmuxWebModeAuthorizer, type FlmuxAuthorizationContext, type FlmuxWebModeAuthorizer } from "./webModeAuth";
+import {
+  createFlmuxWebModeAuthorizer,
+  type FlmuxAuthorizationContext,
+  type FlmuxWebModeAuthorizer
+} from "./webModeAuth";
 import { eventToReadPath } from "./auth/eventAclPath";
 import { resolveFlmuxServerPort } from "./auth/serverConfig";
 import { resolveFlmuxRuntimeMode } from "./runtimeMode";
@@ -26,15 +30,9 @@ import { resolveFlmuxRootDir, resolveFlmuxPaths } from "./flmuxPaths";
 import { PtydLockFile } from "./ptyd/lockFile";
 import { callJsonRpcIpc } from "./ptyd/jsonRpcIpc";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
-import {
-  discoverConfiguredLocalExtensions,
-  resolveConfiguredLocalExtensionsRootDir
-} from "./localExtensions";
+import { discoverConfiguredLocalExtensions, resolveConfiguredLocalExtensionsRootDir } from "./localExtensions";
 
-type ShellAuthority = Pick<
-  DesktopShellAuthority | WebModeShellAuthority,
-  "subscribe" | "applyTerminalEvent"
-> & {
+type ShellAuthority = Pick<DesktopShellAuthority | WebModeShellAuthority, "subscribe" | "applyTerminalEvent"> & {
   readonly shellModel: ShellModelAPI;
   readonly router: FlmuxShellModelRouter;
   readonly clientId: string;
@@ -44,7 +42,7 @@ type ShellAuthority = Pick<
 const runtimeMode = resolveFlmuxRuntimeMode();
 const devAuthAs = readDevAuthAsFlag(Bun.argv);
 process.env.BUNITE_REMOTE_DEBUGGING_PORT ??= "9227";
-process.env.FLMUX_DEV_MODE ??= (Bun.argv.includes("--dev") || devAuthAs) ? "1" : "";
+process.env.FLMUX_DEV_MODE ??= Bun.argv.includes("--dev") || devAuthAs ? "1" : "";
 const hiddenWindow = process.env.FLMUX_HIDDEN_WINDOW === "1";
 
 function readDevAuthAsFlag(argv: readonly string[]): string | undefined {
@@ -75,16 +73,13 @@ const localExtensionsRootDir = resolveConfiguredLocalExtensionsRootDir(resolve(b
 // CEF's userDataDir to our `.flmux/cef-userdata/` so cookies / shader
 // cache live alongside the rest of flmux state (tests override via
 // BUNITE_USER_DATA_DIR for per-run isolation).
-const app = runtimeMode === "desktop"
-  ? new AppRuntime({ logLevel: "info", userDataDir: flmuxPaths.cefUserDataDir })
-  : null;
+const app =
+  runtimeMode === "desktop" ? new AppRuntime({ logLevel: "info", userDataDir: flmuxPaths.cefUserDataDir }) : null;
 if (app) await app.ready;
 
 const clientRegistry = new FlmuxClientRegistry();
 const terminalService = createTerminalService();
-const sessionStore = runtimeMode === "desktop"
-  ? createSessionStore({ filePath: flmuxPaths.desktopSessionFile })
-  : null;
+const sessionStore = runtimeMode === "desktop" ? createSessionStore({ filePath: flmuxPaths.desktopSessionFile }) : null;
 // paneId → set of subscribed viewIds. Terminal events fan out to every
 // live subscriber so multiple tabs of the same user can share a pane
 // (device handoff: desktop tab stays open while mobile attaches).
@@ -92,34 +87,32 @@ const sessionStore = runtimeMode === "desktop"
 // slip through are lazily skipped by the forwarder.
 const paneSubscribers = new Map<string, Set<number>>();
 const localExtensions = await discoverConfiguredLocalExtensions(localExtensionsRootDir);
-const webModeAuthPaths = runtimeMode === "web"
-  ? {
-      authDir: flmuxPaths.authDir,
-      usersFile: flmuxPaths.usersFile,
-      tokensFile: flmuxPaths.tokensFile
-    }
-  : null;
-const webModeAuthorizer = webModeAuthPaths
-  ? createFlmuxWebModeAuthorizer(webModeAuthPaths, { devAuthAs })
-  : null;
+const webModeAuthPaths =
+  runtimeMode === "web"
+    ? {
+        authDir: flmuxPaths.authDir,
+        usersFile: flmuxPaths.usersFile,
+        tokensFile: flmuxPaths.tokensFile
+      }
+    : null;
+const webModeAuthorizer = webModeAuthPaths ? createFlmuxWebModeAuthorizer(webModeAuthPaths, { devAuthAs }) : null;
 if (devAuthAs && runtimeMode === "web") {
-  console.warn(
-    `[flmux] [!] DEV AUTH: all web requests authenticated as '${devAuthAs}' — do not use in production`
-  );
+  console.warn(`[flmux] [!] DEV AUTH: all web requests authenticated as '${devAuthAs}' — do not use in production`);
 } else if (devAuthAs) {
   console.warn(`[flmux] --dev-auth-as has no effect in ${runtimeMode} mode; ignored`);
 }
 
-const desktopAuthority: DesktopShellAuthority | null = runtimeMode === "desktop" && sessionStore
-  ? await createDesktopShellAuthority({
-      projectDir,
-      runtimeLabel: "desktop local-http preload ok",
-      terminalService,
-      sessionStore,
-      clientRegistry,
-      localExtensions
-    })
-  : null;
+const desktopAuthority: DesktopShellAuthority | null =
+  runtimeMode === "desktop" && sessionStore
+    ? await createDesktopShellAuthority({
+        projectDir,
+        runtimeLabel: "desktop local-http preload ok",
+        terminalService,
+        sessionStore,
+        clientRegistry,
+        localExtensions
+      })
+    : null;
 
 let serverOrigin = "";
 
@@ -127,37 +120,38 @@ let serverOrigin = "";
 // gets an isolated `ShellCore` on first reach. Session persistence is NOT
 // per-user yet — desktop keeps its single `sessionStore`, web has none
 // (B2 Phase 2+ concern).
-const userAuthorityRegistry: WebModeUserAuthorityRegistry | null = runtimeMode === "web"
-  ? createWebModeUserAuthorityRegistry({
-      projectDir,
-      terminalService,
-      clientRegistry,
-      localExtensions,
-      getOrigin: () => serverOrigin,
-      onAuthorityCreated: (_userId, authority) => {
-        trackPaneLifecycle(authority);
-      },
-      onAuthorityEvicted: (_userId, authority) => {
-        paneLifecycleUnsubs.get(authority)?.();
-        paneLifecycleUnsubs.delete(authority);
-        for (const [paneId, owner] of paneIdToAuthority.entries()) {
-          if (owner === authority) paneIdToAuthority.delete(paneId);
-        }
-        // Cancel any pending debounce so we don't write through a
-        // freshly-evicted authority (sessionStore.save would still
-        // succeed, but the work is wasted).
-        const timer = debounceTimerByAuthority.get(authority as PersistingAuthority);
-        if (timer) {
-          clearTimeout(timer);
-          debounceTimerByAuthority.delete(authority as PersistingAuthority);
-          pendingLayoutsByAuthority.delete(authority as PersistingAuthority);
-        }
-      },
-      // Per-user session persistence under the auth dir — each
-      // authenticated user gets `<authDir>/sessions/<userId>/session.json`.
-      sessionsDir: runtimeMode === "web" ? flmuxPaths.webSessionsDir : undefined
-    })
-  : null;
+const userAuthorityRegistry: WebModeUserAuthorityRegistry | null =
+  runtimeMode === "web"
+    ? createWebModeUserAuthorityRegistry({
+        projectDir,
+        terminalService,
+        clientRegistry,
+        localExtensions,
+        getOrigin: () => serverOrigin,
+        onAuthorityCreated: (_userId, authority) => {
+          trackPaneLifecycle(authority);
+        },
+        onAuthorityEvicted: (_userId, authority) => {
+          paneLifecycleUnsubs.get(authority)?.();
+          paneLifecycleUnsubs.delete(authority);
+          for (const [paneId, owner] of paneIdToAuthority.entries()) {
+            if (owner === authority) paneIdToAuthority.delete(paneId);
+          }
+          // Cancel any pending debounce so we don't write through a
+          // freshly-evicted authority (sessionStore.save would still
+          // succeed, but the work is wasted).
+          const timer = debounceTimerByAuthority.get(authority as PersistingAuthority);
+          if (timer) {
+            clearTimeout(timer);
+            debounceTimerByAuthority.delete(authority as PersistingAuthority);
+            pendingLayoutsByAuthority.delete(authority as PersistingAuthority);
+          }
+        },
+        // Per-user session persistence under the auth dir — each
+        // authenticated user gets `<authDir>/sessions/<userId>/session.json`.
+        sessionsDir: runtimeMode === "web" ? flmuxPaths.webSessionsDir : undefined
+      })
+    : null;
 
 /** Authority-eviction grace: after a user's last attachment evicts, wait
  * this long before tearing down their authority. Gives legitimate tab
@@ -174,9 +168,7 @@ const userAuthorityRegistry: WebModeUserAuthorityRegistry | null = runtimeMode =
  * would muddy the "events describe shell state" contract from B1b. */
 const authorityGraceEnvMs = Number.parseInt(process.env.FLMUX_AUTHORITY_EVICTION_GRACE_MS ?? "", 10);
 const AUTHORITY_EVICTION_GRACE_MS =
-  Number.isFinite(authorityGraceEnvMs) && authorityGraceEnvMs > 0
-    ? authorityGraceEnvMs
-    : 5 * 60 * 1000;
+  Number.isFinite(authorityGraceEnvMs) && authorityGraceEnvMs > 0 ? authorityGraceEnvMs : 5 * 60 * 1000;
 const pendingAuthorityEvictionByUser = new Map<string, ReturnType<typeof setTimeout>>();
 
 function countUserAttachments(userId: string): number {
@@ -223,9 +215,7 @@ if ((desktopAuthority === null) === (userAuthorityRegistry === null)) {
 
 const attachmentGraceEnvMs = Number.parseInt(process.env.FLMUX_ATTACHMENT_GRACE_MS ?? "", 10);
 const attachmentRegistry = new AttachmentRegistry(
-  Number.isFinite(attachmentGraceEnvMs) && attachmentGraceEnvMs > 0
-    ? { graceMs: attachmentGraceEnvMs }
-    : undefined
+  Number.isFinite(attachmentGraceEnvMs) && attachmentGraceEnvMs > 0 ? { graceMs: attachmentGraceEnvMs } : undefined
 );
 const viewIdToAttachmentId = new Map<number, string>();
 // Web-only: records which user owns each minted attachmentId so WS
@@ -295,10 +285,7 @@ function resolveAuthorityForAttachment(attachmentId: string): ShellAuthority | n
   return userAuthorityRegistry?.get(userId) ?? null;
 }
 
-function resolveAuthorityForViewId(
-  viewId: number,
-  hints?: { attachmentId?: string }
-): ShellAuthority | null {
+function resolveAuthorityForViewId(viewId: number, hints?: { attachmentId?: string }): ShellAuthority | null {
   if (desktopAuthority) return desktopAuthority;
   const attachmentId = hints?.attachmentId ?? viewIdToAttachmentId.get(viewId);
   if (!attachmentId) return null;
@@ -505,37 +492,39 @@ const webViewIds = new WeakMap<WebClient, number>();
 rendererRpc.webHandler.onWebClientConnected = (client) => {
   const viewId = nextWebViewId++;
   webViewIds.set(client, viewId);
-  client.rpc.setRequestHandler(createFlmuxHostRequestHandlers({
-    mode: runtimeMode,
-    getAppOrigin: () => serverOrigin,
-    getProjectDir: () => projectDir,
-    // Web clients discover their *own* authority's clientId via
-    // /api/clients — this field is historically the "well-known authority
-    // clientId" for the preload-RPC transport. In web mode the value is
-    // user-specific and not known at WS-open time, so we expose null and
-    // let the browser read it through the auth-scoped /api/clients route.
-    getAuthorityClientId: () => null,
-    getCallerViewId: () => viewId,
-    getCallerAttachmentId: (id) => viewIdToAttachmentId.get(id) ?? null,
-    paneSubscribers,
-    resolveShellModel,
-    resolveShellModelRouter,
-    localExtensions,
-    desktopAuthority,
-    onClientRegister: (registeredViewId, binding) => {
-      if (!binding) {
-        throw new Error(
-          "flmux.client.register: web clients must pass {attachmentId, lastAppliedSeq} " +
-          "obtained from /api/shell/bootstrap"
-        );
-      }
-      return bindWebAttachment(registeredViewId, binding);
-    },
-    // Per-user sessionStore persistence (B2 Phase 2): the user's
-    // authority owns its own store at `<authDir>/sessions/<userId>/session.json`
-    // — main resolves the right one from the caller's viewId.
-    pushLayout: pushLayoutForViewId
-  }));
+  client.rpc.setRequestHandler(
+    createFlmuxHostRequestHandlers({
+      mode: runtimeMode,
+      getAppOrigin: () => serverOrigin,
+      getProjectDir: () => projectDir,
+      // Web clients discover their *own* authority's clientId via
+      // /api/clients — this field is historically the "well-known authority
+      // clientId" for the preload-RPC transport. In web mode the value is
+      // user-specific and not known at WS-open time, so we expose null and
+      // let the browser read it through the auth-scoped /api/clients route.
+      getAuthorityClientId: () => null,
+      getCallerViewId: () => viewId,
+      getCallerAttachmentId: (id) => viewIdToAttachmentId.get(id) ?? null,
+      paneSubscribers,
+      resolveShellModel,
+      resolveShellModelRouter,
+      localExtensions,
+      desktopAuthority,
+      onClientRegister: (registeredViewId, binding) => {
+        if (!binding) {
+          throw new Error(
+            "flmux.client.register: web clients must pass {attachmentId, lastAppliedSeq} " +
+              "obtained from /api/shell/bootstrap"
+          );
+        }
+        return bindWebAttachment(registeredViewId, binding);
+      },
+      // Per-user sessionStore persistence (B2 Phase 2): the user's
+      // authority owns its own store at `<authDir>/sessions/<userId>/session.json`
+      // — main resolves the right one from the caller's viewId.
+      pushLayout: pushLayoutForViewId
+    })
+  );
   clientRegistry.attachRenderer(viewId, client.rpc);
 };
 
@@ -587,9 +576,10 @@ const server = startFlmuxServer({
         // inside the 30-second grace window. Mismatch or unknown → mint
         // fresh, install buffer subscriber. Either path re-arms the
         // grace timer so the HTTP→WS register gap stays covered.
-        const canReuse = existingAttachmentId
-          && attachmentIdToUserId.get(existingAttachmentId) === userId
-          && attachmentRegistry.get(existingAttachmentId) !== undefined;
+        const canReuse =
+          existingAttachmentId &&
+          attachmentIdToUserId.get(existingAttachmentId) === userId &&
+          attachmentRegistry.get(existingAttachmentId) !== undefined;
         const attachmentId = canReuse ? existingAttachmentId! : mintWebAttachmentId();
         if (!canReuse) {
           attachmentIdToUserId.set(attachmentId, userId);
@@ -621,13 +611,15 @@ if (desktopAuthority) {
 }
 
 console.log(
-  `[flmux] ${runtimeMode} mode server listening at ${server.origin}`
-    + (portResolution.source !== "default" ? ` (port from ${portResolution.source})` : "")
+  `[flmux] ${runtimeMode} mode server listening at ${server.origin}` +
+    (portResolution.source !== "default" ? ` (port from ${portResolution.source})` : "")
 );
 if (webModeAuthPaths) {
   console.log(`[flmux] auth dir: ${webModeAuthPaths.authDir}`);
   console.log(`[flmux] web origin: ${server.origin} (append ?token=<issued-token> on first attach)`);
-  console.log(`[flmux] issue tokens via: bun src/cli.ts tokens issue --user <name> --auth-dir ${webModeAuthPaths.authDir}`);
+  console.log(
+    `[flmux] issue tokens via: bun src/cli.ts tokens issue --user <name> --auth-dir ${webModeAuthPaths.authDir}`
+  );
 }
 
 terminalService.subscribe((event: TerminalRuntimeEvent) => {
@@ -656,7 +648,9 @@ async function stopRuntime() {
     if (lock) {
       await callJsonRpcIpc(lock.controlIpcPath, "daemon.stop", undefined, 2_000);
     }
-  } catch { /* best-effort */ }
+  } catch {
+    /* best-effort */
+  }
   terminalService.dispose?.();
   server.stop();
 }

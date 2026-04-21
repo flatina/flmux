@@ -2,7 +2,7 @@ import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 
 const extensionApiRuntimeTranspiler = new Bun.Transpiler({ loader: "ts" });
-const EXTENSION_API_RUNTIME_ROOT_URL = "/__flmux/runtime/extension-api.js";
+const _EXTENSION_API_RUNTIME_ROOT_URL = "/__flmux/runtime/extension-api.js";
 const EXTENSION_API_RUNTIME_MODULE_PREFIX = "/__flmux/runtime/extension-api";
 
 export interface ExtensionApiRuntimeBuildResult {
@@ -26,10 +26,9 @@ if (import.meta.main) {
   console.log(`  files: ${result.builtFiles.length}`);
 }
 
-export async function buildExtensionApiRuntime(options: {
-  sourceDir?: string;
-  outDir?: string;
-} = {}): Promise<ExtensionApiRuntimeBuildResult> {
+export async function buildExtensionApiRuntime(
+  options: { sourceDir?: string; outDir?: string } = {}
+): Promise<ExtensionApiRuntimeBuildResult> {
   const sourceDir = resolve(options.sourceDir ?? join(import.meta.dir, "."));
   const outDir = resolve(options.outDir ?? join(import.meta.dir, "..", "dist-runtime"));
   const builtFiles: string[] = [];
@@ -56,12 +55,7 @@ export async function buildExtensionApiRuntime(options: {
   }
 }
 
-async function buildRuntimeTree(
-  sourceDir: string,
-  outDir: string,
-  builtFiles: string[],
-  rootDir: string
-) {
+async function buildRuntimeTree(sourceDir: string, outDir: string, builtFiles: string[], rootDir: string) {
   const entries = await readdir(sourceDir, { withFileTypes: true, encoding: "utf8" });
   for (const entry of entries) {
     const sourcePath = join(sourceDir, entry.name);
@@ -89,13 +83,9 @@ function rewriteRuntimeSourceImports(source: string, isRootEntry: boolean) {
   const relativeRewriter = isRootEntry
     ? (_match: string, prefix: string, moduleName: string, suffix: string) =>
         `${prefix}${EXTENSION_API_RUNTIME_MODULE_PREFIX}/${moduleName}.js${suffix}`
-    : (_match: string, prefix: string, moduleName: string, suffix: string) =>
-        `${prefix}./${moduleName}.js${suffix}`;
+    : (_match: string, prefix: string, moduleName: string, suffix: string) => `${prefix}./${moduleName}.js${suffix}`;
 
-  return source.replace(
-    /((?:import|export)[\s\S]*?\sfrom\s+["'])\.\/([A-Za-z0-9_-]+)(["'])/g,
-    relativeRewriter
-  );
+  return source.replace(/((?:import|export)[\s\S]*?\sfrom\s+["'])\.\/([A-Za-z0-9_-]+)(["'])/g, relativeRewriter);
 }
 
 function replaceTsExtension(path: string) {

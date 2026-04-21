@@ -4,7 +4,7 @@ import type { FlmuxIssuedToken } from "./tokenStore";
 export function stringifyUsersToml(users: readonly FlmuxUser[]): string {
   const lines = [
     "# users.toml — static user config for flmux web mode.",
-    "# allow_pane_kinds = \"*\" grants every pane kind; otherwise list them explicitly.",
+    '# allow_pane_kinds = "*" grants every pane kind; otherwise list them explicitly.',
     ""
   ];
 

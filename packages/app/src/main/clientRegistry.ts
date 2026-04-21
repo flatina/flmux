@@ -46,7 +46,7 @@ export class FlmuxClientRegistry {
 
   resolve(clientId: string): RegisteredFlmuxClient {
     const record = this.byClientId.get(clientId);
-    if (!record || !record.clientId) {
+    if (!record?.clientId) {
       throw new Error(`Unknown flmux client: ${clientId}`);
     }
 
@@ -59,7 +59,7 @@ export class FlmuxClientRegistry {
 
   resolveByViewId(viewId: number): RegisteredFlmuxClient | null {
     const record = this.byViewId.get(viewId);
-    if (!record || !record.clientId) {
+    if (!record?.clientId) {
       return null;
     }
 

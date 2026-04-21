@@ -2,29 +2,20 @@ import { PLACEHOLDER_PANE_KIND, createBrowserPaneSpec } from "@flmux/core/shell"
 import { BrowserPaneRenderer } from "../panes/browserPane";
 import { PlaceholderPaneRenderer } from "../panes/placeholderPane";
 import { TerminalPaneRenderer } from "../panes/terminalPane";
-import {
-  type PaneDescriptor,
-  type PaneRegistry,
-  isTerminalPaneRecord
-} from "./paneRegistry";
+import { type PaneDescriptor, type PaneRegistry, isTerminalPaneRecord } from "./paneRegistry";
 
 export interface BuiltinPaneDescriptorDependencies {
   installRoot: string;
   resolveTerminalCwd(rootDir: string, inputCwd: string | undefined): string;
 }
 
-export function registerBuiltinPaneDescriptors(
-  registry: PaneRegistry,
-  deps: BuiltinPaneDescriptorDependencies
-) {
+export function registerBuiltinPaneDescriptors(registry: PaneRegistry, deps: BuiltinPaneDescriptorDependencies) {
   for (const descriptor of createBuiltinPaneDescriptors(deps)) {
     registry.register(descriptor);
   }
 }
 
-function createBuiltinPaneDescriptors(
-  deps: BuiltinPaneDescriptorDependencies
-): PaneDescriptor[] {
+function createBuiltinPaneDescriptors(deps: BuiltinPaneDescriptorDependencies): PaneDescriptor[] {
   const browserSpec = createBrowserPaneSpec();
   return [
     {
@@ -81,10 +72,7 @@ function createBuiltinPaneDescriptors(
       subtreeMounts: [
         {
           mountKey: "terminal",
-          getStateSnapshot: ({ record }) =>
-            isTerminalPaneRecord(record)
-              ? { cwd: record.cwd }
-              : undefined,
+          getStateSnapshot: ({ record }) => (isTerminalPaneRecord(record) ? { cwd: record.cwd } : undefined),
           getStatusSnapshot: ({ record }) =>
             isTerminalPaneRecord(record)
               ? {
@@ -104,10 +92,7 @@ function createBuiltinPaneDescriptors(
         normalizeRestoredParams: ({ params }) => ({
           cwd: deps.resolveTerminalCwd(deps.installRoot, optionalStringParam(params?.cwd))
         }),
-        serializeParams: ({ record }) =>
-          isTerminalPaneRecord(record)
-            ? { cwd: record.cwd }
-            : undefined
+        serializeParams: ({ record }) => (isTerminalPaneRecord(record) ? { cwd: record.cwd } : undefined)
       }
     },
     {

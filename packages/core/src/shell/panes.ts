@@ -23,24 +23,14 @@ export type GenericPaneStateRecord = { kind: string };
 export type PaneStateRecord = BrowserPaneStateRecord | TerminalPaneStateRecord | GenericPaneStateRecord;
 
 export interface PaneLifecycleHooks<TRecord extends PaneStateRecord = PaneStateRecord> {
-  createParams?(args: {
-    workspace: PaneWorkspaceContext;
-    input: NewPaneInput;
-  }): Record<string, unknown> | undefined;
+  createParams?(args: { workspace: PaneWorkspaceContext; input: NewPaneInput }): Record<string, unknown> | undefined;
   getTitle?(args: {
     workspace: PaneWorkspaceContext;
     input: NewPaneInput;
     params: Record<string, unknown> | undefined;
   }): string;
-  createRecord?(args: {
-    workspace: PaneWorkspaceContext;
-    params: Record<string, unknown> | undefined;
-  }): TRecord;
-  createSnapshot?(args: {
-    paneId: string;
-    title: string;
-    record: TRecord;
-  }): ShellPaneRecordSnapshot;
+  createRecord?(args: { workspace: PaneWorkspaceContext; params: Record<string, unknown> | undefined }): TRecord;
+  createSnapshot?(args: { paneId: string; title: string; record: TRecord }): ShellPaneRecordSnapshot;
 }
 
 export interface PanePersistenceHooks<TRecord extends PaneStateRecord = PaneStateRecord> {
@@ -68,11 +58,7 @@ export interface PanePathMount<TRecord extends PaneStateRecord = PaneStateRecord
   mountKey: string;
   getStateSnapshot?(ctx: PanePathMountContext<TRecord>): Awaitable<Record<string, unknown> | undefined>;
   canSetStatePath?(ctx: PanePathMountContext<TRecord>, relativePath: string[]): Awaitable<boolean>;
-  setState?(
-    ctx: PanePathMountContext<TRecord>,
-    relativePath: string[],
-    value: unknown
-  ): Awaitable<{ value: unknown }>;
+  setState?(ctx: PanePathMountContext<TRecord>, relativePath: string[], value: unknown): Awaitable<{ value: unknown }>;
   getStatusSnapshot?(ctx: PanePathMountContext<TRecord>): Awaitable<Record<string, unknown> | undefined>;
 }
 
@@ -103,11 +89,13 @@ export function createPlaceholderPaneSpec(): PaneSpec {
   return { kind: PLACEHOLDER_PANE_KIND };
 }
 
-export class PaneRegistry<TDescriptor extends {
-  kind: string;
-  pathMount?: { mountKey: string } | undefined;
-  subtreeMounts?: Array<{ mountKey: string }> | undefined;
-}> {
+export class PaneRegistry<
+  TDescriptor extends {
+    kind: string;
+    pathMount?: { mountKey: string } | undefined;
+    subtreeMounts?: Array<{ mountKey: string }> | undefined;
+  }
+> {
   private readonly descriptors = new Map<string, TDescriptor>();
 
   register(descriptor: TDescriptor) {
@@ -142,10 +130,12 @@ export function resolvePaneCreateParams<TRecord extends PaneStateRecord>(options
   input: NewPaneInput;
   fallbackParams: Record<string, unknown> | undefined;
 }): Record<string, unknown> | undefined {
-  return options.spec.lifecycle?.createParams?.({
-    workspace: options.workspace,
-    input: options.input
-  }) ?? options.fallbackParams;
+  return (
+    options.spec.lifecycle?.createParams?.({
+      workspace: options.workspace,
+      input: options.input
+    }) ?? options.fallbackParams
+  );
 }
 
 export function resolvePaneTitle<TRecord extends PaneStateRecord>(options: {
@@ -155,11 +145,13 @@ export function resolvePaneTitle<TRecord extends PaneStateRecord>(options: {
   params: Record<string, unknown> | undefined;
   fallbackTitle: string;
 }): string {
-  return options.spec.lifecycle?.getTitle?.({
-    workspace: options.workspace,
-    input: options.input,
-    params: options.params
-  }) ?? options.fallbackTitle;
+  return (
+    options.spec.lifecycle?.getTitle?.({
+      workspace: options.workspace,
+      input: options.input,
+      params: options.params
+    }) ?? options.fallbackTitle
+  );
 }
 
 export function createPaneStateRecord<TRecord extends PaneStateRecord>(options: {
@@ -167,12 +159,15 @@ export function createPaneStateRecord<TRecord extends PaneStateRecord>(options: 
   workspace: PaneWorkspaceContext;
   params: Record<string, unknown> | undefined;
 }): TRecord {
-  return options.spec.lifecycle?.createRecord?.({
-    workspace: options.workspace,
-    params: options.params
-  }) ?? {
-    kind: options.spec.kind
-  } as TRecord;
+  return (
+    options.spec.lifecycle?.createRecord?.({
+      workspace: options.workspace,
+      params: options.params
+    }) ??
+    ({
+      kind: options.spec.kind
+    } as TRecord)
+  );
 }
 
 export function createPaneSnapshot<TRecord extends PaneStateRecord>(options: {
@@ -181,15 +176,17 @@ export function createPaneSnapshot<TRecord extends PaneStateRecord>(options: {
   title: string;
   record: TRecord;
 }): ShellPaneRecordSnapshot {
-  return options.spec.lifecycle?.createSnapshot?.({
-    paneId: options.paneId,
-    title: options.title,
-    record: options.record
-  }) ?? {
-    id: options.paneId,
-    kind: options.record.kind,
-    title: options.title
-  };
+  return (
+    options.spec.lifecycle?.createSnapshot?.({
+      paneId: options.paneId,
+      title: options.title,
+      record: options.record
+    }) ?? {
+      id: options.paneId,
+      kind: options.record.kind,
+      title: options.title
+    }
+  );
 }
 
 export function normalizeRestoredPaneParams<TRecord extends PaneStateRecord>(options: {
@@ -197,10 +194,12 @@ export function normalizeRestoredPaneParams<TRecord extends PaneStateRecord>(opt
   workspace: PaneWorkspaceContext;
   params: Record<string, unknown> | undefined;
 }): Record<string, unknown> | undefined {
-  return options.spec.persistence?.normalizeRestoredParams?.({
-    workspace: options.workspace,
-    params: options.params
-  }) ?? options.params;
+  return (
+    options.spec.persistence?.normalizeRestoredParams?.({
+      workspace: options.workspace,
+      params: options.params
+    }) ?? options.params
+  );
 }
 
 export function serializePaneParams<TRecord extends PaneStateRecord>(options: {
@@ -209,11 +208,13 @@ export function serializePaneParams<TRecord extends PaneStateRecord>(options: {
   record: TRecord;
   currentParams: Record<string, unknown> | undefined;
 }): Record<string, unknown> | undefined {
-  return options.spec.persistence?.serializeParams?.({
-    workspace: options.workspace,
-    record: options.record,
-    currentParams: options.currentParams
-  }) ?? options.currentParams;
+  return (
+    options.spec.persistence?.serializeParams?.({
+      workspace: options.workspace,
+      record: options.record,
+      currentParams: options.currentParams
+    }) ?? options.currentParams
+  );
 }
 
 const RESERVED_MOUNT_KEYS = new Set([
@@ -263,7 +264,9 @@ function validateDescriptorMounts(descriptor: {
   for (const subtreeMount of descriptor.subtreeMounts ?? []) {
     validateMountKey(descriptor.kind, subtreeMount.mountKey, "subtree mount key");
     if (RESERVED_SUBTREE_MOUNT_KEYS.has(subtreeMount.mountKey)) {
-      throw new Error(`Pane descriptor '${descriptor.kind}' uses reserved subtree mount key '${subtreeMount.mountKey}'`);
+      throw new Error(
+        `Pane descriptor '${descriptor.kind}' uses reserved subtree mount key '${subtreeMount.mountKey}'`
+      );
     }
     if (seenKeys.has(subtreeMount.mountKey)) {
       throw new Error(`Pane descriptor '${descriptor.kind}' defines duplicate mount key '${subtreeMount.mountKey}'`);

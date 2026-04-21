@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, normalize, relative } from "node:path";
+import { isAbsolute, join, normalize, relative } from "node:path";
 import { validateExtensionManifest, type ExtensionManifest } from "../../extension-api/src/manifest";
 
 export interface ExtensionDirectoryValidationResult {
@@ -105,10 +105,7 @@ export function resolveValidateTargets(targets: string[]) {
 
 export function formatExtensionValidationResult(result: ExtensionDirectoryValidationResult) {
   if (result.ok) {
-    const details = [
-      `OK  ${result.extensionDir}`,
-      `  manifest: ${result.manifestPath}`
-    ];
+    const details = [`OK  ${result.extensionDir}`, `  manifest: ${result.manifestPath}`];
     if (result.manifest?.entrypoints.renderer) {
       details.push(`  renderer: ${result.manifest.entrypoints.renderer}`);
     }
@@ -118,8 +115,5 @@ export function formatExtensionValidationResult(result: ExtensionDirectoryValida
     return details.join("\n");
   }
 
-  return [
-    `ERR ${result.extensionDir}`,
-    ...result.errors.map((error) => `  - ${error}`)
-  ].join("\n");
+  return [`ERR ${result.extensionDir}`, ...result.errors.map((error) => `  - ${error}`)].join("\n");
 }

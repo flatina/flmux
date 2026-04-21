@@ -1,31 +1,42 @@
 import type { TerminalRuntimeEvent } from "../shared/terminal";
 import type { FlmuxClientRegistry } from "./clientRegistry";
 
-export function forwardTerminalEventToOwnedClient(options: {
+/**
+ * Fan out a terminal event to every live subscriber of the pane. Stale
+ * viewIds (client disconnected without `releaseView` sweeping) are
+ * lazy-cleaned from the Set. On `type: "removed"` the entire Set is
+ * dropped — the pane no longer has a runtime to subscribe to.
+ */
+export function forwardTerminalEventToSubscribers(options: {
   event: TerminalRuntimeEvent;
-  paneOwners: Map<string, number>;
+  paneSubscribers: Map<string, Set<number>>;
   clientRegistry: FlmuxClientRegistry;
-}) {
-  const { event, paneOwners, clientRegistry } = options;
+}): boolean {
+  const { event, paneSubscribers, clientRegistry } = options;
   const paneId = event.paneId ?? null;
-  if (!paneId) {
-    return false;
-  }
+  if (!paneId) return false;
 
-  const viewId = paneOwners.get(paneId);
-  if (!viewId) {
-    return false;
-  }
-
-  const client = clientRegistry.resolveByViewId(viewId);
-  if (!client) {
-    return false;
-  }
+  const subscribers = paneSubscribers.get(paneId);
+  if (!subscribers || subscribers.size === 0) return false;
 
   if (event.type === "removed") {
-    paneOwners.delete(paneId);
+    paneSubscribers.delete(paneId);
   }
 
-  client.bridge.sendProxy["terminal.event"](event);
-  return true;
+  let delivered = false;
+  for (const viewId of [...subscribers]) {
+    const client = clientRegistry.resolveByViewId(viewId);
+    if (!client) {
+      subscribers.delete(viewId);
+      continue;
+    }
+    client.bridge.sendProxy["terminal.event"](event);
+    delivered = true;
+  }
+
+  if (subscribers.size === 0 && event.type !== "removed") {
+    paneSubscribers.delete(paneId);
+  }
+
+  return delivered;
 }

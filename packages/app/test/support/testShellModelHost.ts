@@ -125,7 +125,32 @@ export class TestShellModelHost implements ShellModelHost {
 
   createTerminalDelegate(): ShellTerminalDelegate {
     return {
-      attachRuntime: (paneId, input) => this.createTerminalRuntime(paneId, input),
+      attachRuntime: async (paneId, input) => {
+        const pane = this.requireTerminalPane(paneId);
+        if (pane.runtimeId && pane.rootKey && pane.summary) {
+          // Idempotent attach mirror of shellCore's real delegate: when
+          // the pane already has a runtime, return its current snapshot
+          // + history instead of re-entering create.
+          const history = await this.readTerminalHistory(paneId, {});
+          return {
+            ok: true,
+            rootKey: pane.rootKey,
+            runtimeId: pane.runtimeId,
+            history: history.data,
+            terminal: {
+              rootKey: pane.rootKey,
+              rootDir: this.workspaceRootDir,
+              runtimeId: pane.runtimeId,
+              cwd: pane.cwd,
+              alive: pane.summary.alive ?? true,
+              commandCount: pane.summary.commandCount ?? 0,
+              createdAt: pane.summary.createdAt ?? "",
+              updatedAt: pane.summary.updatedAt ?? ""
+            }
+          };
+        }
+        return this.createTerminalRuntime(paneId, input);
+      },
       writeRuntime: (paneId, input) => this.writeTerminalRuntime(paneId, input),
       resizeRuntime: (paneId, input) => this.resizeTerminalRuntime(paneId, input),
       readHistory: (paneId, input) => this.readTerminalHistory(paneId, input),

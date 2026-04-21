@@ -14,7 +14,7 @@ import {
 import type { WebModeShellAuthority } from "./webModeShellAuthority";
 import { createWebModeUserAuthorityRegistry, type WebModeUserAuthorityRegistry } from "./userAuthorityRegistry";
 import { startFlmuxServer } from "./server";
-import { forwardTerminalEventToOwnedClient } from "./terminalEventForwarding";
+import { forwardTerminalEventToSubscribers } from "./terminalEventForwarding";
 import { createTerminalService } from "./terminal-service";
 import { createFlmuxHostRequestHandlers } from "./hostRequests";
 import { createFlmuxWebModeAuthorizer, type FlmuxAuthorizationContext, type FlmuxWebModeAuthorizer } from "./webModeAuth";
@@ -51,7 +51,12 @@ const localExtensionsRootDir = resolveConfiguredLocalExtensionsRootDir(app.resol
 const clientRegistry = new FlmuxClientRegistry();
 const terminalService = createTerminalService();
 const sessionStore = runtimeMode === "desktop" ? createSessionStore() : null;
-const paneOwners = new Map<string, number>();
+// paneId → set of subscribed viewIds. Terminal events fan out to every
+// live subscriber so multiple tabs of the same user can share a pane
+// (device handoff: desktop tab stays open while mobile attaches).
+// Disconnected viewIds are swept by `releaseView`; stale entries that
+// slip through are lazily skipped by the forwarder.
+const paneSubscribers = new Map<string, Set<number>>();
 const localExtensions = await discoverConfiguredLocalExtensions(localExtensionsRootDir);
 const webModeAuthPaths = runtimeMode === "web" ? resolveFlmuxAuthPaths(resolveFlmuxAuthDir()) : null;
 const webModeAuthorizer = webModeAuthPaths ? createFlmuxWebModeAuthorizer(webModeAuthPaths) : null;
@@ -375,8 +380,10 @@ function releaseView(viewId: number) {
       if (userId) maybeScheduleAuthorityEviction(userId);
     });
   }
-  for (const [paneId, owner] of paneOwners.entries()) {
-    if (owner === viewId) paneOwners.delete(paneId);
+  for (const [paneId, subscribers] of paneSubscribers.entries()) {
+    if (subscribers.delete(viewId) && subscribers.size === 0) {
+      paneSubscribers.delete(paneId);
+    }
   }
   clientRegistry.detachRenderer(viewId);
 }
@@ -425,7 +432,7 @@ const rendererRpc = BrowserView.defineRPC<FlmuxRendererBridgeSchema>({
       getAuthorityClientId: () => desktopAuthorityClientId,
       getCallerViewId: requireDesktopViewId,
       getCallerAttachmentId: (viewId) => viewIdToAttachmentId.get(viewId) ?? null,
-      paneOwners,
+      paneSubscribers,
       resolveShellModel,
       resolveShellModelRouter,
       terminalService,
@@ -463,7 +470,7 @@ rendererRpc.webHandler.onWebClientConnected = (client) => {
     getAuthorityClientId: () => null,
     getCallerViewId: () => viewId,
     getCallerAttachmentId: (id) => viewIdToAttachmentId.get(id) ?? null,
-    paneOwners,
+    paneSubscribers,
     resolveShellModel,
     resolveShellModelRouter,
     terminalService,
@@ -578,9 +585,9 @@ terminalService.subscribe((event: TerminalRuntimeEvent) => {
   if (event.paneId) {
     paneIdToAuthority.get(event.paneId)?.applyTerminalEvent(event);
   }
-  forwardTerminalEventToOwnedClient({
+  forwardTerminalEventToSubscribers({
     event,
-    paneOwners,
+    paneSubscribers,
     clientRegistry
   });
 });

@@ -514,8 +514,23 @@ export class ShellCore implements ShellModelHost {
     return {
       attachRuntime: async (paneId, input) => {
         const { workspace, pane } = this.requireTerminalPane(paneId);
-        if (pane.runtimeId) {
-          throw new Error(`Terminal pane '${paneId}' already has an attached runtime`);
+
+        // Idempotent: if this pane already has a live runtime (e.g. after
+        // browser reload re-mounts the terminal), return the current
+        // state + fresh history instead of rejecting. A second subscriber
+        // (multi-device handoff) takes this path too.
+        if (pane.runtimeId && pane.rootKey && pane.summary) {
+          const historyResult = await backend.history({
+            rootKey: pane.rootKey,
+            runtimeId: pane.runtimeId
+          });
+          return {
+            ok: true,
+            rootKey: pane.rootKey,
+            runtimeId: pane.runtimeId,
+            history: historyResult.data ?? "",
+            terminal: pane.summary
+          };
         }
 
         const adopt = await backend.adoptByPaneId({

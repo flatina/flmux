@@ -25,7 +25,10 @@ export function createFlmuxHostRequestHandlers(options: {
    * Optional — tests can omit (defaults to "no attachment", mutations land
    * on the authority's defaultSlotKey). */
   getCallerAttachmentId?(viewId: number): string | null;
-  paneOwners: Map<string, number>;
+  /** Pane → set of subscribed viewIds. Terminal events fan out to every
+   * subscriber. See `main.ts` for the shared instance and `releaseView`
+   * cleanup path. */
+  paneSubscribers: Map<string, Set<number>>;
   /** Resolve the caller's authority `ShellModelAPI`. Desktop ignores args
    * and returns the single authority; web needs the caller's attachment
    * binding (`viewId` for post-register calls, or `hints.attachmentId`
@@ -161,30 +164,72 @@ export function createFlmuxHostRequestHandlers(options: {
       args?: Record<string, unknown>;
       caller?: PathCallerContext;
     }) => {
-      const shellModel = requireShellModel("shellModel.path.call");
-      const result = await shellModel.pathCall(params.path, params.args, resolvePreloadCaller(params.caller));
-      if (result.ok) {
-        const attachMatch = TERMINAL_ATTACH_PATH.exec(params.path);
-        if (attachMatch) {
-          options.paneOwners.set(attachMatch[1], options.getCallerViewId());
-        }
+      // Pre-subscribe for terminal/attach so terminal events emitted
+      // mid-attach are routed to the caller's viewId instead of dropped.
+      // Roll back on failure — but only if we were the one that added
+      // the membership, so a transient failure from an already-subscribed
+      // viewId (e.g. retry) doesn't silently drop fan-out.
+      // Narrow race remains: output events that fire between the
+      // server's history snapshot (idempotent branch) and the RPC
+      // response are re-written by the renderer's `applyAttachResult`
+      // when it resets xterm to the snapshot. Fixing requires a
+      // sequencing cursor — out of scope for D1.
+      const attachMatch = TERMINAL_ATTACH_PATH.exec(params.path);
+      const viewId = options.getCallerViewId();
+      let attachAddedSubscriber = false;
+      if (attachMatch) {
+        const paneId = attachMatch[1]!;
+        attachAddedSubscriber = !options.paneSubscribers.get(paneId)?.has(viewId);
+        addPaneSubscriber(options.paneSubscribers, paneId, viewId);
       }
-      return result;
+      try {
+        const shellModel = requireShellModel("shellModel.path.call");
+        const result = await shellModel.pathCall(params.path, params.args, resolvePreloadCaller(params.caller));
+        if (attachMatch && attachAddedSubscriber && !result.ok) {
+          removePaneSubscriber(options.paneSubscribers, attachMatch[1]!, viewId);
+        }
+        return result;
+      } catch (error) {
+        if (attachMatch && attachAddedSubscriber) {
+          removePaneSubscriber(options.paneSubscribers, attachMatch[1]!, viewId);
+        }
+        throw error;
+      }
     },
 
     "flmux.terminal.create": async (params: Parameters<TerminalService["create"]>[0]) => {
+      const viewId = options.getCallerViewId();
+      let addedSubscriber = false;
       if (params.paneId) {
-        options.paneOwners.set(params.paneId, options.getCallerViewId());
+        addedSubscriber = !options.paneSubscribers.get(params.paneId)?.has(viewId);
+        addPaneSubscriber(options.paneSubscribers, params.paneId, viewId);
       }
-      return options.terminalService.create(params);
+      try {
+        return await options.terminalService.create(params);
+      } catch (error) {
+        if (params.paneId && addedSubscriber) {
+          removePaneSubscriber(options.paneSubscribers, params.paneId, viewId);
+        }
+        throw error;
+      }
     },
 
     "flmux.terminal.adopt": async (params: Parameters<TerminalService["adoptByPaneId"]>[0]) => {
-      const result = await options.terminalService.adoptByPaneId(params);
-      if (result.outcome === "adopted") {
-        options.paneOwners.set(params.paneId, options.getCallerViewId());
+      const viewId = options.getCallerViewId();
+      const addedSubscriber = !options.paneSubscribers.get(params.paneId)?.has(viewId);
+      addPaneSubscriber(options.paneSubscribers, params.paneId, viewId);
+      try {
+        const result = await options.terminalService.adoptByPaneId(params);
+        if (result.outcome !== "adopted" && addedSubscriber) {
+          removePaneSubscriber(options.paneSubscribers, params.paneId, viewId);
+        }
+        return result;
+      } catch (error) {
+        if (addedSubscriber) {
+          removePaneSubscriber(options.paneSubscribers, params.paneId, viewId);
+        }
+        throw error;
       }
-      return result;
     },
 
     "flmux.terminal.write": (params: Parameters<TerminalService["write"]>[0]) => {
@@ -207,4 +252,20 @@ export function createFlmuxHostRequestHandlers(options: {
       return options.terminalService.listRoots();
     }
   };
+}
+
+function addPaneSubscriber(map: Map<string, Set<number>>, paneId: string, viewId: number): void {
+  let set = map.get(paneId);
+  if (!set) {
+    set = new Set();
+    map.set(paneId, set);
+  }
+  set.add(viewId);
+}
+
+function removePaneSubscriber(map: Map<string, Set<number>>, paneId: string, viewId: number): void {
+  const set = map.get(paneId);
+  if (!set) return;
+  set.delete(viewId);
+  if (set.size === 0) map.delete(paneId);
 }

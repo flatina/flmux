@@ -4,7 +4,7 @@ import { createFlmuxHostRequestHandlers } from "../src/main/hostRequests";
 
 describe("flmux host requests", () => {
   it("binds registration and terminal ownership to the caller view", async () => {
-    const paneOwners = new Map<string, number>();
+    const paneSubscribers = new Map<string, Set<number>>();
     const registerClient = mock((viewId: number) => ({ clientId: `client-${viewId}` }));
     const onClientRegister = mock((_viewId: number) => {});
     const create = mock(async (input: { paneId?: string }) => ({
@@ -58,7 +58,7 @@ describe("flmux host requests", () => {
       getProjectDir: () => "C:/project",
       getAuthorityClientId: () => null,
       getCallerViewId: () => 77,
-      paneOwners,
+      paneSubscribers,
       resolveShellModelRouter: () => ({
         registerClient,
         listClients: async () => [],
@@ -101,13 +101,13 @@ describe("flmux host requests", () => {
       rootDir: "C:/workspace",
       cwd: "."
     });
-    expect(paneOwners.get("pane.alpha")).toBe(77);
+    expect(paneSubscribers.get("pane.alpha")?.has(77)).toBe(true);
 
     await handlers["flmux.terminal.adopt"]({
       paneId: "pane.beta",
       rootDir: "C:/workspace"
     });
-    expect(paneOwners.get("pane.beta")).toBe(77);
+    expect(paneSubscribers.get("pane.beta")?.has(77)).toBe(true);
     expect(registerClient).toHaveBeenCalledWith(77);
     expect(create).toHaveBeenCalledTimes(1);
     expect(adoptByPaneId).toHaveBeenCalledTimes(1);
@@ -130,7 +130,7 @@ describe("flmux host requests", () => {
       getProjectDir: () => "C:/project",
       getAuthorityClientId: () => "server_authority",
       getCallerViewId: () => 5,
-      paneOwners: new Map(),
+      paneSubscribers: new Map(),
       resolveShellModelRouter: () => ({
         registerClient: () => ({ clientId: "client-5" }),
         listClients: async () => [],
@@ -192,7 +192,7 @@ describe("flmux host requests", () => {
       getAuthorityClientId: () => null,
       getCallerViewId: () => 1,
       getCallerAttachmentId: () => "local",
-      paneOwners: new Map(),
+      paneSubscribers: new Map(),
       resolveShellModelRouter: () => ({
         registerClient: () => ({ clientId: "client-1" }),
         listClients: async () => [],
@@ -229,7 +229,7 @@ describe("flmux host requests", () => {
       getProjectDir: () => ".",
       getAuthorityClientId: () => null,
       getCallerViewId: () => 1,
-      paneOwners: new Map(),
+      paneSubscribers: new Map(),
       resolveShellModelRouter: () => ({
         registerClient: () => ({ clientId: "client-1" }),
         listClients: async () => [],
@@ -280,7 +280,7 @@ describe("flmux host requests", () => {
       getProjectDir: () => ".",
       getAuthorityClientId: () => "server_authority",
       getCallerViewId: () => 9,
-      paneOwners: new Map(),
+      paneSubscribers: new Map(),
       resolveShellModelRouter: () => ({
         registerClient: () => ({ clientId: "client-9" }),
         listClients: async () => [],
@@ -328,7 +328,7 @@ describe("flmux host requests", () => {
       getProjectDir: () => ".",
       getAuthorityClientId: () => "server_authority",
       getCallerViewId: () => 11,
-      paneOwners: new Map(),
+      paneSubscribers: new Map(),
       resolveShellModelRouter: () => null,
       resolveShellModel: () => null,
       terminalService: {
@@ -359,7 +359,7 @@ describe("flmux host requests", () => {
       getProjectDir: () => ".",
       getAuthorityClientId: () => "server_authority",
       getCallerViewId: () => 13,
-      paneOwners: new Map(),
+      paneSubscribers: new Map(),
       resolveShellModelRouter: () => null,
       resolveShellModel: () => null,
       terminalService: {

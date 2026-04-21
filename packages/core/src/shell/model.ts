@@ -388,10 +388,10 @@ class ShellModel implements ShellModelAPI {
       }
 
       if (segments.length === 4 && segments[3] === "attach") {
-        if (readTerminalRuntimeId(pane) !== null) {
-          return throwPathError("INVALID_VALUE", "Terminal pane already has an attached runtime");
-        }
-
+        // attach is idempotent: the delegate returns the existing runtime
+        // snapshot when one is already attached, so browser reloads and
+        // multi-device subscribers share the same ptyd session instead of
+        // getting rejected.
         const result = await this.terminal.attachRuntime(pane.id, {
           cwd: optionalString(args.cwd)
         });

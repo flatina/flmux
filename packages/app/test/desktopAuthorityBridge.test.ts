@@ -261,7 +261,7 @@ describe("desktop shell authority bridge", () => {
       getProjectDir: () => "C:/project",
       getAuthorityClientId: () => authority.clientId,
       getCallerViewId: () => 1,
-      paneOwners: new Map(),
+      paneSubscribers: new Map(),
       resolveShellModelRouter: () => authority.router,
       resolveShellModel: () => authority.shellModel,
       terminalService,
@@ -300,7 +300,7 @@ describe("desktop shell authority bridge", () => {
       getProjectDir: () => "C:/project",
       getAuthorityClientId: () => authority.clientId,
       getCallerViewId: () => viewId,
-      paneOwners: new Map(),
+      paneSubscribers: new Map(),
       resolveShellModelRouter: () => authority.router,
       resolveShellModel: () => authority.shellModel,
       terminalService: createTerminalService(createInMemoryTerminalBackend()),
@@ -341,16 +341,16 @@ describe("desktop shell authority bridge", () => {
     expect(status).toMatchObject({ ok: true, found: true });
   });
 
-  it("terminal attach via shellModel.path.call populates paneOwners for event forwarding", async () => {
+  it("terminal attach via shellModel.path.call adds the caller's viewId to paneSubscribers for event forwarding", async () => {
     const { authority, terminalService } = await createTestAuthority();
-    const paneOwners = new Map<string, number>();
+    const paneSubscribers = new Map<string, Set<number>>();
     const handlers = createFlmuxHostRequestHandlers({
       mode: "desktop",
       getAppOrigin: () => "http://127.0.0.1:0",
       getProjectDir: () => "C:/project",
       getAuthorityClientId: () => authority.clientId,
       getCallerViewId: () => 42,
-      paneOwners,
+      paneSubscribers,
       resolveShellModelRouter: () => authority.router,
       resolveShellModel: () => authority.shellModel,
       terminalService,
@@ -362,14 +362,43 @@ describe("desktop shell authority bridge", () => {
       kind: "terminal"
     })) as { ok: true; value: { paneId: string } };
     const paneId = created.value.paneId;
-    expect(paneOwners.has(paneId)).toBe(false);
+    expect(paneSubscribers.has(paneId)).toBe(false);
 
     const attachResult = await handlers["shellModel.path.call"]({
       path: `/panes/${paneId}/terminal/attach`,
       args: {}
     });
     expect(attachResult.ok).toBe(true);
-    expect(paneOwners.get(paneId)).toBe(42);
+    expect(paneSubscribers.get(paneId)?.has(42)).toBe(true);
+
+    // Idempotent re-attach (e.g. after browser reload) from a different
+    // viewId: returns the same runtimeId + adds the new viewId to the
+    // subscriber set without kicking out the previous one.
+    const secondAttachHandlers = createFlmuxHostRequestHandlers({
+      mode: "desktop",
+      getAppOrigin: () => "http://127.0.0.1:0",
+      getProjectDir: () => "C:/project",
+      getAuthorityClientId: () => authority.clientId,
+      getCallerViewId: () => 99,
+      paneSubscribers,
+      resolveShellModelRouter: () => authority.router,
+      resolveShellModel: () => authority.shellModel,
+      terminalService,
+      localExtensions: [],
+      desktopAuthority: authority
+    });
+    const secondAttach = await secondAttachHandlers["shellModel.path.call"]({
+      path: `/panes/${paneId}/terminal/attach`,
+      args: {}
+    });
+    if (!secondAttach.ok) {
+      // eslint-disable-next-line no-console
+      console.error("secondAttach failed:", secondAttach);
+    }
+    expect(secondAttach.ok).toBe(true);
+    expect(paneSubscribers.get(paneId)?.size).toBe(2);
+    expect(paneSubscribers.get(paneId)?.has(42)).toBe(true);
+    expect(paneSubscribers.get(paneId)?.has(99)).toBe(true);
   });
 
   // Router goes onto the HTTP/WS wire (external, CLI). If router.pathCall
@@ -407,7 +436,7 @@ describe("desktop shell authority bridge", () => {
       getProjectDir: () => "C:/project",
       getAuthorityClientId: () => authority.clientId,
       getCallerViewId: () => 1,
-      paneOwners: new Map(),
+      paneSubscribers: new Map(),
       resolveShellModelRouter: () => authority.router,
       resolveShellModel: () => authority.shellModel,
       terminalService: createTerminalService(createInMemoryTerminalBackend()),

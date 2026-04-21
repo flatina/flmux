@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { FlmuxClientRegistry } from "../src/main/clientRegistry";
 import { startFlmuxServer } from "../src/main/server";
 import { createServerShellModelRouter } from "../src/main/serverShellModelRouter";
-import { forwardTerminalEventToOwnedClient } from "../src/main/terminalEventForwarding";
+import { forwardTerminalEventToSubscribers } from "../src/main/terminalEventForwarding";
 import { createTerminalService } from "../src/main/terminal-service";
 import type { FlmuxRendererBridge } from "../src/shared/rendererBridge";
 import type { TerminalRuntimeEvent } from "../src/shared/terminal";
@@ -28,7 +28,7 @@ export async function createSmokeHarness(): Promise<SmokeHarness> {
   const workspaceRootDir = join(tempDir, "workspace-root");
   const rendererDir = join(tempDir, "renderer");
   const viewId = 1;
-  const paneOwners = new Map<string, number>();
+  const paneSubscribers = new Map<string, Set<number>>();
 
   await mkdir(workspaceRootDir, { recursive: true });
   await mkdir(rendererDir, { recursive: true });
@@ -43,7 +43,12 @@ export async function createSmokeHarness(): Promise<SmokeHarness> {
     runtimeLabel: "smoke-harness",
     terminalService,
     onTerminalCreate(paneId) {
-      paneOwners.set(paneId, viewId);
+      let set = paneSubscribers.get(paneId);
+      if (!set) {
+        set = new Set();
+        paneSubscribers.set(paneId, set);
+      }
+      set.add(viewId);
     }
   });
   const shellModel = host.createModel();
@@ -65,9 +70,9 @@ export async function createSmokeHarness(): Promise<SmokeHarness> {
   host.setAppOrigin(server.origin);
 
   const unsubscribeTerminal = terminalService.subscribe((event) => {
-    forwardTerminalEventToOwnedClient({
+    forwardTerminalEventToSubscribers({
       event,
-      paneOwners,
+      paneSubscribers,
       clientRegistry: registry
     });
   });

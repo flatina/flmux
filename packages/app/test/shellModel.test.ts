@@ -479,11 +479,13 @@ describe("shell model direct", () => {
       { target: { scope: "pane", paneId: "pane.term" }, key: "title", value: "Renamed Terminal" }
     ]);
 
-    expect(await model.pathCall("/panes/current/terminal/attach", { cwd: "." })).toEqual({
-      ok: false,
-      code: "INVALID_VALUE",
-      error: "Terminal pane already has an attached runtime"
-    });
+    // attach is idempotent (multi-subscriber / reload support): a second
+    // attach on the same pane no longer throws. The test host's terminal
+    // delegate re-enters createTerminalRuntime — the shape we care about
+    // in real code is the shellCore-level idempotent branch; here we
+    // just assert the pathCall doesn't reject.
+    const reAttach = await model.pathCall("/panes/current/terminal/attach", { cwd: "." });
+    expect(reAttach.ok).toBe(true);
   });
 
   it("creates, drives, and detaches terminal runtimes only through explicit terminal actions", async () => {
@@ -515,11 +517,11 @@ describe("shell model direct", () => {
     });
     expect(host.calls.createTerminalRuntime).toEqual([{ paneId: "pane.term", input: { cwd: "." } }]);
 
-    expect(await model.pathCall("/panes/current/terminal/attach", { cwd: "." })).toEqual({
-      ok: false,
-      code: "INVALID_VALUE",
-      error: "Terminal pane already has an attached runtime"
-    });
+    // Idempotent attach: no rejection. (shellCore's real delegate
+    // returns the existing runtime snapshot; the test mock re-enters
+    // createTerminalRuntime, which is fine for the pathCall surface.)
+    const reAttach = await model.pathCall("/panes/current/terminal/attach", { cwd: "." });
+    expect(reAttach.ok).toBe(true);
 
     const wrote = await model.pathCall("/panes/current/terminal/write", { data: "echo hi\r" });
     expect(wrote).toMatchObject({
@@ -552,7 +554,9 @@ describe("shell model direct", () => {
         data: "echo hi\r\n"
       }
     });
-    expect(host.calls.readTerminalHistory).toEqual([{ paneId: "pane.term", input: { maxBytes: 256 } }]);
+    // Idempotent re-attach above also reads history (to return it to the
+    // caller) — the final call we care about is the explicit one.
+    expect(host.calls.readTerminalHistory.at(-1)).toEqual({ paneId: "pane.term", input: { maxBytes: 256 } });
 
     const killed = await model.pathCall("/panes/current/terminal/kill");
     expect(killed).toMatchObject({

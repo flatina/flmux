@@ -1,0 +1,46 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": [],
+      "project": []
+    },
+    "packages/app": {
+      "entry": ["src/main/ptyd/daemonMain.ts", "test/*.test.ts", "test/browser/*.spec.ts"],
+      "project": ["src/**/*.{ts,tsx}", "test/**/*.{ts,tsx}"],
+      "ignoreDependencies": ["bunite-native-win-x64"],
+      "playwright": {
+        "config": ["playwright.config.ts"],
+        "entry": ["test/browser/**/*.spec.ts"]
+      },
+      "vite": {
+        "config": ["vite.config.ts"]
+      }
+    },
+    "packages/core": {
+      "entry": ["test/*.test.ts"],
+      "project": ["src/**/*.ts", "test/**/*.ts"]
+    },
+    "packages/extension-api": {
+      "entry": ["test/*.test.ts"],
+      "project": ["src/**/*.ts", "test/**/*.ts"]
+    },
+    "packages/extension-devkit": {
+      "entry": ["test/*.test.ts"],
+      "project": ["src/**/*.ts", "test/**/*.ts"]
+    },
+    "extensions/cowsay": {
+      "entry": ["cli.ts"],
+      "project": ["**/*.ts"]
+    },
+    "extensions/counter": {
+      "project": ["**/*.ts"]
+    },
+    "extensions/inspector": {
+      "project": ["**/*.ts"]
+    },
+    "extensions/scratchpad": {
+      "project": ["**/*.ts"]
+    }
+  }
+}

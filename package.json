@@ -24,6 +24,7 @@
     "check:fix": "biome check --write"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.12"
+    "@biomejs/biome": "2.4.12",
+    "knip": "6.6.0"
   }
 }

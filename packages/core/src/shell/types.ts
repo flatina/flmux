@@ -91,19 +91,13 @@ export interface PaneStateSnapshot {
   terminal?: TerminalPaneStateSnapshot;
 }
 
-export interface BrowserPaneStatusSnapshot extends BrowserPaneStateSnapshot {}
-
 export interface PaneStatusSnapshot extends PaneStateSnapshot {
   id: string;
-  browser?: BrowserPaneStatusSnapshot;
+  browser?: BrowserPaneStateSnapshot;
   terminal?: TerminalPaneStatusSnapshot;
 }
 
-export interface ShellPaneSnapshot extends PaneStateSnapshot {}
-
-export interface ShellPaneStatusSnapshot extends PaneStatusSnapshot {}
-
-export interface ShellPaneRecordSnapshot extends ShellPaneStatusSnapshot {}
+export interface ShellPaneRecordSnapshot extends PaneStatusSnapshot {}
 
 export interface TerminalPaneStateSnapshot {
   cwd: string;
@@ -118,8 +112,6 @@ export interface TerminalPaneStatusSnapshot extends TerminalPaneStateSnapshot {
   createdAt: string | null;
   updatedAt: string | null;
 }
-
-export interface TerminalPaneRuntimeSnapshot extends TerminalPaneStatusSnapshot {}
 
 export interface ShellResolvedPanePathMount {
   mountKey: string;

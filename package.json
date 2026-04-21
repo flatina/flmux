@@ -11,10 +11,10 @@
     "build:extensions": "bun run --filter @flmux/extension-devkit build ../../extensions/cowsay ../../extensions/counter ../../extensions/inspector ../../extensions/scratchpad",
     "build": "bun run --filter @flmux/app build",
     "dev": "bun run --filter @flmux/app dev",
-    "test:direct": "bun run --filter @flmux/app test:direct",
-    "test:smoke": "bun run --filter @flmux/app test:smoke",
-    "test:harness-smoke": "bun run --filter @flmux/app test:harness-smoke",
-    "typecheck": "bun run --filter @flmux/app typecheck",
+    "test:direct": "cd packages/app && bun run test:direct",
+    "test:smoke": "cd packages/app && bun run test:smoke",
+    "test:harness-smoke": "cd packages/app && bun run test:harness-smoke",
+    "typecheck": "cd packages/app && bun run typecheck",
     "validate:extensions": "bun run --filter @flmux/extension-devkit validate ../../extensions/cowsay ../../extensions/counter ../../extensions/inspector ../../extensions/scratchpad"
   }
 }

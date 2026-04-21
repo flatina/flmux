@@ -42,6 +42,7 @@
         "@xterm/xterm": "^5.5.0",
         "bunite-core": "^0.0.14",
         "bunite-native-win-x64": "^0.0.3",
+        "citty": "^0.2.2",
         "dockview-core": "^5.1.0",
         "elysia": "^1.4.28",
         "qrcode-terminal": "^0.12.0",
@@ -346,6 +347,8 @@
     "bunite-dev": ["bunite-dev@0.0.6", "", { "peerDependencies": { "bunite-core": "*" }, "bin": { "bunite-build": "scripts/build.ts", "bunite-setup-cef": "scripts/setup-cef.ts" } }, "sha512-n1IY861UXO5zGR8jWHuNUr3If/TN3+kQCZCdW3IAUOR5nK7qwuwGujZNTyvuqlt9AKuiTOTVnyy2DeaS2s9Kog=="],
 
     "bunite-native-win-x64": ["bunite-native-win-x64@0.0.3", "", { "os": "win32", "cpu": "x64" }, "sha512-RkAnmLPju8X1WDJzF6MpEWeLYUdePy1toWmWf8J9yFpH2RVy2d7txvpU9pvfeGrHX2muCK9Y3oTbkh6jsB3+MA=="],
+
+    "citty": ["citty@0.2.2", "", {}, "sha512-+6vJA3L98yv+IdfKGZHBNiGW5KHn22e/JwID0Strsz8h4S/csAu/OuICwxrg44k5MRiZHWIo8XXuJgQTriRP4w=="],
 
     "cookie": ["cookie@1.1.1", "", {}, "sha512-ei8Aos7ja0weRpFzJnEA9UHJ/7XQmqglbRwnf2ATjcB9Wq874VKH9kfjjirM6UhU2/E5fFYadylyhFldcqSidQ=="],
 

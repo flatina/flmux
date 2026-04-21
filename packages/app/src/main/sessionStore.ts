@@ -7,7 +7,7 @@ export interface FlmuxSessionStore {
   save(snapshot: FlmuxSessionSnapshot): Promise<void>;
 }
 
-export interface FlmuxSessionStoreOptions {
+interface FlmuxSessionStoreOptions {
   /** Absolute path to the session snapshot file. Required. Desktop
    * passes `<flmuxDir>/session.json`; web-mode passes
    * `<authDir>/sessions/<userId>/session.json`. */

@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 
-export interface GeneratedToken {
+interface GeneratedToken {
   id: string;
   value: string;
   hash: string;

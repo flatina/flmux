@@ -1,6 +1,6 @@
 import type { GroupPanelPartInitParameters, IContentRenderer, PanelUpdateEvent } from "dockview-core";
 
-export interface BrowserPaneRendererDependencies {
+interface BrowserPaneRendererDependencies {
   panelTemplate: HTMLTemplateElement;
   normalizeUrl(value: string): string | null;
   onUrlChange(paneId: string, url: string): void;

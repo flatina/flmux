@@ -3,7 +3,7 @@ import type { FlmuxLocalExtensionLoadEntry } from "../../shared/rendererBridge";
 import type { PaneDescriptor } from "../shell/paneRegistry";
 import { createExternalPaneDescriptor } from "./runtime";
 
-export interface LocalExternalPaneRegistrationHost {
+interface LocalExternalPaneRegistrationHost {
   registerExternalPane(descriptor: PaneDescriptor): void;
 }
 

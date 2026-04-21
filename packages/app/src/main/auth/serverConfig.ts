@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 
-export interface FlmuxServerPortResolution {
+interface FlmuxServerPortResolution {
   port: number | undefined;
   source: "cli" | "env" | "config" | "default";
 }

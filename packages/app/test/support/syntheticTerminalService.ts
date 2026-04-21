@@ -9,7 +9,7 @@ import type {
 import { toTerminalRootKey } from "@flmux/core/terminal/rootKey";
 import { normalizeTerminalRootDir, resolveTerminalCwdFromRoot } from "@flmux/core/terminal/path";
 
-export interface SyntheticTerminalService {
+interface SyntheticTerminalService {
   create(input: { paneId?: string; rootDir: string; cwd?: string }): Promise<TerminalCreateResult>;
   write(input: { rootKey: string; runtimeId: string; data: string }): Promise<TerminalWriteResult>;
   resize(input: { rootKey: string; runtimeId: string; cols: number; rows: number }): Promise<TerminalResizeResult>;
@@ -17,7 +17,7 @@ export interface SyntheticTerminalService {
   kill(input: { rootKey: string; runtimeId: string }): Promise<TerminalKillResult>;
 }
 
-export interface SyntheticTerminalServiceOptions {
+interface SyntheticTerminalServiceOptions {
   rootKey?: string;
 }
 

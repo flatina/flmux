@@ -1,6 +1,6 @@
 export type FlmuxRuntimeMode = "desktop" | "web";
 
-export interface FlmuxRendererLifecyclePolicy {
+interface FlmuxRendererLifecyclePolicy {
   restoreSession: boolean;
   persistSession: boolean;
 }

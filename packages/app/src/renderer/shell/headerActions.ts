@@ -77,7 +77,7 @@ export class WorkspaceHeaderActions implements IHeaderActionsRenderer {
   }
 }
 
-export interface PaneKindOption {
+interface PaneKindOption {
   kind: string;
   label: string;
 }

@@ -22,7 +22,7 @@ import type {
 import { resolveTerminalCwdFromRoot } from "@flmux/core/terminal/path";
 import { createSyntheticTerminalService } from "./syntheticTerminalService";
 
-export type StoredPane =
+type StoredPane =
   | { id: string; kind: "browser"; title: string; url: string }
   | { id: string; kind: "cowsay"; title: string }
   | { id: string; kind: "inspector"; title: string; subscription?: string }
@@ -42,7 +42,7 @@ export type StoredPane =
       };
     };
 
-export interface TerminalServiceLike {
+interface TerminalServiceLike {
   create(input: { paneId?: string; rootDir: string; cwd?: string }): Promise<TerminalCreateResult>;
   write(input: { rootKey: string; runtimeId: string; data: string }): Promise<TerminalWriteResult>;
   resize(input: { rootKey: string; runtimeId: string; cols: number; rows: number }): Promise<TerminalResizeResult>;
@@ -50,7 +50,7 @@ export interface TerminalServiceLike {
   kill(input: { rootKey: string; runtimeId: string }): Promise<TerminalKillResult>;
 }
 
-export interface TestShellModelHostOptions {
+interface TestShellModelHostOptions {
   workspaceId?: string;
   workspaceTitle?: string;
   workspaceRootDir?: string;

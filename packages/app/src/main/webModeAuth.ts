@@ -38,7 +38,7 @@ export function createFlmuxWebModeAuthorizer(
   return createAuthorizerFromStores({ userStore, tokenStore, devAuthAs: options.devAuthAs });
 }
 
-export function createAuthorizerFromStores(options: {
+function createAuthorizerFromStores(options: {
   userStore: UserStore;
   tokenStore: TokenStore;
   /** Dev-only bypass: when set, every call to `authorize` returns the named

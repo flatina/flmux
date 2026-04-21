@@ -5,7 +5,7 @@ import { resolveFlmuxPaths } from "../../src/main/flmuxPaths";
 import { stopOwnedPtydDaemonsForRootDir } from "./ptydCleanup";
 import { waitFor } from "./waitFor";
 
-export interface CdpTarget {
+interface CdpTarget {
   id: string;
   title: string;
   type: string;
@@ -259,7 +259,7 @@ export async function connectCdp(url: string) {
   };
 }
 
-export async function killProcessTree(processHandle: Bun.Subprocess<"ignore", "pipe", "pipe">) {
+async function killProcessTree(processHandle: Bun.Subprocess<"ignore", "pipe", "pipe">) {
   if (processHandle.killed || processHandle.exitCode !== null) {
     return;
   }
@@ -297,7 +297,7 @@ export async function killMainProcessOnly(processHandle: Bun.Subprocess<"ignore"
   await processHandle.exited;
 }
 
-export function resolveAppInstallRoot() {
+function resolveAppInstallRoot() {
   return resolve(import.meta.dir, "..", "..", "..", "..");
 }
 

@@ -5,7 +5,7 @@ import type { TerminalHostAPI } from "../terminalHost";
 import type { ShellModelAPI } from "@flmux/core/shell/types";
 import type { TerminalCreateResult, TerminalRuntimeEvent, TerminalWriteResult } from "@flmux/core/terminal/types";
 
-export interface TerminalPaneRendererDependencies {
+interface TerminalPaneRendererDependencies {
   shellModel: ShellModelAPI;
   terminalEvents: Pick<TerminalHostAPI, "subscribe">;
 }

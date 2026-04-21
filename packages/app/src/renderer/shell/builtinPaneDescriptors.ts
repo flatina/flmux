@@ -4,7 +4,7 @@ import { PlaceholderPaneRenderer } from "../panes/placeholderPane";
 import { TerminalPaneRenderer } from "../panes/terminalPane";
 import { type PaneDescriptor, type PaneRegistry, isTerminalPaneRecord } from "./paneRegistry";
 
-export interface BuiltinPaneDescriptorDependencies {
+interface BuiltinPaneDescriptorDependencies {
   installRoot: string;
   resolveTerminalCwd(rootDir: string, inputCwd: string | undefined): string;
 }

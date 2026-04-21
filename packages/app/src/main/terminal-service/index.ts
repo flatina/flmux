@@ -20,4 +20,3 @@ export function createTerminalService(backend: TerminalBackend = createPtydBacke
 
 export type { TerminalBackend } from "@flmux/core/terminal/backend";
 export { createInMemoryTerminalBackend } from "./inMemoryBackend";
-export { createPtydBackend } from "./ptydBackend";

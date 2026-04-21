@@ -6,7 +6,7 @@ import { fetchJson, postJson, waitFor, waitForWebOrigin } from "../support/realA
 import { runTokensCli } from "../../src/cliTokens";
 import { stringifyUsersToml } from "../../src/main/auth/tomlWriter";
 
-export interface WebBootSmokeOptions {
+interface WebBootSmokeOptions {
   token: string;
   authDir: string;
 }

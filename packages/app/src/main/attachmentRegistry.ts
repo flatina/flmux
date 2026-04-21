@@ -9,7 +9,7 @@ import type { SequencedShellCoreEvent } from "@flmux/core/shell";
  * B1d wires browser attachments + the HTTP /api/shell/bootstrap + WS
  * lastAppliedSeq handshake that actually exercises the ring buffer.
  */
-export interface AttachmentState {
+interface AttachmentState {
   readonly attachmentId: string;
   /** Transport view id while the client is connected; null during grace. */
   viewId: number | null;
@@ -28,7 +28,7 @@ export interface AttachmentState {
   disconnectTimer: ReturnType<typeof setTimeout> | null;
 }
 
-export interface AttachmentRegistryOptions {
+interface AttachmentRegistryOptions {
   /** Max events retained per attachment. B1c default 200 per preflight #3. */
   bufferSize?: number;
   /** Grace period (ms) before a disconnected attachment is evicted. */

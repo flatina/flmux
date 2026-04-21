@@ -1,12 +1,6 @@
-import {
-  PtydClient as CorePtydClient,
-  type PtydClientOptions,
-  type PtydLaunchPlan
-} from "@flmux/core/terminal/ptyd/client";
+import { PtydClient as CorePtydClient, type PtydClientOptions } from "@flmux/core/terminal/ptyd/client";
 import type { PtydTerminalEvent } from "@flmux/core/terminal/ptyd/controlPlane";
 import { createAppPtydLaunchPlan } from "./launch";
-
-export type { PtydClientOptions, PtydLaunchPlan };
 
 export class PtydClient extends CorePtydClient {
   constructor(

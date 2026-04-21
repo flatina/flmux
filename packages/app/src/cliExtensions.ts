@@ -2,14 +2,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import type { FlmuxExtensionCliContext, FlmuxExtensionCliRunner, ShellClient } from "@flmux/extension-api";
 import { discoverConfiguredLocalExtensions, resolveConfiguredLocalExtensionsRootDir } from "./main/localExtensions";
 
-export interface DiscoveredLocalCliCommand {
+interface DiscoveredLocalCliCommand {
   commandId: string;
   description?: string;
   extensionId: string;
   cliEntryPath: string;
 }
 
-export interface FlmuxCliExtensionDispatchOptions {
+interface FlmuxCliExtensionDispatchOptions {
   commandId: string;
   argv: string[];
   env: Record<string, string | undefined>;
@@ -83,7 +83,7 @@ export async function discoverLocalCliCommands(extensionsRootDir: string): Promi
   return commands.sort((left, right) => left.commandId.localeCompare(right.commandId));
 }
 
-export async function resolveLocalCliCommand(extensionsRootDir: string, commandId: string) {
+async function resolveLocalCliCommand(extensionsRootDir: string, commandId: string) {
   const commands = await discoverLocalCliCommands(extensionsRootDir);
   return commands.find((command) => command.commandId === commandId) ?? null;
 }
@@ -92,6 +92,6 @@ export function defaultExtensionsRootDir() {
   return resolveConfiguredLocalExtensionsRootDir(fileURLToPath(new URL("../../../extensions/", import.meta.url)));
 }
 
-export async function importCliModule(cliEntryPath: string): Promise<CliModule> {
+async function importCliModule(cliEntryPath: string): Promise<CliModule> {
   return (await import(pathToFileURL(cliEntryPath).href)) as CliModule;
 }

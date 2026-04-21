@@ -6,7 +6,7 @@ interface FlmuxClientRecord {
   bridge: FlmuxRendererBridge;
 }
 
-export interface RegisteredFlmuxClient {
+interface RegisteredFlmuxClient {
   clientId: string;
   viewId: number;
   bridge: FlmuxRendererBridge;

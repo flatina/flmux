@@ -1,6 +1,6 @@
 import { resolve, join } from "node:path";
 
-export interface FlmuxPaths {
+interface FlmuxPaths {
   /** Install root — parent of `.flmux/`. All other paths derive from this. */
   rootDir: string;
   /** `<rootDir>/.flmux` — container for everything flmux writes to disk. */

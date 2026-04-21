@@ -24,7 +24,7 @@ const MIME_TYPES: Record<string, string> = {
   ".ico": "image/x-icon"
 };
 
-export interface FlmuxServerHandle {
+interface FlmuxServerHandle {
   origin: string;
   stop(): void;
 }

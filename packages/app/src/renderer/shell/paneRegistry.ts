@@ -1,30 +1,10 @@
 import type { CreateComponentOptions, IContentRenderer } from "dockview-core";
-import type {
-  PaneLifecycleHooks,
-  PanePathMount,
-  PanePathMountContext,
-  PanePersistenceHooks,
-  PaneSpec,
-  PaneStateRecord,
-  PaneSubtreeMount,
-  PaneWorkspaceContext
-} from "@flmux/core/shell";
-import {
-  PaneRegistry as CorePaneRegistry,
-  isBrowserPaneStateRecord,
-  isTerminalPaneStateRecord
-} from "@flmux/core/shell";
+import type { PaneSpec, PaneStateRecord, PaneWorkspaceContext } from "@flmux/core/shell";
+import { PaneRegistry as CorePaneRegistry, isTerminalPaneStateRecord } from "@flmux/core/shell";
 import type { TerminalHostAPI } from "../terminalHost";
 import type { ShellModelAPI } from "@flmux/core/shell/types";
 
-export type {
-  PaneWorkspaceContext,
-  PaneLifecycleHooks,
-  PanePersistenceHooks,
-  PanePathMountContext,
-  PanePathMount,
-  PaneSubtreeMount
-};
+export type { PaneWorkspaceContext };
 
 export interface PaneRendererRuntimeContext {
   shellModel: ShellModelAPI;
@@ -44,5 +24,4 @@ export interface PaneDescriptor<TStateRecord extends PaneStateRecord = PaneState
 
 export class PaneRegistry extends CorePaneRegistry<PaneDescriptor> {}
 
-export const isBrowserPaneRecord = isBrowserPaneStateRecord;
 export const isTerminalPaneRecord = isTerminalPaneStateRecord;

@@ -5,7 +5,7 @@ import { createWebModeShellAuthority, type WebModeShellAuthority } from "./webMo
 import type { FlmuxClientRegistry } from "./clientRegistry";
 import type { TerminalService } from "./terminal-service";
 
-export interface WebModeUserAuthorityRegistryOptions {
+interface WebModeUserAuthorityRegistryOptions {
   projectDir: string;
   terminalService: TerminalService;
   clientRegistry: FlmuxClientRegistry;

@@ -1,10 +1,10 @@
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import {
-  resolveFlmuxAuthDir,
   resolveFlmuxAuthPaths,
   type FlmuxAuthPaths
 } from "./main/auth/authConfig";
+import { resolveFlmuxPaths } from "./main/flmuxPaths";
 import { generateToken } from "./main/auth/tokenFormat";
 import { createTokenStore } from "./main/auth/tokenStore";
 import { createUserStore, type AllowPaneKinds, type FlmuxUser } from "./main/auth/userStore";
@@ -21,7 +21,7 @@ export async function runTokensCli(rawArgs: string[]): Promise<unknown> {
   }
 
   const { authDir, argv } = extractAuthDirFlag(rest);
-  const paths = resolveFlmuxAuthPaths(authDir ?? resolveFlmuxAuthDir());
+  const paths = resolveFlmuxAuthPaths(authDir ?? resolveCliAuthDir());
 
   switch (subcommand) {
     case "bootstrap":
@@ -222,4 +222,14 @@ function extractAuthDirFlag(argv: string[]): { authDir: string | null; argv: str
   const value = argv[index + 1];
   const remaining = [...argv.slice(0, index), ...argv.slice(index + 2)];
   return { authDir: value, argv: remaining };
+}
+
+function resolveCliAuthDir(): string {
+  const rootOverride = process.env.FLMUX_ROOT_DIR?.trim();
+  if (!rootOverride) {
+    throw new Error(
+      "tokens: --auth-dir <dir> is required (or set FLMUX_ROOT_DIR to derive <rootDir>/.flmux/auth)"
+    );
+  }
+  return resolveFlmuxPaths(resolve(rootOverride)).authDir;
 }

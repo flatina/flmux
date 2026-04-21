@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
 
 export interface FlmuxServerPortResolution {
   port: number | undefined;
@@ -10,14 +9,14 @@ export interface FlmuxServerPortResolution {
  * Resolve the server port with a 3-tier priority:
  *   1. `--port <n>` CLI flag
  *   2. `FLMUX_PORT` env var
- *   3. `<authDir>/server.toml` — `[server] port`
+ *   3. `configFile` — `[server] port` (typically `<flmuxDir>/server.toml`)
  * Returns `{ port: undefined, source: "default" }` when nothing is set —
  * the caller should treat that as "let the OS pick" (Bun listens on 0).
  */
 export function resolveFlmuxServerPort(options: {
   argv?: readonly string[];
   env?: NodeJS.ProcessEnv;
-  authDir?: string | null;
+  configFile?: string | null;
 }): FlmuxServerPortResolution {
   const argv = options.argv ?? Bun.argv;
   const env = options.env ?? process.env;
@@ -28,8 +27,8 @@ export function resolveFlmuxServerPort(options: {
   const fromEnv = normalizePort(env.FLMUX_PORT);
   if (fromEnv !== undefined) return { port: fromEnv, source: "env" };
 
-  if (options.authDir) {
-    const fromFile = readServerConfigPort(resolve(options.authDir, "server.toml"));
+  if (options.configFile) {
+    const fromFile = readServerConfigPort(options.configFile);
     if (fromFile !== undefined) return { port: fromFile, source: "config" };
   }
 

@@ -1,17 +1,16 @@
 import { expect } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { rm } from "node:fs/promises";
 import { callJsonRpcIpc } from "../../src/main/ptyd/jsonRpcIpc";
 import type { AppProcessHandle } from "../support/realAppSmokeSupport";
 import { loadPtydLockForRootDir } from "../support/ptydCleanup";
 import {
+  allocateFlmuxRootDir,
   connectCdp,
   fetchJson,
   fetchTargets,
   launchFlmuxApp,
   postJson,
-  resolveAppInstallRoot,
+  resolveLaunchSessionFile,
   stopAppWorkspaceDaemons,
   waitFor,
   waitForMainTarget,
@@ -21,9 +20,9 @@ import {
 export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
   await stopAppWorkspaceDaemons();
   const port = 9300 + Math.floor(Math.random() * 200);
-  const sessionDir = await mkdtemp(resolve(tmpdir(), "flmux-session-"));
-  const sessionFile = resolve(sessionDir, "session.json");
-  const app = launchFlmuxApp(port, sessionFile);
+  const rootDir = allocateFlmuxRootDir("session");
+  const sessionFile = resolveLaunchSessionFile(rootDir);
+  const app = launchFlmuxApp(port, rootDir);
   appHandles.push(app);
 
   try {
@@ -493,14 +492,12 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
       }
     }, { timeoutMs: 10_000, intervalMs: 100, label: "workspace close persisted session file" });
 
-    const installRoot = resolveAppInstallRoot();
-
     // Closing workspace.2 kills its terminal pane; verify no runtime owned by
     // that pane remains on the install-scoped daemon. Filter by ownerPaneId
     // instead of total runtime count so sibling workspace terminals cannot
     // mask a leak of this specific runtime.
     await waitFor(async () => {
-      const lock = await loadPtydLockForRootDir(installRoot);
+      const lock = await loadPtydLockForRootDir(rootDir);
       if (!lock) {
         return true;
       }
@@ -525,6 +522,6 @@ export async function runAppBootSmokeScenario(appHandles: AppProcessHandle[]) {
 
     await session.close();
   } finally {
-    await rm(sessionDir, { recursive: true, force: true });
+    await rm(rootDir, { recursive: true, force: true });
   }
 }

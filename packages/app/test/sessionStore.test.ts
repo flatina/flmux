@@ -7,7 +7,6 @@ import { createSessionStore, isSessionSnapshot } from "../src/main/sessionStore"
 const tempDirs: string[] = [];
 
 afterEach(async () => {
-  delete process.env.FLMUX_SESSION_FILE;
   await Promise.all(tempDirs.splice(0).map(async (dir) => await rm(dir, { recursive: true, force: true })));
 });
 
@@ -69,7 +68,6 @@ describe("session store", () => {
     const dir = await mkdtemp(join(tmpdir(), "flmux-session-store-"));
     tempDirs.push(dir);
     const sessionFile = join(dir, "session.json");
-    process.env.FLMUX_SESSION_FILE = sessionFile;
 
     await writeFile(sessionFile, JSON.stringify({
       version: 3,
@@ -82,7 +80,7 @@ describe("session store", () => {
       }
     }, null, 2), "utf8");
 
-    const store = createSessionStore();
+    const store = createSessionStore({ filePath: sessionFile });
     expect(await store.load()).toBeNull();
   });
 });

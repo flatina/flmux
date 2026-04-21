@@ -330,7 +330,7 @@ function usage() {
     "  bun src/cli.ts tokens qr --token <plaintext-token> --origin <url>",
     "  note: --client is only required when multiple renderer clients are connected",
     "  note: use --token <token> or FLMUX_TOKEN when the web server has auth enabled",
-    "  note: tokens subcommands read/write users.toml and users.tokens.toml directly (FLMUX_AUTH_DIR or --auth-dir)"
+    "  note: tokens subcommands read/write users.toml + users.tokens.toml at --auth-dir (or <FLMUX_ROOT_DIR>/.flmux/auth when --auth-dir is omitted)"
   ].join("\n");
 }
 

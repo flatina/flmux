@@ -13,18 +13,15 @@ export interface PtydLockEntry {
 }
 
 /**
- * Lock file location: `<rootDir>/.flmux/ptyd.lock`.
- *
- * Scoping the lock to the rootDir (rather than a shared tmpdir keyed by
- * rootKey hash) means stale locks die with their rootDir — when a test's
- * `mkdtemp` dir is removed or a dev install is wiped, the lock goes with
- * it. That's important because the lock file is the single source of
- * truth for "a daemon exists for this rootDir"; a stale lock in tmpdir
- * from a prior session would otherwise invite re-adoption or respawn of
- * a daemon for an unrelated rootDir.
+ * Lock file location: `<rootDir>/.flmux/tmp/ptyd.lock`. Sits under `tmp/`
+ * because it's truly ephemeral (cleared on clean daemon shutdown) and
+ * safe to wipe at any time — the daemon will recreate it on restart.
+ * Scoping to rootDir means stale locks die with their rootDir: when a
+ * test's `mkdtemp` dir is removed or an install is wiped, the lock goes
+ * too, so there's no tmpdir-wide accumulation across sessions.
  */
 export function getPtydLockPath(rootDir: string) {
-  return join(rootDir, ".flmux", "ptyd.lock");
+  return join(rootDir, ".flmux", "tmp", "ptyd.lock");
 }
 
 export class PtydLockFile {

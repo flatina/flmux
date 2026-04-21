@@ -1,41 +1,42 @@
 import { afterEach, describe, it } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { runTokensCli } from "../src/cliTokens";
 import { runWebModeBootSmokeScenario } from "./scenarios/webModeBootSmokeScenario";
 import {
+  allocateFlmuxRootDir,
   cleanupAppHandles,
-  type AppProcessHandle,
-  launchFlmuxWebApp
+  launchFlmuxWebApp,
+  resolveLaunchAuthDir,
+  type AppProcessHandle
 } from "./support/realAppSmokeSupport";
 
 const appHandles: AppProcessHandle[] = [];
-const tempDirs: string[] = [];
 
 afterEach(async () => {
   await cleanupAppHandles(appHandles);
-  await Promise.all(tempDirs.splice(0).map(async (dir) => await rm(dir, { recursive: true, force: true })));
 });
 
 describe("flmux web smoke", () => {
   it(
     "boots web mode and keeps browser attach, HTTP model calls, and CLI token calls on the same server authority",
     async () => {
-      const authDir = await mkdtemp(join(tmpdir(), "flmux-web-smoke-auth-"));
-      tempDirs.push(authDir);
+      const rootDir = allocateFlmuxRootDir("web-smoke");
+      const authDir = resolveLaunchAuthDir(rootDir);
 
       const bootstrap = await runTokensCli(["bootstrap", "--auth-dir", authDir]) as {
         token: string;
       };
 
-      const app = launchFlmuxWebApp({ authDir });
+      const app = launchFlmuxWebApp({ rootDir });
       appHandles.push(app);
 
-      await runWebModeBootSmokeScenario(appHandles, {
-        token: bootstrap.token,
-        authDir
-      });
+      try {
+        await runWebModeBootSmokeScenario(appHandles, {
+          token: bootstrap.token,
+          authDir
+        });
+      } finally {
+        // rootDir is removed by cleanupAppHandles via the AppProcessHandle.
+      }
     },
     90_000
   );

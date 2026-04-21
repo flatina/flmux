@@ -1,13 +1,13 @@
 import { expect } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { rm } from "node:fs/promises";
 import type { AppProcessHandle } from "../support/realAppSmokeSupport";
 import {
+  allocateFlmuxRootDir,
   fetchTargets,
   killMainProcessOnly,
   launchFlmuxApp,
   postJson,
+  resolveLaunchSessionFile,
   stopAppWorkspaceDaemons,
   waitFor,
   waitForMainTarget,
@@ -18,9 +18,9 @@ export async function runTerminalRestartRecreateSmokeScenario(appHandles: AppPro
   await stopAppWorkspaceDaemons();
   const port = 10100 + Math.floor(Math.random() * 100);
   const secondPort = port + 300;
-  const sessionDir = await mkdtemp(resolve(tmpdir(), "flmux-session-"));
-  const sessionFile = resolve(sessionDir, "session.json");
-  const firstApp = launchFlmuxApp(port, sessionFile);
+  const rootDir = allocateFlmuxRootDir("session");
+  const sessionFile = resolveLaunchSessionFile(rootDir);
+  const firstApp = launchFlmuxApp(port, rootDir);
   appHandles.push(firstApp);
 
   try {
@@ -95,7 +95,7 @@ export async function runTerminalRestartRecreateSmokeScenario(appHandles: AppPro
 
     await stopAppWorkspaceDaemons();
 
-    const secondApp = launchFlmuxApp(secondPort, sessionFile);
+    const secondApp = launchFlmuxApp(secondPort, rootDir);
     appHandles.push(secondApp);
 
     const secondMainTarget = await waitForMainTarget(secondPort, "recreate second main flmux target");
@@ -159,6 +159,6 @@ export async function runTerminalRestartRecreateSmokeScenario(appHandles: AppPro
     }, { timeoutMs: 20_000, intervalMs: 250, label: "recreated restored terminal history" });
     expect(recreatedHistory.runtimeId).toBe(recreatedRuntimeId);
   } finally {
-    await rm(sessionDir, { recursive: true, force: true });
+    await rm(rootDir, { recursive: true, force: true });
   }
 }

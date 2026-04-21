@@ -6,77 +6,81 @@ import { resolveFlmuxServerPort } from "../src/main/auth/serverConfig";
 
 describe("resolveFlmuxServerPort", () => {
   it("returns default when nothing is specified", () => {
-    const result = resolveFlmuxServerPort({ argv: [], env: {}, authDir: null });
+    const result = resolveFlmuxServerPort({ argv: [], env: {}, configFile: null });
     expect(result).toEqual({ port: undefined, source: "default" });
   });
 
   it("prefers --port CLI flag over env + config", () => {
-    const authDir = mkdtempSync(join(tmpdir(), "flmux-cfg-"));
+    const dir = mkdtempSync(join(tmpdir(), "flmux-cfg-"));
+    const configFile = resolve(dir, "server.toml");
     try {
-      writeFileSync(resolve(authDir, "server.toml"), `[server]\nport = 5000\n`, "utf8");
+      writeFileSync(configFile, `[server]\nport = 5000\n`, "utf8");
       const result = resolveFlmuxServerPort({
         argv: ["--web", "--port", "4095"],
         env: { FLMUX_PORT: "6000" },
-        authDir
+        configFile
       });
       expect(result).toEqual({ port: 4095, source: "cli" });
     } finally {
-      rmSync(authDir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
   it("falls through CLI → env → config → default", () => {
-    const authDir = mkdtempSync(join(tmpdir(), "flmux-cfg-"));
+    const dir = mkdtempSync(join(tmpdir(), "flmux-cfg-"));
+    const configFile = resolve(dir, "server.toml");
     try {
-      writeFileSync(resolve(authDir, "server.toml"), `[server]\nport = 5000\n`, "utf8");
-      expect(resolveFlmuxServerPort({ argv: [], env: { FLMUX_PORT: "6000" }, authDir }))
+      writeFileSync(configFile, `[server]\nport = 5000\n`, "utf8");
+      expect(resolveFlmuxServerPort({ argv: [], env: { FLMUX_PORT: "6000" }, configFile }))
         .toEqual({ port: 6000, source: "env" });
-      expect(resolveFlmuxServerPort({ argv: [], env: {}, authDir }))
+      expect(resolveFlmuxServerPort({ argv: [], env: {}, configFile }))
         .toEqual({ port: 5000, source: "config" });
-      expect(resolveFlmuxServerPort({ argv: [], env: {}, authDir: null }))
+      expect(resolveFlmuxServerPort({ argv: [], env: {}, configFile: null }))
         .toEqual({ port: undefined, source: "default" });
     } finally {
-      rmSync(authDir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
   it("rejects malformed values (non-integer, out-of-range) and keeps falling through", () => {
-    const authDir = mkdtempSync(join(tmpdir(), "flmux-cfg-"));
+    const dir = mkdtempSync(join(tmpdir(), "flmux-cfg-"));
+    const configFile = resolve(dir, "server.toml");
     try {
-      writeFileSync(resolve(authDir, "server.toml"), `[server]\nport = 4095\n`, "utf8");
+      writeFileSync(configFile, `[server]\nport = 4095\n`, "utf8");
       // Bad CLI → falls through to env
       expect(resolveFlmuxServerPort({
         argv: ["--port", "not-a-number"],
         env: { FLMUX_PORT: "7000" },
-        authDir
+        configFile
       })).toEqual({ port: 7000, source: "env" });
       // Bad env (out-of-range) → falls through to config
       expect(resolveFlmuxServerPort({
         argv: [],
         env: { FLMUX_PORT: "99999" },
-        authDir
+        configFile
       })).toEqual({ port: 4095, source: "config" });
       // Bad config (negative) → falls through to default
-      writeFileSync(resolve(authDir, "server.toml"), `[server]\nport = -1\n`, "utf8");
-      expect(resolveFlmuxServerPort({ argv: [], env: {}, authDir }))
+      writeFileSync(configFile, `[server]\nport = -1\n`, "utf8");
+      expect(resolveFlmuxServerPort({ argv: [], env: {}, configFile }))
         .toEqual({ port: undefined, source: "default" });
     } finally {
-      rmSync(authDir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
   it("accepts port 0 from CLI (explicit OS-assign)", () => {
-    expect(resolveFlmuxServerPort({ argv: ["--port", "0"], env: {}, authDir: null }))
+    expect(resolveFlmuxServerPort({ argv: ["--port", "0"], env: {}, configFile: null }))
       .toEqual({ port: 0, source: "cli" });
   });
 
   it("ignores missing server.toml silently", () => {
-    const authDir = mkdtempSync(join(tmpdir(), "flmux-cfg-"));
+    const dir = mkdtempSync(join(tmpdir(), "flmux-cfg-"));
     try {
-      expect(resolveFlmuxServerPort({ argv: [], env: {}, authDir }))
+      const configFile = resolve(dir, "server.toml");
+      expect(resolveFlmuxServerPort({ argv: [], env: {}, configFile }))
         .toEqual({ port: undefined, source: "default" });
     } finally {
-      rmSync(authDir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

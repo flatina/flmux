@@ -1,5 +1,5 @@
 import { mkdir, rename } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import type { FlmuxSessionSnapshot } from "../shared/session";
 
 export interface FlmuxSessionStore {
@@ -8,15 +8,14 @@ export interface FlmuxSessionStore {
 }
 
 export interface FlmuxSessionStoreOptions {
-  /** Explicit path for this store. Overrides the env/cwd defaults — used
-   * by per-user web-mode stores that live under `<authDir>/sessions/`. */
-  filePath?: string;
+  /** Absolute path to the session snapshot file. Required. Desktop
+   * passes `<flmuxDir>/session.json`; web-mode passes
+   * `<authDir>/sessions/<userId>/session.json`. */
+  filePath: string;
 }
 
-export function createSessionStore(options: FlmuxSessionStoreOptions = {}): FlmuxSessionStore {
-  const filePath = options.filePath
-    || process.env.FLMUX_SESSION_FILE?.trim()
-    || join(process.cwd(), ".tmp", "session.json");
+export function createSessionStore(options: FlmuxSessionStoreOptions): FlmuxSessionStore {
+  const { filePath } = options;
 
   return {
     async load() {

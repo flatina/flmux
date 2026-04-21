@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { BrowserView, BrowserWindow, AppRuntime } from "bunite-core";
 import type { SequencedShellCoreEvent, ShellModelAPI } from "@flmux/core/shell";
 import type { FlmuxRendererBridgeSchema, FlmuxSessionSaveLayouts } from "../shared/rendererBridge";
@@ -20,9 +20,9 @@ import { createTerminalService } from "./terminal-service";
 import { createFlmuxHostRequestHandlers } from "./hostRequests";
 import { createFlmuxWebModeAuthorizer, type FlmuxAuthorizationContext, type FlmuxWebModeAuthorizer } from "./webModeAuth";
 import { eventToReadPath } from "./auth/eventAclPath";
-import { resolveFlmuxAuthDir, resolveFlmuxAuthPaths } from "./auth/authConfig";
 import { resolveFlmuxServerPort } from "./auth/serverConfig";
 import { resolveFlmuxRuntimeMode } from "./runtimeMode";
+import { resolveFlmuxRootDir, resolveFlmuxPaths } from "./flmuxPaths";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
 import {
   discoverConfiguredLocalExtensions,
@@ -55,12 +55,6 @@ function readDevAuthAsFlag(argv: readonly string[]): string | undefined {
   return value;
 }
 
-// Only desktop mode needs the CEF runtime. Web mode runs as a headless
-// Bun server and instantiating AppRuntime eagerly would boot CEF for
-// nothing (bunite's `new AppRuntime` triggers `initNativeRuntime`).
-const app = runtimeMode === "desktop" ? new AppRuntime({ logLevel: "info" }) : null;
-if (app) await app.ready;
-
 // Mirrors bunite's internal `getBaseDir()` (shared/paths.ts): use the
 // entry-script dir in dev, the binary dir when compiled. This lets web
 // mode resolve renderer assets without constructing `AppRuntime` (which
@@ -68,11 +62,27 @@ if (app) await app.ready;
 // `app.resolve(...)`; we keep one code path so both modes agree.
 const baseDir = Bun.main && existsSync(Bun.main) ? dirname(Bun.main) : dirname(process.execPath);
 const rendererDir = resolve(baseDir, "../dist/renderer");
-const projectDir = resolve(baseDir, "../../..");
+const installRoot = resolve(baseDir, "../../..");
+const flmuxPaths = resolveFlmuxPaths(resolveFlmuxRootDir(installRoot));
+const projectDir = flmuxPaths.rootDir;
 const localExtensionsRootDir = resolveConfiguredLocalExtensionsRootDir(resolve(baseDir, "../../../extensions"));
+
+// Only desktop mode needs the CEF runtime. Web mode runs as a headless
+// Bun server and instantiating AppRuntime eagerly would boot CEF for
+// nothing (bunite's `new AppRuntime` triggers `initNativeRuntime`). Pin
+// CEF's userDataDir to our `.flmux/cef-userdata/` so cookies / shader
+// cache live alongside the rest of flmux state (tests override via
+// BUNITE_USER_DATA_DIR for per-run isolation).
+const app = runtimeMode === "desktop"
+  ? new AppRuntime({ logLevel: "info", userDataDir: flmuxPaths.cefUserDataDir })
+  : null;
+if (app) await app.ready;
+
 const clientRegistry = new FlmuxClientRegistry();
 const terminalService = createTerminalService();
-const sessionStore = runtimeMode === "desktop" ? createSessionStore() : null;
+const sessionStore = runtimeMode === "desktop"
+  ? createSessionStore({ filePath: flmuxPaths.desktopSessionFile })
+  : null;
 // paneId → set of subscribed viewIds. Terminal events fan out to every
 // live subscriber so multiple tabs of the same user can share a pane
 // (device handoff: desktop tab stays open while mobile attaches).
@@ -80,7 +90,13 @@ const sessionStore = runtimeMode === "desktop" ? createSessionStore() : null;
 // slip through are lazily skipped by the forwarder.
 const paneSubscribers = new Map<string, Set<number>>();
 const localExtensions = await discoverConfiguredLocalExtensions(localExtensionsRootDir);
-const webModeAuthPaths = runtimeMode === "web" ? resolveFlmuxAuthPaths(resolveFlmuxAuthDir()) : null;
+const webModeAuthPaths = runtimeMode === "web"
+  ? {
+      authDir: flmuxPaths.authDir,
+      usersFile: flmuxPaths.usersFile,
+      tokensFile: flmuxPaths.tokensFile
+    }
+  : null;
 const webModeAuthorizer = webModeAuthPaths
   ? createFlmuxWebModeAuthorizer(webModeAuthPaths, { devAuthAs })
   : null;
@@ -137,8 +153,7 @@ const userAuthorityRegistry: WebModeUserAuthorityRegistry | null = runtimeMode =
       },
       // Per-user session persistence under the auth dir — each
       // authenticated user gets `<authDir>/sessions/<userId>/session.json`.
-      // `webModeAuthPaths` is always set when runtimeMode is "web".
-      sessionsDir: webModeAuthPaths ? join(webModeAuthPaths.authDir, "sessions") : undefined
+      sessionsDir: runtimeMode === "web" ? flmuxPaths.webSessionsDir : undefined
     })
   : null;
 
@@ -529,7 +544,7 @@ rendererRpc.webHandler.onWebClientDisconnected = (client) => {
 };
 
 const portResolution = resolveFlmuxServerPort({
-  authDir: webModeAuthPaths?.authDir ?? null
+  configFile: flmuxPaths.serverConfigFile
 });
 
 const server = startFlmuxServer({

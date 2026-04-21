@@ -1,18 +1,17 @@
 import { expect } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { rm } from "node:fs/promises";
 import { PtydClient } from "../../src/main/ptyd/client";
 import { PtydLockFile } from "../../src/main/ptyd/lockFile";
 import type { AppProcessHandle } from "../support/realAppSmokeSupport";
 import {
+  allocateFlmuxRootDir,
   connectCdp,
   fetchJson,
   fetchTargets,
   killMainProcessOnly,
   launchFlmuxApp,
   postJson,
-  resolveAppInstallRoot,
+  resolveLaunchSessionFile,
   stopAppWorkspaceDaemons,
   waitFor,
   waitForMainTarget,
@@ -23,9 +22,9 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
   await stopAppWorkspaceDaemons();
   const port = 9500 + Math.floor(Math.random() * 200);
   const secondPort = port + 300;
-  const sessionDir = await mkdtemp(resolve(tmpdir(), "flmux-session-"));
-  const sessionFile = resolve(sessionDir, "session.json");
-  const firstApp = launchFlmuxApp(port, sessionFile);
+  const rootDir = allocateFlmuxRootDir("session");
+  const sessionFile = resolveLaunchSessionFile(rootDir);
+  const firstApp = launchFlmuxApp(port, rootDir);
   appHandles.push(firstApp);
   let secondSession: Awaited<ReturnType<typeof connectCdp>> | null = null;
 
@@ -75,7 +74,6 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
     }, { timeoutMs: 20_000, intervalMs: 250, label: "initial terminal auto-attach" });
     const rootKey = attached.rootKey;
     const runtimeId = attached.runtimeId;
-    const rootDir = resolveAppInstallRoot();
 
     const marker = `flmux-restart-${crypto.randomUUID()}`;
     await postJson<{
@@ -303,7 +301,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
     const lock = await new PtydLockFile(rootDir).load();
     expect(lock?.rootKey).toBe(rootKey);
 
-    const secondApp = launchFlmuxApp(secondPort, sessionFile);
+    const secondApp = launchFlmuxApp(secondPort, rootDir);
     appHandles.push(secondApp);
 
     const secondMainTarget = await waitForMainTarget(secondPort, "second main flmux target");
@@ -525,6 +523,6 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
     if (secondSession) {
       await secondSession.close();
     }
-    await rm(sessionDir, { recursive: true, force: true });
+    await rm(rootDir, { recursive: true, force: true });
   }
 }

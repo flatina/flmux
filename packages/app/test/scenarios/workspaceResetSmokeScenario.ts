@@ -1,16 +1,14 @@
 import { expect } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { rm } from "node:fs/promises";
 import { callJsonRpcIpc } from "../../src/main/ptyd/jsonRpcIpc";
 import type { AppProcessHandle } from "../support/realAppSmokeSupport";
 import { loadPtydLockForRootDir } from "../support/ptydCleanup";
 import {
+  allocateFlmuxRootDir,
   connectCdp,
   fetchTargets,
   launchFlmuxApp,
   postJson,
-  resolveAppInstallRoot,
   stopAppWorkspaceDaemons,
   waitFor,
   waitForMainTarget,
@@ -20,9 +18,8 @@ import {
 export async function runWorkspaceResetSmokeScenario(appHandles: AppProcessHandle[]) {
   await stopAppWorkspaceDaemons();
   const port = 9700 + Math.floor(Math.random() * 200);
-  const sessionDir = await mkdtemp(resolve(tmpdir(), "flmux-session-"));
-  const sessionFile = resolve(sessionDir, "session.json");
-  const app = launchFlmuxApp(port, sessionFile);
+  const rootDir = allocateFlmuxRootDir("session");
+  const app = launchFlmuxApp(port, rootDir);
   appHandles.push(app);
 
   try {
@@ -30,7 +27,6 @@ export async function runWorkspaceResetSmokeScenario(appHandles: AppProcessHandl
     const appOrigin = new URL(mainTarget.url).origin;
     const secondWorkspaceId = "workspace.2";
     const secondWorkspaceStartUrl = `${appOrigin}/__flmux/internal/start?workspace=${secondWorkspaceId}`;
-    const installRoot = resolveAppInstallRoot();
 
     const session = await connectCdp(mainTarget.webSocketDebuggerUrl!);
     await session.send("Runtime.enable");
@@ -151,7 +147,7 @@ export async function runWorkspaceResetSmokeScenario(appHandles: AppProcessHandl
     // just killed. Filter by ownerPaneId rather than checking total runtime
     // count so sibling workspace terminals (if any) don't mask a leak.
     await waitFor(async () => {
-      const lock = await loadPtydLockForRootDir(installRoot);
+      const lock = await loadPtydLockForRootDir(rootDir);
       if (!lock) {
         return true;
       }
@@ -176,6 +172,6 @@ export async function runWorkspaceResetSmokeScenario(appHandles: AppProcessHandl
 
     await session.close();
   } finally {
-    await rm(sessionDir, { recursive: true, force: true });
+    await rm(rootDir, { recursive: true, force: true });
   }
 }

@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -10,6 +10,7 @@ const APP_DIR = resolve(HERE, "..", "..");
 
 interface WebAppHandle {
   process: ChildProcess;
+  rootDir: string;
   authDir: string;
   origin: string;
   token: string;
@@ -18,7 +19,8 @@ interface WebAppHandle {
 let handle: WebAppHandle | null = null;
 
 test.beforeAll(async () => {
-  const authDir = mkdtempSync(resolve(tmpdir(), "flmux-browser-smoke-auth-"));
+  const rootDir = mkdtempSync(resolve(tmpdir(), "flmux-browser-smoke-"));
+  const authDir = join(rootDir, ".flmux", "auth");
   const tokenProcess = spawn(
     "bun",
     ["src/cli.ts", "tokens", "bootstrap", "--auth-dir", authDir],
@@ -32,12 +34,12 @@ test.beforeAll(async () => {
     ["run", "dev", "--", "--web"],
     {
       cwd: APP_DIR,
-      env: { ...process.env, FLMUX_AUTH_DIR: authDir, FLMUX_DEV_MODE: "1" },
+      env: { ...process.env, FLMUX_ROOT_DIR: rootDir, FLMUX_DEV_MODE: "1" },
     }
   );
 
   const origin = await waitForOrigin(appProcess);
-  handle = { process: appProcess, authDir, origin, token: bootstrap.token };
+  handle = { process: appProcess, rootDir, authDir, origin, token: bootstrap.token };
 });
 
 test.afterAll(async () => {
@@ -46,7 +48,7 @@ test.afterAll(async () => {
   await new Promise((r) => setTimeout(r, 500));
   if (!handle.process.killed) handle.process.kill("SIGKILL");
   try {
-    rmSync(handle.authDir, { recursive: true, force: true });
+    rmSync(handle.rootDir, { recursive: true, force: true });
   } catch {
     // best-effort
   }
@@ -379,7 +381,8 @@ test("C6 allow_paths.read gates broadcast forwarder (B3)", async ({ browser }) =
 // (ShellCore GC, ptyd lifecycle) is out of scope here and covered by
 // the `onAuthorityEvicted` side-effect wiring in `main.ts`.
 test("C5 authority evicts after attachment+authority grace", async ({ browser }) => {
-  const authDir = mkdtempSync(resolve(tmpdir(), "flmux-c5-auth-"));
+  const rootDir = mkdtempSync(resolve(tmpdir(), "flmux-c5-"));
+  const authDir = join(rootDir, ".flmux", "auth");
   let appProc: ChildProcess | null = null;
 
   try {
@@ -395,7 +398,7 @@ test("C5 authority evicts after attachment+authority grace", async ({ browser })
         cwd: APP_DIR,
         env: {
           ...process.env,
-          FLMUX_AUTH_DIR: authDir,
+          FLMUX_ROOT_DIR: rootDir,
           FLMUX_DEV_MODE: "1",
           FLMUX_ATTACHMENT_GRACE_MS: "300",
           FLMUX_AUTHORITY_EVICTION_GRACE_MS: "300"
@@ -444,7 +447,7 @@ test("C5 authority evicts after attachment+authority grace", async ({ browser })
       await new Promise((r) => setTimeout(r, 300));
       if (!appProc.killed) appProc.kill("SIGKILL");
     }
-    try { rmSync(authDir, { recursive: true, force: true }); } catch { /* best-effort */ }
+    try { rmSync(rootDir, { recursive: true, force: true }); } catch { /* best-effort */ }
   }
 });
 

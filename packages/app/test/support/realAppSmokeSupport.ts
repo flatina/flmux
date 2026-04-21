@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { resolveFlmuxPaths } from "../../src/main/flmuxPaths";
 import { stopOwnedPtydDaemonsForRootDir } from "./ptydCleanup";
 import { waitFor } from "./waitFor";
 
@@ -16,7 +17,10 @@ export interface AppProcessHandle {
   process: Bun.Subprocess<"ignore", "pipe", "pipe">;
   stdout: string;
   stderr: string;
-  userDataDir: string;
+  /** Per-launch install root (mkdtemp). Everything flmux writes lives under
+   * `<rootDir>/.flmux/` — CEF user data, session snapshot, auth store,
+   * ptyd lock. Deleted recursively at cleanup. */
+  rootDir: string;
 }
 
 export async function cleanupAppHandles(appHandles: AppProcessHandle[]) {
@@ -27,54 +31,67 @@ export async function cleanupAppHandles(appHandles: AppProcessHandle[]) {
     }
 
     await killProcessTree(handle.process);
+    // Stop the ptyd daemon spawned for this rootDir before wiping the
+    // tree — killProcessTree only covers the app's child tree, and ptyd
+    // is spawned detached so it'd survive otherwise.
     try {
-      rmSync(handle.userDataDir, { recursive: true, force: true });
+      await stopOwnedPtydDaemonsForRootDir(handle.rootDir);
+    } catch { /* best-effort */ }
+    try {
+      rmSync(handle.rootDir, { recursive: true, force: true });
     } catch {
       // CEF may still be releasing handles at kill; best-effort cleanup.
     }
   }
 }
 
-function allocateUserDataDir(label: string): string {
+export function allocateFlmuxRootDir(label: string): string {
   return mkdtempSync(resolve(tmpdir(), `flmux-${label}-`));
 }
 
-export function launchFlmuxApp(remoteDebuggingPort: number, sessionFile?: string): AppProcessHandle {
-  const userDataDir = allocateUserDataDir("cef");
+export function launchFlmuxApp(remoteDebuggingPort: number, rootDir?: string): AppProcessHandle {
+  const resolvedRootDir = rootDir ?? allocateFlmuxRootDir("root");
   const appProcess = Bun.spawn({
     cmd: [resolveBunCommand(), "run", "dev"],
     cwd: resolve(import.meta.dir, "..", ".."),
     env: {
       ...process.env,
       BUNITE_REMOTE_DEBUGGING_PORT: String(remoteDebuggingPort),
-      BUNITE_USER_DATA_DIR: userDataDir,
       FLMUX_DEV_MODE: "1",
       FLMUX_HIDDEN_WINDOW: "1",
-      ...(sessionFile ? { FLMUX_SESSION_FILE: sessionFile } : {})
+      FLMUX_ROOT_DIR: resolvedRootDir
     },
     stdout: "pipe",
     stderr: "pipe"
   });
 
-  return createAppProcessHandle(appProcess, userDataDir);
+  return createAppProcessHandle(appProcess, resolvedRootDir);
 }
 
-export function launchFlmuxWebApp(options: { authDir: string }): AppProcessHandle {
-  const userDataDir = allocateUserDataDir("cef-web");
+export function launchFlmuxWebApp(options: { rootDir: string }): AppProcessHandle {
   const appProcess = Bun.spawn({
     cmd: [resolveBunCommand(), "run", "dev", "--", "--web"],
     cwd: resolve(import.meta.dir, "..", ".."),
     env: {
       ...process.env,
-      BUNITE_USER_DATA_DIR: userDataDir,
       FLMUX_DEV_MODE: "1",
-      FLMUX_AUTH_DIR: options.authDir
+      FLMUX_ROOT_DIR: options.rootDir
     },
     stdout: "pipe",
     stderr: "pipe"
   });
 
-  return createAppProcessHandle(appProcess, userDataDir);
+  return createAppProcessHandle(appProcess, options.rootDir);
+}
+
+/** Resolve the session snapshot file a launched app will read/write. */
+export function resolveLaunchSessionFile(rootDir: string): string {
+  return resolveFlmuxPaths(rootDir).desktopSessionFile;
+}
+
+/** Resolve the auth dir a launched web app will read/write. */
+export function resolveLaunchAuthDir(rootDir: string): string {
+  return resolveFlmuxPaths(rootDir).authDir;
 }
 
 export async function waitForMainTarget(port: number, label: string) {
@@ -285,13 +302,13 @@ export { waitFor };
 
 function createAppProcessHandle(
   process: Bun.Subprocess<"ignore", "pipe", "pipe">,
-  userDataDir: string
+  rootDir: string
 ): AppProcessHandle {
   const handle: AppProcessHandle = {
     process,
     stdout: "",
     stderr: "",
-    userDataDir
+    rootDir
   };
 
   void pumpStream(process.stdout, (chunk) => {

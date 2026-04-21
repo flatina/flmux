@@ -75,7 +75,6 @@ export class FlmuxWorkbench {
   private bootstrapped = false;
   private lastAppliedSeq = 0;
   private eventBuffer: SequencedShellCoreEvent[] = [];
-  private unsubscribeCoreEvents: (() => void) | null = null;
 
   // Mirrored app-level state (needed to render document title; core is authoritative)
   private appTitle = "flmux";
@@ -102,7 +101,7 @@ export class FlmuxWorkbench {
       resolveTerminalCwd: resolveTerminalCwdFromRoot
     });
     this.shellModel = createShellModelClientOverPreload(hostProxy);
-    this.unsubscribeCoreEvents = subscribeShellCoreEvents((event) => this.handleCoreEvent(event));
+    subscribeShellCoreEvents((event) => this.handleCoreEvent(event));
   }
 
   registerExternalPane(descriptor: PaneDescriptor) {

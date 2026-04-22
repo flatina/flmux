@@ -70,6 +70,12 @@
     "packages/extension-devkit": {
       "name": "@flmux/extension-devkit",
       "version": "0.0.0",
+      "bin": {
+        "flmux-ext": "./src/cli.ts",
+      },
+      "peerDependencies": {
+        "@flmux/extension-api": "*",
+      },
     },
   },
   "packages": {

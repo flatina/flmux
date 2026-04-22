@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
-import { validateExtensionManifest, type ExtensionManifest } from "../../extension-api/src/manifest";
+import { validateExtensionManifest, type ExtensionManifest } from "@flmux/extension-api";
 
 export interface ExtensionPackResult {
   ok: boolean;

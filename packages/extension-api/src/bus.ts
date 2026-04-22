@@ -1,17 +1,24 @@
-import type { WorkspaceBusEvent as CoreWorkspaceBusEvent } from "@flmux/core/shell";
-
-export type WorkspaceBusEvent<T = unknown> = CoreWorkspaceBusEvent<T>;
-
 /**
  * Transient in-workspace pub/sub for extension panes.
  *
- * A3b scope: bus instances are **workspace-local within the current client**.
- * A publish from one pane reaches every subscriber attached to the same
- * workspace on the same client (desktop renderer, or a single browser attach).
- * Cross-client broadcast — a CLI/HTTP publisher reaching a renderer
- * subscriber, or one browser publish reaching another browser — is not wired
- * in A3b and arrives in Phase B via the server broadcast channel.
+ * Bus instances are **workspace-local within the current client**. A publish
+ * from one pane reaches every subscriber attached to the same workspace on the
+ * same client (desktop renderer, or a single browser attach). Cross-client
+ * broadcast — a CLI/HTTP publisher reaching a renderer subscriber, or one
+ * browser publish reaching another browser — is not wired yet.
+ *
+ * Shape must stay structurally compatible with `WorkspaceBusEvent` /
+ * `WorkspaceBus` in `@flmux/core/shell/types` (the host-side implementation).
  */
+
+export interface WorkspaceBusEvent<T = unknown> {
+  topic: string;
+  workspaceId: string;
+  sourcePaneId: string;
+  payload: T;
+  timestamp: number;
+}
+
 export interface WorkspaceBusClient {
   publish(
     topic: string,

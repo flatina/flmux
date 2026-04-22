@@ -66,9 +66,6 @@
     "packages/extension-api": {
       "name": "@flmux/extension-api",
       "version": "0.0.0",
-      "dependencies": {
-        "@flmux/core": "workspace:*",
-      },
     },
     "packages/extension-devkit": {
       "name": "@flmux/extension-devkit",

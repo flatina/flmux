@@ -1,15 +1,21 @@
-import type {
-  NewPaneInput as CoreNewPaneInput,
-  PaneKind as CorePaneKind,
-  PanePlacement as CorePanePlacement
-} from "@flmux/core/shell";
 import type { WorkspaceBusClient } from "./bus";
 import type { ShellClient } from "./shell";
 import type { PaneStateStore } from "./state";
 
-export type PanePlacement = CorePanePlacement;
-export type PaneKind = CorePaneKind;
-export type NewPaneInput = CoreNewPaneInput;
+// Structurally compatible with `@flmux/core/shell/types` — the host creates
+// panes with exactly these shapes.
+export type PanePlacement = "within" | "left" | "right" | "above" | "below";
+export type PaneKind = "browser" | "terminal" | (string & {});
+
+export interface NewPaneInput {
+  kind: PaneKind;
+  title?: string;
+  url?: string;
+  cwd?: string;
+  params?: Record<string, unknown>;
+  place?: PanePlacement;
+  referencePaneId?: string;
+}
 
 export interface ExtensionPaneContext {
   paneId: string;

@@ -1,20 +1,39 @@
-import type {
-  PathCallResult as CoreShellPathCallResult,
-  PathErrorCode as CorePathErrorCode,
-  PathGetResult as CoreShellPathGetResult,
-  PathListResult as CoreShellPathListResult,
-  PathSetResult as CoreShellPathSetResult,
-  ShellPathEntry as CoreShellPathEntry,
-  ShellPathNodeKind as CoreShellPathNodeKind
-} from "@flmux/core/shell";
+/**
+ * Types mirror `@flmux/core/shell/types` for structural compatibility — the
+ * host speaks the same shapes at runtime. Keep this file pure types; no
+ * runtime imports from core, so extensions don't need `@flmux/core` in their
+ * dependency graph.
+ */
 
-export type ShellPathNodeKind = CoreShellPathNodeKind;
-export type PathErrorCode = CorePathErrorCode;
-export type ShellPathEntry = CoreShellPathEntry;
-export type ShellPathGetResult = CoreShellPathGetResult;
-export type ShellPathListResult = CoreShellPathListResult;
-export type ShellPathSetResult = CoreShellPathSetResult;
-export type ShellPathCallResult = CoreShellPathCallResult;
+export type ShellPathNodeKind = "leaf" | "object" | "collection" | "action";
+
+export type PathErrorCode =
+  | "NOT_FOUND"
+  | "NOT_WRITABLE"
+  | "NOT_CALLABLE"
+  | "INVALID_VALUE"
+  | "INVALID_PATH"
+  | "NO_CURRENT_PANE"
+  | "INTERNAL_ERROR";
+
+export interface ShellPathEntry {
+  name: string;
+  path: string;
+  kind: ShellPathNodeKind;
+  writable: boolean;
+}
+
+export type ShellPathGetResult =
+  | { ok: true; found: boolean; value: unknown }
+  | { ok: false; code: PathErrorCode; error: string };
+
+export type ShellPathListResult =
+  | { ok: true; found: boolean; entries: ShellPathEntry[] }
+  | { ok: false; code: PathErrorCode; error: string };
+
+export type ShellPathSetResult = { ok: true; value: unknown } | { ok: false; code: PathErrorCode; error: string };
+
+export type ShellPathCallResult = { ok: true; value: unknown } | { ok: false; code: PathErrorCode; error: string };
 
 export interface ShellClient {
   get(path: string): Promise<ShellPathGetResult>;

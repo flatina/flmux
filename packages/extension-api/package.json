@@ -6,9 +6,6 @@
   "scripts": {
     "test": "bun test"
   },
-  "dependencies": {
-    "@flmux/core": "workspace:*"
-  },
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",

@@ -73,9 +73,6 @@
       "bin": {
         "flmux-ext": "./src/cli.ts",
       },
-      "dependencies": {
-        "@flmux/extension-api": "workspace:*",
-      },
     },
   },
   "packages": {

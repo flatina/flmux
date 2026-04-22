@@ -11,8 +11,5 @@
     "build": "bun src/cli.ts build",
     "validate": "bun src/cli.ts validate",
     "test": "bun test"
-  },
-  "dependencies": {
-    "@flmux/extension-api": "workspace:*"
   }
 }

@@ -1,6 +1,6 @@
 import { mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
-import type { ExtensionManifest } from "@flmux/extension-api";
+import type { ExtensionManifest } from "./manifest";
 import { validateExtensionDirectory } from "./validate";
 
 export interface ExtensionBuildResult {

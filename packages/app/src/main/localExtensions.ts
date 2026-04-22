@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { isAbsolute, join, normalize, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { validateExtensionManifest, type ExtensionManifest } from "@flmux/extension-api";
@@ -57,7 +57,7 @@ export async function discoverLocalExtensions(rootDir: string): Promise<Discover
   let entries: Array<{ name: string; isDirectory(): boolean }>;
 
   try {
-    entries = await readdir(rootDir);
+    entries = await readdir(rootDir, { withFileTypes: true, encoding: "utf8" });
   } catch {
     return [];
   }
@@ -68,7 +68,10 @@ export async function discoverLocalExtensions(rootDir: string): Promise<Discover
       .map(async (entry) => discoverSourceExtension(join(rootDir, entry.name)))
   );
 
-  return dedupeById(manifests.filter((m): m is DiscoveredLocalExtension => m !== null));
+  // Collapse same-id siblings within a single root (e.g., two folders
+  // declaring the same extension id at different versions). Uses the same
+  // highest-version rule as cross-backend collapsing so the two paths agree.
+  return collapseById(manifests.filter((m): m is DiscoveredLocalExtension => m !== null));
 }
 
 export async function discoverConfiguredLocalExtensions(rootDir: string): Promise<DiscoveredLocalExtension[]> {
@@ -478,18 +481,6 @@ function collapseById(entries: DiscoveredLocalExtension[]): DiscoveredLocalExten
   return [...byId.values()];
 }
 
-function dedupeById(entries: DiscoveredLocalExtension[]): DiscoveredLocalExtension[] {
-  const byId = new Map<string, DiscoveredLocalExtension>();
-  for (const entry of entries) {
-    if (byId.has(entry.id)) {
-      console.warn(`[flmux] duplicate local extension id ignored: ${entry.id}`);
-      continue;
-    }
-    byId.set(entry.id, entry);
-  }
-  return [...byId.values()];
-}
-
 function compareSemverLike(a: string, b: string): number {
   const parse = (v: string) => v.split(".").map((s) => Number.parseInt(s, 10) || 0);
   const pa = parse(a);
@@ -516,9 +507,4 @@ function dedupePreservingOrder(values: string[]) {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-async function readdir(dir: string): Promise<Array<{ name: string; isDirectory(): boolean }>> {
-  const { readdir: fsReaddir } = await import("node:fs/promises");
-  return fsReaddir(dir, { withFileTypes: true, encoding: "utf8" });
 }

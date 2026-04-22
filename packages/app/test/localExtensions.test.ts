@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtemp, mkdir, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { FLMUX_EXTENSION_API_VERSION } from "@flmux/extension-api";
 import type { FlmuxLocalExtensionLoadEntry } from "../src/shared/rendererBridge";
 import {
@@ -11,6 +11,7 @@ import {
   type LocalExtensionCatalogConfig,
   type DiscoveredLocalExtension
 } from "../src/main/localExtensions";
+import { createExtensionPaneSpecs } from "../src/main/paneSpecs";
 import { startFlmuxServer } from "../src/main/server";
 import {
   loadLocalExtensionDefinitions,
@@ -193,6 +194,40 @@ describe("local extension loading", () => {
     });
 
     expect(await discoverConfiguredLocalExtensions(extensionsRootDir)).toEqual([]);
+  });
+
+  it("preserves pathMount hooks when loading a packed archive-backed extension", async () => {
+    // Reproduces the main-side import regression: after packing an extension
+    // into a .tar.gz and loading it through the archive backend, the
+    // pathMount / lifecycle hooks on renderer-exported panes must still be
+    // available. This exercises `createExtensionPaneSpecs`, which `import()`s
+    // the renderer bundle from main to extract those hooks.
+    const counterDistDir = resolve(__dirname, "../../../extensions/counter/dist");
+    const manifest = await readFile(join(counterDistDir, "manifest.json"), "utf8");
+    expect(JSON.parse(manifest).id).toBe("sample.counter");
+
+    const catalogRootDir = await createTempExtensionRoot("archive-pathmount");
+    const tarballPath = join(catalogRootDir, "counter.tar.gz");
+
+    // Build the archive entries directly from the already-built counter dist/ —
+    // mirrors what `flmux-ext pack` produces (flat paths rooted at dist/).
+    const entries: Record<string, Uint8Array> = {};
+    await collectFiles(counterDistDir, counterDistDir, entries);
+    await Bun.Archive.write(tarballPath, entries, { compress: "gzip" });
+
+    await writeFile(join(catalogRootDir, "catalog.json"), JSON.stringify({ tarballs: [tarballPath] }, null, 2), "utf8");
+
+    const discovered = await discoverConfiguredLocalExtensions(catalogRootDir);
+    expect(discovered).toHaveLength(1);
+    expect(discovered[0]?.origin).toBe("archive");
+    expect(discovered[0]?.id).toBe("sample.counter");
+
+    const specs = await createExtensionPaneSpecs(discovered);
+    const counterSpec = specs.find((spec) => spec.kind === "counter");
+    expect(counterSpec).toBeDefined();
+    // Before the fix: data-URL `import()` can't resolve `@flmux/extension-api`
+    // bare specifier, hooks fall back to manifest-only, pathMount === undefined.
+    expect(counterSpec?.pathMount?.mountKey).toBe("counter");
   });
 
   it("serves built local extension manifest and runtime file tree from same-origin routes", async () => {
@@ -396,6 +431,19 @@ describe("local extension loading", () => {
     expect(host.descriptors.map((descriptor) => descriptor.kind)).toEqual(["cowsay", "inspector"]);
   });
 });
+
+async function collectFiles(dir: string, rootDir: string, entries: Record<string, Uint8Array>) {
+  const dirEntries = await readdir(dir, { withFileTypes: true, encoding: "utf8" });
+  for (const entry of dirEntries) {
+    const entryPath = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      await collectFiles(entryPath, rootDir, entries);
+      continue;
+    }
+    const key = relative(rootDir, entryPath).replace(/\\/g, "/");
+    entries[key] = new Uint8Array(await Bun.file(entryPath).arrayBuffer());
+  }
+}
 
 async function createTempExtensionRoot(prefix: string) {
   const dir = await mkdtemp(join(tmpdir(), `flmux-ext-${prefix}-`));

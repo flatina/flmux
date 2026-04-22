@@ -122,8 +122,9 @@ export async function buildExtensionDirectory(extensionDir: string): Promise<Ext
   await rm(outDir, { recursive: true, force: true });
   await rename(tmpDir, outDir);
 
-  // Re-map built file paths from tmp → final.
-  const finalBuiltFiles = builtFiles.map((p) => p.replace(tmpDir, outDir));
+  // Re-map built file paths from tmp → final. Use slice instead of replace so
+  // a `$&`/`$1` sequence in a user path would never be interpreted.
+  const finalBuiltFiles = builtFiles.map((p) => (p.startsWith(tmpDir) ? outDir + p.slice(tmpDir.length) : p));
 
   return {
     ok: true,
@@ -155,20 +156,20 @@ async function bundleEntrypoint(
   const outPath = join(tmpDir, replaceTsExtension(stripRelativePrefix(entry.sourceRelative)));
   await mkdir(dirname(outPath), { recursive: true });
 
-  // Renderer runs in the browser; CEF preload's importmap resolves
-  // `@flmux/extension-api` and its subpaths to `/__flmux/runtime/extension-api*.js`,
-  // so they stay external. CLI/server run in Bun; they import only types
-  // from `@flmux/extension-api` (zero runtime deps by contract), so keeping
-  // the same external list is safe and keeps bundle output identical across
-  // entrypoint kinds.
-  const external = ["@flmux/extension-api", "@flmux/extension-api/*"];
+  // All entries are self-contained — `@flmux/extension-api` (types + tiny
+  // identity helpers like defineExtension/definePane) is inlined rather than
+  // left bare. Reason: main-side `import()` of archive-backed renderer
+  // bundles runs from a `data:` URL, which has no resolution base for bare
+  // specifiers. Inlining makes every entry loadable in every context (CEF
+  // via HTTP, main via data URL, cli/server by contract). The runtime
+  // importmap at `/__flmux/runtime/extension-api*` becomes vestigial for
+  // extension-produced bundles — harmless, still available.
   const target = entry.kind === "renderer" ? "browser" : "bun";
 
   const result = await Bun.build({
     entrypoints: [entry.sourcePath],
     target,
     format: "esm",
-    external,
     // Keep outputs readable for dev; pack/size pressure doesn't apply here.
     minify: false,
     sourcemap: "none"
@@ -181,13 +182,22 @@ async function bundleEntrypoint(
     };
   }
 
-  const output = result.outputs[0];
-  if (!output) {
+  if (result.outputs.length === 0) {
     return { ok: false, errors: [`[${entry.kind}] bundler produced no output for ${entry.sourceRelative}`] };
   }
 
-  await writeFile(outPath, await output.text(), "utf8");
-  return { ok: true, builtFiles: [outPath] };
+  // The primary entry is outputs[0]; sidecars (CSS, worker chunks, etc.) land
+  // in subsequent outputs with their own paths rooted at the bundler's outdir.
+  // Persist every output so bundled assets reach dist/ and the tarball.
+  const built: string[] = [];
+  const outDir = dirname(outPath);
+  for (const [index, artifact] of result.outputs.entries()) {
+    const artifactPath = index === 0 ? outPath : join(outDir, artifact.path.replace(/^\.\//, ""));
+    await mkdir(dirname(artifactPath), { recursive: true });
+    await writeFile(artifactPath, new Uint8Array(await artifact.arrayBuffer()));
+    built.push(artifactPath);
+  }
+  return { ok: true, builtFiles: built };
 }
 
 async function copyStaticAssets(sourceDir: string, tmpDir: string, builtFiles: string[]): Promise<void> {

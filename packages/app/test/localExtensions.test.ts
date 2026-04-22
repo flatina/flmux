@@ -276,7 +276,9 @@ describe("local extension loading", () => {
 
       expect(rendererResponse.status).toBe(200);
       const rendererModule = await rendererResponse.text();
-      expect(rendererModule).toContain('from "/__flmux/runtime/extension-api.js"');
+      // Fixture uses a bare specifier — real builds inline `@flmux/extension-api`,
+      // but the server just passes bytes through for the `.js` route.
+      expect(rendererModule).toContain('from "@flmux/extension-api"');
       expect(rendererModule).toContain('from "./lib/helper.js"');
 
       expect(helperResponse.status).toBe(200);
@@ -320,7 +322,7 @@ describe("local extension loading", () => {
       sourceRendererEntry: "./src/index.ts",
       runtimeRendererEntry: "src/index.js"
     });
-    const builtCode = 'export { defineExtension } from "/__flmux/runtime/extension-api.js";\n';
+    const builtCode = 'export { defineExtension } from "@flmux/extension-api";\n';
     await writeFile(join(fixture.extensionDir, "dist", "src", "index.js"), builtCode, "utf8");
 
     const rendererDir = await createTempRendererDir();
@@ -548,8 +550,7 @@ async function writeExtensionFixture(
     buildRendererEntrySource({
       id: manifest.id,
       helperModule: manifest.helperSourceModule,
-      assetPath: manifest.assetSourcePath,
-      runtimeImport: false
+      assetPath: manifest.assetSourcePath
     }),
     "utf8"
   );
@@ -558,8 +559,7 @@ async function writeExtensionFixture(
     buildRendererEntrySource({
       id: manifest.id,
       helperModule: manifest.helperRuntimeModule,
-      assetPath: manifest.assetRuntimePath,
-      runtimeImport: true
+      assetPath: manifest.assetRuntimePath
     }),
     "utf8"
   );
@@ -571,17 +571,8 @@ async function writeExtensionFixture(
   };
 }
 
-function buildRendererEntrySource(options: {
-  id: string;
-  helperModule?: string;
-  assetPath?: string;
-  runtimeImport: boolean;
-}) {
-  const lines = [
-    options.runtimeImport
-      ? 'import { defineExtension, definePane } from "/__flmux/runtime/extension-api.js";'
-      : 'import { defineExtension, definePane } from "@flmux/extension-api";'
-  ];
+function buildRendererEntrySource(options: { id: string; helperModule?: string; assetPath?: string }) {
+  const lines = ['import { defineExtension, definePane } from "@flmux/extension-api";'];
   if (options.helperModule) {
     lines.push(`import { paneKind } from ${JSON.stringify(options.helperModule)};`);
   }

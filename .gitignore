@@ -1,7 +1,6 @@
 .tmp/
 .flmux/
 dist/
-dist-runtime/
 node_modules/
 test-results/
 playwright-report/

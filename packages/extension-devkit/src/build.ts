@@ -161,9 +161,7 @@ async function bundleEntrypoint(
   // left bare. Reason: main-side `import()` of archive-backed renderer
   // bundles runs from a `data:` URL, which has no resolution base for bare
   // specifiers. Inlining makes every entry loadable in every context (CEF
-  // via HTTP, main via data URL, cli/server by contract). The runtime
-  // importmap at `/__flmux/runtime/extension-api*` becomes vestigial for
-  // extension-produced bundles — harmless, still available.
+  // via HTTP, main via data URL).
   const target = entry.kind === "renderer" ? "browser" : "bun";
 
   const result = await Bun.build({

@@ -9,7 +9,6 @@
     "includes": [
       "**",
       "!**/dist",
-      "!**/dist-runtime",
       "!**/node_modules",
       "!**/test-results",
       "!**/playwright-report",

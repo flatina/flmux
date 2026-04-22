@@ -7,7 +7,6 @@
     "extensions/*"
   ],
   "scripts": {
-    "build:extension-api-runtime": "bun run --filter @flmux/extension-api build:runtime",
     "build:extensions": "bun run --filter @flmux/extension-devkit build ../../extensions/cowsay ../../extensions/counter ../../extensions/inspector ../../extensions/scratchpad",
     "build": "bun run --filter @flmux/app build",
     "dev": "bun run --filter @flmux/app dev",

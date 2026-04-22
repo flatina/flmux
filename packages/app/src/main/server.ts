@@ -1,6 +1,5 @@
 import { existsSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
-import { fileURLToPath } from "node:url";
 import { Elysia } from "elysia";
 import type {
   ClientScopedPathCallInput,
@@ -29,8 +28,6 @@ interface FlmuxServerHandle {
   origin: string;
   stop(): void;
 }
-
-const EXTENSION_API_RUNTIME_DIST_DIR = fileURLToPath(new URL("../../../extension-api/dist-runtime/", import.meta.url));
 
 export function startFlmuxServer(options: {
   rendererDir: string;
@@ -80,22 +77,6 @@ export function startFlmuxServer(options: {
         ok: true,
         clients: await router.listClients()
       };
-    })
-    .get("/__flmux/runtime/extension-api.js", async ({ request, set }) => {
-      const auth = authorizeRequest(request, set, options.authorizer);
-      if (!auth.ok) {
-        return "Unauthorized";
-      }
-
-      return await handleExtensionApiRuntimeModuleRequest("index.js", set);
-    })
-    .get("/__flmux/runtime/extension-api/:module", async ({ request, params, set }) => {
-      const auth = authorizeRequest(request, set, options.authorizer);
-      if (!auth.ok) {
-        return "Unauthorized";
-      }
-
-      return await handleExtensionApiRuntimeModuleRequest(params.module, set);
     })
     .get("/__flmux/ext/:extensionId/:version/manifest.json", ({ request, params, set }) => {
       const auth = authorizeRequest(request, set, options.authorizer);
@@ -495,40 +476,6 @@ function handleLocalExtensionRuntimeRequest(
   return new Response(blob, {
     headers: { "content-type": contentType }
   });
-}
-
-async function handleExtensionApiRuntimeModuleRequest(moduleName: string, set: { status?: number | string }) {
-  const builtPath = resolveExtensionApiRuntimeBuiltPath(moduleName);
-  if (builtPath) {
-    return new Response(Bun.file(builtPath), {
-      headers: { "content-type": "application/javascript; charset=utf-8" }
-    });
-  }
-
-  if (!/^[A-Za-z0-9_-]+\.js$/.test(moduleName)) {
-    set.status = 404;
-    return "Not Found";
-  }
-
-  if (!existsSync(EXTENSION_API_RUNTIME_DIST_DIR)) {
-    set.status = 500;
-    return "Missing built extension-api runtime. Run 'bun run build:extension-api-runtime'.";
-  }
-
-  set.status = 500;
-  return `Missing built extension-api runtime module '${moduleName}'. Run 'bun run build:extension-api-runtime'.`;
-}
-
-function resolveExtensionApiRuntimeBuiltPath(moduleName: string) {
-  if (!/^[A-Za-z0-9_-]+\.js$/.test(moduleName)) {
-    return null;
-  }
-
-  const builtPath =
-    moduleName === "index.js"
-      ? join(EXTENSION_API_RUNTIME_DIST_DIR, "index.js")
-      : join(EXTENSION_API_RUNTIME_DIST_DIR, moduleName);
-  return existsSync(builtPath) ? builtPath : null;
 }
 
 function handleInternalStartPageRequest(request: Request): Response {

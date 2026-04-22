@@ -1,0 +1,172 @@
+# @flmux/extension-api
+
+Types and small helpers for building flmux extensions. An extension ships a `manifest.json` plus one or both of a renderer entrypoint (a pane) and a CLI entrypoint (a command). Only types and helpers live here — the runtime is provided by flmux when the extension is loaded.
+
+## Minimal pane extension
+
+```
+extensions/myext/
+├── manifest.json
+├── index.ts
+└── package.json
+```
+
+**manifest.json**
+```json
+{
+  "id": "myext",
+  "name": "My Extension",
+  "version": "0.1.0",
+  "apiVersion": 2,
+  "entrypoints": { "renderer": "dist/index.js" },
+  "panes": [{ "kind": "myext", "defaultTitle": "My Pane" }]
+}
+```
+
+**index.ts**
+```ts
+import { defineExtension, definePane, type ExtensionPaneContext, type ExtensionPaneInstance } from "@flmux/extension-api";
+
+const myPane = definePane({
+  kind: "myext",
+  mount: (host, ctx) => new MyPaneRenderer(host, ctx),
+  createParams: ({ input }) => ({ note: (input.params as { note?: string } | undefined)?.note ?? "" }),
+  getTitle: ({ input }) => input.title?.trim() || "My Pane",
+  // Optional: expose pane state under /panes/{id}/myext/...
+  pathMount: {
+    mountKey: "myext",
+    getStateSnapshot: ({ currentParams }) => ({ note: String(currentParams?.note ?? "") }),
+    canSetStatePath: ({ relativePath }) => relativePath.length === 1 && relativePath[0] === "note",
+    setState: async ({ relativePath, value, setParams, currentParams }) => {
+      if (relativePath[0] !== "note") throw new Error(`unsupported path ${relativePath.join("/")}`);
+      const note = String(value);
+      await setParams({ ...currentParams, note });
+      return { value: note };
+    }
+  }
+});
+
+class MyPaneRenderer implements ExtensionPaneInstance {
+  constructor(host: HTMLElement, ctx: ExtensionPaneContext) {
+    host.textContent = `pane ${ctx.paneId} in workspace ${ctx.workspaceId}`;
+  }
+  update(params?: Record<string, unknown>) { /* re-render on external state change */ }
+  dispose() { /* cleanup subscriptions */ }
+}
+
+export default defineExtension({ panes: [myPane] });
+```
+
+## Pane context — the three axes
+
+Every pane receives `ExtensionPaneContext` on mount:
+
+- **`shell: ShellClient`** — `get/list/set/call` against flmux's path surface. Lets the pane read app state (`/status/app/origin`), create other panes (`call /panes/new`), write to another pane's subtree, etc.
+- **`bus: WorkspaceBusClient`** — transient pub/sub scoped to the current workspace + current renderer client. `publish(topic, payload?)` stamps the pane's id as `sourcePaneId`; `subscribe(topic, handler)` receives events. Topic patterns: `*`, `prefix.*`, exact match. **Subscribers see their own events** — filter with `event.sourcePaneId !== myPaneId` if that matters. Cross-renderer forwarding is a deferred feature; publishes from CLI/HTTP do not reach renderer subscribers today.
+- **`state: PaneStateStore`** — `getParams/setParams/patchParams/getTitle/setTitle`. Per-pane, persisted as part of the workspace layout. External writes through `pathMount.setState` go here.
+
+## pathMount — exposing pane internals on the path surface
+
+A `pathMount` lets external callers (CLI, another pane, an AI agent) reach a specific pane's internals via `/panes/{paneId}/<mountKey>/…`. Two scopes:
+
+- **state** (`getStateSnapshot` / `canSetStatePath` / `setState`) — persisted values. Path `/panes/{id}/<mountKey>/…`. Writes go through `setState(ctx, relativePath, value)`. The extension decides which subpaths are writable by returning `true`/`false` from `canSetStatePath`.
+- **status** (`getStatusSnapshot`) — runtime-derived, read-only. Path `/status/panes/{id}/<mountKey>/…`.
+
+A CLI command driving this pane from the terminal:
+
+```bash
+flmux set /panes/pane.abc/myext/note "hello"
+flmux get /panes/pane.abc/myext/note
+flmux get /status/panes/pane.abc/myext
+```
+
+## CLI extension
+
+Add `entrypoints.cli` and a `commands` array to `manifest.json`:
+
+```json
+{
+  "entrypoints": { "renderer": "dist/index.js", "cli": "dist/cli.js" },
+  "commands": [{ "id": "myext", "description": "Open a myext pane" }]
+}
+```
+
+**cli.ts**
+```ts
+import type { FlmuxExtensionCliContext } from "@flmux/extension-api";
+
+export async function run(ctx: FlmuxExtensionCliContext) {
+  const client = await ctx.getClient();
+  const result = await client.call("/panes/new", { kind: "myext", place: "right" });
+  ctx.print(result);
+}
+```
+
+The user runs `flmux myext …`. `ctx.argv` holds positionals after the command (global `--origin/--client/--token` are consumed by flmux). `getClient()` returns a `ShellClient` hitting the flmux HTTP surface.
+
+## Testing without flmux — `@flmux/extension-api/testing`
+
+Separate subpath so nothing bundles into runtime.
+
+```ts
+import {
+  createTestBus,
+  createTestPaneStateStore,
+  createTestShellClient,
+  createTestPaneContext
+} from "@flmux/extension-api/testing";
+
+// Drive a pane through its own interface:
+const ctx = createTestPaneContext({
+  paneId: "pane.1",
+  workspaceId: "ws.1",
+  shell: createTestShellClient({
+    "get /status/app/origin": () => "http://127.0.0.1:4000"
+  }),
+  state: createTestPaneStateStore({ params: { note: "init" } })
+});
+const pane = myPane.mount(document.createElement("div"), ctx);
+
+// Two panes sharing a bus:
+const bus = createTestBus("ws.1");
+const a = createTestPaneContext({ paneId: "pane.a", workspaceId: "ws.1", bus });
+const b = createTestPaneContext({ paneId: "pane.b", workspaceId: "ws.1", bus });
+const received: string[] = [];
+b.bus.subscribe("signal", (event) => received.push(event.sourcePaneId));
+await a.bus.publish("signal", { n: 1 });
+// received === ["pane.a"]
+```
+
+`createTestBus` replicates flmux's real topic-matching and error-isolation semantics, so behavior verified against it stays true in production.
+
+## Recommended package layout
+
+If your pane builds on a flmux-agnostic library (your own primitives, domain models, query sources), split into two packages:
+
+- `packages/mylib` — flmux-free. Uses only structural types or `import type { … } from "@flmux/extension-api"` (type-only imports erase at compile time and don't add a runtime dep). Tested standalone with `@flmux/extension-api/testing` helpers.
+- `packages/mylib-flmux` — the thin extension. Depends on `@flmux/extension-api`, implements `defineExtension` + `definePane`, wraps `mylib` primitives with `ctx.bus` / `ctx.state` / `ctx.shell`.
+
+This keeps the core library reusable outside flmux (demos, other hosts) without duplicating extension-api's shapes.
+
+## Manifest reference
+
+| Field | Required | Notes |
+|---|---|---|
+| `id` | yes | Non-empty string, unique |
+| `name` | yes | Human-readable |
+| `version` | yes | SemVer recommended |
+| `apiVersion` | yes | Must equal `FLMUX_EXTENSION_API_VERSION` (currently `2`) |
+| `entrypoints.renderer` | either renderer or cli | Relative path, stays inside extension dir |
+| `entrypoints.cli` | either renderer or cli | Relative path |
+| `commands` | required if `cli` set | Array of `{ id, description? }`, unique ids |
+| `panes` | optional | Array of `{ kind, defaultTitle? }`, unique kinds |
+
+Validate programmatically with `validateExtensionManifest(json)`.
+
+## Where to look in flmux for reference behavior
+
+- `packages/core/src/shell/workspaceBus.ts` — real bus implementation `createTestBus` mirrors
+- `packages/core/src/shell/model.ts` — path surface (`/status/app`, `/panes`, `/status/panes/{id}`, etc.)
+- `extensions/counter/` — minimal pane with writable `pathMount`
+- `extensions/cowsay/` — pane + CLI command example
+- `extensions/scratchpad/` — pane with richer state

@@ -1,6 +1,5 @@
 import { createBrowserPaneSpec, isTerminalPaneStateRecord, type NewPaneInput, type PaneSpec } from "@flmux/core/shell";
 import type { ExtensionDefinition, ExtensionManifestPane, ExtensionPaneDefinition } from "@flmux/extension-api";
-import { pathToFileURL } from "node:url";
 import { resolveTerminalCwdFromRoot } from "@flmux/core/terminal/path";
 import {
   adaptExtensionLifecycle,
@@ -10,7 +9,7 @@ import {
 import type { DiscoveredLocalExtension } from "./localExtensions";
 
 type ExtensionModule = { default?: ExtensionDefinition };
-export type ExtensionModuleImporter = (entryPath: string) => Promise<ExtensionModule>;
+export type ExtensionModuleImporter = (entryUrl: string) => Promise<ExtensionModule>;
 
 export function createBuiltinPaneSpecs(projectDir: string): PaneSpec[] {
   return [
@@ -94,12 +93,19 @@ async function loadExtensionPaneDefinitions(
   importer: ExtensionModuleImporter
 ): Promise<Map<string, ExtensionPaneDefinition>> {
   const byKind = new Map<string, ExtensionPaneDefinition>();
-  const entryPath = extension.rendererEntryPath;
-  if (!entryPath) {
+  const rendererRel = extension.rendererEntryRelativePath;
+  if (!rendererRel) {
+    return byKind;
+  }
+  const entryUrl = await extension.resolveEntryImportUrl(rendererRel);
+  if (!entryUrl) {
+    console.warn(
+      `[flmux] could not resolve renderer entry URL for extension '${extension.id}' (${extension.originPath})`
+    );
     return byKind;
   }
   try {
-    const module = await importer(entryPath);
+    const module = await importer(entryUrl);
     for (const pane of module.default?.panes ?? []) {
       byKind.set(pane.kind, pane);
     }
@@ -148,9 +154,8 @@ function createExtensionPaneSpec(
   };
 }
 
-async function defaultImportExtensionModule(entryPath: string): Promise<ExtensionModule> {
-  const fileUrl = pathToFileURL(entryPath).href;
-  return await import(fileUrl);
+async function defaultImportExtensionModule(entryUrl: string): Promise<ExtensionModule> {
+  return await import(/* @vite-ignore */ entryUrl);
 }
 
 function optionalStringParam(value: unknown) {

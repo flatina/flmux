@@ -1,9 +1,7 @@
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import type { ExtensionManifest } from "../../extension-api/src/manifest";
 import { validateExtensionDirectory } from "./validate";
-
-const extensionBuildTranspiler = new Bun.Transpiler({ loader: "ts" });
 
 export interface ExtensionBuildResult {
   ok: boolean;
@@ -14,10 +12,30 @@ export interface ExtensionBuildResult {
   errors: string[];
 }
 
+interface EntrypointSpec {
+  kind: "renderer" | "cli" | "server";
+  sourcePath: string;
+  sourceRelative: string;
+}
+
+const SKIP_DIRS = new Set(["node_modules", "dist", "dist.tmp"]);
+const SKIP_ROOT_FILES = new Set(["manifest.json", "package.json", "tsconfig.json"]);
+
+/**
+ * Build an extension directory into `<extensionDir>/dist/`.
+ *
+ * Contract ({@link internal notes}):
+ * - Each entrypoint (renderer/cli/server) bundles to a single-file ESM.
+ * - `@flmux/extension-api` stays external (renderer importmap resolves it;
+ *   cli/server never import it at runtime — types only).
+ * - Writes to `dist.tmp/` then renames atomically so a failed rebuild leaves
+ *   the previous `dist/` intact.
+ */
 export async function buildExtensionDirectory(extensionDir: string): Promise<ExtensionBuildResult> {
   const resolvedExtensionDir = resolve(extensionDir);
   const validation = await validateExtensionDirectory(resolvedExtensionDir);
   const outDir = join(resolvedExtensionDir, "dist");
+  const tmpDir = join(resolvedExtensionDir, "dist.tmp");
 
   if (!validation.ok || !validation.manifest) {
     return {
@@ -30,23 +48,89 @@ export async function buildExtensionDirectory(extensionDir: string): Promise<Ext
     };
   }
 
-  await rm(outDir, { recursive: true, force: true });
-  await mkdir(outDir, { recursive: true });
+  const entrypoints: EntrypointSpec[] = [];
+  if (validation.manifest.entrypoints.renderer && validation.rendererEntryPath) {
+    entrypoints.push({
+      kind: "renderer",
+      sourcePath: validation.rendererEntryPath,
+      sourceRelative: validation.manifest.entrypoints.renderer
+    });
+  }
+  if (validation.manifest.entrypoints.cli && validation.cliEntryPath) {
+    entrypoints.push({
+      kind: "cli",
+      sourcePath: validation.cliEntryPath,
+      sourceRelative: validation.manifest.entrypoints.cli
+    });
+  }
+  if (validation.manifest.entrypoints.server && validation.serverEntryPath) {
+    entrypoints.push({
+      kind: "server",
+      sourcePath: validation.serverEntryPath,
+      sourceRelative: validation.manifest.entrypoints.server
+    });
+  }
+
+  await rm(tmpDir, { recursive: true, force: true });
+  await mkdir(tmpDir, { recursive: true });
 
   const builtFiles: string[] = [];
-  await buildExtensionTree(extensionDir, outDir, builtFiles);
+  const errors: string[] = [];
 
-  const runtimeManifest = createRuntimeManifest(validation.manifest);
-  const manifestPath = join(outDir, "manifest.json");
-  await writeFile(manifestPath, JSON.stringify(runtimeManifest, null, 2), "utf8");
-  builtFiles.push(manifestPath);
+  try {
+    await copyStaticAssets(resolvedExtensionDir, tmpDir, builtFiles);
+
+    for (const entry of entrypoints) {
+      const bundleResult = await bundleEntrypoint(entry, tmpDir);
+      if (!bundleResult.ok) {
+        errors.push(...bundleResult.errors);
+        continue;
+      }
+      builtFiles.push(...bundleResult.builtFiles);
+    }
+
+    if (errors.length > 0) {
+      await rm(tmpDir, { recursive: true, force: true });
+      return {
+        ok: false,
+        extensionDir: resolvedExtensionDir,
+        outDir,
+        manifestPath: join(outDir, "manifest.json"),
+        builtFiles: [],
+        errors
+      };
+    }
+
+    const runtimeManifest = createRuntimeManifest(validation.manifest);
+    const manifestPath = join(tmpDir, "manifest.json");
+    await writeFile(manifestPath, JSON.stringify(runtimeManifest, null, 2), "utf8");
+    builtFiles.push(manifestPath);
+  } catch (error) {
+    await rm(tmpDir, { recursive: true, force: true });
+    return {
+      ok: false,
+      extensionDir: resolvedExtensionDir,
+      outDir,
+      manifestPath: join(outDir, "manifest.json"),
+      builtFiles: [],
+      errors: [error instanceof Error ? error.message : String(error)]
+    };
+  }
+
+  // Atomic swap: remove old dist, rename tmp → dist. Windows requires the
+  // target to not exist before rename.
+  await rm(outDir, { recursive: true, force: true });
+  await rename(tmpDir, outDir);
+
+  // Re-map built file paths from tmp → final.
+  const finalBuiltFiles = builtFiles.map((p) => p.replace(tmpDir, outDir));
 
   return {
     ok: true,
     extensionDir: resolvedExtensionDir,
     outDir,
-    manifestPath,
-    builtFiles,
+    manifestPath: join(outDir, "manifest.json"),
+    builtFiles: finalBuiltFiles,
     errors: []
   };
 }
@@ -64,39 +148,82 @@ export function formatExtensionBuildResult(result: ExtensionBuildResult) {
   ].join("\n");
 }
 
-async function buildExtensionTree(
+async function bundleEntrypoint(
+  entry: EntrypointSpec,
+  tmpDir: string
+): Promise<{ ok: true; builtFiles: string[] } | { ok: false; errors: string[] }> {
+  const outPath = join(tmpDir, replaceTsExtension(stripRelativePrefix(entry.sourceRelative)));
+  await mkdir(dirname(outPath), { recursive: true });
+
+  // Renderer runs in the browser; CEF preload's importmap resolves
+  // `@flmux/extension-api` and its subpaths to `/__flmux/runtime/extension-api*.js`,
+  // so they stay external. CLI/server run in Bun; they import only types
+  // from `@flmux/extension-api` (zero runtime deps by contract), so keeping
+  // the same external list is safe and keeps bundle output identical across
+  // entrypoint kinds.
+  const external = ["@flmux/extension-api", "@flmux/extension-api/*"];
+  const target = entry.kind === "renderer" ? "browser" : "bun";
+
+  const result = await Bun.build({
+    entrypoints: [entry.sourcePath],
+    target,
+    format: "esm",
+    external,
+    // Keep outputs readable for dev; pack/size pressure doesn't apply here.
+    minify: false,
+    sourcemap: "none"
+  });
+
+  if (!result.success) {
+    return {
+      ok: false,
+      errors: result.logs.map((log) => `[${entry.kind}] ${entry.sourceRelative}: ${String(log)}`)
+    };
+  }
+
+  const output = result.outputs[0];
+  if (!output) {
+    return { ok: false, errors: [`[${entry.kind}] bundler produced no output for ${entry.sourceRelative}`] };
+  }
+
+  await writeFile(outPath, await output.text(), "utf8");
+  return { ok: true, builtFiles: [outPath] };
+}
+
+async function copyStaticAssets(sourceDir: string, tmpDir: string, builtFiles: string[]): Promise<void> {
+  await copyStaticAssetsRecursive(sourceDir, tmpDir, builtFiles, sourceDir);
+}
+
+async function copyStaticAssetsRecursive(
   sourceDir: string,
-  outDir: string,
+  tmpDir: string,
   builtFiles: string[],
-  rootDir: string = sourceDir
+  rootDir: string
 ): Promise<void> {
   const entries = await readdir(sourceDir, { withFileTypes: true, encoding: "utf8" });
   for (const entry of entries) {
-    if (entry.name === "node_modules" || entry.name === "dist") {
+    if (SKIP_DIRS.has(entry.name)) {
       continue;
     }
-    if (sourceDir === rootDir && (entry.name === "manifest.json" || entry.name === "package.json")) {
+    // Root-level JSON/config files aren't copied — manifest.json is rewritten
+    // separately, and package.json/tsconfig.json are dev-only.
+    if (sourceDir === rootDir && SKIP_ROOT_FILES.has(entry.name)) {
       continue;
     }
 
     const sourcePath = join(sourceDir, entry.name);
-    const relativePath = relative(rootDir, sourcePath);
     if (entry.isDirectory()) {
-      await buildExtensionTree(sourcePath, outDir, builtFiles, rootDir);
+      await copyStaticAssetsRecursive(sourcePath, tmpDir, builtFiles, rootDir);
       continue;
     }
 
-    if (entry.name.endsWith(".ts")) {
-      const targetPath = join(outDir, replaceTsExtension(relativePath));
-      await mkdir(dirname(targetPath), { recursive: true });
-      const source = await readFile(sourcePath, "utf8");
-      const code = extensionBuildTranspiler.transformSync(rewriteRelativeTsImports(source));
-      await writeFile(targetPath, code, "utf8");
-      builtFiles.push(targetPath);
+    // Skip TS sources — they're handled by the bundler, not copied raw.
+    if (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) {
       continue;
     }
 
-    const targetPath = join(outDir, relativePath);
+    const relativePath = relative(rootDir, sourcePath);
+    const targetPath = join(tmpDir, relativePath);
     await mkdir(dirname(targetPath), { recursive: true });
     await Bun.write(targetPath, Bun.file(sourcePath));
     builtFiles.push(targetPath);
@@ -112,31 +239,16 @@ function createRuntimeManifest(sourceManifest: ExtensionManifest): ExtensionMani
         : undefined,
       cli: sourceManifest.entrypoints.cli
         ? replaceTsExtension(stripRelativePrefix(sourceManifest.entrypoints.cli))
+        : undefined,
+      server: sourceManifest.entrypoints.server
+        ? replaceTsExtension(stripRelativePrefix(sourceManifest.entrypoints.server))
         : undefined
     }
   };
 }
 
-function rewriteRelativeTsImports(source: string) {
-  return source
-    .replace(
-      /((?:import|export)[\s\S]*?\sfrom\s+["'])(\.{1,2}\/[^"']+?)(["'])/g,
-      (_match, prefix: string, specifier: string, suffix: string) =>
-        `${prefix}${maybeRewriteTsExtension(specifier)}${suffix}`
-    )
-    .replace(
-      /(import\(\s*["'])(\.{1,2}\/[^"']+?)(["']\s*\))/g,
-      (_match, prefix: string, specifier: string, suffix: string) =>
-        `${prefix}${maybeRewriteTsExtension(specifier)}${suffix}`
-    );
-}
-
-function maybeRewriteTsExtension(specifier: string) {
-  return specifier.endsWith(".ts") ? replaceTsExtension(specifier) : specifier;
-}
-
 function replaceTsExtension(path: string) {
-  return path.replace(/\.ts$/, ".js");
+  return path.replace(/\.tsx?$/, ".js");
 }
 
 function stripRelativePrefix(path: string) {

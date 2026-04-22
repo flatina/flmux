@@ -9,6 +9,7 @@ export interface ExtensionDirectoryValidationResult {
   manifest?: ExtensionManifest;
   rendererEntryPath?: string;
   cliEntryPath?: string;
+  serverEntryPath?: string;
   errors: string[];
 }
 
@@ -59,6 +60,10 @@ export async function validateExtensionDirectory(extensionDir: string): Promise<
     typeof manifest.entrypoints.cli === "string"
       ? resolveExtensionRelativePath(extensionDir, manifest.entrypoints.cli)
       : undefined;
+  const serverEntryPath =
+    typeof manifest.entrypoints.server === "string"
+      ? resolveExtensionRelativePath(extensionDir, manifest.entrypoints.server)
+      : undefined;
 
   if (manifest.entrypoints.renderer && !rendererEntryPath) {
     errors.push(`Renderer entrypoint '${manifest.entrypoints.renderer}' is invalid`);
@@ -66,12 +71,18 @@ export async function validateExtensionDirectory(extensionDir: string): Promise<
   if (manifest.entrypoints.cli && !cliEntryPath) {
     errors.push(`CLI entrypoint '${manifest.entrypoints.cli}' is invalid`);
   }
+  if (manifest.entrypoints.server && !serverEntryPath) {
+    errors.push(`Server entrypoint '${manifest.entrypoints.server}' is invalid`);
+  }
 
   if (rendererEntryPath && !(await Bun.file(rendererEntryPath).exists())) {
     errors.push(`Renderer entrypoint does not exist: ${manifest.entrypoints.renderer}`);
   }
   if (cliEntryPath && !(await Bun.file(cliEntryPath).exists())) {
     errors.push(`CLI entrypoint does not exist: ${manifest.entrypoints.cli}`);
+  }
+  if (serverEntryPath && !(await Bun.file(serverEntryPath).exists())) {
+    errors.push(`Server entrypoint does not exist: ${manifest.entrypoints.server}`);
   }
 
   return {
@@ -81,6 +92,7 @@ export async function validateExtensionDirectory(extensionDir: string): Promise<
     manifest,
     rendererEntryPath,
     cliEntryPath,
+    serverEntryPath,
     errors
   };
 }
@@ -111,6 +123,9 @@ export function formatExtensionValidationResult(result: ExtensionDirectoryValida
     }
     if (result.manifest?.entrypoints.cli) {
       details.push(`  cli: ${result.manifest.entrypoints.cli}`);
+    }
+    if (result.manifest?.entrypoints.server) {
+      details.push(`  server: ${result.manifest.entrypoints.server}`);
     }
     return details.join("\n");
   }

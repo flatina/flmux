@@ -21,7 +21,8 @@ const MIME_TYPES: Record<string, string> = {
   ".json": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
-  ".ico": "image/x-icon"
+  ".ico": "image/x-icon",
+  ".wasm": "application/wasm"
 };
 
 interface FlmuxServerHandle {
@@ -437,7 +438,9 @@ function handleLocalExtensionManifestRequest(
     return "Not Found";
   }
 
-  return new Response(Bun.file(extension.runtimeManifestPath), {
+  // Serialize the already-validated runtime manifest rather than reading
+  // from the backend again — works uniformly for source and archive origins.
+  return new Response(JSON.stringify(extension.runtimeManifest), {
     headers: { "content-type": "application/json; charset=utf-8" }
   });
 }
@@ -468,63 +471,30 @@ function handleLocalExtensionRuntimeRequest(
   set: { status?: number | string },
   localExtensions: DiscoveredLocalExtension[]
 ) {
-  const resolved = resolveLocalExtensionRuntimeFile(pathname, localExtensions);
-  if (!resolved) {
-    set.status = 404;
-    return "Not Found";
-  }
-
-  const { filePath } = resolved;
-  const contentType = MIME_TYPES[extname(filePath)] ?? "application/octet-stream";
-
-  return new Response(Bun.file(filePath), {
-    headers: { "content-type": contentType }
-  });
-}
-
-function resolveLocalExtensionRuntimeFile(pathname: string, localExtensions: DiscoveredLocalExtension[]) {
   const parts = pathname.split("/").filter(Boolean);
   if (parts.length < 5) {
-    return null;
+    set.status = 404;
+    return "Not Found";
   }
 
   const [, , extensionId, version, ...relativeParts] = parts;
   const extension = resolveLocalExtension({ extensionId, version }, localExtensions);
   if (!extension || relativeParts.length === 0) {
-    return null;
+    set.status = 404;
+    return "Not Found";
   }
 
   const relativePath = relativeParts.join("/");
-  const filePath = resolveExtensionRuntimePath(extension.runtimeRootDir, relativePath);
-  if (!filePath || !existsSync(filePath)) {
-    return null;
+  const blob = extension.resolveRuntimeFile(relativePath);
+  if (!blob) {
+    set.status = 404;
+    return "Not Found";
   }
 
-  return {
-    extension,
-    relativePath,
-    filePath
-  };
-}
-
-function resolveExtensionRuntimePath(rootDir: string, relativePath: string) {
-  if (!relativePath || relativePath.startsWith("/") || relativePath.includes("\\")) {
-    return null;
-  }
-
-  const normalizedRelativePath = normalize(relativePath);
-  if (normalizedRelativePath.startsWith("..")) {
-    return null;
-  }
-
-  const fullPath = join(rootDir, normalizedRelativePath);
-  const normalizedRoot = normalize(rootDir).replace(/[\\/]+$/, "");
-  const normalizedFullPath = normalize(fullPath);
-  if (!normalizedFullPath.startsWith(normalizedRoot)) {
-    return null;
-  }
-
-  return normalizedFullPath;
+  const contentType = MIME_TYPES[extname(relativePath)] ?? "application/octet-stream";
+  return new Response(blob, {
+    headers: { "content-type": contentType }
+  });
 }
 
 async function handleExtensionApiRuntimeModuleRequest(moduleName: string, set: { status?: number | string }) {

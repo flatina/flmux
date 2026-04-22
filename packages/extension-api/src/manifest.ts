@@ -3,6 +3,11 @@ export const FLMUX_EXTENSION_API_VERSION = 2;
 export interface ExtensionManifestEntrypoints {
   renderer?: string;
   cli?: string;
+  /** Server-side entry — reserved for extensions that register HTTP endpoints
+   * or other main-process hooks. Schema + bundler are wired, but runtime
+   * integration (route mounting into the flmux server) is not yet landed.
+   * Safe to declare; no-op at load time until the consumer lands. */
+  server?: string;
 }
 
 export interface ExtensionManifestCommand {
@@ -63,8 +68,10 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
 
   const renderer = isPlainObject(entrypoints) ? entrypoints.renderer : undefined;
   const cli = isPlainObject(entrypoints) ? entrypoints.cli : undefined;
+  const server = isPlainObject(entrypoints) ? entrypoints.server : undefined;
   const rendererPath = validateManifestEntrypointPath(renderer, "entrypoints.renderer");
   const cliPath = validateManifestEntrypointPath(cli, "entrypoints.cli");
+  const serverPath = validateManifestEntrypointPath(server, "entrypoints.server");
   const commandsResult = validateManifestCommands(commands, Boolean(cli));
   const panesResult = validateManifestPanes(panes);
 
@@ -74,6 +81,9 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
   if (cliPath) {
     errors.push(cliPath);
   }
+  if (serverPath) {
+    errors.push(serverPath);
+  }
   if (!commandsResult.ok) {
     errors.push(...commandsResult.errors);
   }
@@ -81,8 +91,10 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
     errors.push(...panesResult.errors);
   }
 
-  if (!renderer && !cli) {
-    errors.push("Manifest must define at least one of 'entrypoints.renderer' or 'entrypoints.cli'");
+  if (!renderer && !cli && !server) {
+    errors.push(
+      "Manifest must define at least one of 'entrypoints.renderer', 'entrypoints.cli', or 'entrypoints.server'"
+    );
   }
 
   if (errors.length > 0 || !id || !name || !version || !isPlainObject(entrypoints)) {
@@ -98,7 +110,8 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
       apiVersion: FLMUX_EXTENSION_API_VERSION,
       entrypoints: {
         renderer: typeof renderer === "string" ? renderer.trim() : undefined,
-        cli: typeof cli === "string" ? cli.trim() : undefined
+        cli: typeof cli === "string" ? cli.trim() : undefined,
+        server: typeof server === "string" ? server.trim() : undefined
       },
       commands: commandsResult.ok ? commandsResult.commands : undefined,
       panes: panesResult.ok ? panesResult.panes : undefined

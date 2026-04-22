@@ -1,12 +1,17 @@
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import type { FlmuxExtensionCliContext, FlmuxExtensionCliRunner, ShellClient } from "@flmux/extension-api";
-import { discoverConfiguredLocalExtensions, resolveConfiguredLocalExtensionsRootDir } from "./main/localExtensions";
+import {
+  discoverConfiguredLocalExtensions,
+  resolveConfiguredLocalExtensionsRootDir,
+  type DiscoveredLocalExtension
+} from "./main/localExtensions";
 
 interface DiscoveredLocalCliCommand {
   commandId: string;
   description?: string;
   extensionId: string;
-  cliEntryPath: string;
+  extension: DiscoveredLocalExtension;
+  cliEntryRelativePath: string;
 }
 
 interface FlmuxCliExtensionDispatchOptions {
@@ -34,7 +39,17 @@ export async function dispatchLocalCliExtensionCommand(options: FlmuxCliExtensio
     return false;
   }
 
-  const module = await importCliModule(command.cliEntryPath);
+  // `resolveEntryImportUrl` abstracts origin: source → file:// URL; archive →
+  // data:text/javascript;base64,<bundled-bytes>. Data URL import works because
+  // cli entries have zero runtime externals by contract (internal design).
+  const entryUrl = await command.extension.resolveEntryImportUrl(command.cliEntryRelativePath);
+  if (!entryUrl) {
+    throw new Error(
+      `CLI entry '${command.cliEntryRelativePath}' for '${command.extensionId}' could not be resolved from ${command.extension.origin} origin at ${command.extension.originPath}`
+    );
+  }
+
+  const module = (await import(/* @vite-ignore */ entryUrl)) as CliModule;
   const runner = module.run ?? module.default;
   if (typeof runner !== "function") {
     throw new Error(`CLI extension '${command.extensionId}' must export named 'run(ctx)' or a default function`);
@@ -60,7 +75,7 @@ export async function discoverLocalCliCommands(extensionsRootDir: string): Promi
   const seen = new Set<string>();
 
   for (const extension of extensions) {
-    if (!extension.cliEntryPath) {
+    if (!extension.cliEntryRelativePath) {
       continue;
     }
 
@@ -75,7 +90,8 @@ export async function discoverLocalCliCommands(extensionsRootDir: string): Promi
         commandId: command.id,
         description: command.description,
         extensionId: extension.id,
-        cliEntryPath: extension.cliEntryPath
+        extension,
+        cliEntryRelativePath: extension.cliEntryRelativePath
       });
     }
   }
@@ -90,8 +106,4 @@ async function resolveLocalCliCommand(extensionsRootDir: string, commandId: stri
 
 export function defaultExtensionsRootDir() {
   return resolveConfiguredLocalExtensionsRootDir(fileURLToPath(new URL("../../../extensions/", import.meta.url)));
-}
-
-async function importCliModule(cliEntryPath: string): Promise<CliModule> {
-  return (await import(pathToFileURL(cliEntryPath).href)) as CliModule;
 }

@@ -21,14 +21,15 @@ describe("cli extension dispatch", () => {
     const rootDir = await createCliExtensionFixture();
     const commands = await discoverLocalCliCommands(rootDir);
 
-    expect(commands).toEqual([
+    expect(commands).toMatchObject([
       {
         commandId: "cowsay",
         description: "Open a cowsay pane",
         extensionId: "sample.cowsay",
-        cliEntryPath: join(rootDir, "cowsay", "dist", "cli.js")
+        cliEntryRelativePath: "cli.js"
       }
     ]);
+    expect(commands[0]?.extension.origin).toBe("source");
   });
 
   it("dispatches a local extension command and passes shell client context", async () => {

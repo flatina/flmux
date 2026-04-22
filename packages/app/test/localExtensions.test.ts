@@ -19,6 +19,20 @@ import {
 
 const tempDirs: string[] = [];
 
+function pickStableFields(extension: DiscoveredLocalExtension) {
+  return {
+    id: extension.id,
+    name: extension.name,
+    version: extension.version,
+    runtimeManifest: extension.runtimeManifest,
+    rendererEntryRelativePath: extension.rendererEntryRelativePath,
+    cliEntryRelativePath: extension.cliEntryRelativePath,
+    serverEntryRelativePath: extension.serverEntryRelativePath,
+    origin: extension.origin,
+    originPath: extension.originPath
+  };
+}
+
 afterEach(async () => {
   await Promise.all(
     tempDirs.splice(0).map(async (dir) => {
@@ -50,7 +64,7 @@ describe("local extension loading", () => {
       }
     });
 
-    const loadEntries = createLocalExtensionLoadEntries(discovered, "http://127.0.0.1:4321");
+    const loadEntries = createLocalExtensionLoadEntries(discovered, "http://127.0.0.1:4321", { cacheKey: null });
     expect(loadEntries).toEqual([
       {
         id: "sample.cowsay",
@@ -60,6 +74,13 @@ describe("local extension loading", () => {
         rendererEntryUrl: "http://127.0.0.1:4321/__flmux/ext/sample.cowsay/0.1.0/index.js"
       }
     ]);
+
+    const loadEntriesCached = createLocalExtensionLoadEntries(discovered, "http://127.0.0.1:4321", {
+      cacheKey: "abc123"
+    });
+    expect(loadEntriesCached[0]?.rendererEntryUrl).toBe(
+      "http://127.0.0.1:4321/__flmux/ext/sample.cowsay/0.1.0/index.js?v=abc123"
+    );
   });
 
   it("ignores duplicate local extension id/version pairs", async () => {
@@ -110,8 +131,7 @@ describe("local extension loading", () => {
 
     const discovered = await discoverLocalExtensions(extensionsRootDir);
     expect(discovered).toHaveLength(1);
-    expect(discovered[0]?.rendererEntryPath).not.toBeNull();
-    expect(discovered[0]!.rendererEntryPath!.replace(/\\/g, "/")).toEndWith("/dist/src/renderer-entry.js");
+    expect(discovered[0]?.rendererEntryRelativePath).toBe("src/renderer-entry.js");
   });
 
   it("passes through local discovery unchanged when catalog.json is absent", async () => {
@@ -122,9 +142,11 @@ describe("local extension loading", () => {
       version: "0.1.0"
     });
 
-    expect(await discoverConfiguredLocalExtensions(extensionsRootDir)).toEqual(
-      await discoverLocalExtensions(extensionsRootDir)
-    );
+    const configured = await discoverConfiguredLocalExtensions(extensionsRootDir);
+    const raw = await discoverLocalExtensions(extensionsRootDir);
+    // Each discovery call returns fresh closure references for resolveRuntimeFile /
+    // resolveEntryImportUrl, so compare the serializable fields instead of the whole object.
+    expect(configured.map(pickStableFields)).toEqual(raw.map(pickStableFields));
   });
 
   it("applies catalog additionalRoots and enable/disable selectors", async () => {

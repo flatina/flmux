@@ -194,9 +194,7 @@ describe("web mode shell authority", () => {
     const counterExtension: DiscoveredLocalExtension = {
       id: "sample.counter",
       name: "sample.counter",
-      rootDir: resolve(counterDistRoot, ".."),
-      runtimeRootDir: counterDistRoot,
-      runtimeManifestPath: resolve(counterDistRoot, "manifest.json"),
+      version: "0.1.0",
       runtimeManifest: {
         id: "sample.counter",
         name: "sample.counter",
@@ -205,9 +203,16 @@ describe("web mode shell authority", () => {
         entrypoints: { renderer: "index.js" },
         panes: [{ kind: "counter", defaultTitle: "Counter" }]
       },
-      rendererEntryPath: resolve(counterDistRoot, "index.js"),
-      cliEntryPath: null,
-      version: "0.1.0"
+      rendererEntryRelativePath: "index.js",
+      cliEntryRelativePath: null,
+      serverEntryRelativePath: null,
+      origin: "source",
+      originPath: resolve(counterDistRoot, ".."),
+      resolveRuntimeFile: () => null,
+      resolveEntryImportUrl: async (relativePath) => {
+        const { pathToFileURL } = await import("node:url");
+        return pathToFileURL(resolve(counterDistRoot, relativePath)).href;
+      }
     };
 
     const clientRegistry = new FlmuxClientRegistry();
@@ -285,9 +290,7 @@ function createFakeDiscoveredExtension(options: {
   return {
     id: options.id,
     name: options.id,
-    rootDir: `/fake/${options.id}`,
-    runtimeRootDir: `/fake/${options.id}/dist`,
-    runtimeManifestPath: `/fake/${options.id}/dist/manifest.json`,
+    version: options.version,
     runtimeManifest: {
       id: options.id,
       name: options.id,
@@ -296,8 +299,12 @@ function createFakeDiscoveredExtension(options: {
       entrypoints: { renderer: "index.js" },
       panes: options.panes
     },
-    rendererEntryPath: `/fake/${options.id}/dist/index.js`,
-    cliEntryPath: null,
-    version: options.version
+    rendererEntryRelativePath: "index.js",
+    cliEntryRelativePath: null,
+    serverEntryRelativePath: null,
+    origin: "source",
+    originPath: `/fake/${options.id}`,
+    resolveRuntimeFile: () => null,
+    resolveEntryImportUrl: async () => `fake://${options.id}/index.js`
   };
 }

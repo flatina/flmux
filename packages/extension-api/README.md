@@ -139,15 +139,6 @@ await a.bus.publish("signal", { n: 1 });
 
 `createTestBus` replicates flmux's real topic-matching and error-isolation semantics, so behavior verified against it stays true in production.
 
-## Recommended package layout
-
-If your pane builds on a flmux-agnostic library (your own primitives, domain models, query sources), split into two packages:
-
-- `packages/mylib` — flmux-free. Uses only structural types or `import type { … } from "@flmux/extension-api"` (type-only imports erase at compile time and don't add a runtime dep). Tested standalone with `@flmux/extension-api/testing` helpers.
-- `packages/mylib-flmux` — the thin extension. Depends on `@flmux/extension-api`, implements `defineExtension` + `definePane`, wraps `mylib` primitives with `ctx.bus` / `ctx.state` / `ctx.shell`.
-
-This keeps the core library reusable outside flmux (demos, other hosts) without duplicating extension-api's shapes.
-
 ## Manifest reference
 
 | Field | Required | Notes |

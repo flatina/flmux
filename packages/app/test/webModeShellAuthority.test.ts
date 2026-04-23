@@ -187,31 +187,31 @@ describe("web mode shell authority", () => {
   });
 
   it("forwards extension pathMount hooks to the server authority", async () => {
-    // Points at the real built counter bundle — exercises the default production
+    // Points at the real built scratchpad bundle — exercises the default production
     // importer end-to-end (pathToFileURL + dynamic import + @flmux/extension-api
     // bare specifier resolution via Bun workspace).
-    const counterDistRoot = resolve(__dirname, "../../../extensions/counter/dist");
-    const counterExtension: DiscoveredLocalExtension = {
-      id: "sample.counter",
-      name: "sample.counter",
+    const scratchpadDistRoot = resolve(__dirname, "../../../extensions/scratchpad/dist");
+    const scratchpadExtension: DiscoveredLocalExtension = {
+      id: "sample.scratchpad",
+      name: "sample.scratchpad",
       version: "0.1.0",
       runtimeManifest: {
-        id: "sample.counter",
-        name: "sample.counter",
+        id: "sample.scratchpad",
+        name: "sample.scratchpad",
         version: "0.1.0",
         apiVersion: 2,
         entrypoints: { renderer: "index.js" },
-        panes: [{ kind: "counter", defaultTitle: "Counter" }]
+        panes: [{ kind: "scratchpad", defaultTitle: "Scratchpad" }]
       },
       rendererEntryRelativePath: "index.js",
       cliEntryRelativePath: null,
       serverEntryRelativePath: null,
       origin: "source",
-      originPath: resolve(counterDistRoot, ".."),
+      originPath: resolve(scratchpadDistRoot, ".."),
       resolveRuntimeFile: () => null,
       resolveEntryImportUrl: async (relativePath) => {
         const { pathToFileURL } = await import("node:url");
-        return pathToFileURL(resolve(counterDistRoot, relativePath)).href;
+        return pathToFileURL(resolve(scratchpadDistRoot, relativePath)).href;
       }
     };
 
@@ -222,7 +222,7 @@ describe("web mode shell authority", () => {
       runtimeLabel: "web server authority",
       terminalService,
       clientRegistry,
-      localExtensions: [counterExtension]
+      localExtensions: [scratchpadExtension]
     });
 
     await authority.start("http://127.0.0.1:4324");
@@ -230,34 +230,34 @@ describe("web mode shell authority", () => {
     const created = (await authority.router.pathCall({
       clientId: authority.clientId,
       path: "/panes/new",
-      args: { kind: "counter", count: 7 }
+      args: { kind: "scratchpad", note: "hello" }
     })) as { ok: true; value: { pane: { id: string } } };
     const paneId = created.value.pane.id;
 
     const initialState = await authority.router.pathGet({
       clientId: authority.clientId,
-      path: `/panes/${paneId}/counter/count`
+      path: `/panes/${paneId}/scratchpad/note`
     });
-    expect(initialState).toEqual({ ok: true, found: true, value: 7 });
+    expect(initialState).toEqual({ ok: true, found: true, value: "hello" });
 
     const setResult = await authority.router.pathSet({
       clientId: authority.clientId,
-      path: `/panes/${paneId}/counter/count`,
-      value: 42
+      path: `/panes/${paneId}/scratchpad/note`,
+      value: "updated"
     });
-    expect(setResult).toEqual({ ok: true, value: 42 });
+    expect(setResult).toEqual({ ok: true, value: "updated" });
 
     const afterSet = await authority.router.pathGet({
       clientId: authority.clientId,
-      path: `/panes/${paneId}/counter/count`
+      path: `/panes/${paneId}/scratchpad/note`
     });
-    expect(afterSet).toEqual({ ok: true, found: true, value: 42 });
+    expect(afterSet).toEqual({ ok: true, found: true, value: "updated" });
 
     const status = await authority.router.pathGet({
       clientId: authority.clientId,
-      path: `/status/panes/${paneId}/counter/count`
+      path: `/status/panes/${paneId}/scratchpad/noteLength`
     });
-    expect(status).toEqual({ ok: true, found: true, value: 42 });
+    expect(status).toEqual({ ok: true, found: true, value: 7 });
   });
 
   it("rejects /panes/new for pane kinds not declared by any built-in or extension", async () => {

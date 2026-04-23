@@ -1,6 +1,14 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { BrowserView, BrowserWindow, AppRuntime } from "bunite-core";
+import {
+  BrowserWindow,
+  AppRuntime,
+  defineBunRPC,
+  createTransportDemuxer,
+  createWebSocketTransport,
+  type TransportDemuxer,
+  type WebSocketLike
+} from "bunite-core";
 import type { SequencedShellCoreEvent, ShellModelAPI } from "@flmux/core/shell";
 import type { FlmuxRendererBridgeSchema, FlmuxSessionSaveLayouts } from "../shared/rendererBridge";
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
@@ -31,6 +39,7 @@ import { PtydLockFile } from "@flmux/core/terminal/ptyd/lockFile";
 import { callJsonRpcIpc } from "@flmux/core/terminal/ptyd/jsonRpcIpc";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
 import { discoverConfiguredLocalExtensions, resolveConfiguredLocalExtensionsRootDir } from "./localExtensions";
+import type { ExtensionServerDefinition, ExtensionServerPaneInstance } from "@flmux/extension-api";
 
 type ShellAuthority = Pick<DesktopShellAuthority | WebModeShellAuthority, "subscribe" | "applyTerminalEvent"> & {
   readonly shellModel: ShellModelAPI;
@@ -85,7 +94,13 @@ if (runtimeMode === "desktop") {
   mkdirSync(flmuxPaths.cefUserDataDir, { recursive: true });
 }
 const app =
-  runtimeMode === "desktop" ? new AppRuntime({ logLevel: "info", userDataDir: flmuxPaths.cefUserDataDir }) : null;
+  runtimeMode === "desktop"
+    ? new AppRuntime({
+        logLevel: "info",
+        userDataDir: flmuxPaths.cefUserDataDir,
+        cefDir: resolve(installRoot, "dist/cef")
+      })
+    : null;
 if (app) await app.ready;
 
 const clientRegistry = new FlmuxClientRegistry();
@@ -98,6 +113,69 @@ const sessionStore = runtimeMode === "desktop" ? createSessionStore({ filePath: 
 // slip through are lazily skipped by the forwarder.
 const paneSubscribers = new Map<string, Set<number>>();
 const localExtensions = await discoverConfiguredLocalExtensions(localExtensionsRootDir);
+
+// Extension server entries: imported once, registered per (paneId, attachmentId)
+// subscription. Module-level state lives inside the extension's server module
+// (e.g. a cache keyed by paneId) — flmux only wires the transport channel.
+const extensionServers = new Map<string, ExtensionServerDefinition>();
+for (const ext of localExtensions) {
+  if (!ext.serverEntryRelativePath) continue;
+  try {
+    const url = await ext.resolveEntryImportUrl(ext.serverEntryRelativePath);
+    if (!url) continue;
+    const mod = (await import(url)) as { default?: ExtensionServerDefinition };
+    if (mod.default) extensionServers.set(ext.id, mod.default);
+  } catch (err) {
+    console.warn(`[flmux] failed to load server entry for extension '${ext.id}':`, err);
+  }
+}
+
+// (paneId × attachmentId) → server instance, plus the pane→kind & attachment→demux
+// indexes used to drive attach/detach in pane and attachment lifecycles.
+const paneServerInstances = new Map<string, ExtensionServerPaneInstance>();
+const paneKinds = new Map<string, string>();
+const attachmentIdToDemux = new Map<string, TransportDemuxer>();
+const webViewIdToDemux = new Map<number, TransportDemuxer>();
+
+function findExtensionIdForPaneKind(kind: string): string | undefined {
+  return localExtensions.find((ext) => ext.runtimeManifest.panes?.some((p) => p.kind === kind))?.id;
+}
+
+function paneInstanceKey(extId: string, paneId: string, attachmentId: string) {
+  return `${extId}::${paneId}::${attachmentId}`;
+}
+
+function attachExtensionServerChannel(paneId: string, kind: string, attachmentId: string) {
+  const extId = findExtensionIdForPaneKind(kind);
+  if (!extId) return;
+  const server = extensionServers.get(extId);
+  if (!server?.onPaneConnected) return;
+  const demux = attachmentIdToDemux.get(attachmentId);
+  if (!demux) return;
+  const key = paneInstanceKey(extId, paneId, attachmentId);
+  if (paneServerInstances.has(key)) return;
+  try {
+    const transport = demux.channel(paneId);
+    const inst = server.onPaneConnected(paneId, attachmentId, { transport });
+    if (inst) paneServerInstances.set(key, inst);
+  } catch (err) {
+    console.warn(`[flmux] extension '${extId}' onPaneConnected error (pane ${paneId}, att ${attachmentId}):`, err);
+  }
+}
+
+function detachExtensionServerChannel(paneId: string, kind: string, attachmentId: string) {
+  const extId = findExtensionIdForPaneKind(kind);
+  if (!extId) return;
+  const key = paneInstanceKey(extId, paneId, attachmentId);
+  const inst = paneServerInstances.get(key);
+  if (!inst) return;
+  try {
+    inst.dispose?.();
+  } catch (err) {
+    console.warn(`[flmux] extension '${extId}' dispose error (pane ${paneId}, att ${attachmentId}):`, err);
+  }
+  paneServerInstances.delete(key);
+}
 const webModeAuthPaths =
   runtimeMode === "web"
     ? {
@@ -249,13 +327,57 @@ const paneLifecycleUnsubs = new WeakMap<ShellAuthority, () => void>();
 function trackPaneLifecycle(authority: ShellAuthority): () => void {
   const unsub = authority.subscribe((event) => {
     if (event.topic === "pane.added") {
-      paneIdToAuthority.set(event.payload.paneId, authority);
+      const { paneId, snapshot } = event.payload;
+      paneIdToAuthority.set(paneId, authority);
+      paneKinds.set(paneId, snapshot.kind);
+      for (const [attachmentId] of attachmentIdToDemux) {
+        if (resolveAuthorityForAttachment(attachmentId) === authority) {
+          attachExtensionServerChannel(paneId, snapshot.kind, attachmentId);
+        }
+      }
     } else if (event.topic === "pane.removed") {
-      paneIdToAuthority.delete(event.payload.paneId);
+      const { paneId } = event.payload;
+      paneIdToAuthority.delete(paneId);
+      const kind = paneKinds.get(paneId);
+      if (kind) {
+        for (const [attachmentId] of attachmentIdToDemux) {
+          detachExtensionServerChannel(paneId, kind, attachmentId);
+        }
+        paneKinds.delete(paneId);
+      }
     }
   });
   paneLifecycleUnsubs.set(authority, unsub);
   return unsub;
+}
+
+// After an attachment's demux is installed, retroactively attach every pane
+// already bound to that attachment's authority. Used at:
+//   - desktop boot (demux created after session restore panes land)
+//   - web attachment bind (demux was created at WS open, attachmentId at register)
+function retroattachAllPanesForAttachment(attachmentId: string) {
+  const authority = resolveAuthorityForAttachment(attachmentId);
+  if (!authority) return;
+  for (const [paneId, kind] of paneKinds) {
+    if (paneIdToAuthority.get(paneId) === authority) {
+      attachExtensionServerChannel(paneId, kind, attachmentId);
+    }
+  }
+}
+
+function detachAllPanesForAttachment(attachmentId: string) {
+  const keyPrefix = `::`;
+  for (const key of [...paneServerInstances.keys()]) {
+    if (!key.endsWith(keyPrefix + attachmentId)) continue;
+    const inst = paneServerInstances.get(key);
+    try {
+      inst?.dispose?.();
+    } catch (err) {
+      console.warn(`[flmux] extension dispose error (key ${key}):`, err);
+    }
+    paneServerInstances.delete(key);
+  }
+  attachmentIdToDemux.delete(attachmentId);
 }
 
 function scopeMatches(event: SequencedShellCoreEvent, attachmentId: string): boolean {
@@ -375,6 +497,23 @@ function bindWebAttachment(
     }
   }
   installAttachmentForwarder(binding.attachmentId, viewId);
+
+  // Tie the WS demux (stored at open-time under viewId) to the now-known
+  // attachmentId, then open channels for every pane the attachment's
+  // authority already owns. If the attachmentId is being rebound to a fresh
+  // socket (grace-period reconnect, tab reuse), drop every server instance
+  // still pinned to the old demux first — otherwise it stays bound to the
+  // dead transport and the eventual old-socket `close` would tear down the
+  // new binding via `detachAllPanesForAttachment`.
+  const demux = webViewIdToDemux.get(viewId);
+  if (demux) {
+    const previousDemux = attachmentIdToDemux.get(binding.attachmentId);
+    if (previousDemux && previousDemux !== demux) {
+      detachAllPanesForAttachment(binding.attachmentId);
+    }
+    attachmentIdToDemux.set(binding.attachmentId, demux);
+    retroattachAllPanesForAttachment(binding.attachmentId);
+  }
 }
 
 function mintWebAttachmentId(): string {
@@ -415,8 +554,13 @@ function pushLayoutForViewId(viewId: number, layouts: FlmuxSessionSaveLayouts) {
 
 function releaseView(viewId: number) {
   const attachmentId = viewIdToAttachmentId.get(viewId);
+  webViewIdToDemux.delete(viewId);
   if (attachmentId) {
     viewIdToAttachmentId.delete(viewId);
+    // Tear down extension channels for this attachment immediately —
+    // connection is gone, server-side rpcs must release their pane state
+    // before the registry's grace eviction fires.
+    detachAllPanesForAttachment(attachmentId);
     attachmentRegistry.markDisconnected(attachmentId, (state) => {
       // Order matters: read userId, delete the entry, THEN schedule.
       // maybeScheduleAuthorityEviction → countUserAttachments reads the
@@ -470,7 +614,7 @@ const resolveShellModelRouter = (viewId: number, hints?: { attachmentId?: string
   return resolveAuthorityForViewId(viewId, hints)?.router ?? null;
 };
 
-const rendererRpc = BrowserView.defineRPC<FlmuxRendererBridgeSchema>({
+const rendererRpc = defineBunRPC<FlmuxRendererBridgeSchema>({
   handlers: {
     requests: createFlmuxHostRequestHandlers({
       mode: runtimeMode,
@@ -496,14 +640,60 @@ const rendererRpc = BrowserView.defineRPC<FlmuxRendererBridgeSchema>({
   }
 });
 
-type WebClient = NonNullable<Parameters<NonNullable<typeof rendererRpc.webHandler.onWebClientConnected>>[0]>;
+// Web RPC handler — per-connection assembles (ws pipe → demuxer → rpc on
+// "default" channel). demux is retained on each client so extension panes
+// can later mint their own channels off the same connection.
+type WebClient = {
+  ws: WebSocketLike;
+  rpc: ReturnType<typeof defineBunRPC<FlmuxRendererBridgeSchema>>;
+  demux: TransportDemuxer;
+};
+
+const webConnections = new Map<
+  WebSocketLike,
+  { client: WebClient; receive: (raw: ArrayBuffer | Uint8Array) => void }
+>();
+
+const rendererWebHandler = {
+  open(ws: WebSocketLike) {
+    const pipe = createWebSocketTransport(ws);
+    const demux = createTransportDemuxer(pipe.transport);
+    const rpc = defineBunRPC<FlmuxRendererBridgeSchema>({ handlers: {} });
+    rpc.setTransport(demux.channel("default"));
+    const client: WebClient = { ws, rpc, demux };
+    webConnections.set(ws, { client, receive: pipe.receive });
+    rendererWebHandler.onWebClientConnected?.(client);
+  },
+  message(ws: WebSocketLike, raw: string | Buffer | ArrayBuffer | Uint8Array) {
+    if (typeof raw === "string") return;
+    const entry = webConnections.get(ws);
+    if (!entry) return;
+    entry.receive(raw instanceof Buffer ? new Uint8Array(raw) : raw);
+  },
+  close(ws: WebSocketLike) {
+    const entry = webConnections.get(ws);
+    if (!entry) return;
+    // onWebClientDisconnected → releaseView → detachAllPanesForAttachment
+    // runs extension server instance dispose() calls which may send final
+    // messages through per-pane channels. Those must complete before the
+    // default-channel rpc + demuxer tear down, so disconnect first, tear
+    // down transports after.
+    webConnections.delete(ws);
+    rendererWebHandler.onWebClientDisconnected?.(entry.client);
+    entry.client.rpc.dispose();
+    entry.client.demux.dispose();
+  },
+  onWebClientConnected: undefined as ((client: WebClient) => void) | undefined,
+  onWebClientDisconnected: undefined as ((client: WebClient) => void) | undefined
+};
 
 let nextWebViewId = 1_000_000;
 const webViewIds = new WeakMap<WebClient, number>();
 
-rendererRpc.webHandler.onWebClientConnected = (client) => {
+rendererWebHandler.onWebClientConnected = (client) => {
   const viewId = nextWebViewId++;
   webViewIds.set(client, viewId);
+  webViewIdToDemux.set(viewId, client.demux);
   client.rpc.setRequestHandler(
     createFlmuxHostRequestHandlers({
       mode: runtimeMode,
@@ -540,7 +730,7 @@ rendererRpc.webHandler.onWebClientConnected = (client) => {
   clientRegistry.attachRenderer(viewId, client.rpc);
 };
 
-rendererRpc.webHandler.onWebClientDisconnected = (client) => {
+rendererWebHandler.onWebClientDisconnected = (client) => {
   const viewId = webViewIds.get(client);
   if (viewId == null) return;
   releaseView(viewId);
@@ -612,7 +802,7 @@ const server = startFlmuxServer({
       }
     : undefined,
   authorizer: webModeAuthorizer ?? undefined,
-  rpcWebHandler: rendererRpc.webHandler
+  rpcWebHandler: rendererWebHandler
 });
 serverOrigin = server.origin;
 if (desktopAuthority) {
@@ -674,9 +864,17 @@ if (runtimeMode === "desktop" && app) {
     url: server.origin,
     titleBarStyle: "default",
     hidden: hiddenWindow,
-    preloadOrigins: [server.origin],
-    rpc: rendererRpc
+    preloadOrigins: [server.origin]
   });
+
+  // Wrap the preload pipe in a demuxer so the "default" channel carries
+  // ShellModelAPI and extension channels can mount alongside (one channel
+  // per extension pane, keyed by paneId).
+  const desktopDemux = createTransportDemuxer(win.view.transport);
+  rendererRpc.setTransport(desktopDemux.channel("default"));
+  attachmentIdToDemux.set(DESKTOP_ATTACHMENT_ID, desktopDemux);
+  // Session-restored panes fire pane.added before this point — pick them up.
+  retroattachAllPanesForAttachment(DESKTOP_ATTACHMENT_ID);
 
   desktopViewId = win.webviewId;
   clientRegistry.attachRenderer(win.webviewId, rendererRpc);

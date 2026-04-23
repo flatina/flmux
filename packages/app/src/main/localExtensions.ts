@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { isAbsolute, join, normalize, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { validateExtensionManifest, type ExtensionManifest } from "@flmux/extension-api";
@@ -54,7 +54,7 @@ interface LocalExtensionCatalogPolicy {
 }
 
 export async function discoverLocalExtensions(rootDir: string): Promise<DiscoveredLocalExtension[]> {
-  let entries: Array<{ name: string; isDirectory(): boolean }>;
+  let entries: Array<{ name: string; isDirectory(): boolean; isSymbolicLink(): boolean }>;
 
   try {
     entries = await readdir(rootDir, { withFileTypes: true, encoding: "utf8" });
@@ -62,10 +62,29 @@ export async function discoverLocalExtensions(rootDir: string): Promise<Discover
     return [];
   }
 
+  // Accept regular directories plus links that resolve to directories.
+  // Bun on Windows reports directory junctions as symlinks (isDirectory()
+  // returns false), so a plain isDirectory() filter would silently drop
+  // link-backed extension roots. Follow the link via stat() to include them.
+  const extensionDirs = await Promise.all(
+    entries.map(async (entry) => {
+      if (entry.isDirectory()) return entry.name;
+      if (entry.isSymbolicLink()) {
+        try {
+          const target = await stat(join(rootDir, entry.name));
+          if (target.isDirectory()) return entry.name;
+        } catch {
+          // dead link — skip silently
+        }
+      }
+      return null;
+    })
+  );
+
   const manifests = await Promise.all(
-    entries
-      .filter((entry) => entry.isDirectory())
-      .map(async (entry) => discoverSourceExtension(join(rootDir, entry.name)))
+    extensionDirs
+      .filter((name): name is string => name !== null)
+      .map((name) => discoverSourceExtension(join(rootDir, name)))
   );
 
   // Collapse same-id siblings within a single root (e.g., two folders

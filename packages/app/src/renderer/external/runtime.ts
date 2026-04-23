@@ -18,6 +18,7 @@ import {
   adaptExtensionPanePathMount,
   adaptExtensionPersistence
 } from "../../shared/extensionPaneAdapter";
+import { channelForPane } from "./paneChannelRegistry";
 
 export function createExternalPaneDescriptor(options: ExtensionPaneDefinition): PaneDescriptor {
   return {
@@ -72,7 +73,8 @@ function createExternalPaneContext(
         return unsubscribe;
       }
     },
-    state
+    state,
+    transport: channelForPane(paneId)
   };
 }
 

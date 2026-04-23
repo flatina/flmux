@@ -75,9 +75,11 @@ export function createWebModeUserAuthorityRegistry(
       localExtensions: options.localExtensions,
       sessionStore
     });
-    await authority.start(options.getOrigin());
     authorities.set(userId, authority);
+    // Subscribe BEFORE start() so any pane.added emitted during session
+    // restore is indexed correctly — mirrors the desktop boot sequence.
     options.onAuthorityCreated?.(userId, authority);
+    await authority.start(options.getOrigin());
     return authority;
   }
 

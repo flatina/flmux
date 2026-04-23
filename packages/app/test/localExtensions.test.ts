@@ -201,18 +201,19 @@ describe("local extension loading", () => {
     // into a .tar.gz and loading it through the archive backend, the
     // pathMount / lifecycle hooks on renderer-exported panes must still be
     // available. This exercises `createExtensionPaneSpecs`, which `import()`s
-    // the renderer bundle from main to extract those hooks.
-    const counterDistDir = resolve(__dirname, "../../../extensions/counter/dist");
-    const manifest = await readFile(join(counterDistDir, "manifest.json"), "utf8");
-    expect(JSON.parse(manifest).id).toBe("sample.counter");
+    // the renderer bundle from main to extract those hooks. Uses scratchpad
+    // since it's a first-party extension with a pathMount declared.
+    const scratchpadDistDir = resolve(__dirname, "../../../extensions/scratchpad/dist");
+    const manifest = await readFile(join(scratchpadDistDir, "manifest.json"), "utf8");
+    expect(JSON.parse(manifest).id).toBe("sample.scratchpad");
 
     const catalogRootDir = await createTempExtensionRoot("archive-pathmount");
-    const tarballPath = join(catalogRootDir, "counter.tar.gz");
+    const tarballPath = join(catalogRootDir, "scratchpad.tar.gz");
 
-    // Build the archive entries directly from the already-built counter dist/ —
+    // Build the archive entries directly from the already-built scratchpad dist/ —
     // mirrors what `flmux-ext pack` produces (flat paths rooted at dist/).
     const entries: Record<string, Uint8Array> = {};
-    await collectFiles(counterDistDir, counterDistDir, entries);
+    await collectFiles(scratchpadDistDir, scratchpadDistDir, entries);
     await Bun.Archive.write(tarballPath, entries, { compress: "gzip" });
 
     await writeFile(join(catalogRootDir, "catalog.json"), JSON.stringify({ tarballs: [tarballPath] }, null, 2), "utf8");
@@ -220,14 +221,14 @@ describe("local extension loading", () => {
     const discovered = await discoverConfiguredLocalExtensions(catalogRootDir);
     expect(discovered).toHaveLength(1);
     expect(discovered[0]?.origin).toBe("archive");
-    expect(discovered[0]?.id).toBe("sample.counter");
+    expect(discovered[0]?.id).toBe("sample.scratchpad");
 
     const specs = await createExtensionPaneSpecs(discovered);
-    const counterSpec = specs.find((spec) => spec.kind === "counter");
-    expect(counterSpec).toBeDefined();
+    const scratchpadSpec = specs.find((spec) => spec.kind === "scratchpad");
+    expect(scratchpadSpec).toBeDefined();
     // Before the fix: data-URL `import()` can't resolve `@flmux/extension-api`
     // bare specifier, hooks fall back to manifest-only, pathMount === undefined.
-    expect(counterSpec?.pathMount?.mountKey).toBe("counter");
+    expect(scratchpadSpec?.pathMount?.mountKey).toBe("scratchpad");
   });
 
   it("serves built local extension manifest and runtime file tree from same-origin routes", async () => {

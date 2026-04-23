@@ -1,8 +1,9 @@
-import { BuniteView } from "bunite-core/view";
+import { BuniteView, createTransportDemuxer, defineWebviewRPC } from "bunite-core/view";
 import type { FlmuxRendererBridgeSchema } from "../shared/rendererBridge";
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
 import type { SequencedShellCoreEvent } from "@flmux/core/shell";
 import { registerLocalExternalPaneDescriptors } from "./external/registerLocalExternalPaneDescriptors";
+import { setExtensionPaneDemuxer } from "./external/paneChannelRegistry";
 import { FlmuxWorkbench } from "./shell/workbench";
 import { pushShellCoreEvent } from "./shell/shellEventBus";
 import { pushTerminalEvent } from "./terminalHost";
@@ -12,7 +13,7 @@ void bootstrap().catch((error) => {
 });
 
 async function bootstrap() {
-  const rpc = BuniteView.defineRPC<FlmuxRendererBridgeSchema>({
+  const rpc = defineWebviewRPC<FlmuxRendererBridgeSchema>({
     handlers: {
       messages: {
         "terminal.event": (event: TerminalRuntimeEvent) => {
@@ -24,6 +25,12 @@ async function bootstrap() {
       }
     }
   });
+  const view = new BuniteView();
+  const demux = createTransportDemuxer(view.transport);
+  rpc.setTransport(demux.channel("default"));
+  // Expose to external pane runtime so extension panes can claim their own
+  // `ctx.transport = demux.channel(paneId)` on mount.
+  setExtensionPaneDemuxer(demux);
 
   const config = await rpc.requestProxy["flmux.getConfig"]();
   const workbench = new FlmuxWorkbench(config, rpc.requestProxy);

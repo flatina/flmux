@@ -223,7 +223,7 @@ function createExtensionShellClient(paneId: string, attachmentId: string): Shell
   };
 }
 
-function attachExtensionServerChannel(paneId: string, kind: string, attachmentId: string) {
+async function attachExtensionServerChannel(paneId: string, kind: string, attachmentId: string) {
   const extId = findExtensionIdForPaneKind(kind);
   if (!extId) return;
   const server = extensionServers.get(extId);
@@ -240,8 +240,8 @@ function attachExtensionServerChannel(paneId: string, kind: string, attachmentId
   const key = paneInstanceKey(extId, paneId, attachmentId);
   if (paneServerInstances.has(key)) return;
   try {
-    const transport = demux.channel(paneId);
-    const inst = server.onPaneConnected(paneId, attachmentId, { transport, shell });
+    const channel = demux.channel(paneId);
+    const inst = await server.onPaneConnected(paneId, attachmentId, { channel, shell });
     if (inst) paneServerInstances.set(key, inst);
   } catch (err) {
     console.warn(`[flmux] extension '${extId}' onPaneConnected error (pane ${paneId}, att ${attachmentId}):`, err);
@@ -744,7 +744,12 @@ const rendererWebHandler = {
     const pipe = createWebSocketTransport(ws);
     const demux = createTransportDemuxer(pipe.transport);
     const rpc = defineBunRPC<FlmuxRendererBridgeSchema>({ handlers: {} });
-    rpc.setTransport(demux.channel("default"));
+    // Fire-and-forget: the WS pipe is already up; the HELLO handshake
+    // resolves once the renderer binds its own side of the channel.
+    // Nothing on the server path needs to wait for that resolution —
+    // per-connection rpc is receive-side and main doesn't kick off
+    // requests before the browser registers its handler.
+    void demux.channel("default").bindTo(rpc);
     const client: WebClient = { ws, rpc, demux };
     webConnections.set(ws, { client, receive: pipe.receive });
     rendererWebHandler.onWebClientConnected?.(client);
@@ -956,7 +961,9 @@ if (runtimeMode === "desktop" && app) {
   // ShellModelAPI and extension channels can mount alongside (one channel
   // per extension pane, keyed by paneId).
   const desktopDemux = createTransportDemuxer(win.view.transport);
-  rendererRpc.setTransport(desktopDemux.channel("default"));
+  // Fire-and-forget bindTo — the CEF renderer comes up later and its
+  // `defineWebviewRPC(...).bindTo(...)` call completes the handshake.
+  void desktopDemux.channel("default").bindTo(rendererRpc);
   attachmentIdToDemux.set(DESKTOP_ATTACHMENT_ID, desktopDemux);
   // Session-restored panes fire pane.added before this point — pick them up.
   retroattachAllPanesForAttachment(DESKTOP_ATTACHMENT_ID);

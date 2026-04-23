@@ -4,7 +4,10 @@
   "type": "module",
   "workspaces": [
     "packages/*",
-    "extensions/*"
+    "extensions/cowsay",
+    "extensions/counter",
+    "extensions/inspector",
+    "extensions/scratchpad"
   ],
   "scripts": {
     "build:extensions": "bun run --filter @flmux/extension-devkit build ../../extensions/cowsay ../../extensions/counter ../../extensions/inspector ../../extensions/scratchpad",
@@ -27,6 +30,6 @@
     "knip": "6.6.0"
   },
   "dependencies": {
-    "bunite-core": "^0.2.1"
+    "bunite-core": "^0.3.1"
   }
 }

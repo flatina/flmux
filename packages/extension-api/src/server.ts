@@ -1,10 +1,20 @@
-import type { RPCTransport } from "bunite-core/shared/rpc";
+import type { ChannelHandle } from "bunite-core";
 import type { ShellClient } from "./shell";
+
+// Re-export so extensions don't need to add `bunite-core` to their own
+// deps just to name the channel type. `ChannelHandle.bindTo(rpc)` wires the
+// rpc to the channel transport and returns a promise that resolves once
+// both sides have registered handlers (HELLO handshake). Awaiting guarantees
+// the first subsequent request/message reaches the peer.
+export type { ChannelHandle };
 
 /**
  * Server-side context for a single (pane × attachment) subscription.
- * `transport` is an isolated bunite channel — the extension pairs its own
- * schema to it via `defineBunRPC(...).setTransport(ctx.transport)`.
+ *
+ * `channel` is an isolated bunite channel handle — the extension pairs its
+ * own schema to it via `defineBunRPC(...)` and `await ctx.channel.bindTo(rpc)`.
+ * Awaiting the bind is mandatory before sending requests; otherwise the
+ * first packet can race the peer's handler registration and be dropped.
  *
  * One context is minted per connected pane per attachment. Device handoff
  * (same paneId re-subscribed from another attachment) triggers a fresh
@@ -13,7 +23,7 @@ import type { ShellClient } from "./shell";
  * state in module-level singletons.
  */
 export interface ExtensionServerPaneContext {
-  transport: RPCTransport;
+  channel: ChannelHandle;
   /**
    * ACL-aware ShellModelAPI client scoped to this subscription's
    * attachment/user. Use for identity lookup (e.g. `/status/attachments/
@@ -35,7 +45,7 @@ export interface ExtensionServerDefinition {
     paneId: string,
     attachmentId: string,
     ctx: ExtensionServerPaneContext
-  ): ExtensionServerPaneInstance | void;
+  ): ExtensionServerPaneInstance | void | Promise<ExtensionServerPaneInstance | void>;
 }
 
 export function defineExtensionServer<T extends ExtensionServerDefinition>(definition: T): T {

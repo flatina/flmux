@@ -74,7 +74,7 @@ function createExternalPaneContext(
       }
     },
     state,
-    transport: channelForPane(paneId)
+    channel: channelForPane(paneId)
   };
 }
 

@@ -1,4 +1,4 @@
-export const FLMUX_EXTENSION_API_VERSION = 4;
+export const FLMUX_EXTENSION_API_VERSION = 5;
 
 export interface ExtensionManifestEntrypoints {
   renderer?: string;

@@ -15,7 +15,7 @@ function notifyAll(sourcePaneId: string | null) {
 }
 
 export default defineExtensionServer({
-  onPaneConnected(paneId, _attachmentId, ctx) {
+  async onPaneConnected(paneId, _attachmentId, ctx) {
     const rpc = defineBunRPC<CounterSchema>({
       handlers: {
         requests: {
@@ -33,7 +33,9 @@ export default defineExtensionServer({
         }
       }
     });
-    rpc.setTransport(ctx.transport);
+    // Wait for the HELLO handshake so any `send` below reaches the pane
+    // instead of racing the peer's handler registration.
+    await ctx.channel.bindTo(rpc);
 
     const peer: Peer = {
       broadcast: (sourcePaneId) => {
@@ -42,8 +44,8 @@ export default defineExtensionServer({
     };
     peers.add(peer);
 
-    // Push the current value on mount so the pane never has to race its own
-    // initial `getCount()` against the attachment-bind window in web mode.
+    // Push the current value on mount so the renderer doesn't have to
+    // issue its own initial `getCount()` round-trip.
     peer.broadcast(null);
 
     return {

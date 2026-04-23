@@ -45,21 +45,31 @@ class CounterPane implements ExtensionPaneInstance {
     `;
     this.valueEl = host.querySelector<HTMLElement>('[data-role="value"]')!;
 
-    if (!ctx.transport) {
+    if (!ctx.channel) {
       this.valueEl.textContent = "(server entry not wired)";
       return;
     }
-    this.rpc.setTransport(ctx.transport);
 
     const inc = host.querySelector<HTMLButtonElement>('[data-action="inc"]')!;
     const dec = host.querySelector<HTMLButtonElement>('[data-action="dec"]')!;
     const reset = host.querySelector<HTMLButtonElement>('[data-action="reset"]')!;
 
-    inc.addEventListener("click", () => this.apply(this.rpc.requestProxy.increment({ delta: 1 })));
-    dec.addEventListener("click", () => this.apply(this.rpc.requestProxy.increment({ delta: -1 })));
-    reset.addEventListener("click", () => this.apply(this.rpc.requestProxy.reset()));
-
-    void this.apply(this.rpc.requestProxy.getCount());
+    // Await the channel handshake before wiring anything that sends a
+    // request — the server publishes the current count via `count.changed`
+    // as soon as it sees us, so the initial render arrives through the
+    // message listener, not a round-trip.
+    ctx.channel
+      .bindTo(this.rpc)
+      .then(() => {
+        if (this.disposed) return;
+        inc.addEventListener("click", () => this.apply(this.rpc.requestProxy.increment({ delta: 1 })));
+        dec.addEventListener("click", () => this.apply(this.rpc.requestProxy.increment({ delta: -1 })));
+        reset.addEventListener("click", () => this.apply(this.rpc.requestProxy.reset()));
+      })
+      .catch((error) => {
+        console.warn("[counter] channel handshake failed", error);
+        if (!this.disposed) this.valueEl.textContent = "(handshake failed)";
+      });
   }
 
   private async apply(promise: Promise<{ count: number }>) {

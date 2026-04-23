@@ -27,9 +27,11 @@ async function bootstrap() {
   });
   const view = new BuniteView();
   const demux = createTransportDemuxer(view.transport);
-  rpc.setTransport(demux.channel("default"));
+  // Await the HELLO handshake before any request is sent — `getConfig()`
+  // below races the peer's handler registration without this.
+  await demux.channel("default").bindTo(rpc);
   // Expose to external pane runtime so extension panes can claim their own
-  // `ctx.transport = demux.channel(paneId)` on mount.
+  // channel via `ctx.channel.bindTo(rpc)` on mount.
   setExtensionPaneDemuxer(demux);
 
   const config = await rpc.requestProxy["flmux.getConfig"]();

@@ -22,6 +22,7 @@
       "name": "@flmux-ext/cowsay",
       "dependencies": {
         "@flmux/extension-api": "workspace:*",
+        "citty": "^0.2.2",
       },
     },
     "extensions/inspector": {
@@ -71,6 +72,7 @@
       "version": "0.0.0",
       "dependencies": {
         "bunite-core": "^0.2.0",
+        "citty": "^0.2.2",
       },
     },
     "packages/extension-devkit": {

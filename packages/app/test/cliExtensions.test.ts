@@ -2,11 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import {
-  defaultExtensionsRootDir,
-  dispatchLocalCliExtensionCommand,
-  discoverLocalCliCommands
-} from "../src/cliExtensions";
+import { defaultExtensionsRootDir, discoverLocalCliCommands, loadLocalCliCommandDef } from "../src/cliExtensions";
 import { FLMUX_EXTENSION_API_VERSION } from "@flmux/extension-api";
 
 const tempDirs: string[] = [];
@@ -16,7 +12,7 @@ afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map(async (dir) => await rm(dir, { recursive: true, force: true })));
 });
 
-describe("cli extension dispatch", () => {
+describe("cli extension registration", () => {
   it("discovers command metadata from local extension manifests with cli entrypoints", async () => {
     const rootDir = await createCliExtensionFixture();
     const commands = await discoverLocalCliCommands(rootDir);
@@ -32,78 +28,24 @@ describe("cli extension dispatch", () => {
     expect(commands[0]?.extension.origin).toBe("source");
   });
 
-  it("dispatches a local extension command and passes shell client context", async () => {
+  it("loads the extension's default-exported citty CommandDef", async () => {
     const rootDir = await createCliExtensionFixture();
-    const printed: unknown[] = [];
-    const shellCalls: Array<{ path: string; args?: Record<string, unknown> }> = [];
+    const [command] = await discoverLocalCliCommands(rootDir);
+    const def = await loadLocalCliCommandDef(command!);
 
-    const handled = await dispatchLocalCliExtensionCommand({
-      commandId: "cowsay",
-      argv: ["hello", "cli"],
-      env: {},
-      cwd: "C:\\workspace",
-      extensionsRootDir: rootDir,
-      async getClient() {
-        return {
-          get: async () => ({ ok: true, found: true, value: null }),
-          list: async () => ({ ok: true, found: true, entries: [] }),
-          set: async (_path, value) => ({ ok: true, value }),
-          call: async (path, args) => {
-            shellCalls.push({ path, args });
-            return { ok: true, value: { path, args } };
-          }
-        };
-      },
-      print(value) {
-        printed.push(value);
-      },
-      printError(message) {
-        throw new Error(message);
-      }
-    });
-
-    expect(handled).toBe(true);
-    expect(shellCalls).toEqual([
-      {
-        path: "/panes/new",
-        args: {
-          kind: "cowsay",
-          place: "right",
-          title: "hello cli"
-        }
-      }
-    ]);
-    expect(printed).toEqual([
-      {
-        ok: true,
-        value: {
-          path: "/panes/new",
-          args: {
-            kind: "cowsay",
-            place: "right",
-            title: "hello cli"
-          }
-        }
-      }
-    ]);
+    expect(def).toBeTruthy();
+    // Citty CommandDefs carry meta + run; this confirms the extension
+    // default-exported the shape flmux registers at the root level.
+    const rawMeta = def?.meta;
+    const meta = typeof rawMeta === "function" ? await rawMeta() : rawMeta;
+    expect((meta as { name?: string } | undefined)?.name).toBe("cowsay");
   });
 
-  it("returns false when no extension command matches", async () => {
-    const rootDir = await createCliExtensionFixture();
-    const handled = await dispatchLocalCliExtensionCommand({
-      commandId: "unknown",
-      argv: [],
-      env: {},
-      cwd: "C:\\workspace",
-      extensionsRootDir: rootDir,
-      async getClient() {
-        throw new Error("should not be called");
-      },
-      print() {},
-      printError() {}
-    });
-
-    expect(handled).toBe(false);
+  it("returns null when a loaded module doesn't default-export a CommandDef", async () => {
+    const rootDir = await createCliExtensionFixture({ badExport: true });
+    const [command] = await discoverLocalCliCommands(rootDir);
+    const def = await loadLocalCliCommandDef(command!);
+    expect(def).toBeNull();
   });
 
   it("applies catalog disable policy to CLI command discovery", async () => {
@@ -129,7 +71,7 @@ describe("cli extension dispatch", () => {
   });
 });
 
-async function createCliExtensionFixture() {
+async function createCliExtensionFixture(options: { badExport?: boolean } = {}) {
   const rootDir = await mkdtemp(join(tmpdir(), "flmux-cli-ext-"));
   tempDirs.push(rootDir);
   const extensionDir = join(rootDir, "cowsay");
@@ -138,84 +80,41 @@ async function createCliExtensionFixture() {
 
   await mkdir(dirname(sourceCliEntryPath), { recursive: true });
   await mkdir(dirname(runtimeCliEntryPath), { recursive: true });
-  await writeFile(
-    join(extensionDir, "manifest.json"),
-    JSON.stringify(
+
+  const manifest = {
+    id: "sample.cowsay",
+    name: "Cowsay",
+    version: "0.1.0",
+    apiVersion: FLMUX_EXTENSION_API_VERSION,
+    entrypoints: {
+      cli: "./cli.ts"
+    },
+    commands: [
       {
-        id: "sample.cowsay",
-        name: "Cowsay",
-        version: "0.1.0",
-        apiVersion: FLMUX_EXTENSION_API_VERSION,
-        entrypoints: {
-          cli: "./cli.ts"
-        },
-        commands: [
-          {
-            id: "cowsay",
-            description: "Open a cowsay pane"
-          }
-        ]
-      },
-      null,
-      2
-    ),
-    "utf8"
-  );
+        id: "cowsay",
+        description: "Open a cowsay pane"
+      }
+    ]
+  };
+  await writeFile(join(extensionDir, "manifest.json"), JSON.stringify(manifest, null, 2), "utf8");
   await writeFile(
     join(extensionDir, "dist", "manifest.json"),
-    JSON.stringify(
-      {
-        id: "sample.cowsay",
-        name: "Cowsay",
-        version: "0.1.0",
-        apiVersion: FLMUX_EXTENSION_API_VERSION,
-        entrypoints: {
-          cli: "cli.js"
-        },
-        commands: [
-          {
-            id: "cowsay",
-            description: "Open a cowsay pane"
-          }
-        ]
-      },
-      null,
-      2
-    ),
+    JSON.stringify({ ...manifest, entrypoints: { cli: "cli.js" } }, null, 2),
     "utf8"
   );
-  await writeFile(
-    sourceCliEntryPath,
-    [
-      "export async function run(context) {",
-      "  const client = await context.getClient();",
-      '  const result = await client.call("/panes/new", {',
-      '    kind: "cowsay",',
-      '    place: "right",',
-      '    ...(context.argv.length > 0 ? { title: context.argv.join(" ") } : {})',
-      "  });",
-      "  context.print(result);",
-      "}",
-      ""
-    ].join("\n"),
-    "utf8"
-  );
-  await writeFile(
-    runtimeCliEntryPath,
-    [
-      "export async function run(context) {",
-      "  const client = await context.getClient();",
-      '  const result = await client.call("/panes/new", {',
-      '    kind: "cowsay",',
-      '    place: "right",',
-      '    ...(context.argv.length > 0 ? { title: context.argv.join(" ") } : {})',
-      "  });",
-      "  context.print(result);",
-      "}",
-      ""
-    ].join("\n"),
-    "utf8"
-  );
+
+  const runtimeContents = options.badExport
+    ? "export const notADefault = 1;\n"
+    : [
+        "export default {",
+        '  meta: { name: "cowsay", description: "Open a cowsay pane" },',
+        "  async run() {}",
+        "};",
+        ""
+      ].join("\n");
+
+  await writeFile(sourceCliEntryPath, "// source stub for discovery\n", "utf8");
+  await writeFile(runtimeCliEntryPath, runtimeContents, "utf8");
 
   return rootDir;
 }

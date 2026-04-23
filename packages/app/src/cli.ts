@@ -1,40 +1,16 @@
 import { defineCommand, runMain, type CommandDef } from "citty";
-import { dispatchLocalCliExtensionCommand, discoverLocalCliCommands, defaultExtensionsRootDir } from "./cliExtensions";
+import { discoverLocalCliCommands, defaultExtensionsRootDir, loadLocalCliCommandDef } from "./cliExtensions";
 import { runTokensCli } from "./cliTokens";
-import type {
-  ShellClient,
-  ShellPathCallResult,
-  ShellPathGetResult,
-  ShellPathListResult,
-  ShellPathSetResult
-} from "@flmux/extension-api";
+import { commonArgs, printJson, resolveClientId, resolveOrigin, toFlmuxCliFlags } from "@flmux/extension-api";
+import type { FlmuxCliFlags } from "@flmux/extension-api";
 
-type Flags = {
-  origin?: string;
-  client?: string;
-  token?: string;
-};
-
-const commonArgs = {
-  origin: {
-    type: "string",
-    description: "Server origin (http://127.0.0.1:PORT). Falls back to FLMUX_ORIGIN."
-  },
-  client: {
-    type: "string",
-    description: "Renderer clientId. Required only when multiple clients are connected."
-  },
-  token: {
-    type: "string",
-    description: "Bearer token for authenticated servers. Falls back to FLMUX_TOKEN."
-  }
-} as const;
+type Flags = FlmuxCliFlags;
 
 const clientsCmd = defineCommand({
   meta: { name: "clients", description: "List connected renderer clients" },
   args: commonArgs,
   async run({ args }) {
-    const flags = toFlags(args);
+    const flags = toFlmuxCliFlags(args);
     const origin = resolveOrigin(flags);
     printJson(await apiGet<{ ok: true; clients: unknown[] }>(origin, "/api/clients", flags));
   }
@@ -47,7 +23,7 @@ const getCmd = defineCommand({
     path: { type: "positional", description: "Path (e.g. /status/app/origin)", required: true }
   },
   async run({ args }) {
-    const flags = toFlags(args);
+    const flags = toFlmuxCliFlags(args);
     const origin = resolveOrigin(flags);
     printJson(
       await modelPost(
@@ -70,7 +46,7 @@ const lsCmd = defineCommand({
     path: { type: "positional", description: "Path to list", required: true }
   },
   async run({ args }) {
-    const flags = toFlags(args);
+    const flags = toFlmuxCliFlags(args);
     const origin = resolveOrigin(flags);
     printJson(
       await modelPost(
@@ -93,7 +69,7 @@ const lsEachGetCmd = defineCommand({
     path: { type: "positional", description: "Path to list", required: true }
   },
   async run({ args }) {
-    const flags = toFlags(args);
+    const flags = toFlmuxCliFlags(args);
     const origin = resolveOrigin(flags);
     const clientId = await resolveClientId(origin, flags);
     const listed = await modelPost<{
@@ -130,7 +106,7 @@ const setCmd = defineCommand({
     }
   },
   async run({ args }) {
-    const flags = toFlags(args);
+    const flags = toFlmuxCliFlags(args);
     const origin = resolveOrigin(flags);
     // args._ contains all positionals including `path` at [0] and `value` at [1].
     // Extra trailing positionals are joined to support unquoted multi-word values.
@@ -158,7 +134,7 @@ const callCmd = defineCommand({
     path: { type: "positional", description: "Path to call", required: true }
   },
   async run({ args }) {
-    const flags = toFlags(args);
+    const flags = toFlmuxCliFlags(args);
     const origin = resolveOrigin(flags);
     // args._ has all positionals; path is at [0], key=value args follow.
     const callArgs = parseNamedArgs(args._.slice(1));
@@ -213,46 +189,20 @@ async function buildSubCommands(): Promise<Record<string, CommandDef>> {
     tokens: tokensCmd as CommandDef
   };
 
+  // Extensions default-export a citty CommandDef; flmux registers each at
+  // the root level. The extension owns its args/flags/subCommands/run so
+  // root-level strict validation never sees extension-specific options.
   const extensionCommands = await discoverLocalCliCommands(defaultExtensionsRootDir()).catch(() => []);
   for (const cmd of extensionCommands) {
     if (cmd.commandId in subCommands) continue;
-    subCommands[cmd.commandId] = buildExtensionSubCommand(cmd.commandId, cmd.description) as CommandDef;
+    const def = await loadLocalCliCommandDef(cmd);
+    if (def) subCommands[cmd.commandId] = def;
   }
   return subCommands;
 }
 
-function buildExtensionSubCommand(commandId: string, description: string | undefined) {
-  return defineCommand({
-    meta: { name: commandId, description: description ?? `Extension command '${commandId}'` },
-    args: commonArgs,
-    async run({ args }) {
-      const flags = toFlags(args);
-      const origin = resolveOrigin(flags);
-      // args._ holds positionals only; common flags are already parsed out.
-      await dispatchLocalCliExtensionCommand({
-        commandId,
-        argv: args._,
-        env: process.env as Record<string, string | undefined>,
-        cwd: process.cwd(),
-        getClient: (clientId) => Promise.resolve(createShellClient(origin, flags, clientId)),
-        print: printJson,
-        printError: (message) => console.error(message)
-      });
-    }
-  });
-}
-
-function toFlags(args: { origin?: string; client?: string; token?: string }): Flags {
-  return { origin: args.origin, client: args.client, token: args.token };
-}
-
 async function modelPost<T = unknown>(origin: string, pathname: string, body: unknown, flags: Flags): Promise<T> {
   return apiPost<T>(origin, pathname, body, flags);
-}
-
-async function modelResultPost<T = unknown>(origin: string, pathname: string, body: unknown, flags: Flags): Promise<T> {
-  const payload = await apiPost<{ ok: true; result: T }>(origin, pathname, body, flags);
-  return payload.result;
 }
 
 async function apiGet<T>(origin: string, pathname: string, flags: Flags): Promise<T> {
@@ -283,87 +233,6 @@ async function apiPost<T>(origin: string, pathname: string, body: unknown, flags
   return payload as T;
 }
 
-function resolveOrigin(flags: Flags) {
-  const origin = flags.origin ?? process.env.FLMUX_ORIGIN;
-  if (!origin) {
-    throw new Error("Provide --origin <http://127.0.0.1:PORT> or set FLMUX_ORIGIN");
-  }
-  return origin.replace(/\/+$/, "");
-}
-
-async function resolveClientId(origin: string, flags: Flags) {
-  const explicit = flags.client ?? process.env.FLMUX_CLIENT_ID;
-  if (explicit) return explicit;
-
-  const payload = await apiGet<{
-    ok: true;
-    clients: Array<{ clientId: string; workspace?: { id?: string; title?: string } | null }>;
-  }>(origin, "/api/clients", flags);
-
-  if (payload.clients.length === 1) return payload.clients[0].clientId;
-  if (payload.clients.length === 0) {
-    throw new Error("No flmux clients are connected. Start the app first or provide --client <clientId>.");
-  }
-
-  const available = payload.clients
-    .map((c) => {
-      const ws = c.workspace
-        ? ` (${c.workspace.id ?? "unknown"}${c.workspace.title ? `: ${c.workspace.title}` : ""})`
-        : "";
-      return `${c.clientId}${ws}`;
-    })
-    .join(", ");
-  throw new Error(`Multiple flmux clients are connected. Use --client <clientId>. Available: ${available}`);
-}
-
-function createShellClient(origin: string, flags: Flags, explicitClientId?: string): ShellClient {
-  const merged = { ...flags, client: explicitClientId ?? flags.client };
-  return {
-    get: async (path: string): Promise<ShellPathGetResult> =>
-      modelResultPost(
-        origin,
-        "/api/model/path/get",
-        {
-          clientId: await resolveClientId(origin, merged),
-          path
-        },
-        flags
-      ),
-    list: async (path: string): Promise<ShellPathListResult> =>
-      modelResultPost(
-        origin,
-        "/api/model/path/list",
-        {
-          clientId: await resolveClientId(origin, merged),
-          path
-        },
-        flags
-      ),
-    set: async (path: string, value: unknown): Promise<ShellPathSetResult> =>
-      modelResultPost(
-        origin,
-        "/api/model/path/set",
-        {
-          clientId: await resolveClientId(origin, merged),
-          path,
-          value
-        },
-        flags
-      ),
-    call: async (path: string, args?: Record<string, unknown>): Promise<ShellPathCallResult> =>
-      modelResultPost(
-        origin,
-        "/api/model/path/call",
-        {
-          clientId: await resolveClientId(origin, merged),
-          path,
-          args
-        },
-        flags
-      )
-  };
-}
-
 function parseNamedArgs(tokens: string[]) {
   return Object.fromEntries(
     tokens.map((token) => {
@@ -391,10 +260,6 @@ function coerceScalar(rawValue: string): unknown {
     }
   }
   return rawValue;
-}
-
-function printJson(value: unknown) {
-  console.log(JSON.stringify(value, null, 2));
 }
 
 function buildAuthHeaders(flags: Flags) {

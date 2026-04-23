@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@flmux/extension-api": "workspace:*"
+    "@flmux/extension-api": "workspace:*",
+    "citty": "^0.2.2"
   },
   "main": "index.ts"
 }

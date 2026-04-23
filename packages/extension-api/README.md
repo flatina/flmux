@@ -93,16 +93,24 @@ Add `entrypoints.cli` and a `commands` array to `manifest.json`:
 
 **cli.ts**
 ```ts
-import type { FlmuxExtensionCliContext } from "@flmux/extension-api";
+import { defineCommand } from "citty";
+import { commonArgs, createFlmuxClient, printJson, toFlmuxCliFlags } from "@flmux/extension-api";
 
-export async function run(ctx: FlmuxExtensionCliContext) {
-  const client = await ctx.getClient();
-  const result = await client.call("/panes/new", { kind: "myext", place: "right" });
-  ctx.print(result);
-}
+export default defineCommand({
+  meta: { name: "myext", description: "Open a myext pane" },
+  args: {
+    ...commonArgs,
+    title: { type: "positional", description: "Title", required: false }
+  },
+  async run({ args }) {
+    const client = await createFlmuxClient(toFlmuxCliFlags(args));
+    const result = await client.call("/panes/new", { kind: "myext", place: "right" });
+    printJson(result);
+  }
+});
 ```
 
-The user runs `flmux myext …`. `ctx.argv` holds positionals after the command (global `--origin/--client/--token` are consumed by flmux). `getClient()` returns a `ShellClient` hitting the flmux HTTP surface.
+Extension CLI entries default-export a [citty](https://github.com/unjs/citty) `CommandDef` — flmux registers it directly as a root subcommand, so `flmux myext …` goes straight to your `run({ args, rawArgs })`. Spread `commonArgs` into your own `args` to inherit the transport flags (`--origin`, `--client`, `--token`); `createFlmuxClient(flags)` returns a `ShellClient` talking to the flmux HTTP surface; `printJson(value)` writes the canonical stdout format the built-in verbs use.
 
 ## Testing without flmux — `@flmux/extension-api/testing`
 

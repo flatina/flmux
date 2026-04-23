@@ -1,12 +1,28 @@
-import type { FlmuxExtensionCliContext } from "@flmux/extension-api";
+import { defineCommand } from "citty";
+import { commonArgs, createFlmuxClient, printJson, toFlmuxCliFlags } from "@flmux/extension-api";
 
-export async function run(context: FlmuxExtensionCliContext) {
-  const title = context.argv.join(" ").trim();
-  const client = await context.getClient();
-  const result = await client.call("/panes/new", {
-    kind: "cowsay",
-    place: "right",
-    ...(title ? { title } : {})
-  });
-  context.print(result);
-}
+export default defineCommand({
+  meta: {
+    name: "cowsay",
+    description: "Open a cowsay pane"
+  },
+  args: {
+    ...commonArgs,
+    title: {
+      type: "positional",
+      description: "Title for the new pane (multiple words joined)",
+      required: false
+    }
+  },
+  async run({ args }) {
+    const flags = toFlmuxCliFlags(args);
+    const client = await createFlmuxClient(flags);
+    const title = args._.join(" ").trim();
+    const result = await client.call("/panes/new", {
+      kind: "cowsay",
+      place: "right",
+      ...(title ? { title } : {})
+    });
+    printJson(result);
+  }
+});

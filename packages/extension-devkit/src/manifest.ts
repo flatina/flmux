@@ -6,7 +6,7 @@
 // devkit. Drift is caught by the shared schema's tests and by the small
 // stable surface (rarely changes).
 
-const FLMUX_EXTENSION_API_VERSION = 3;
+const FLMUX_EXTENSION_API_VERSION = 4;
 
 export interface ExtensionManifestEntrypoints {
   renderer?: string;

@@ -71,7 +71,10 @@ export async function createDesktopShellAuthority(options: {
     // Phase B: the CEF renderer is a single attachment; name its slot
     // `"local"` so scope=attachment event envelopes are self-describing.
     // B2 switches to per-attachment slotKey = real attachmentId.
-    defaultSlotKey: DESKTOP_ATTACHMENT_ID
+    defaultSlotKey: DESKTOP_ATTACHMENT_ID,
+    // Desktop is single-user; surface `"local"` through
+    // `/status/attachments/{id}/userId` for extension session keying.
+    authorityUserId: DESKTOP_ATTACHMENT_ID
   });
   const shellModel = createShellModel({
     host: shellCore,

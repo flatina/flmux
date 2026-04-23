@@ -2,7 +2,7 @@
   "id": "sample.counter",
   "name": "Counter",
   "version": "0.1.0",
-  "apiVersion": 3,
+  "apiVersion": 4,
   "entrypoints": {
     "renderer": "./src/index.ts",
     "server": "./src/server.ts"

@@ -919,6 +919,9 @@ class ShellModel implements ShellModelAPI {
       if (segments[1] === "attachmentId") {
         return { ok: true, found: true, value: attachment.attachmentId };
       }
+      if (segments[1] === "userId") {
+        return { ok: true, found: true, value: attachment.userId };
+      }
       if (segments[1] === "activeWorkspaceId") {
         return { ok: true, found: true, value: attachment.activeWorkspaceId };
       }
@@ -962,6 +965,7 @@ class ShellModel implements ShellModelAPI {
         found: true,
         entries: [
           leafEntry("attachmentId", `/status/attachments/${attachment.attachmentId}/attachmentId`),
+          leafEntry("userId", `/status/attachments/${attachment.attachmentId}/userId`),
           leafEntry("activeWorkspaceId", `/status/attachments/${attachment.attachmentId}/activeWorkspaceId`),
           leafEntry(
             "activePaneIdByWorkspace",
@@ -975,6 +979,7 @@ class ShellModel implements ShellModelAPI {
     if (segments.length === 2) {
       if (
         segments[1] === "attachmentId" ||
+        segments[1] === "userId" ||
         segments[1] === "activeWorkspaceId" ||
         segments[1] === "activePaneIdByWorkspace"
       ) {

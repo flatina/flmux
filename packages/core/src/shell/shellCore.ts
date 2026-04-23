@@ -75,6 +75,11 @@ export interface ShellCoreOptions {
    * defaultSlotKey should either go away or become strictly test-scoped.
    */
   defaultSlotKey?: string;
+  /** Owning user. Authority passes its own user id — desktop: `"local"`,
+   * web: authenticated `user.name`. Surfaced through
+   * `/status/attachments/{id}/userId` so extensions can key session state
+   * per user (flmux only routes; extensions own their schema). */
+  authorityUserId?: string;
 }
 
 const IMPLICIT_DEFAULT_SLOT_KEY = "default";
@@ -690,8 +695,10 @@ export class ShellCore implements ShellModelHost {
    * needed.
    */
   async listAttachmentSlots(): Promise<import("./types").AttachmentSlotSummary[]> {
+    const userId = this.options.authorityUserId ?? "local";
     return Array.from(this.activeSlots.entries()).map(([attachmentId, slot]) => ({
       attachmentId,
+      userId,
       activeWorkspaceId: slot.activeWorkspaceId,
       activePaneIdByWorkspace: Object.fromEntries(slot.activePaneIdByWorkspace)
     }));

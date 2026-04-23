@@ -96,6 +96,7 @@ describe("shell model direct", () => {
       expect(attachments.value).toEqual({
         test: {
           attachmentId: "test",
+          userId: "test-user",
           activeWorkspaceId: "workspace.test",
           activePaneIdByWorkspace: { "workspace.test": "pane.alpha" }
         }

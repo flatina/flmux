@@ -48,6 +48,10 @@ export async function createWebModeShellAuthority(options: {
    * `sessionStore.load()` + `restoreFromSession` before falling back to
    * `initialize()`; `persistSession` writes through to the store. */
   sessionStore?: FlmuxSessionStore;
+  /** Authenticated user this authority serves. Surfaced through
+   * `/status/attachments/{id}/userId` so extensions can key session state
+   * per user. `undefined` (legacy single-tenant tests) maps to `"local"`. */
+  userId?: string;
 }): Promise<WebModeShellAuthority> {
   const paneRegistry = new PaneRegistry<PaneSpec>();
   paneRegistry.register(createPlaceholderPaneSpec());
@@ -66,7 +70,8 @@ export async function createWebModeShellAuthority(options: {
     // Web-mode authority's default slot is the server-side ShellModelAPI
     // driver (CLI, external HTTP calls without a browser attachment). B2
     // replaces this with per-attachment (browser) slots.
-    defaultSlotKey: "server"
+    defaultSlotKey: "server",
+    authorityUserId: options.userId
   });
   const shellModel = createShellModel({
     host: shellCore,

@@ -1,4 +1,5 @@
 import type { RPCTransport } from "bunite-core/shared/rpc";
+import type { ShellClient } from "./shell";
 
 /**
  * Server-side context for a single (pane × attachment) subscription.
@@ -13,6 +14,16 @@ import type { RPCTransport } from "bunite-core/shared/rpc";
  */
 export interface ExtensionServerPaneContext {
   transport: RPCTransport;
+  /**
+   * ACL-aware ShellModelAPI client scoped to this subscription's
+   * attachment/user. Use for identity lookup (e.g. `/status/attachments/
+   * {attachmentId}/userId` to key user-scoped session state) and for any
+   * shell queries the extension needs. Calls route through the owning
+   * user's `allow_paths` — permission is governed by the same config file
+   * that drives HTTP ACL, so extension access per user is managed in one
+   * place.
+   */
+  shell: ShellClient;
 }
 
 export interface ExtensionServerPaneInstance {

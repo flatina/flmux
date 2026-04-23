@@ -156,6 +156,10 @@ export interface ShellCreatePaneOptions extends ShellSlotOptions {
  * transport-level metadata (connected, lastSeen) is a higher-layer concern. */
 export interface AttachmentSlotSummary {
   attachmentId: string;
+  /** Owning user. Desktop authority uses `"local"`; web authority fills in
+   * the authenticated user name. Surfaced so extension server entries can
+   * key session state per user via `/status/attachments/{id}/userId`. */
+  userId: string;
   activeWorkspaceId: string | null;
   activePaneIdByWorkspace: Record<string, string>;
 }

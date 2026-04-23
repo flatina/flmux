@@ -73,7 +73,8 @@ export function createWebModeUserAuthorityRegistry(
       terminalService: options.terminalService,
       clientRegistry: options.clientRegistry,
       localExtensions: options.localExtensions,
-      sessionStore
+      sessionStore,
+      userId
     });
     authorities.set(userId, authority);
     // Subscribe BEFORE start() so any pane.added emitted during session

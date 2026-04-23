@@ -301,6 +301,7 @@ export class TestShellModelHost implements ShellModelHost {
     return [
       {
         attachmentId: "test",
+        userId: "test-user",
         activeWorkspaceId: this.workspaceId,
         activePaneIdByWorkspace: this.activePaneId ? { [this.workspaceId]: this.activePaneId } : {}
       }

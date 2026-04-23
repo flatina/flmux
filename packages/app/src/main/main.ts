@@ -31,6 +31,7 @@ import {
   type FlmuxAuthorizationContext,
   type FlmuxWebModeAuthorizer
 } from "./webModeAuth";
+import type { FlmuxUser as FlmuxUserImport } from "./auth/userStore";
 import { eventToReadPath } from "./auth/eventAclPath";
 import { resolveFlmuxServerPort } from "./auth/serverConfig";
 import { resolveFlmuxRuntimeMode } from "./runtimeMode";
@@ -39,7 +40,11 @@ import { PtydLockFile } from "@flmux/core/terminal/ptyd/lockFile";
 import { callJsonRpcIpc } from "@flmux/core/terminal/ptyd/jsonRpcIpc";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
 import { discoverConfiguredLocalExtensions, resolveConfiguredLocalExtensionsRootDir } from "./localExtensions";
-import type { ExtensionServerDefinition, ExtensionServerPaneInstance } from "@flmux/extension-api";
+import type {
+  ExtensionServerDefinition,
+  ExtensionServerPaneInstance,
+  ShellClient as ShellClientImport
+} from "@flmux/extension-api";
 
 type ShellAuthority = Pick<DesktopShellAuthority | WebModeShellAuthority, "subscribe" | "applyTerminalEvent"> & {
   readonly shellModel: ShellModelAPI;
@@ -145,6 +150,79 @@ function paneInstanceKey(extId: string, paneId: string, attachmentId: string) {
   return `${extId}::${paneId}::${attachmentId}`;
 }
 
+/**
+ * ACL-aware ShellClient handed to the extension server entry. Calls route
+ * through the same `allow_paths` + `allow_pane_kinds` gates that guard HTTP
+ * — so extension reach is configured alongside the user's other permissions
+ * in one policy surface. Desktop (no authorizer) grants through by default,
+ * same as preload/WS trust.
+ *
+ * Returns null only when the pane→authority mapping isn't established yet
+ * (racing `attachmentIdToDemux` writes); caller warns and retries when
+ * lifecycle resolves.
+ */
+function createExtensionShellClient(paneId: string, attachmentId: string): ShellClientImport | null {
+  const authority = paneIdToAuthority.get(paneId);
+  if (!authority) return null;
+  const shellModel = authority.shellModel;
+  const authorizer = webModeAuthorizer;
+  const caller = { attachmentId, sourcePaneId: paneId };
+
+  // Resolve userId per call so session cleanup / token revocation during
+  // the pane's lifetime drops the extension's ACL-admitted reach on the
+  // next shell call rather than leaving a stale snapshot.
+  function resolveUser(): FlmuxUserImport | null {
+    if (!authorizer) return null;
+    const userId = attachmentIdToUserId.get(attachmentId);
+    if (!userId) return null;
+    return authorizer.resolveUserByName(userId);
+  }
+
+  function assertAllowed(method: "read" | "write" | "call", path: string) {
+    if (!authorizer) return;
+    const user = resolveUser();
+    if (!user) {
+      // Fail closed: writes/calls must not slip through when the
+      // attachment's user can't be identified against the configured ACL.
+      throw new Error(`No resolvable user for attachment '${attachmentId}' (shell ${method} '${path}')`);
+    }
+    if (!authorizer.isPathAllowed(user, method, path)) {
+      throw new Error(`Access denied for user '${user.name}': ${method} '${path}'`);
+    }
+  }
+
+  function assertPaneKindAllowed(path: string, args: Record<string, unknown> | undefined) {
+    if (!authorizer || path !== "/panes/new") return;
+    const kind = typeof args?.kind === "string" ? args.kind : null;
+    if (!kind) return;
+    const user = resolveUser();
+    if (!user) return; // already thrown from assertAllowed earlier
+    if (!authorizer.isPaneKindAllowed(user, kind)) {
+      throw new Error(`User '${user.name}' is not allowed to create pane kind '${kind}'`);
+    }
+  }
+
+  return {
+    async get(path) {
+      assertAllowed("read", path);
+      return shellModel.pathGet(path, caller);
+    },
+    async list(path) {
+      assertAllowed("read", path);
+      return shellModel.pathList(path, caller);
+    },
+    async set(path, value) {
+      assertAllowed("write", path);
+      return shellModel.pathSet(path, value, caller);
+    },
+    async call(path, args) {
+      assertAllowed("call", path);
+      assertPaneKindAllowed(path, args);
+      return shellModel.pathCall(path, args, caller);
+    }
+  };
+}
+
 function attachExtensionServerChannel(paneId: string, kind: string, attachmentId: string) {
   const extId = findExtensionIdForPaneKind(kind);
   if (!extId) return;
@@ -152,11 +230,18 @@ function attachExtensionServerChannel(paneId: string, kind: string, attachmentId
   if (!server?.onPaneConnected) return;
   const demux = attachmentIdToDemux.get(attachmentId);
   if (!demux) return;
+  const shell = createExtensionShellClient(paneId, attachmentId);
+  if (!shell) {
+    console.warn(
+      `[flmux] extension '${extId}' skipped onPaneConnected — no authority mapped for pane '${paneId}' (attachment ${attachmentId})`
+    );
+    return;
+  }
   const key = paneInstanceKey(extId, paneId, attachmentId);
   if (paneServerInstances.has(key)) return;
   try {
     const transport = demux.channel(paneId);
-    const inst = server.onPaneConnected(paneId, attachmentId, { transport });
+    const inst = server.onPaneConnected(paneId, attachmentId, { transport, shell });
     if (inst) paneServerInstances.set(key, inst);
   } catch (err) {
     console.warn(`[flmux] extension '${extId}' onPaneConnected error (pane ${paneId}, att ${attachmentId}):`, err);

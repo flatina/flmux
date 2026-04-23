@@ -8,9 +8,12 @@ import type {
 } from "./shell";
 
 /**
- * Flags that every flmux-aware CLI subcommand accepts. Extension CommandDefs
- * spread these into their `args` so the common transport options stay
- * consistent (`--origin`, `--client`, `--token`).
+ * Transport flags that every flmux-aware CLI subcommand accepts. Extensions
+ * **must** spread these into their own `args` (`args: { ...commonArgs,
+ * myFlag: {...} }`) — citty parses each subcommand in isolation, so an
+ * extension CommandDef that omits the spread will have citty reject
+ * `--origin`/`--client`/`--token` as unknown options. The user-visible
+ * contract is `flmux <cmd> [--origin=X] [--client=Y] [--token=Z] <args>`.
  */
 export const commonArgs = {
   origin: {

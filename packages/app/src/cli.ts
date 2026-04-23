@@ -26,7 +26,7 @@ const getCmd = defineCommand({
     const flags = toFlmuxCliFlags(args);
     const origin = resolveOrigin(flags);
     printJson(
-      await modelPost(
+      await apiPost(
         origin,
         "/api/model/path/get",
         {
@@ -49,7 +49,7 @@ const lsCmd = defineCommand({
     const flags = toFlmuxCliFlags(args);
     const origin = resolveOrigin(flags);
     printJson(
-      await modelPost(
+      await apiPost(
         origin,
         "/api/model/path/list",
         {
@@ -72,7 +72,7 @@ const lsEachGetCmd = defineCommand({
     const flags = toFlmuxCliFlags(args);
     const origin = resolveOrigin(flags);
     const clientId = await resolveClientId(origin, flags);
-    const listed = await modelPost<{
+    const listed = await apiPost<{
       ok: true;
       result: { ok: boolean; found?: boolean; entries?: Array<{ path: string }> };
     }>(origin, "/api/model/path/list", { clientId, path: args.path }, flags);
@@ -85,7 +85,7 @@ const lsEachGetCmd = defineCommand({
     const values = Object.fromEntries(
       await Promise.all(
         listed.result.entries.map(async (entry) => {
-          const value = await modelPost(origin, "/api/model/path/get", { clientId, path: entry.path }, flags);
+          const value = await apiPost(origin, "/api/model/path/get", { clientId, path: entry.path }, flags);
           return [entry.path, value];
         })
       )
@@ -113,7 +113,7 @@ const setCmd = defineCommand({
     const rawValue = args._.slice(1).join(" ");
     const value = coerceScalar(rawValue || String(args.value));
     printJson(
-      await modelPost(
+      await apiPost(
         origin,
         "/api/model/path/set",
         {
@@ -139,7 +139,7 @@ const callCmd = defineCommand({
     // args._ has all positionals; path is at [0], key=value args follow.
     const callArgs = parseNamedArgs(args._.slice(1));
     printJson(
-      await modelPost(
+      await apiPost(
         origin,
         "/api/model/path/call",
         {
@@ -199,10 +199,6 @@ async function buildSubCommands(): Promise<Record<string, CommandDef>> {
     if (def) subCommands[cmd.commandId] = def;
   }
   return subCommands;
-}
-
-async function modelPost<T = unknown>(origin: string, pathname: string, body: unknown, flags: Flags): Promise<T> {
-  return apiPost<T>(origin, pathname, body, flags);
 }
 
 async function apiGet<T>(origin: string, pathname: string, flags: Flags): Promise<T> {

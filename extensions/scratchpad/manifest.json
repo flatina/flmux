@@ -2,7 +2,7 @@
   "id": "sample.scratchpad",
   "name": "Scratchpad",
   "version": "0.1.0",
-  "apiVersion": 2,
+  "apiVersion": 3,
   "entrypoints": {
     "renderer": "./index.ts"
   },

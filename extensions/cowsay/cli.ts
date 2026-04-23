@@ -10,14 +10,13 @@ export default defineCommand({
     ...commonArgs,
     title: {
       type: "positional",
-      description: "Title for the new pane (multiple words joined)",
+      description: "Title for the new pane (quote to include spaces)",
       required: false
     }
   },
   async run({ args }) {
-    const flags = toFlmuxCliFlags(args);
-    const client = await createFlmuxClient(flags);
-    const title = args._.join(" ").trim();
+    const client = await createFlmuxClient(toFlmuxCliFlags(args));
+    const title = args.title?.trim();
     const result = await client.call("/panes/new", {
       kind: "cowsay",
       place: "right",

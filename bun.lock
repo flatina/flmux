@@ -22,7 +22,6 @@
       "name": "@flmux-ext/cowsay",
       "dependencies": {
         "@flmux/extension-api": "workspace:*",
-        "citty": "^0.2.2",
       },
     },
     "extensions/inspector": {

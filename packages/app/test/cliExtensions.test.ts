@@ -48,6 +48,70 @@ describe("cli extension registration", () => {
     expect(def).toBeNull();
   });
 
+  it("runs the first-party cowsay CommandDef end-to-end against a stub flmux server", async () => {
+    // Drive the real cowsay CLI build through its full path: citty parse →
+    // createFlmuxClient → /api/clients lookup → /api/model/path/call. Mounts
+    // a stub HTTP server so the test owns the responses and asserts on the
+    // outbound request body (what the extension author's `client.call`
+    // actually sends over the wire).
+    const { resolve } = await import("node:path");
+    const cowsayDistDir = resolve(__dirname, "../../../extensions/cowsay/dist");
+    const cowsayCliUrl = (await import("node:url")).pathToFileURL(resolve(cowsayDistDir, "cli.js")).href;
+
+    const calls: Array<{ pathname: string; body: unknown }> = [];
+    const server = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        const url = new URL(req.url);
+        const body = req.method === "POST" ? await req.json() : null;
+        calls.push({ pathname: url.pathname, body });
+        if (url.pathname === "/api/clients") {
+          return Response.json({ ok: true, clients: [{ clientId: "stub.client" }] });
+        }
+        if (url.pathname === "/api/model/path/call") {
+          return Response.json({ ok: true, result: { ok: true, value: { paneId: "pane.stub" } } });
+        }
+        return new Response("not found", { status: 404 });
+      }
+    });
+
+    try {
+      const mod = (await import(cowsayCliUrl)) as { default: { run: (ctx: unknown) => Promise<void> } };
+      const logs: string[] = [];
+      const originalLog = console.log;
+      console.log = (v: unknown) => {
+        logs.push(typeof v === "string" ? v : JSON.stringify(v));
+      };
+      try {
+        await mod.default.run({
+          args: {
+            _: ["moo moo"],
+            origin: `http://127.0.0.1:${server.port}`,
+            title: "moo moo"
+          },
+          rawArgs: []
+        });
+      } finally {
+        console.log = originalLog;
+      }
+
+      expect(calls).toEqual([
+        { pathname: "/api/clients", body: null },
+        {
+          pathname: "/api/model/path/call",
+          body: {
+            clientId: "stub.client",
+            path: "/panes/new",
+            args: { kind: "cowsay", place: "right", title: "moo moo" }
+          }
+        }
+      ]);
+      expect(logs.at(-1)).toContain("pane.stub");
+    } finally {
+      server.stop(true);
+    }
+  });
+
   it("applies catalog disable policy to CLI command discovery", async () => {
     const rootDir = await createCliExtensionFixture();
     await writeFile(

@@ -7,6 +7,12 @@ import type {
   ShellPathSetResult
 } from "./shell";
 
+// Re-export the citty surface extensions need so consumers depend only on
+// `@flmux/extension-api` — flmux owns the citty version, extensions stay
+// out of the dep graph entirely.
+export { defineCommand } from "citty";
+export type { ArgsDef, CommandDef, SubCommandsDef } from "citty";
+
 /**
  * Transport flags that every flmux-aware CLI subcommand accepts. Extensions
  * **must** spread these into their own `args` (`args: { ...commonArgs,

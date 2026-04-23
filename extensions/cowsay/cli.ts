@@ -1,5 +1,4 @@
-import { defineCommand } from "citty";
-import { commonArgs, createFlmuxClient, printJson, toFlmuxCliFlags } from "@flmux/extension-api";
+import { commonArgs, createFlmuxClient, defineCommand, printJson, toFlmuxCliFlags } from "@flmux/extension-api/cli";
 
 export default defineCommand({
   meta: {

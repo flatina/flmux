@@ -1,8 +1,8 @@
 import { defineCommand, runMain, type CommandDef } from "citty";
 import { discoverLocalCliCommands, defaultExtensionsRootDir, loadLocalCliCommandDef } from "./cliExtensions";
 import { runTokensCli } from "./cliTokens";
-import { commonArgs, printJson, resolveClientId, resolveOrigin, toFlmuxCliFlags } from "@flmux/extension-api";
-import type { FlmuxCliFlags } from "@flmux/extension-api";
+import { commonArgs, printJson, resolveClientId, resolveOrigin, toFlmuxCliFlags } from "@flmux/extension-api/cli";
+import type { FlmuxCliFlags } from "@flmux/extension-api/cli";
 
 type Flags = FlmuxCliFlags;
 
@@ -189,12 +189,24 @@ async function buildSubCommands(): Promise<Record<string, CommandDef>> {
     tokens: tokensCmd as CommandDef
   };
 
-  // Extensions default-export a citty CommandDef; flmux registers each at
-  // the root level. The extension owns its args/flags/subCommands/run so
-  // root-level strict validation never sees extension-specific options.
+  // Lazy extension registration: avoid importing every extension's CLI
+  // entry on every `flmux ...` invocation. When the user already selected
+  // a built-in subcommand, no extension is touched. When the user selected
+  // a single extension command, only that one is loaded. `--help` and
+  // unknown/empty subcommand paths fall back to loading every extension
+  // so the help listing stays complete.
+  const invoked = process.argv[2];
+  if (invoked && invoked in subCommands) {
+    return subCommands;
+  }
+
   const extensionCommands = await discoverLocalCliCommands(defaultExtensionsRootDir()).catch(() => []);
+  const isHelpContext = !invoked || invoked === "--help" || invoked === "-h";
+  const targetCommandId = isHelpContext ? null : invoked;
+
   for (const cmd of extensionCommands) {
     if (cmd.commandId in subCommands) continue;
+    if (targetCommandId && cmd.commandId !== targetCommandId) continue;
     const def = await loadLocalCliCommandDef(cmd);
     if (def) subCommands[cmd.commandId] = def;
   }

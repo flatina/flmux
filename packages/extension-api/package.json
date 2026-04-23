@@ -9,6 +9,7 @@
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./cli": "./src/cli.ts",
     "./testing": "./src/testing.ts"
   },
   "dependencies": {

@@ -10,6 +10,8 @@ import {
 } from "@flmux/extension-api";
 import type { CounterSchema } from "./schema";
 
+const panelTemplateUrl = new URL("./panel.html", import.meta.url).href;
+
 class CounterPane implements ExtensionPaneInstance {
   private readonly rpc = defineWebviewRPC<CounterSchema>({
     handlers: {
@@ -18,58 +20,59 @@ class CounterPane implements ExtensionPaneInstance {
       }
     }
   });
-  private readonly valueEl: HTMLElement;
+  private valueEl: HTMLElement | null = null;
   private disposed = false;
 
-  constructor(host: HTMLElement, ctx: ExtensionPaneContext) {
-    host.className = "counter-panel";
-    host.innerHTML = `
-      <section class="counter-hero">
-        <div>
-          <strong>counter</strong>
-          <p>Server-held count shared across every pane over its own RPC channel.</p>
-        </div>
-        <div class="counter-identities">
-          <span data-role="workspace-id">${ctx.workspaceId}</span>
-          <span data-role="pane-id">${ctx.paneId}</span>
-        </div>
-      </section>
-      <section class="counter-card">
-        <div class="counter-value" data-role="value">--</div>
-        <div class="counter-actions">
-          <button type="button" data-action="dec">-1</button>
-          <button type="button" data-action="reset">reset</button>
-          <button type="button" data-action="inc">+1</button>
-        </div>
-      </section>
-    `;
-    this.valueEl = host.querySelector<HTMLElement>('[data-role="value"]')!;
+  constructor(
+    private readonly host: HTMLElement,
+    private readonly ctx: ExtensionPaneContext
+  ) {
+    this.host.className = "counter-panel";
+    void this.mount();
+  }
 
-    if (!ctx.channel) {
-      this.valueEl.textContent = "(server entry not wired)";
+  private async mount() {
+    let html: string;
+    try {
+      html = await fetch(panelTemplateUrl).then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.text();
+      });
+    } catch (error) {
+      console.warn("[counter] panel template fetch failed", error);
+      if (!this.disposed) this.host.textContent = "(panel template failed to load)";
+      return;
+    }
+    if (this.disposed) return;
+
+    this.host.innerHTML = html;
+    this.host.querySelector<HTMLElement>('[data-role="workspace-id"]')!.textContent = this.ctx.workspaceId;
+    this.host.querySelector<HTMLElement>('[data-role="pane-id"]')!.textContent = this.ctx.paneId;
+    this.valueEl = this.host.querySelector<HTMLElement>('[data-role="value"]');
+
+    if (!this.ctx.channel) {
+      if (this.valueEl) this.valueEl.textContent = "(server entry not wired)";
       return;
     }
 
-    const inc = host.querySelector<HTMLButtonElement>('[data-action="inc"]')!;
-    const dec = host.querySelector<HTMLButtonElement>('[data-action="dec"]')!;
-    const reset = host.querySelector<HTMLButtonElement>('[data-action="reset"]')!;
+    const inc = this.host.querySelector<HTMLButtonElement>('[data-action="inc"]')!;
+    const dec = this.host.querySelector<HTMLButtonElement>('[data-action="dec"]')!;
+    const reset = this.host.querySelector<HTMLButtonElement>('[data-action="reset"]')!;
 
     // Await the channel handshake before wiring anything that sends a
     // request — the server publishes the current count via `count.changed`
     // as soon as it sees us, so the initial render arrives through the
     // message listener, not a round-trip.
-    ctx.channel
-      .bindTo(this.rpc)
-      .then(() => {
-        if (this.disposed) return;
-        inc.addEventListener("click", () => this.apply(this.rpc.requestProxy.increment({ delta: 1 })));
-        dec.addEventListener("click", () => this.apply(this.rpc.requestProxy.increment({ delta: -1 })));
-        reset.addEventListener("click", () => this.apply(this.rpc.requestProxy.reset()));
-      })
-      .catch((error) => {
-        console.warn("[counter] channel handshake failed", error);
-        if (!this.disposed) this.valueEl.textContent = "(handshake failed)";
-      });
+    try {
+      await this.ctx.channel.bindTo(this.rpc);
+      if (this.disposed) return;
+      inc.addEventListener("click", () => this.apply(this.rpc.requestProxy.increment({ delta: 1 })));
+      dec.addEventListener("click", () => this.apply(this.rpc.requestProxy.increment({ delta: -1 })));
+      reset.addEventListener("click", () => this.apply(this.rpc.requestProxy.reset()));
+    } catch (error) {
+      console.warn("[counter] channel handshake failed", error);
+      if (!this.disposed && this.valueEl) this.valueEl.textContent = "(handshake failed)";
+    }
   }
 
   private async apply(promise: Promise<{ count: number }>) {
@@ -82,7 +85,7 @@ class CounterPane implements ExtensionPaneInstance {
   }
 
   private render(count: number) {
-    if (this.disposed) return;
+    if (this.disposed || !this.valueEl) return;
     this.valueEl.textContent = String(count);
   }
 

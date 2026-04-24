@@ -1,0 +1,55 @@
+<div class="cowsay-panel__intro">
+  <div>
+    <strong>cowsay probe</strong>
+    <p>Thin REPL/testbed for path model and renderer-local workspace messaging.</p>
+  </div>
+  <pre class="cowsay-panel__cow" aria-hidden="true"> ^__^
+(oo)\_______
+(__)\       )\/\
+    ||----w |
+    ||     ||</pre>
+</div>
+<div class="cowsay-panel__grid">
+  <section class="cowsay-card">
+    <header class="cowsay-card__header">
+      <strong>REPL</strong>
+      <span>get / ls / set / call / pub / sub</span>
+    </header>
+    <form class="cowsay-repl" data-role="command-form">
+      <input class="cowsay-repl__input" name="command" type="text" spellcheck="false" placeholder="get /title" />
+      <button type="submit">Run</button>
+    </form>
+    <div class="cowsay-examples">
+      <button type="button" data-example="get /title">get /title</button>
+      <button type="button" data-example="set /title moo">set /title moo</button>
+      <button type="button" data-example="call /panes/new kind=browser place=right">new browser</button>
+      <button type="button" data-example="call /panes/new kind=terminal cwd=. place=right">new terminal</button>
+      <button type="button" data-example="pub cowsay.message text=moo">pub cowsay.message</button>
+      <button type="button" data-example="ls-each-get /status/panes">ls-each-get /status/panes</button>
+    </div>
+  </section>
+  <section class="cowsay-card">
+    <header class="cowsay-card__header">
+      <strong>Subscription</strong>
+      <span>WorkspaceBus topic match: <code>*</code>, <code>prefix.*</code>, exact</span>
+    </header>
+    <form class="cowsay-subscription" data-role="subscription-form">
+      <input class="cowsay-subscription__input" name="subscription" type="text" spellcheck="false" value="*" />
+      <button type="submit">Apply</button>
+    </form>
+    <label class="cowsay-output">
+      <span>Output</span>
+      <select name="output-mode">
+        <option value="pretty">Pretty JSON</option>
+        <option value="compact">Compact JSON</option>
+      </select>
+    </label>
+  </section>
+</div>
+<section class="cowsay-card cowsay-card--logs">
+  <header class="cowsay-card__header">
+    <strong>Log</strong>
+    <span>Received messages and command results</span>
+  </header>
+  <div class="cowsay-log" data-role="log-list"></div>
+</section>

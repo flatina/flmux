@@ -11,6 +11,7 @@
   ],
   "scripts": {
     "build:extensions": "bun run --filter @flmux/extension-devkit build ../../extensions/cowsay ../../extensions/counter ../../extensions/inspector ../../extensions/scratchpad",
+    "pack:extensions": "bun scripts/pack-extensions.ts",
     "build": "bun run --filter @flmux/app build",
     "dev": "bun run --filter @flmux/app dev",
     "test:direct": "cd packages/app && bun run test:direct",

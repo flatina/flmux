@@ -1,0 +1,100 @@
+.scratchpad-panel {
+  gap: 10px;
+  padding: 12px;
+  background: var(--fl-editor-background);
+}
+
+.scratchpad-hero {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--fl-widget-border);
+  border-radius: 14px;
+  background: var(--fl-widget-background);
+}
+
+.scratchpad-hero p {
+  margin: 6px 0 0;
+  color: var(--fl-description-foreground);
+}
+
+.scratchpad-identities {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 180px;
+}
+
+.scratchpad-identities span {
+  padding: 7px 10px;
+  border: 1px solid var(--fl-contrast-border);
+  border-radius: 999px;
+  background: var(--fl-input-background);
+  font:
+    12px / 1.35 ui-monospace,
+    "SFMono-Regular",
+    monospace;
+}
+
+.scratchpad-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--fl-widget-border);
+  border-radius: 14px;
+  background: var(--fl-widget-background);
+}
+
+.scratchpad-card__header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scratchpad-card__header span {
+  color: var(--fl-description-foreground);
+}
+
+.scratchpad-textarea {
+  flex: 1;
+  min-height: 220px;
+  width: 100%;
+  resize: none;
+  color: var(--fl-input-foreground);
+  background: var(--fl-input-background);
+  border: 1px solid var(--fl-input-border);
+  border-radius: 14px;
+  padding: 14px;
+  outline: none;
+  font:
+    12px / 1.5 ui-monospace,
+    "SFMono-Regular",
+    monospace;
+}
+
+.scratchpad-textarea:focus {
+  border-color: var(--fl-focus-border);
+}
+
+.scratchpad-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--fl-description-foreground);
+  font:
+    12px / 1.35 ui-monospace,
+    "SFMono-Regular",
+    monospace;
+}
+
+@media (max-width: 720px) {
+  .scratchpad-hero {
+    flex-direction: column;
+  }
+}

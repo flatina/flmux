@@ -1,0 +1,78 @@
+.counter-panel {
+  gap: 10px;
+  padding: 12px;
+  background: var(--fl-editor-background);
+}
+
+.counter-hero {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--fl-widget-border);
+  border-radius: 14px;
+  background: var(--fl-widget-background);
+}
+
+.counter-hero p {
+  margin: 6px 0 0;
+  color: var(--fl-description-foreground);
+}
+
+.counter-identities {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 180px;
+}
+
+.counter-identities span {
+  padding: 7px 10px;
+  border: 1px solid var(--fl-contrast-border);
+  border-radius: 999px;
+  background: var(--fl-input-background);
+  color: var(--fl-description-foreground);
+  font:
+    12px / 1.35 ui-monospace,
+    "SFMono-Regular",
+    monospace;
+}
+
+.counter-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  border: 1px solid var(--fl-widget-border);
+  border-radius: 14px;
+  background: var(--fl-widget-background);
+}
+
+.counter-value {
+  color: var(--fl-accent-foreground);
+  font:
+    600 44px / 1 ui-monospace,
+    "SFMono-Regular",
+    monospace;
+  letter-spacing: 0.02em;
+}
+
+.counter-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.counter-actions button {
+  min-width: 64px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font:
+    12px / 1.4 ui-monospace,
+    "SFMono-Regular",
+    monospace;
+}

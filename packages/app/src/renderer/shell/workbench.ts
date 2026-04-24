@@ -2,18 +2,28 @@ import "dockview-core/dist/styles/dockview.css";
 import {
   createDockview,
   themeAbyss,
+  themeLight,
   type CreateComponentOptions,
   type DockviewApi,
   type DockviewPanelApi,
+  type DockviewTheme,
   type GroupPanelPartInitParameters,
   type IContentRenderer,
   type SerializedDockview
 } from "dockview-core";
+
+function currentDockviewTheme(): DockviewTheme {
+  const explicit = document.documentElement.dataset.theme;
+  if (explicit === "light") return themeLight;
+  if (explicit === "dark") return themeAbyss;
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? themeLight : themeAbyss;
+}
 import "../styles.css";
 import { setupDropIndicatorMasks } from "../maskHelper";
 import { createTerminalHost } from "../terminalHost";
 import {
   createWorkspaceBus,
+  PLACEHOLDER_PANE_KIND,
   type PaneWorkspaceContext,
   type SequencedShellCoreEvent,
   type ShellModelAPI,
@@ -102,6 +112,15 @@ export class FlmuxWorkbench {
     });
     this.shellModel = createShellModelClientOverPreload(hostProxy);
     subscribeShellCoreEvents((event) => this.handleCoreEvent(event));
+    document.addEventListener("flmux-theme-change", () => this.applyDockviewTheme());
+  }
+
+  private applyDockviewTheme() {
+    const theme = currentDockviewTheme();
+    this.outerApi?.updateOptions({ theme });
+    for (const record of this.workspaces.values()) {
+      record.innerApi?.updateOptions({ theme });
+    }
   }
 
   registerExternalPane(descriptor: PaneDescriptor) {
@@ -424,16 +443,19 @@ export class FlmuxWorkbench {
     record.innerHost = host;
 
     const innerApi = createDockview(host, {
-      theme: themeAbyss,
+      theme: currentDockviewTheme(),
       disableFloatingGroups: true,
       createComponent: (options) => this.createInnerPanelRenderer(record, options),
       createRightHeaderActionComponent: (group) =>
         new NewPaneHeaderAction(group, {
           listKinds: () =>
-            this.paneRegistry.list().map((descriptor) => ({
-              kind: descriptor.kind,
-              label: humanizePaneKind(descriptor.kind)
-            })),
+            this.paneRegistry
+              .list()
+              .filter((descriptor) => descriptor.kind !== PLACEHOLDER_PANE_KIND)
+              .map((descriptor) => ({
+                kind: descriptor.kind,
+                label: humanizePaneKind(descriptor.kind)
+              })),
           onSelect: (kind) => {
             void this.shellModel.pathCall("/panes/new", { kind, place: "right" });
           }
@@ -550,7 +572,7 @@ export class FlmuxWorkbench {
     this.workspaces.clear();
 
     this.outerApi = createDockview(this.shellEl, {
-      theme: themeAbyss,
+      theme: currentDockviewTheme(),
       disableFloatingGroups: true,
       defaultRenderer: "always",
       createComponent: (options) => this.createOuterPanelRenderer(options),

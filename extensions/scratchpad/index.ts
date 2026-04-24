@@ -1,6 +1,18 @@
 import type { ExtensionPaneContext, ExtensionPaneInstance } from "@flmux/extension-api";
 import { defineExtension, definePane } from "@flmux/extension-api";
 
+const panelStylesheetUrl = new URL("./panel.css", import.meta.url).href;
+const STYLESHEET_ID = "scratchpad-panel-styles";
+
+function ensureStylesheet() {
+  if (document.getElementById(STYLESHEET_ID)) return;
+  const link = document.createElement("link");
+  link.id = STYLESHEET_ID;
+  link.rel = "stylesheet";
+  link.href = panelStylesheetUrl;
+  document.head.appendChild(link);
+}
+
 interface ScratchpadParams extends Record<string, unknown> {
   note?: string;
 }
@@ -14,7 +26,8 @@ class ScratchpadPaneRenderer implements ExtensionPaneInstance {
     private readonly host: HTMLElement,
     private readonly context: ExtensionPaneContext
   ) {
-    this.host.className = "scratchpad-panel";
+    this.host.classList.add("scratchpad-panel");
+    ensureStylesheet();
     this.mount();
   }
 

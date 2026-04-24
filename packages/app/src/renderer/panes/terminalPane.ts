@@ -17,6 +17,65 @@ type TerminalPaneParams = {
 
 const MAX_RENDER_HISTORY_CHARS = 200_000;
 
+// ANSI 16-color palettes tuned from VS Code Dark+ / Light+ (matching what
+// most users see in other terminals). Without explicit values xterm falls
+// back to its built-in defaults, which on the light background render
+// bright yellow / bright white at near-invisible contrast.
+const XTERM_DARK_THEME = {
+  background: "#04070c",
+  foreground: "#d7ffe1",
+  cursor: "#ffad5a",
+  cursorAccent: "#04070c",
+  selectionBackground: "rgba(136, 214, 201, 0.28)",
+  black: "#000000",
+  red: "#cd3131",
+  green: "#0dbc79",
+  yellow: "#e5e510",
+  blue: "#2472c8",
+  magenta: "#bc3fbc",
+  cyan: "#11a8cd",
+  white: "#e5e5e5",
+  brightBlack: "#666666",
+  brightRed: "#f14c4c",
+  brightGreen: "#23d18b",
+  brightYellow: "#f5f543",
+  brightBlue: "#3b8eea",
+  brightMagenta: "#d670d6",
+  brightCyan: "#29b8db",
+  brightWhite: "#e5e5e5"
+} as const;
+
+const XTERM_LIGHT_THEME = {
+  background: "#f7f9fc",
+  foreground: "#1f2937",
+  cursor: "#d4820f",
+  cursorAccent: "#f7f9fc",
+  selectionBackground: "rgba(212, 130, 15, 0.22)",
+  black: "#000000",
+  red: "#cd3131",
+  green: "#107c10",
+  yellow: "#949800",
+  blue: "#0451a5",
+  magenta: "#bc05bc",
+  cyan: "#0598bc",
+  white: "#555555",
+  brightBlack: "#666666",
+  brightRed: "#cd3131",
+  brightGreen: "#14ce14",
+  brightYellow: "#b5ba00",
+  brightBlue: "#0451a5",
+  brightMagenta: "#bc05bc",
+  brightCyan: "#0598bc",
+  brightWhite: "#a5a5a5"
+} as const;
+
+function currentXtermTheme() {
+  const mode = document.documentElement.dataset.theme;
+  if (mode === "light") return XTERM_LIGHT_THEME;
+  if (mode === "dark") return XTERM_DARK_THEME;
+  return window.matchMedia("(prefers-color-scheme: light)").matches ? XTERM_LIGHT_THEME : XTERM_DARK_THEME;
+}
+
 export class TerminalPaneRenderer implements IContentRenderer {
   readonly element = document.createElement("div");
 
@@ -33,6 +92,7 @@ export class TerminalPaneRenderer implements IContentRenderer {
   private viewportEl?: HTMLElement;
   private unsubscribeEvent?: () => void;
   private viewportObserver?: ResizeObserver;
+  private themeChangeListener?: () => void;
 
   constructor(private readonly deps: TerminalPaneRendererDependencies) {
     this.element.className = "terminal-panel";
@@ -71,6 +131,9 @@ export class TerminalPaneRenderer implements IContentRenderer {
   dispose() {
     this.unsubscribeEvent?.();
     this.viewportObserver?.disconnect();
+    if (this.themeChangeListener) {
+      document.removeEventListener("flmux-theme-change", this.themeChangeListener);
+    }
     this.xterm?.dispose();
   }
 
@@ -91,11 +154,7 @@ export class TerminalPaneRenderer implements IContentRenderer {
         fontFamily: `ui-monospace, "SFMono-Regular", Consolas, monospace`,
         fontSize: 12,
         scrollback: 10_000,
-        theme: {
-          background: "#04070c",
-          foreground: "#d7ffe1",
-          selectionBackground: "rgba(136, 214, 201, 0.28)"
-        }
+        theme: currentXtermTheme()
       });
       const fitAddon = new FitAddon();
       terminal.loadAddon(fitAddon);
@@ -109,6 +168,11 @@ export class TerminalPaneRenderer implements IContentRenderer {
 
       this.xterm = terminal;
       this.fitAddon = fitAddon;
+      this.themeChangeListener = () => {
+        if (!this.xterm) return;
+        this.xterm.options.theme = currentXtermTheme();
+      };
+      document.addEventListener("flmux-theme-change", this.themeChangeListener);
       this.replaceTerminalBuffer();
       this.fitTerminal();
     })().catch((error) => {

@@ -121,7 +121,13 @@ function wrapExternalPaneRenderer(
 
 function createPaneHostElement(): HTMLElement {
   if (typeof document !== "undefined") {
-    return document.createElement("div");
+    const host = document.createElement("div");
+    // Default pane-occupation policy: extensions fill the pane area unless
+    // they opt out with their own CSS. `.flmux-ext-pane` is defined in
+    // `styles.css` — extensions that set additional classes should use
+    // `classList.add(...)` so the base class is preserved.
+    host.classList.add("flmux-ext-pane");
+    return host;
   }
 
   return {
@@ -133,7 +139,14 @@ function createPaneHostElement(): HTMLElement {
     querySelectorAll() {
       return [];
     },
-    replaceChildren() {}
+    replaceChildren() {},
+    classList: {
+      add() {},
+      remove() {},
+      contains() {
+        return false;
+      }
+    }
   } as unknown as HTMLElement;
 }
 

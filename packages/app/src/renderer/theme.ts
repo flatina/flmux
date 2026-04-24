@@ -6,50 +6,51 @@
  * library's theme API (xterm `theme`, CodeMirror Compartment, chart
  * library presets).
  *
- * Resolution order: `data-theme` attribute if set → `prefers-color-scheme`
- * otherwise. OS preference changes are forwarded only when no explicit
- * override is active.
+ * User preference (`light` / `dark` / `system`) persists in localStorage;
+ * `system` follows `prefers-color-scheme`.
  */
 export type ThemeMode = "dark" | "light";
+export type ThemePreference = ThemeMode | "system";
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";
+const STORAGE_KEY = "flmux.theme";
 
 export function setupTheme(): void {
   const root = document.documentElement;
   const mq = window.matchMedia(DARK_QUERY);
 
-  applyResolvedMode(root, mq);
+  applyPreference(root, loadPreference());
 
   mq.addEventListener("change", () => {
     if (root.dataset.theme) return;
-    applyResolvedMode(root, mq);
+    dispatchChange(resolveMode(root, mq));
   });
 }
 
-/**
- * Set an explicit theme override. Pass `null` to clear the override and
- * fall back to the OS `prefers-color-scheme`. Dispatches
- * `flmux-theme-change` whenever the resolved mode changes.
- */
-export function setThemeMode(mode: ThemeMode | null): void {
+export function getThemePreference(): ThemePreference {
+  return loadPreference();
+}
+
+export function setThemePreference(preference: ThemePreference): void {
   const root = document.documentElement;
-  const before = resolveMode(root, window.matchMedia(DARK_QUERY));
-  if (mode === null) {
-    delete root.dataset.theme;
-  } else {
-    root.dataset.theme = mode;
-  }
-  const after = resolveMode(root, window.matchMedia(DARK_QUERY));
+  const mq = window.matchMedia(DARK_QUERY);
+  const before = resolveMode(root, mq);
+  persistPreference(preference);
+  applyPreference(root, preference);
+  const after = resolveMode(root, mq);
   if (before !== after) dispatchChange(after);
 }
 
-function applyResolvedMode(root: HTMLElement, mq: MediaQueryList): void {
-  const mode = resolveMode(root, mq);
+function applyPreference(root: HTMLElement, preference: ThemePreference): void {
+  if (preference === "system") {
+    delete root.dataset.theme;
+  } else {
+    root.dataset.theme = preference;
+  }
+  const mode = resolveMode(root, window.matchMedia(DARK_QUERY));
   // Keep `color-scheme` in sync so the UA paints form controls / scrollbars
-  // in the matching palette even if the extension renderer styles haven't
-  // loaded yet.
+  // in the matching palette.
   root.style.colorScheme = mode;
-  dispatchChange(mode);
 }
 
 function resolveMode(root: HTMLElement, mq: MediaQueryList): ThemeMode {
@@ -60,4 +61,26 @@ function resolveMode(root: HTMLElement, mq: MediaQueryList): ThemeMode {
 
 function dispatchChange(mode: ThemeMode): void {
   document.dispatchEvent(new CustomEvent("flmux-theme-change", { detail: { mode } }));
+}
+
+function loadPreference(): ThemePreference {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (raw === "light" || raw === "dark") return raw;
+  } catch {
+    // localStorage may be unavailable (private mode, sandboxed); fall through.
+  }
+  return "system";
+}
+
+function persistPreference(preference: ThemePreference): void {
+  try {
+    if (preference === "system") {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } else {
+      window.localStorage.setItem(STORAGE_KEY, preference);
+    }
+  } catch {
+    // Silently ignore; preference won't persist across reloads.
+  }
 }

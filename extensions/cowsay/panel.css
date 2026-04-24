@@ -1,0 +1,175 @@
+.cowsay-panel {
+  gap: 10px;
+  padding: 12px;
+  background: var(--fl-editor-background);
+}
+
+.cowsay-panel__intro {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--fl-widget-border);
+  border-radius: 14px;
+  background: var(--fl-widget-background);
+}
+
+.cowsay-panel__intro p {
+  margin: 6px 0 0;
+  color: var(--fl-description-foreground);
+}
+
+.cowsay-panel__cow {
+  margin: 0;
+  color: var(--fl-accent-foreground-secondary);
+  font:
+    12px / 1.15 ui-monospace,
+    "SFMono-Regular",
+    monospace;
+  white-space: pre;
+}
+
+.cowsay-panel__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr);
+  gap: 10px;
+}
+
+.cowsay-card {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--fl-widget-border);
+  border-radius: 14px;
+  background: var(--fl-widget-background);
+}
+
+.cowsay-card--logs {
+  flex: 1;
+}
+
+.cowsay-card__header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cowsay-card__header span,
+.cowsay-output span,
+.cowsay-card code {
+  color: var(--fl-description-foreground);
+}
+
+.cowsay-repl,
+.cowsay-subscription {
+  display: flex;
+  gap: 8px;
+}
+
+.cowsay-repl__input,
+.cowsay-subscription__input {
+  flex: 1;
+  min-width: 0;
+  font:
+    12px / 1.4 ui-monospace,
+    "SFMono-Regular",
+    monospace;
+}
+
+.cowsay-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cowsay-examples button {
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.cowsay-output {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.cowsay-output select {
+  min-width: 136px;
+}
+
+.cowsay-log {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.cowsay-log__entry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 11px;
+  border: 1px solid var(--fl-contrast-border);
+  border-radius: 12px;
+  background: var(--fl-input-background);
+}
+
+.cowsay-log__entry--event {
+  border-color: var(--fl-accent-foreground);
+}
+
+.cowsay-log__entry--error {
+  border-color: var(--fl-error-foreground);
+}
+
+.cowsay-log__entry--input {
+  border-color: var(--fl-accent-foreground-secondary);
+}
+
+.cowsay-log__meta {
+  color: var(--fl-description-foreground);
+  font:
+    11px / 1.2 ui-monospace,
+    "SFMono-Regular",
+    monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.cowsay-log__body {
+  margin: 0;
+  color: var(--fl-foreground);
+  white-space: pre-wrap;
+  word-break: break-word;
+  font:
+    12px / 1.45 ui-monospace,
+    "SFMono-Regular",
+    monospace;
+}
+
+@media (max-width: 960px) {
+  .cowsay-panel__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .cowsay-repl,
+  .cowsay-subscription,
+  .cowsay-output {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cowsay-panel__intro {
+    flex-direction: column;
+  }
+}

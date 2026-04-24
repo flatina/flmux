@@ -161,6 +161,20 @@ await a.bus.publish("signal", { n: 1 });
 
 Validate programmatically with `validateExtensionManifest(json)`.
 
+## Pane host layout
+
+flmux creates the pane's `host` element as a `<div>` with the class `flmux-ext-pane` already set. Default CSS (shipped with flmux):
+
+```css
+.flmux-ext-pane {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+```
+
+Extensions that need additional classes should use `host.classList.add("...")` rather than `host.className = "..."` — the latter wipes the base class and loses the default fill-the-pane behavior. Overriding any of these properties is a normal CSS cascade: extension stylesheets load after flmux styles, so a rule like `.my-panel { height: auto }` wins with equal specificity.
+
 ## Theming
 
 flmux publishes two independent signals for light/dark theming. DOM panes use the CSS custom-property set; canvas / WebGL / wasm panes read the JS signal and map it to their rendering library's own theme API.

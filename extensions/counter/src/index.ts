@@ -11,6 +11,17 @@ import {
 import type { CounterSchema } from "./schema";
 
 const panelTemplateUrl = new URL("./panel.html", import.meta.url).href;
+const panelStylesheetUrl = new URL("./panel.css", import.meta.url).href;
+const STYLESHEET_ID = "counter-panel-styles";
+
+function ensureStylesheet() {
+  if (document.getElementById(STYLESHEET_ID)) return;
+  const link = document.createElement("link");
+  link.id = STYLESHEET_ID;
+  link.rel = "stylesheet";
+  link.href = panelStylesheetUrl;
+  document.head.appendChild(link);
+}
 
 class CounterPane implements ExtensionPaneInstance {
   private readonly rpc = defineWebviewRPC<CounterSchema>({
@@ -27,7 +38,8 @@ class CounterPane implements ExtensionPaneInstance {
     private readonly host: HTMLElement,
     private readonly ctx: ExtensionPaneContext
   ) {
-    this.host.className = "counter-panel";
+    this.host.classList.add("counter-panel");
+    ensureStylesheet();
     void this.mount();
   }
 

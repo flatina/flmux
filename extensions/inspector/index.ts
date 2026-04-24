@@ -7,6 +7,18 @@ import type {
 } from "@flmux/extension-api";
 import { defineExtension, definePane } from "@flmux/extension-api";
 
+const panelStylesheetUrl = new URL("./panel.css", import.meta.url).href;
+const STYLESHEET_ID = "inspector-panel-styles";
+
+function ensureStylesheet() {
+  if (document.getElementById(STYLESHEET_ID)) return;
+  const link = document.createElement("link");
+  link.id = STYLESHEET_ID;
+  link.rel = "stylesheet";
+  link.href = panelStylesheetUrl;
+  document.head.appendChild(link);
+}
+
 interface SnapshotState {
   appTitle: string;
   workspaceTitle: string;
@@ -53,7 +65,8 @@ class InspectorPaneRenderer implements ExtensionPaneInstance {
     private readonly host: HTMLElement,
     private readonly context: ExtensionPaneContext
   ) {
-    this.host.className = "inspector-panel";
+    this.host.classList.add("inspector-panel");
+    ensureStylesheet();
     this.mount();
   }
 

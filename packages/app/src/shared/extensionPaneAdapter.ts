@@ -85,6 +85,29 @@ export function adaptExtensionPanePathMount(source: ExtensionPanePathMount): Pan
             patchParams: async (patch) => await patchParams(patch)
           })
       : undefined,
+    canCallStatePath: source.canCallStatePath
+      ? ({ paneId, workspace, currentParams }, relativePath) =>
+          source.canCallStatePath!({
+            paneId,
+            workspaceId: workspace.id,
+            defaultBrowserPath: workspace.defaultBrowserPath,
+            currentParams,
+            relativePath
+          })
+      : undefined,
+    callState: source.callState
+      ? ({ paneId, workspace, currentParams, setParams, patchParams }, relativePath, args) =>
+          source.callState!({
+            paneId,
+            workspaceId: workspace.id,
+            defaultBrowserPath: workspace.defaultBrowserPath,
+            currentParams,
+            relativePath,
+            args,
+            setParams: async (nextParams) => await setParams(nextParams),
+            patchParams: async (patch) => await patchParams(patch)
+          })
+      : undefined,
     getStatusSnapshot: source.getStatusSnapshot
       ? ({ paneId, workspace, currentParams }) =>
           source.getStatusSnapshot!({

@@ -459,7 +459,47 @@ class ShellModel implements ShellModelAPI {
       };
     }
 
+    if (segments.length >= 4) {
+      const mountKey = segments[2]!;
+      const relativePath = segments.slice(3);
+
+      const subtreeMount = await this.resolvePaneSubtreeMount(pane.id, mountKey);
+      if (subtreeMount) {
+        return await this.callPaneMountStatePath(subtreeMount, relativePath, args);
+      }
+
+      const mount = await this.host.getPanePathMount(pane.id);
+      if (mount && mountKey === mount.mountKey) {
+        return await this.callPaneMountStatePath(mount, relativePath, args);
+      }
+    }
+
     return throwPathError("NOT_CALLABLE", "Path is not callable");
+  }
+
+  private async callPaneMountStatePath(
+    mount: Awaited<ReturnType<ShellModelHost["getPanePathMount"]>>,
+    relativePath: string[],
+    args: Record<string, unknown>
+  ): Promise<PathCallResult> {
+    if (!mount?.callState || relativePath.length === 0) {
+      return throwPathError("NOT_CALLABLE", "Path is not callable");
+    }
+
+    if (!((await mount.canCallStatePath?.(relativePath)) ?? false)) {
+      return throwPathError("NOT_CALLABLE", "Path is not callable");
+    }
+
+    try {
+      const result = await mount.callState(relativePath, args);
+      return { ok: true, value: result.value };
+    } catch (err) {
+      if (err instanceof ModelPathError) {
+        throw err;
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      return throwPathError("INTERNAL_ERROR", message);
+    }
   }
 
   private async getApp(segments: string[]): Promise<PathGetResult> {

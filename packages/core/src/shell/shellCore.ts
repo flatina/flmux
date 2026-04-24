@@ -935,6 +935,12 @@ export class ShellCore implements ShellModelHost {
       setState: mount.setState
         ? (relativePath, value) => mount.setState!(createContext(), relativePath, value)
         : undefined,
+      canCallStatePath: mount.canCallStatePath
+        ? (relativePath) => mount.canCallStatePath!(createContext(), relativePath)
+        : undefined,
+      callState: mount.callState
+        ? (relativePath, args) => mount.callState!(createContext(), relativePath, args)
+        : undefined,
       getStatusSnapshot: () => mount.getStatusSnapshot?.(createContext())
     };
   }

@@ -123,6 +123,32 @@ const scratchpadPane = definePane({
       await setParams({ note });
       return { value: note };
     },
+    // Two illustrative callState shapes:
+    //   - `stats` is a pure read (args ignored, no state mutation) — the
+    //     query pattern external agents use when they want a computed answer
+    //     without caring about the underlying snapshot shape.
+    //   - `clear` mutates state via patchParams and returns a confirmation —
+    //     the action pattern equivalent to an RPC verb like `reset`.
+    canCallStatePath: ({ relativePath }) =>
+      relativePath.length === 1 && (relativePath[0] === "stats" || relativePath[0] === "clear"),
+    callState: async ({ relativePath, currentParams, patchParams }) => {
+      const op = relativePath[0];
+      if (op === "stats") {
+        const note = normalizeScratchpadText(currentParams?.note);
+        return {
+          value: {
+            chars: note.length,
+            words: note.trim() === "" ? 0 : note.trim().split(/\s+/).length,
+            lines: note === "" ? 0 : note.split(/\r?\n/).length
+          }
+        };
+      }
+      if (op === "clear") {
+        await patchParams({ note: "" });
+        return { value: { cleared: true } };
+      }
+      throw new Error(`Unsupported scratchpad op '${op}'`);
+    },
     getStatusSnapshot: ({ currentParams }) => {
       const note = normalizeScratchpadText(currentParams?.note);
       return {

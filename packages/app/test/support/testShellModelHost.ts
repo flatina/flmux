@@ -506,6 +506,26 @@ export class TestShellModelHost implements ShellModelHost {
           this.setPaneParams(paneId, { note });
           return { value: note };
         },
+        canCallStatePath: (relativePath) =>
+          relativePath.length === 1 && (relativePath[0] === "stats" || relativePath[0] === "clear"),
+        callState: (relativePath) => {
+          const op = relativePath[0];
+          const note = this.readScratchpadNote(paneId);
+          if (op === "stats") {
+            return {
+              value: {
+                chars: note.length,
+                words: note.trim() === "" ? 0 : note.trim().split(/\s+/).length,
+                lines: note === "" ? 0 : note.split(/\r?\n/).length
+              }
+            };
+          }
+          if (op === "clear") {
+            this.setPaneParams(paneId, { note: "" });
+            return { value: { cleared: true } };
+          }
+          throw new Error(`Unsupported scratchpad op '${op}'`);
+        },
         getStatusSnapshot: () => {
           const note = this.readScratchpadNote(paneId);
           return {

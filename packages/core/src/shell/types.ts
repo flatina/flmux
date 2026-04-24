@@ -123,6 +123,8 @@ export interface ShellResolvedPanePathMount {
   getStatusSnapshot(): Awaitable<Record<string, unknown> | undefined>;
   canSetStatePath?(relativePath: string[]): Awaitable<boolean>;
   setState?(relativePath: string[], value: unknown): Awaitable<{ value: unknown }>;
+  canCallStatePath?(relativePath: string[]): Awaitable<boolean>;
+  callState?(relativePath: string[], args: Record<string, unknown>): Awaitable<{ value: unknown }>;
 }
 
 export type ShellResolvedPaneSubtreeMount = ShellResolvedPanePathMount;

@@ -65,11 +65,23 @@ export interface ExtensionPanePathMountWritableArgs extends ExtensionPanePathMou
   relativePath: string[];
 }
 
+export interface ExtensionPanePathMountCallableArgs extends ExtensionPanePathMountSnapshotArgs {
+  relativePath: string[];
+  args: Record<string, unknown>;
+  setParams(nextParams: Record<string, unknown>): Promise<Record<string, unknown>>;
+  patchParams(patch: Record<string, unknown>): Promise<Record<string, unknown>>;
+}
+
 export interface ExtensionPanePathMount {
   mountKey: string;
   getStateSnapshot?(args: ExtensionPanePathMountSnapshotArgs): Record<string, unknown> | undefined;
   canSetStatePath?(args: ExtensionPanePathMountWritableArgs): boolean;
   setState?(args: ExtensionPanePathMountSetArgs): Promise<{ value: unknown }> | { value: unknown };
+  // RPC-style action: computed return, snapshot leaf is not required.
+  // Gated by `allow_paths.call` on the shared ShellModelAPI ACL, same as
+  // any other `shell.call` path.
+  canCallStatePath?(args: ExtensionPanePathMountWritableArgs): boolean;
+  callState?(args: ExtensionPanePathMountCallableArgs): Promise<{ value: unknown }> | { value: unknown };
   getStatusSnapshot?(args: ExtensionPanePathMountSnapshotArgs): Record<string, unknown> | undefined;
 }
 

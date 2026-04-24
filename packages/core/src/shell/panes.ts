@@ -59,6 +59,12 @@ export interface PanePathMount<TRecord extends PaneStateRecord = PaneStateRecord
   getStateSnapshot?(ctx: PanePathMountContext<TRecord>): Awaitable<Record<string, unknown> | undefined>;
   canSetStatePath?(ctx: PanePathMountContext<TRecord>, relativePath: string[]): Awaitable<boolean>;
   setState?(ctx: PanePathMountContext<TRecord>, relativePath: string[], value: unknown): Awaitable<{ value: unknown }>;
+  canCallStatePath?(ctx: PanePathMountContext<TRecord>, relativePath: string[]): Awaitable<boolean>;
+  callState?(
+    ctx: PanePathMountContext<TRecord>,
+    relativePath: string[],
+    args: Record<string, unknown>
+  ): Awaitable<{ value: unknown }>;
   getStatusSnapshot?(ctx: PanePathMountContext<TRecord>): Awaitable<Record<string, unknown> | undefined>;
 }
 

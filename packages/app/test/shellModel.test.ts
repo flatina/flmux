@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { ModelPathError } from "@flmux/core/shell";
 import { toTerminalRootKey } from "@flmux/core/terminal/rootKey";
 import { TestShellModelHost } from "./support/testShellModelHost";
 import { createSyntheticTerminalService } from "./support/syntheticTerminalService";
@@ -975,6 +976,55 @@ describe("shell model direct", () => {
     });
   });
 
+  it("exposes scratchpad stats + clear as callState ops on the same mount", async () => {
+    const host = new TestShellModelHost({
+      workspaceId: "workspace.test",
+      workspaceTitle: "Workspace Test",
+      activePaneId: "pane.scratchpad",
+      panes: [
+        {
+          id: "pane.scratchpad",
+          kind: "scratchpad",
+          title: "Scratchpad",
+          note: "hello world\nhow are you"
+        }
+      ]
+    });
+    const model = host.createModel();
+
+    // Pure-read call: args ignored, returns a computed shape without
+    // touching state. Demonstrates the query/RPC flavor of callState.
+    expect(await model.pathCall("/panes/pane.scratchpad/scratchpad/stats", {})).toEqual({
+      ok: true,
+      value: { chars: 23, words: 5, lines: 2 }
+    });
+    // Note is untouched by `stats`.
+    expect(await model.pathGet("/panes/pane.scratchpad/scratchpad/note")).toEqual({
+      ok: true,
+      found: true,
+      value: "hello world\nhow are you"
+    });
+
+    // Action call: mutates params via patchParams and returns a
+    // confirmation payload — the RPC-as-verb pattern.
+    expect(await model.pathCall("/panes/pane.scratchpad/scratchpad/clear", {})).toEqual({
+      ok: true,
+      value: { cleared: true }
+    });
+    expect(await model.pathGet("/panes/pane.scratchpad/scratchpad/note")).toEqual({
+      ok: true,
+      found: true,
+      value: ""
+    });
+
+    // Ops outside the gate are rejected by canCallStatePath.
+    expect(await model.pathCall("/panes/pane.scratchpad/scratchpad/unknown", {})).toEqual({
+      ok: false,
+      code: "NOT_CALLABLE",
+      error: "Path is not callable"
+    });
+  });
+
   it("mounts inspector as a read-only custom subtree", async () => {
     const host = new TestShellModelHost({
       workspaceId: "workspace.test",
@@ -1084,6 +1134,180 @@ describe("shell model direct", () => {
       ok: false,
       code: "NOT_WRITABLE",
       error: "Path is not writable"
+    });
+  });
+
+  it("routes /panes/<id>/<mountKey>/<op> calls through pathMount callState with ACL + error mapping", async () => {
+    const callLog: Array<{ relativePath: string[]; args: Record<string, unknown> }> = [];
+
+    class CallableMountHost extends TestShellModelHost {
+      override getPanePathMount(paneId: string) {
+        if (paneId !== "pane.custom") {
+          return super.getPanePathMount(paneId);
+        }
+
+        return {
+          mountKey: "query",
+          getStateSnapshot: () => ({ ready: true }),
+          canCallStatePath: (relativePath: string[]) =>
+            relativePath.length === 1 && ["echo", "boom", "bad-arg", "silent"].includes(relativePath[0]!),
+          callState: async (relativePath: string[], args: Record<string, unknown>) => {
+            callLog.push({ relativePath, args });
+            const op = relativePath[0];
+            if (op === "echo") return { value: { op, args } };
+            if (op === "boom") throw new Error("kaboom");
+            if (op === "bad-arg") throw new ModelPathError("INVALID_VALUE", "arg rejected");
+            if (op === "silent") return { value: null };
+            throw new Error(`unexpected op ${op}`);
+          },
+          getStatusSnapshot: () => ({ calls: callLog.length })
+        };
+      }
+    }
+
+    const host = new CallableMountHost({
+      workspaceId: "workspace.test",
+      workspaceTitle: "Workspace Test",
+      activePaneId: "pane.custom",
+      panes: [{ id: "pane.custom", kind: "inspector", title: "Callable Mount" }]
+    });
+    const model = host.createModel();
+
+    // Success: computed value is returned verbatim under {ok: true, value}.
+    expect(await model.pathCall("/panes/pane.custom/query/echo", { n: 7 })).toEqual({
+      ok: true,
+      value: { op: "echo", args: { n: 7 } }
+    });
+    expect(callLog.at(-1)).toEqual({ relativePath: ["echo"], args: { n: 7 } });
+
+    // Generic Error → wrapped as INTERNAL_ERROR with the original message.
+    expect(await model.pathCall("/panes/pane.custom/query/boom", {})).toEqual({
+      ok: false,
+      code: "INTERNAL_ERROR",
+      error: "kaboom"
+    });
+
+    // ModelPathError thrown inside callState keeps its code (so extensions can
+    // surface user-input errors as INVALID_VALUE rather than INTERNAL_ERROR).
+    expect(await model.pathCall("/panes/pane.custom/query/bad-arg", {})).toEqual({
+      ok: false,
+      code: "INVALID_VALUE",
+      error: "arg rejected"
+    });
+
+    // canCallStatePath returning false → NOT_CALLABLE, callState never runs.
+    const callsBefore = callLog.length;
+    expect(await model.pathCall("/panes/pane.custom/query/unknown", {})).toEqual({
+      ok: false,
+      code: "NOT_CALLABLE",
+      error: "Path is not callable"
+    });
+    expect(callLog.length).toBe(callsBefore);
+
+    // `/panes/<id>/<mountKey>` with no op is length 3; it never enters the
+    // mount-dispatch branch (which gates on length >= 4) and lands on the
+    // final NOT_CALLABLE throw, so the mount's callState is not invoked.
+    expect(await model.pathCall("/panes/pane.custom/query", {})).toEqual({
+      ok: false,
+      code: "NOT_CALLABLE",
+      error: "Path is not callable"
+    });
+  });
+
+  it("default-denies when callState is defined without canCallStatePath", async () => {
+    class MissingGateHost extends TestShellModelHost {
+      override getPanePathMount(paneId: string) {
+        if (paneId !== "pane.custom") {
+          return super.getPanePathMount(paneId);
+        }
+
+        return {
+          mountKey: "query",
+          getStateSnapshot: () => ({}),
+          // Intentionally omit canCallStatePath to pin the default-deny behavior.
+          callState: () => ({ value: "should-not-run" }),
+          getStatusSnapshot: () => ({})
+        };
+      }
+    }
+
+    const host = new MissingGateHost({
+      workspaceId: "workspace.test",
+      workspaceTitle: "Workspace Test",
+      activePaneId: "pane.custom",
+      panes: [{ id: "pane.custom", kind: "inspector", title: "Missing Gate" }]
+    });
+    const model = host.createModel();
+
+    expect(await model.pathCall("/panes/pane.custom/query/anything", {})).toEqual({
+      ok: false,
+      code: "NOT_CALLABLE",
+      error: "Path is not callable"
+    });
+  });
+
+  it("returns NOT_CALLABLE when the mount has no callState defined", async () => {
+    class ReadOnlyMountHost extends TestShellModelHost {
+      override getPanePathMount(paneId: string) {
+        if (paneId !== "pane.custom") {
+          return super.getPanePathMount(paneId);
+        }
+
+        return {
+          mountKey: "sample",
+          getStateSnapshot: () => ({ ready: true }),
+          getStatusSnapshot: () => ({ ready: true })
+        };
+      }
+    }
+
+    const host = new ReadOnlyMountHost({
+      workspaceId: "workspace.test",
+      workspaceTitle: "Workspace Test",
+      activePaneId: "pane.custom",
+      panes: [{ id: "pane.custom", kind: "inspector", title: "Read-only Mount" }]
+    });
+    const model = host.createModel();
+
+    expect(await model.pathCall("/panes/pane.custom/sample/any", {})).toEqual({
+      ok: false,
+      code: "NOT_CALLABLE",
+      error: "Path is not callable"
+    });
+  });
+
+  it("routes callState through a subtreeMount so panes with built-in subtrees can expose RPC", async () => {
+    class SubtreeCallableHost extends TestShellModelHost {
+      override getPaneSubtreeMounts(paneId: string) {
+        const base = super.getPaneSubtreeMounts(paneId);
+        if (paneId !== "pane.browser") return base;
+
+        return [
+          ...base,
+          {
+            mountKey: "probe",
+            getStateSnapshot: () => ({}),
+            canCallStatePath: (relativePath: string[]) => relativePath.length === 1 && relativePath[0] === "ping",
+            callState: (relativePath: string[], args: Record<string, unknown>) => ({
+              value: { relativePath, args }
+            }),
+            getStatusSnapshot: () => ({})
+          }
+        ];
+      }
+    }
+
+    const host = new SubtreeCallableHost({
+      workspaceId: "workspace.test",
+      workspaceTitle: "Workspace Test",
+      activePaneId: "pane.browser",
+      panes: [{ id: "pane.browser", kind: "browser", title: "Browser", url: "https://example.test" }]
+    });
+    const model = host.createModel();
+
+    expect(await model.pathCall("/panes/pane.browser/probe/ping", { n: 1 })).toEqual({
+      ok: true,
+      value: { relativePath: ["ping"], args: { n: 1 } }
     });
   });
 

@@ -17,7 +17,7 @@ extensions/myext/
   "id": "myext",
   "name": "My Extension",
   "version": "0.1.0",
-  "apiVersion": 6,
+  "apiVersion": 7,
   "entrypoints": { "renderer": "dist/index.js" },
   "panes": [{ "kind": "myext", "defaultTitle": "My Pane" }]
 }
@@ -67,10 +67,13 @@ Every pane receives `ExtensionPaneContext` on mount:
 
 ## pathMount — exposing pane internals on the path surface
 
-A `pathMount` lets external callers (CLI, another pane, an AI agent) reach a specific pane's internals via `/panes/{paneId}/<mountKey>/…`. Two scopes:
+A `pathMount` lets external callers (CLI, another pane, an AI agent) reach a specific pane's internals via `/panes/{paneId}/<mountKey>/…`. Three scopes:
 
-- **state** (`getStateSnapshot` / `canSetStatePath` / `setState`) — persisted values. Path `/panes/{id}/<mountKey>/…`. Writes go through `setState(ctx, relativePath, value)`. The extension decides which subpaths are writable by returning `true`/`false` from `canSetStatePath`.
+- **state** (`getStateSnapshot` / `canSetStatePath` / `setState`) — persisted values. Path `/panes/{id}/<mountKey>/…`. Writes go through `setState(ctx, relativePath, value)` and are gated by `canSetStatePath`; the leaf must already exist in `getStateSnapshot` and be a primitive (the shell reuses the snapshot as the writability contract).
+- **call** (`canCallStatePath` / `callState`) — RPC-style actions with computed return values. Path `shell.call /panes/{id}/<mountKey>/<op>` with `args`. Unlike `setState`, `callState` has no snapshot-leaf requirement — a mount can expose `callState`/`canCallStatePath` alone, without a `getStateSnapshot`, for pure-RPC panes. Return shape `{ value: unknown }`. Throwing `ModelPathError(code, msg)` preserves the code; throwing a plain `Error` becomes `INTERNAL_ERROR` with the error's message. **`canCallStatePath` is required** — it defaults to `false`, so a mount that defines `callState` without its gate will respond `NOT_CALLABLE` to every op.
 - **status** (`getStatusSnapshot`) — runtime-derived, read-only. Path `/status/panes/{id}/<mountKey>/…`.
+
+`call` is gated by `allow_paths.call` on the shared ShellModelAPI ACL (same gate that guards every other `shell.call` path). Preload/WS remain trusted.
 
 A CLI command driving this pane from the terminal:
 
@@ -78,6 +81,7 @@ A CLI command driving this pane from the terminal:
 flmux set /panes/pane.abc/myext/note "hello"
 flmux get /panes/pane.abc/myext/note
 flmux get /status/panes/pane.abc/myext
+flmux call /panes/pane.abc/myext/search query=cpu
 ```
 
 ## CLI extension
@@ -157,7 +161,7 @@ await a.bus.publish("signal", { n: 1 });
 | `id` | yes | Non-empty string, unique |
 | `name` | yes | Human-readable |
 | `version` | yes | SemVer recommended |
-| `apiVersion` | yes | Must equal `FLMUX_EXTENSION_API_VERSION` (currently `6`) |
+| `apiVersion` | yes | Must equal `FLMUX_EXTENSION_API_VERSION` (currently `7`) |
 | `entrypoints.renderer` | either renderer or cli | Relative path, stays inside extension dir |
 | `entrypoints.cli` | either renderer or cli | Relative path |
 | `commands` | required if `cli` set | Array of `{ id, description? }`, unique ids |

@@ -7,12 +7,14 @@ import { setExtensionPaneDemuxer } from "./external/paneChannelRegistry";
 import { FlmuxWorkbench } from "./shell/workbench";
 import { pushShellCoreEvent } from "./shell/shellEventBus";
 import { pushTerminalEvent } from "./terminalHost";
+import { setupTheme } from "./theme";
 
 void bootstrap().catch((error) => {
   document.body.innerHTML = `<pre class="fatal">${String(error)}</pre>`;
 });
 
 async function bootstrap() {
+  setupTheme();
   const rpc = defineWebviewRPC<FlmuxRendererBridgeSchema>({
     handlers: {
       messages: {

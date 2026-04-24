@@ -17,7 +17,7 @@ extensions/myext/
   "id": "myext",
   "name": "My Extension",
   "version": "0.1.0",
-  "apiVersion": 2,
+  "apiVersion": 5,
   "entrypoints": { "renderer": "dist/index.js" },
   "panes": [{ "kind": "myext", "defaultTitle": "My Pane" }]
 }
@@ -153,13 +153,56 @@ await a.bus.publish("signal", { n: 1 });
 | `id` | yes | Non-empty string, unique |
 | `name` | yes | Human-readable |
 | `version` | yes | SemVer recommended |
-| `apiVersion` | yes | Must equal `FLMUX_EXTENSION_API_VERSION` (currently `2`) |
+| `apiVersion` | yes | Must equal `FLMUX_EXTENSION_API_VERSION` (currently `5`) |
 | `entrypoints.renderer` | either renderer or cli | Relative path, stays inside extension dir |
 | `entrypoints.cli` | either renderer or cli | Relative path |
 | `commands` | required if `cli` set | Array of `{ id, description? }`, unique ids |
 | `panes` | optional | Array of `{ kind, defaultTitle? }`, unique kinds |
 
 Validate programmatically with `validateExtensionManifest(json)`.
+
+## Theming
+
+flmux publishes two independent signals for light/dark theming. DOM panes use the CSS custom-property set; canvas / WebGL / wasm panes read the JS signal and map it to their rendering library's own theme API.
+
+### CSS token contract (`--fl-*`)
+
+Reference these names from your extension's styles. Values swap automatically on theme change (via `[data-theme]` on `:root` and `prefers-color-scheme`). The vocabulary follows VS Code Theme Color naming (hyphenated) with an `--fl-` prefix.
+
+**Base**
+`--fl-foreground`, `--fl-description-foreground`, `--fl-error-foreground`, `--fl-accent-foreground`, `--fl-accent-foreground-secondary`, `--fl-focus-border`, `--fl-widget-shadow`
+
+**Surface**
+`--fl-editor-background`, `--fl-editor-foreground`, `--fl-widget-background`, `--fl-widget-border`, `--fl-contrast-border`
+
+**Tab / panel** (dockview chrome)
+`--fl-panel-background`, `--fl-panel-border`, `--fl-tab-active-background`, `--fl-tab-inactive-background`, `--fl-tab-border`
+
+**Form**
+`--fl-input-background`, `--fl-input-foreground`, `--fl-input-border`, `--fl-input-placeholder-foreground`
+
+**Button**
+`--fl-button-background`, `--fl-button-foreground`, `--fl-button-hover-background`, `--fl-button-secondary-background`, `--fl-button-secondary-foreground`
+
+Extensions shouldn't hardcode hex colors; reach for the nearest token instead. flmux treats this list as a public contract — renames will come with an `apiVersion` bump.
+
+### JS mode signal (canvas / WebGL / wasm)
+
+Libraries that paint outside the DOM (xterm.js, CodeMirror, charting libraries) can't consume CSS variables at draw time. For those, read the current mode and pair it with the library's own theme API:
+
+```ts
+const mode = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+term.options.theme = mode === "light" ? lightTerminalTheme : darkTerminalTheme;
+
+document.addEventListener("flmux-theme-change", (event) => {
+  const next = (event as CustomEvent<{ mode: "dark" | "light" }>).detail.mode;
+  term.options.theme = next === "light" ? lightTerminalTheme : darkTerminalTheme;
+});
+```
+
+- Source of truth: `document.documentElement.dataset.theme` (`"dark" | "light" | undefined`). When absent, the user hasn't set an explicit override and the page follows `prefers-color-scheme`.
+- Swap notification: `document.addEventListener("flmux-theme-change", handler)` where `handler` receives `CustomEvent<{ mode: "dark" | "light" }>`. Fires on OS-preference change (when no override is set) and on explicit override.
+- Mapping colors to library-specific theme objects (xterm 16-color palette, CodeMirror Compartments, chart theme presets) is the extension's responsibility — flmux only publishes the mode.
 
 ## Where to look in flmux for reference behavior
 

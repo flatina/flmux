@@ -6,7 +6,7 @@
 // devkit. Drift is caught by the shared schema's tests and by the small
 // stable surface (rarely changes).
 
-const FLMUX_EXTENSION_API_VERSION = 5;
+const FLMUX_EXTENSION_API_VERSION = 6;
 
 export interface ExtensionManifestEntrypoints {
   renderer?: string;
@@ -17,6 +17,7 @@ export interface ExtensionManifestEntrypoints {
 export interface ExtensionManifestCommand {
   id: string;
   description?: string;
+  shim?: string;
 }
 
 export interface ExtensionManifestPane {
@@ -163,6 +164,7 @@ function validateManifestCommands(value: unknown, hasCliEntrypoint: boolean) {
     }
     const id = asNonEmptyString(entry.id);
     const description = entry.description === undefined ? undefined : asNonEmptyString(entry.description);
+    const shim = entry.shim === undefined ? undefined : asNonEmptyString(entry.shim);
     if (!id) {
       errors.push(`Manifest field 'commands[${index}].id' must be a non-empty string`);
       return;
@@ -171,12 +173,19 @@ function validateManifestCommands(value: unknown, hasCliEntrypoint: boolean) {
       errors.push(`Manifest field 'commands[${index}].description' must be a non-empty string when provided`);
       return;
     }
+    if (entry.shim !== undefined && !shim) {
+      errors.push(`Manifest field 'commands[${index}].shim' must be a non-empty string when provided`);
+      return;
+    }
     if (seenIds.has(id)) {
       errors.push(`Manifest field 'commands' contains duplicate command id '${id}'`);
       return;
     }
     seenIds.add(id);
-    commands.push(description ? { id, description } : { id });
+    const command: ExtensionManifestCommand = { id };
+    if (description) command.description = description;
+    if (shim) command.shim = shim;
+    commands.push(command);
   });
 
   return errors.length > 0 ? { ok: false as const, errors } : { ok: true as const, commands };

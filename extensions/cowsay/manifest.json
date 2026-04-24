@@ -2,7 +2,7 @@
   "id": "sample.cowsay",
   "name": "Cowsay",
   "version": "0.1.0",
-  "apiVersion": 5,
+  "apiVersion": 6,
   "entrypoints": {
     "renderer": "./index.ts",
     "cli": "./cli.ts"
@@ -10,7 +10,8 @@
   "commands": [
     {
       "id": "cowsay",
-      "description": "Open a cowsay pane"
+      "description": "Open a cowsay pane",
+      "shim": "cowsay"
     }
   ],
   "panes": [

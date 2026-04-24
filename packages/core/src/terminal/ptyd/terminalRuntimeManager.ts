@@ -1,4 +1,5 @@
 import { spawn, type IPty } from "bun-pty";
+import { join, delimiter } from "node:path";
 import type { TerminalRuntimeSummary } from "../types";
 import type {
   PtydTerminalRecord,
@@ -258,7 +259,18 @@ function createTerminalEnv(rootDir: string, appOrigin: string | undefined) {
   if (appOrigin) {
     env.FLMUX_ORIGIN = appOrigin;
   }
+  prependToPath(env, join(rootDir, ".flmux", "bin"));
   return env;
+}
+
+/** Prepend `dir` to PATH, reusing the existing key's casing on Windows (where
+ *  env names are case-insensitive but `Object.entries` preserves the source
+ *  casing, so a blind `env.PATH =` would introduce a sibling entry). */
+function prependToPath(env: Record<string, string>, dir: string): void {
+  const existingKey = Object.keys(env).find((key) => key.toUpperCase() === "PATH");
+  const key = existingKey ?? "PATH";
+  const current = existingKey ? env[existingKey] : undefined;
+  env[key] = current ? `${dir}${delimiter}${current}` : dir;
 }
 
 function normalizePath(value: string) {

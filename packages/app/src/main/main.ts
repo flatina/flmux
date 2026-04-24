@@ -36,6 +36,7 @@ import { eventToReadPath } from "./auth/eventAclPath";
 import { resolveFlmuxServerPort } from "./auth/serverConfig";
 import { resolveFlmuxRuntimeMode } from "./runtimeMode";
 import { resolveFlmuxRootDir, resolveFlmuxPaths } from "./flmuxPaths";
+import { ensureFlmuxCliShim, ensureExtensionCliShims } from "./cliShim";
 import { PtydLockFile } from "@flmux/core/terminal/ptyd/lockFile";
 import { callJsonRpcIpc } from "@flmux/core/terminal/ptyd/jsonRpcIpc";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
@@ -98,6 +99,15 @@ const localExtensionsRootDir = resolveConfiguredLocalExtensionsRootDir(resolve(b
 if (runtimeMode === "desktop") {
   mkdirSync(flmuxPaths.cefUserDataDir, { recursive: true });
 }
+
+// Write `<rootDir>/.flmux/bin/flmux{,.cmd}` pointing at this install's CLI
+// entry so terminal panes (which prepend `.flmux/bin` to PATH) can invoke
+// `flmux <cmd>` against the version that owns their rootDir. Skipped with a
+// warning when the layout can't be resolved — the empty dir is harmless.
+const shimResult = ensureFlmuxCliShim({ binDir: flmuxPaths.binDir, baseDir });
+if (!shimResult.ok) {
+  console.warn(`[flmux] cli shim skipped (${shimResult.reason})`);
+}
 const app =
   runtimeMode === "desktop"
     ? new AppRuntime({
@@ -118,6 +128,24 @@ const sessionStore = runtimeMode === "desktop" ? createSessionStore({ filePath: 
 // slip through are lazily skipped by the forwarder.
 const paneSubscribers = new Map<string, Set<number>>();
 const localExtensions = await discoverConfiguredLocalExtensions(localExtensionsRootDir);
+
+// Per-extension PATH shims (opt-in via manifest `commands[].shim`). Requires
+// the flmux shim pair to have resolved — shares its bun + cli entry so both
+// point at the same install.
+if (shimResult.ok && shimResult.entry && shimResult.bunCommand) {
+  const extensionShims = ensureExtensionCliShims({
+    binDir: flmuxPaths.binDir,
+    bunCommand: shimResult.bunCommand,
+    cliEntry: shimResult.entry,
+    extensions: localExtensions.map((ext) => ({
+      extensionId: ext.id,
+      commands: ext.runtimeManifest.commands
+    }))
+  });
+  for (const skip of extensionShims.skipped) {
+    console.warn(`[flmux] extension '${skip.extensionId}' shim '${skip.name}' skipped (${skip.reason})`);
+  }
+}
 
 // Extension server entries: imported once, registered per (paneId, attachmentId)
 // subscription. Module-level state lives inside the extension's server module

@@ -61,6 +61,40 @@ describe("extension manifest validation", () => {
     ]);
   });
 
+  it("carries the optional shim field through command validation", () => {
+    const result = validateExtensionManifest({
+      id: "sample.cowsay",
+      name: "Cowsay",
+      version: "0.1.0",
+      apiVersion: FLMUX_EXTENSION_API_VERSION,
+      entrypoints: { cli: "./cli.ts" },
+      commands: [{ id: "cowsay", description: "Open a cowsay pane", shim: "cowsay" }]
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected validation to succeed");
+    expect(result.manifest.commands).toEqual([
+      { id: "cowsay", description: "Open a cowsay pane", shim: "cowsay" }
+    ]);
+  });
+
+  it("rejects empty-string shim values", () => {
+    const result = validateExtensionManifest({
+      id: "sample.cowsay",
+      name: "Cowsay",
+      version: "0.1.0",
+      apiVersion: FLMUX_EXTENSION_API_VERSION,
+      entrypoints: { cli: "./cli.ts" },
+      commands: [{ id: "cowsay", shim: "  " }]
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected validation to fail");
+    expect(result.errors).toEqual([
+      "Manifest field 'commands[0].shim' must be a non-empty string when provided"
+    ]);
+  });
+
   it("requires command metadata when cli entrypoints are declared", () => {
     const result = validateExtensionManifest({
       id: "sample.cowsay",

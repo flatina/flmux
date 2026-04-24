@@ -17,7 +17,7 @@ extensions/myext/
   "id": "myext",
   "name": "My Extension",
   "version": "0.1.0",
-  "apiVersion": 5,
+  "apiVersion": 6,
   "entrypoints": { "renderer": "dist/index.js" },
   "panes": [{ "kind": "myext", "defaultTitle": "My Pane" }]
 }
@@ -87,9 +87,13 @@ Add `entrypoints.cli` and a `commands` array to `manifest.json`:
 ```json
 {
   "entrypoints": { "renderer": "dist/index.js", "cli": "dist/cli.js" },
-  "commands": [{ "id": "myext", "description": "Open a myext pane" }]
+  "commands": [
+    { "id": "myext", "description": "Open a myext pane", "shim": "myext" }
+  ]
 }
 ```
+
+The optional `shim` field is opt-in: when set, flmux writes a PATH shim at `<rootDir>/.flmux/bin/<shim>{,.cmd}` that forwards to `flmux <id>`, so terminal users can type `myext …` directly instead of `flmux myext …`. Leave it off and the command stays reachable only through the `flmux` root (no automatic PATH pollution). Names that collide with a built-in flmux subcommand (`clients`, `get`, `ls`, `ls-each-get`, `set`, `call`, `tokens`) or with another extension's shim are skipped with a console warning.
 
 **cli.ts**
 ```ts
@@ -153,7 +157,7 @@ await a.bus.publish("signal", { n: 1 });
 | `id` | yes | Non-empty string, unique |
 | `name` | yes | Human-readable |
 | `version` | yes | SemVer recommended |
-| `apiVersion` | yes | Must equal `FLMUX_EXTENSION_API_VERSION` (currently `5`) |
+| `apiVersion` | yes | Must equal `FLMUX_EXTENSION_API_VERSION` (currently `6`) |
 | `entrypoints.renderer` | either renderer or cli | Relative path, stays inside extension dir |
 | `entrypoints.cli` | either renderer or cli | Relative path |
 | `commands` | required if `cli` set | Array of `{ id, description? }`, unique ids |

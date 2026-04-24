@@ -5,5 +5,5 @@
   "dependencies": {
     "@flmux/extension-api": "workspace:*"
   },
-  "main": "index.ts"
+  "main": "./src/index.ts"
 }

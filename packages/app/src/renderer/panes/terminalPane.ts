@@ -1,6 +1,6 @@
 import type { FitAddon } from "@xterm/addon-fit";
 import type { Terminal as XtermTerminal } from "@xterm/xterm";
-import type { GroupPanelPartInitParameters, IContentRenderer } from "dockview-core";
+import type { DockviewPanelApi, GroupPanelPartInitParameters, IContentRenderer } from "dockview-core";
 import type { TerminalHostAPI } from "../terminalHost";
 import type { ShellModelAPI } from "@flmux/core/shell/types";
 import type { TerminalCreateResult, TerminalRuntimeEvent, TerminalWriteResult } from "@flmux/core/terminal/types";
@@ -16,6 +16,7 @@ type TerminalPaneParams = {
 };
 
 const MAX_RENDER_HISTORY_CHARS = 200_000;
+const BELL_PREFIX = "\u{1F514} ";
 
 // ANSI 16-color palettes tuned from VS Code Dark+ / Light+ (matching what
 // most users see in other terminals). Without explicit values xterm falls
@@ -93,6 +94,12 @@ export class TerminalPaneRenderer implements IContentRenderer {
   private unsubscribeEvent?: () => void;
   private viewportObserver?: ResizeObserver;
   private themeChangeListener?: () => void;
+  private pointerDownListener?: (event: PointerEvent) => void;
+  private panelApi?: DockviewPanelApi;
+  private bellActive = false;
+  private visibilityDisposable?: { dispose(): void };
+  private activeDisposable?: { dispose(): void };
+  private wasAlive: boolean | null = null;
 
   constructor(private readonly deps: TerminalPaneRendererDependencies) {
     this.element.className = "terminal-panel";
@@ -100,6 +107,7 @@ export class TerminalPaneRenderer implements IContentRenderer {
 
   init(params: GroupPanelPartInitParameters) {
     this.paneId = params.api.id;
+    this.panelApi = params.api;
     const input = params.params as TerminalPaneParams;
     this.cwd = input.cwd ?? input.rootDir ?? ".";
 
@@ -108,6 +116,13 @@ export class TerminalPaneRenderer implements IContentRenderer {
 
     this.unsubscribeEvent = this.deps.terminalEvents.subscribe((event) => {
       this.handleTerminalEvent(event);
+    });
+
+    this.visibilityDisposable = params.api.onDidVisibilityChange((event) => {
+      if (event.isVisible) this.clearBell();
+    });
+    this.activeDisposable = params.api.onDidActiveChange((event) => {
+      if (event.isActive) this.clearBell();
     });
 
     if (typeof ResizeObserver !== "undefined") {
@@ -129,12 +144,37 @@ export class TerminalPaneRenderer implements IContentRenderer {
   }
 
   dispose() {
+    // Strip bell prefix before dockview persists the title.
+    this.clearBell();
     this.unsubscribeEvent?.();
     this.viewportObserver?.disconnect();
+    this.visibilityDisposable?.dispose();
+    this.activeDisposable?.dispose();
     if (this.themeChangeListener) {
       document.removeEventListener("flmux-theme-change", this.themeChangeListener);
     }
+    if (this.pointerDownListener && this.viewportEl) {
+      this.viewportEl.removeEventListener("pointerdown", this.pointerDownListener);
+    }
     this.xterm?.dispose();
+  }
+
+  private setBell() {
+    if (this.bellActive || !this.panelApi) return;
+    this.bellActive = true;
+    const current = this.panelApi.title ?? "";
+    if (!current.startsWith(BELL_PREFIX)) {
+      this.panelApi.setTitle(`${BELL_PREFIX}${current}`);
+    }
+  }
+
+  private clearBell() {
+    if (!this.bellActive || !this.panelApi) return;
+    this.bellActive = false;
+    const current = this.panelApi.title ?? "";
+    if (current.startsWith(BELL_PREFIX)) {
+      this.panelApi.setTitle(current.slice(BELL_PREFIX.length));
+    }
   }
 
   private async ensureXterm() {
@@ -164,7 +204,35 @@ export class TerminalPaneRenderer implements IContentRenderer {
       terminal.onResize(({ cols, rows }) => {
         void this.resizeRuntime(cols, rows);
       });
+
+      terminal.attachCustomKeyEventHandler((event) => {
+        if (event.type !== "keydown") return true;
+        if ((!event.ctrlKey && !event.metaKey) || event.altKey) return true;
+        const key = event.key.toLowerCase();
+        if (key === "c" && terminal.hasSelection()) {
+          navigator.clipboard.writeText(terminal.getSelection()).catch(() => {});
+          terminal.clearSelection();
+          return false;
+        }
+        if (key === "v") {
+          navigator.clipboard
+            .readText()
+            .then((text) => terminal.paste(text))
+            .catch(() => {});
+          return false;
+        }
+        return true;
+      });
+
       terminal.open(this.viewportEl);
+
+      this.pointerDownListener = () => terminal.focus();
+      this.viewportEl.addEventListener("pointerdown", this.pointerDownListener);
+
+      terminal.onBell(() => {
+        if (this.panelApi?.isVisible && this.panelApi?.isActive) return;
+        this.setBell();
+      });
 
       this.xterm = terminal;
       this.fitAddon = fitAddon;
@@ -258,6 +326,7 @@ export class TerminalPaneRenderer implements IContentRenderer {
     this.cwd = result.terminal.cwd;
     this.history = clampHistory(result.history);
     this.lastResizeSignature = null;
+    this.wasAlive = result.terminal.alive;
     this.replaceTerminalBuffer();
   }
 
@@ -299,9 +368,21 @@ export class TerminalPaneRenderer implements IContentRenderer {
     }
 
     if (event.type === "state") {
+      // Runtime swap: drop carry-over wasAlive before reassigning runtimeId.
+      if (event.terminal.runtimeId !== this.runtimeId) {
+        this.wasAlive = null;
+      }
+
       this.rootKey = event.terminal.rootKey;
       this.runtimeId = event.terminal.runtimeId;
       this.cwd = event.terminal.cwd;
+
+      const alive = event.terminal.alive;
+      if (this.wasAlive === true && alive === false) {
+        this.writeSystemLine(`process exited${formatExitSuffix(event.terminal)}`);
+      }
+      this.wasAlive = alive;
+
       this.fitTerminal();
       return;
     }
@@ -310,6 +391,7 @@ export class TerminalPaneRenderer implements IContentRenderer {
       this.rootKey = null;
       this.runtimeId = null;
       this.lastResizeSignature = null;
+      this.wasAlive = null;
       this.writeSystemLine("terminal detached");
     }
   }
@@ -317,4 +399,10 @@ export class TerminalPaneRenderer implements IContentRenderer {
 
 function clampHistory(history: string) {
   return history.length > MAX_RENDER_HISTORY_CHARS ? history.slice(-MAX_RENDER_HISTORY_CHARS) : history;
+}
+
+function formatExitSuffix(summary: { exitCode?: number | null; signal?: string | null }): string {
+  if (typeof summary.exitCode === "number") return ` (${summary.exitCode})`;
+  if (typeof summary.signal === "string" && summary.signal.length > 0) return ` (signal: ${summary.signal})`;
+  return "";
 }

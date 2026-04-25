@@ -20,6 +20,10 @@ export interface TerminalRuntimeSummary {
   createdAt: string;
   updatedAt: string;
   commandCount: number;
+  /** `pty.onExit` exit code; absent while alive, `null` if unreported. */
+  exitCode?: number | null;
+  /** `pty.onExit` signal (e.g. "SIGTERM"); absent on clean exit. */
+  signal?: string | null;
 }
 
 export interface TerminalCreateResult {

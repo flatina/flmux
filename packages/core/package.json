@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
-    "bun-pty": "^0.4.8"
+    "@flatina/bun-pty": "^0.4.8"
   },
   "exports": {
     ".": "./src/index.ts",

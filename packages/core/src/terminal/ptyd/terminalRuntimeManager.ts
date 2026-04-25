@@ -1,4 +1,4 @@
-import { spawn, type IPty } from "bun-pty";
+import { spawn, type IPty } from "@flatina/bun-pty";
 import { join, delimiter } from "node:path";
 import type { TerminalRuntimeSummary } from "../types";
 import type {
@@ -97,13 +97,16 @@ export class TerminalRuntimeManager {
       current.summary.updatedAt = new Date().toISOString();
       this.pushEvent({ type: "output", runtimeId: params.runtimeId, data });
     });
-    pty.onExit(() => {
+    pty.onExit((event) => {
       const current = this.runtimes.get(params.runtimeId);
       if (current !== record) {
         return;
       }
 
       current.summary.alive = false;
+      current.summary.exitCode = typeof event.exitCode === "number" ? event.exitCode : null;
+      current.summary.signal =
+        typeof event.signal === "string" || typeof event.signal === "number" ? String(event.signal) : null;
       current.summary.updatedAt = new Date().toISOString();
       this.pushEvent({ type: "state", terminal: { ...current.summary } });
     });

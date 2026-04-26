@@ -143,6 +143,10 @@ export async function createWebModeShellAuthority(options: {
     shellBootstrap,
     persistSession: options.sessionStore
       ? async (layouts: FlmuxSessionSaveLayouts) => {
+          // shellBootstrap reads these — refresh within authority lifetime
+          // would otherwise replay the start()-time layout.
+          persistedOuterLayout = layouts.outerLayout;
+          persistedInnerLayouts = layouts.innerLayouts;
           const composed = composeSessionSnapshot(shellCore, layouts);
           await options.sessionStore!.save(composed);
         }

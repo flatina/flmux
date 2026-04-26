@@ -5,6 +5,7 @@ import { createInMemoryTerminalBackend, createTerminalService } from "../src/mai
 import type { DiscoveredLocalExtension } from "../src/main/localExtensions";
 import { createWebModeShellAuthority } from "../src/main/webModeShellAuthority";
 import type { FlmuxRendererBridge } from "../src/shared/rendererBridge";
+import type { FlmuxSessionSnapshot } from "../src/shared/session";
 
 describe("web mode shell authority", () => {
   it("routes external model calls through a single server-owned authority", async () => {
@@ -125,6 +126,38 @@ describe("web mode shell authority", () => {
     expect(activeChangesForAlpha).toHaveLength(1);
 
     unsub();
+  });
+
+  it("shellBootstrap reflects the latest persistSession layouts (refresh within authority lifetime)", async () => {
+    const clientRegistry = new FlmuxClientRegistry();
+    const terminalService = createTerminalService(createInMemoryTerminalBackend());
+    const saved: FlmuxSessionSnapshot[] = [];
+    const authority = await createWebModeShellAuthority({
+      projectDir: "C:/project",
+      runtimeLabel: "web server authority",
+      terminalService,
+      clientRegistry,
+      sessionStore: {
+        load: async () => null,
+        save: async (snapshot) => {
+          saved.push(snapshot);
+        }
+      }
+    });
+    await authority.start("http://127.0.0.1:4321");
+
+    const initial = authority.shellBootstrap("web_layout_a");
+    expect(initial.outerLayout).toBeNull();
+    expect(initial.innerLayouts).toEqual({});
+
+    const outerLayout = { panels: { "workspace.1": { id: "workspace.1" } }, grid: { root: "workspace.1" } };
+    const innerLayouts = { "workspace.1": { panels: { "pane.1": { id: "pane.1" } }, grid: { root: "pane.1" } } };
+    await authority.persistSession!({ outerLayout, innerLayouts });
+    expect(saved).toHaveLength(1);
+
+    const refreshed = authority.shellBootstrap("web_layout_b");
+    expect(refreshed.outerLayout).toEqual(outerLayout);
+    expect(refreshed.innerLayouts).toEqual(innerLayouts);
   });
 
   it("shellBootstrap returns synchronously — preflight #1 §S3 parity with desktop", async () => {

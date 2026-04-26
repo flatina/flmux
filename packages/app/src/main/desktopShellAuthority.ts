@@ -140,6 +140,10 @@ export async function createDesktopShellAuthority(options: {
       });
     },
     persistSession: async (layouts) => {
+      // shellBootstrap reads these — refresh within authority lifetime
+      // would otherwise replay the start()-time layout.
+      persistedOuterLayout = layouts.outerLayout;
+      persistedInnerLayouts = layouts.innerLayouts;
       const composed = composeSessionSnapshot(shellCore, layouts);
       await options.sessionStore.save(composed);
     }

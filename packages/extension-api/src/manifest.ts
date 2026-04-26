@@ -1,4 +1,4 @@
-export const FLMUX_EXTENSION_API_VERSION = 8;
+export const FLMUX_EXTENSION_API_VERSION = 9;
 
 export interface ExtensionManifestEntrypoints {
   renderer?: string;
@@ -56,8 +56,8 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
   if (!id) {
     errors.push("Manifest field 'id' must be a non-empty string");
   } else if (!isValidExtensionId(id)) {
-    // ids land verbatim in `<flmuxDir>/ext/<id>/` and `/status/ext/<id>/…`,
-    // so reject path-segment chars before they reach a path join.
+    // ids land verbatim in `<flmuxDir>/ext/<id>/`, so reject path-segment
+    // chars before they reach a path join.
     errors.push(
       "Manifest field 'id' must contain only ASCII letters, digits, '.', '_', '-' and not be '.' or '..'"
     );

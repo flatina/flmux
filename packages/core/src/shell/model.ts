@@ -816,10 +816,6 @@ class ShellModel implements ShellModelAPI {
       return await this.getStatusPanes(segments.slice(1), caller);
     }
 
-    if (segments[0] === "ext") {
-      return await this.getStatusExt(segments.slice(1));
-    }
-
     return notFoundGet();
   }
 
@@ -856,10 +852,6 @@ class ShellModel implements ShellModelAPI {
 
     if (segments[0] === "panes") {
       return await this.listStatusPanes(segments.slice(1), caller);
-    }
-
-    if (segments[0] === "ext") {
-      return await this.listStatusExt(segments.slice(1));
     }
 
     return notFoundList();
@@ -1225,52 +1217,6 @@ class ShellModel implements ShellModelAPI {
         `/status/panes/${segments[0]}/${mount.mountKey}`,
         "status"
       );
-    }
-
-    return notFoundList();
-  }
-
-  private async getStatusExt(segments: string[]): Promise<PathGetResult> {
-    if (segments.length === 0) {
-      // No directory listing for /status/ext — extension data dirs are
-      // looked up by id, not enumerated, so the surface is small.
-      return notFoundGet();
-    }
-
-    const extensionId = segments[0]!;
-    const dataDir = await this.host.resolveExtensionDataDir?.(extensionId);
-    if (dataDir === undefined || dataDir === null) {
-      return notFoundGet();
-    }
-
-    if (segments.length === 1) {
-      return { ok: true, found: true, value: { dataDir } };
-    }
-
-    if (segments.length === 2 && segments[1] === "data-dir") {
-      return { ok: true, found: true, value: dataDir };
-    }
-
-    return notFoundGet();
-  }
-
-  private async listStatusExt(segments: string[]): Promise<PathListResult> {
-    if (segments.length === 0) {
-      return notFoundList();
-    }
-
-    const extensionId = segments[0]!;
-    const dataDir = await this.host.resolveExtensionDataDir?.(extensionId);
-    if (dataDir === undefined || dataDir === null) {
-      return notFoundList();
-    }
-
-    if (segments.length === 1) {
-      return {
-        ok: true,
-        found: true,
-        entries: [leafEntry("data-dir", `/status/ext/${extensionId}/data-dir`)]
-      };
     }
 
     return notFoundList();

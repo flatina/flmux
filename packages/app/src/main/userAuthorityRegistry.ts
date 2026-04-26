@@ -27,9 +27,6 @@ interface WebModeUserAuthorityRegistryOptions {
    * restarts per-user. Omit to keep authorities in-memory only (tests,
    * dev without auth). */
   sessionsDir?: string;
-  /** Forwarded to every user's ShellCore so `/status/ext/<id>/data-dir`
-   * resolves identically across users. */
-  resolveExtensionDataDir?: (extensionId: string) => string | null;
 }
 
 export interface WebModeUserAuthorityRegistry {
@@ -77,8 +74,7 @@ export function createWebModeUserAuthorityRegistry(
       clientRegistry: options.clientRegistry,
       localExtensions: options.localExtensions,
       sessionStore,
-      userId,
-      resolveExtensionDataDir: options.resolveExtensionDataDir
+      userId
     });
     authorities.set(userId, authority);
     // Subscribe BEFORE start() so any pane.added emitted during session

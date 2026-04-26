@@ -675,12 +675,6 @@ export class TestShellModelHost implements ShellModelHost {
     };
   }
 
-  // Default returns null so unrelated tests see NOT_FOUND for /status/ext/*;
-  // ExtDataDirHost subclass overrides for the dedicated test.
-  resolveExtensionDataDir(_extensionId: string): string | null {
-    return null;
-  }
-
   private createStoredPane(paneId: string, input: NewPaneInput): StoredPane {
     switch (input.kind) {
       case "browser":

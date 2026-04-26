@@ -339,8 +339,7 @@ const desktopAuthority: DesktopShellAuthority | null =
         sessionStore,
         clientRegistry,
         localExtensions,
-        cefCdpPort: parseOptionalPort(process.env.BUNITE_REMOTE_DEBUGGING_PORT),
-        resolveExtensionDataDir
+        cefCdpPort: parseOptionalPort(process.env.BUNITE_REMOTE_DEBUGGING_PORT)
       })
     : null;
 
@@ -357,7 +356,6 @@ const userAuthorityRegistry: WebModeUserAuthorityRegistry | null =
         terminalService,
         clientRegistry,
         localExtensions,
-        resolveExtensionDataDir,
         getOrigin: () => serverOrigin,
         onAuthorityCreated: (_userId, authority) => {
           trackPaneLifecycle(authority);

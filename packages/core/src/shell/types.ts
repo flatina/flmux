@@ -192,9 +192,6 @@ export interface ShellModelHost {
   getPaneSubtreeMounts(paneId: string): Awaitable<ShellResolvedPaneSubtreeMount[]>;
   getPanePathMount(paneId: string): Awaitable<ShellResolvedPanePathMount | undefined>;
   publishWorkspaceEvent(input: { topic: string; sourcePaneId: string; payload: unknown }): Awaitable<WorkspaceBusEvent>;
-  /** Backs `/status/ext/<id>/data-dir`. Implementations mkdir before
-   * returning; `null` surfaces NOT_FOUND. */
-  resolveExtensionDataDir?(extensionId: string): Awaitable<string | null>;
 }
 
 export interface ShellTerminalDelegate {

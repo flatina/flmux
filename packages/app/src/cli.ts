@@ -1,6 +1,9 @@
+import { mkdirSync } from "node:fs";
+import { dirname, resolve as pathResolve, sep } from "node:path";
 import { defineCommand, runMain, type CommandDef } from "citty";
 import { discoverLocalCliCommands, defaultExtensionsRootDir, loadLocalCliCommandDef } from "./cliExtensions";
 import { runTokensCli } from "./cliTokens";
+import { resolveFlmuxPaths, resolveFlmuxRootDir } from "./main/flmuxPaths";
 import { commonArgs, printJson, resolveClientId, resolveOrigin, toFlmuxCliFlags } from "@flmux/extension-api/cli";
 import type { FlmuxCliFlags } from "@flmux/extension-api/cli";
 
@@ -203,14 +206,40 @@ async function buildSubCommands(): Promise<Record<string, CommandDef>> {
   const extensionCommands = await discoverLocalCliCommands(defaultExtensionsRootDir()).catch(() => []);
   const isHelpContext = !invoked || invoked === "--help" || invoked === "-h";
   const targetCommandId = isHelpContext ? null : invoked;
+  const loadOptions = { resolveExtensionDataDir: createCliDataDirResolver(extensionCommands.map((c) => c.extensionId)) };
 
   for (const cmd of extensionCommands) {
     if (cmd.commandId in subCommands) continue;
     if (targetCommandId && cmd.commandId !== targetCommandId) continue;
-    const def = await loadLocalCliCommandDef(cmd);
+    const def = await loadLocalCliCommandDef(cmd, loadOptions);
     if (def) subCommands[cmd.commandId] = def;
   }
   return subCommands;
+}
+
+/**
+ * Mirror of main.ts's resolver, scoped to the CLI process. Same install root
+ * resolution + same path layout, so server entry's `ctx.dataDir` and the CLI
+ * subcommand's `ctx.dataDir` agree on a single directory.
+ */
+function createCliDataDirResolver(knownExtensionIds: string[]): (extensionId: string) => string | null {
+  const baseDir = Bun.main ? dirname(Bun.main) : dirname(process.execPath);
+  const installRoot = pathResolve(baseDir, "../../..");
+  const flmuxPaths = resolveFlmuxPaths(resolveFlmuxRootDir(installRoot));
+  const known = new Set(knownExtensionIds);
+  const provisioned = new Set<string>();
+  const rootResolved = pathResolve(flmuxPaths.extDataRootDir);
+  const rootWithSep = rootResolved.endsWith(sep) ? rootResolved : rootResolved + sep;
+  return (extensionId) => {
+    if (!known.has(extensionId)) return null;
+    const dir = pathResolve(flmuxPaths.extDataRootDir, extensionId);
+    if (!dir.startsWith(rootWithSep)) return null;
+    if (!provisioned.has(extensionId)) {
+      mkdirSync(dir, { recursive: true });
+      provisioned.add(extensionId);
+    }
+    return dir;
+  };
 }
 
 async function apiGet<T>(origin: string, pathname: string, flags: Flags): Promise<T> {

@@ -1,6 +1,6 @@
-import { commonArgs, createFlmuxClient, defineCommand, printJson, toFlmuxCliFlags } from "@flmux/extension-api/cli";
+import { commonArgs, createFlmuxClient, defineExtensionCommand, printJson, toFlmuxCliFlags } from "@flmux/extension-api/cli";
 
-export default defineCommand({
+export default defineExtensionCommand({
   meta: {
     name: "cowsay",
     description: "Open a cowsay pane"

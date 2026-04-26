@@ -52,9 +52,6 @@ export async function createWebModeShellAuthority(options: {
    * `/status/attachments/{id}/userId` so extensions can key session state
    * per user. `undefined` (legacy single-tenant tests) maps to `"local"`. */
   userId?: string;
-  /** Backs `/status/ext/<id>/data-dir`; mkdirs and returns the dir, or
-   * null when the id isn't registered. */
-  resolveExtensionDataDir?: (extensionId: string) => string | null;
 }): Promise<WebModeShellAuthority> {
   const paneRegistry = new PaneRegistry<PaneSpec>();
   paneRegistry.register(createPlaceholderPaneSpec());
@@ -74,8 +71,7 @@ export async function createWebModeShellAuthority(options: {
     // driver (CLI, external HTTP calls without a browser attachment). B2
     // replaces this with per-attachment (browser) slots.
     defaultSlotKey: "server",
-    authorityUserId: options.userId,
-    resolveExtensionDataDir: options.resolveExtensionDataDir
+    authorityUserId: options.userId
   });
   const shellModel = createShellModel({
     host: shellCore,

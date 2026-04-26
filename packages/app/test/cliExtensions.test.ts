@@ -28,24 +28,44 @@ describe("cli extension registration", () => {
     expect(commands[0]?.extension.origin).toBe("source");
   });
 
-  it("loads the extension's default-exported citty CommandDef", async () => {
+  it("loads the extension's default-exported defineExtensionCommand and wraps it as a CommandDef", async () => {
     const rootDir = await createCliExtensionFixture();
     const [command] = await discoverLocalCliCommands(rootDir);
-    const def = await loadLocalCliCommandDef(command!);
+    const def = await loadLocalCliCommandDef(command!, { resolveExtensionDataDir: () => "C:\\flmux\\.flmux\\ext\\sample.cowsay" });
 
     expect(def).toBeTruthy();
-    // Citty CommandDefs carry meta + run; this confirms the extension
-    // default-exported the shape flmux registers at the root level.
     const rawMeta = def?.meta;
     const meta = typeof rawMeta === "function" ? await rawMeta() : rawMeta;
     expect((meta as { name?: string } | undefined)?.name).toBe("cowsay");
   });
 
-  it("returns null when a loaded module doesn't default-export a CommandDef", async () => {
+  it("returns null when a loaded module doesn't default-export a FlmuxExtensionCommand", async () => {
     const rootDir = await createCliExtensionFixture({ badExport: true });
     const [command] = await discoverLocalCliCommands(rootDir);
-    const def = await loadLocalCliCommandDef(command!);
+    const def = await loadLocalCliCommandDef(command!, { resolveExtensionDataDir: () => "C:\\unused" });
     expect(def).toBeNull();
+  });
+
+  it("injects ctx.dataDir into the extension run() — extension never claims its own id", async () => {
+    const rootDir = await createCliExtensionFixture({ recordCtx: true });
+    const [command] = await discoverLocalCliCommands(rootDir);
+    const def = await loadLocalCliCommandDef(command!, {
+      resolveExtensionDataDir: (id) => (id === "sample.cowsay" ? "C:\\flmux\\.flmux\\ext\\sample.cowsay" : null)
+    });
+    expect(def).toBeTruthy();
+    const calls: unknown[] = [];
+    (globalThis as unknown as { __flmuxCliCtxRecord?: unknown[] }).__flmuxCliCtxRecord = calls;
+    await def?.run?.({ args: { _: [] }, rawArgs: [], cmd: def, data: undefined } as never);
+    expect(calls).toEqual([{ dataDir: "C:\\flmux\\.flmux\\ext\\sample.cowsay" }]);
+  });
+
+  it("refuses to run when extId is unknown to the resolver", async () => {
+    const rootDir = await createCliExtensionFixture();
+    const [command] = await discoverLocalCliCommands(rootDir);
+    const def = await loadLocalCliCommandDef(command!, { resolveExtensionDataDir: () => null });
+    await expect(def?.run?.({ args: { _: [] }, rawArgs: [], cmd: def, data: undefined } as never)).rejects.toThrow(
+      /not registered/
+    );
   });
 
   it("runs the first-party cowsay CommandDef end-to-end against a stub flmux server", async () => {
@@ -135,7 +155,7 @@ describe("cli extension registration", () => {
   });
 });
 
-async function createCliExtensionFixture(options: { badExport?: boolean } = {}) {
+async function createCliExtensionFixture(options: { badExport?: boolean; recordCtx?: boolean } = {}) {
   const rootDir = await mkdtemp(join(tmpdir(), "flmux-cli-ext-"));
   tempDirs.push(rootDir);
   const extensionDir = join(rootDir, "cowsay");
@@ -169,13 +189,25 @@ async function createCliExtensionFixture(options: { badExport?: boolean } = {}) 
 
   const runtimeContents = options.badExport
     ? "export const notADefault = 1;\n"
-    : [
-        "export default {",
-        '  meta: { name: "cowsay", description: "Open a cowsay pane" },',
-        "  async run() {}",
-        "};",
-        ""
-      ].join("\n");
+    : options.recordCtx
+      ? [
+          "export default {",
+          '  [Symbol.for("flmux.extensionCommand")]: true,',
+          '  meta: { name: "cowsay", description: "Open a cowsay pane" },',
+          "  async run({ ctx }) {",
+          "    (globalThis.__flmuxCliCtxRecord ?? []).push(ctx);",
+          "  }",
+          "};",
+          ""
+        ].join("\n")
+      : [
+          "export default {",
+          '  [Symbol.for("flmux.extensionCommand")]: true,',
+          '  meta: { name: "cowsay", description: "Open a cowsay pane" },',
+          "  async run() {}",
+          "};",
+          ""
+        ].join("\n");
 
   await writeFile(sourceCliEntryPath, "// source stub for discovery\n", "utf8");
   await writeFile(runtimeCliEntryPath, runtimeContents, "utf8");

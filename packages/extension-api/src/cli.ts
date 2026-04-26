@@ -1,4 +1,4 @@
-import type { ArgsDef } from "citty";
+import type { ArgsDef, CommandDef, ParsedArgs } from "citty";
 import type {
   ShellClient,
   ShellPathCallResult,
@@ -12,6 +12,36 @@ import type {
 // out of the dep graph entirely.
 export { defineCommand } from "citty";
 export type { ArgsDef, CommandDef, SubCommandsDef } from "citty";
+
+/** Read-only context flmux injects into every extension CLI subcommand. */
+export interface FlmuxExtensionCliContext {
+  /** Per-extension data dir — `<rootDir>/.flmux/ext/<extId>/`, mkdir'd. */
+  readonly dataDir: string;
+}
+
+/** Marker symbol identifying a flmux-wrapped CLI command vs a raw citty
+ * `CommandDef`. flmux's loader checks for it and injects `ctx` before
+ * dispatching to citty. */
+export const FLMUX_EXTENSION_COMMAND = Symbol.for("flmux.extensionCommand");
+
+export interface FlmuxExtensionCommand<A extends ArgsDef = ArgsDef> {
+  readonly [FLMUX_EXTENSION_COMMAND]: true;
+  readonly meta?: CommandDef<A>["meta"];
+  readonly args?: A;
+  readonly subCommands?: CommandDef<A>["subCommands"];
+  run(input: { args: ParsedArgs<A>; ctx: FlmuxExtensionCliContext; rawArgs: string[] }): unknown | Promise<unknown>;
+}
+
+/**
+ * Define an extension CLI subcommand. flmux dispatches it as a citty
+ * subcommand and injects `ctx.dataDir` from the extension's identity —
+ * extensions never claim their own id at the call site.
+ */
+export function defineExtensionCommand<A extends ArgsDef>(
+  def: Omit<FlmuxExtensionCommand<A>, typeof FLMUX_EXTENSION_COMMAND>
+): FlmuxExtensionCommand<A> {
+  return { [FLMUX_EXTENSION_COMMAND]: true, ...def };
+}
 
 // `resolveColumnFillPlacement` lives in `./placement` (DOM-free) so the
 // renderer + server-entry surfaces can reach it from the main
@@ -179,21 +209,3 @@ export function printError(message: string): void {
 }
 
 
-/**
- * Returns `<rootDir>/.flmux/ext/<extensionId>/` from the running flmux,
- * mkdir'd. Throws when the extension isn't loaded.
- */
-export async function getExtensionDataDir(client: ShellClient, extensionId: string): Promise<string> {
-  if (!extensionId) throw new Error("getExtensionDataDir: extensionId is required");
-  // Manifest validator constrains extensionId to `[a-zA-Z0-9._-]+`, so
-  // encoding would be a no-op anyway; drop it for consistency with other
-  // path-tree helpers (the model's path parser doesn't URL-decode).
-  const result = await client.get(`/status/ext/${extensionId}/data-dir`);
-  if (!result.ok) {
-    throw new Error(`getExtensionDataDir: ${result.code} ${result.error}`);
-  }
-  if (!result.found || typeof result.value !== "string") {
-    throw new Error(`getExtensionDataDir: extension '${extensionId}' is not registered with this flmux instance`);
-  }
-  return result.value;
-}

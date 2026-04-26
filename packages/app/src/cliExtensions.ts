@@ -1,6 +1,11 @@
 import { fileURLToPath } from "node:url";
 import type { CommandDef } from "citty";
 import {
+  FLMUX_EXTENSION_COMMAND,
+  type FlmuxExtensionCliContext,
+  type FlmuxExtensionCommand
+} from "@flmux/extension-api/cli";
+import {
   discoverConfiguredLocalExtensions,
   resolveConfiguredLocalExtensionsRootDir,
   type DiscoveredLocalExtension
@@ -15,19 +20,29 @@ interface DiscoveredLocalCliCommand {
 }
 
 type CliModule = {
-  default?: CommandDef;
+  default?: FlmuxExtensionCommand | CommandDef;
 };
 
+export interface LoadCliCommandDefOptions {
+  /** Resolves the per-extension data dir, mkdir'ing on first call. Returns
+   * null if the extension isn't registered (extId is flmux-supplied so this
+   * should never happen in practice). */
+  resolveExtensionDataDir(extensionId: string): string | null;
+}
+
 /**
- * Dynamically import an extension's CLI entry and return its default-exported
- * citty `CommandDef`. Returns null if the entry or its export is missing —
- * the caller falls back to the other built-in subcommands in that case.
+ * Dynamically import an extension's CLI entry and return a citty `CommandDef`
+ * — wrapped from the extension's `defineExtensionCommand(...)` export with
+ * flmux-supplied `ctx` (currently `dataDir`) injected. Returns null if the
+ * entry or its export is missing/wrong-shape; caller falls back to the
+ * built-in subcommands in that case.
  *
  * Data-URL imports (archive-backed extensions) work because CLI entries are
  * contract-bound to zero runtime externals.
  */
 export async function loadLocalCliCommandDef(
-  command: DiscoveredLocalCliCommand
+  command: DiscoveredLocalCliCommand,
+  options: LoadCliCommandDefOptions
 ): Promise<CommandDef | null> {
   const entryUrl = await command.extension.resolveEntryImportUrl(command.cliEntryRelativePath);
   if (!entryUrl) {
@@ -40,28 +55,46 @@ export async function loadLocalCliCommandDef(
   try {
     const module = (await import(/* @vite-ignore */ entryUrl)) as CliModule;
     const def = module.default;
-    if (!isCommandDefShape(def)) {
+    if (!isFlmuxExtensionCommand(def)) {
       console.warn(
-        `[flmux] CLI extension '${command.extensionId}' must default-export a citty CommandDef (missing run/subCommands)`
+        `[flmux] CLI extension '${command.extensionId}' must default-export defineExtensionCommand({...}) from @flmux/extension-api/cli`
       );
       return null;
     }
-    return def;
+    return wrapAsCommandDef(def, command.extensionId, options);
   } catch (error) {
     console.warn(`[flmux] failed to load CLI entry for extension '${command.extensionId}':`, error);
     return null;
   }
 }
 
-/**
- * Loose shape check for a citty CommandDef — requires either a `run` function
- * or a `subCommands` object. Catches wrong-export shapes at load time rather
- * than letting citty crash mid-dispatch.
- */
-function isCommandDefShape(value: unknown): value is CommandDef {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const record = value as Record<string, unknown>;
-  return typeof record.run === "function" || (typeof record.subCommands === "object" && record.subCommands !== null);
+function isFlmuxExtensionCommand(value: unknown): value is FlmuxExtensionCommand {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as Record<symbol, unknown>)[FLMUX_EXTENSION_COMMAND] === true &&
+    typeof (value as { run?: unknown }).run === "function"
+  );
+}
+
+function wrapAsCommandDef(
+  def: FlmuxExtensionCommand,
+  extensionId: string,
+  options: LoadCliCommandDefOptions
+): CommandDef {
+  return {
+    meta: def.meta,
+    args: def.args,
+    subCommands: def.subCommands,
+    async run(input) {
+      const dataDir = options.resolveExtensionDataDir(extensionId);
+      if (!dataDir) {
+        throw new Error(`[flmux] extension '${extensionId}' is not registered — refusing to run CLI`);
+      }
+      const ctx: FlmuxExtensionCliContext = { dataDir };
+      await def.run({ args: input.args, ctx, rawArgs: input.rawArgs });
+    }
+  } as CommandDef;
 }
 
 export async function discoverLocalCliCommands(extensionsRootDir: string): Promise<DiscoveredLocalCliCommand[]> {

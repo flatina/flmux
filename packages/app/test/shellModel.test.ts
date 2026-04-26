@@ -1305,69 +1305,6 @@ describe("shell model direct", () => {
     });
   });
 
-  it("exposes /status/ext/<id>/data-dir from the host resolver", async () => {
-    class ExtDataDirHost extends TestShellModelHost {
-      readonly resolved: string[] = [];
-      override resolveExtensionDataDir(extensionId: string): string | null {
-        this.resolved.push(extensionId);
-        if (extensionId === "registered.ext") return "C:\\flmux\\.flmux\\ext\\registered.ext";
-        return null;
-      }
-    }
-
-    const host = new ExtDataDirHost({
-      workspaceId: "workspace.test",
-      workspaceTitle: "Workspace Test",
-      activePaneId: "pane.term",
-      panes: [
-        {
-          id: "pane.term",
-          kind: "terminal",
-          title: "Terminal",
-          cwd: WORKSPACE_ROOT_DIR,
-          rootKey: WORKSPACE_ROOT_KEY,
-          runtimeId: "term_live"
-        }
-      ]
-    });
-    const model = host.createModel();
-
-    expect(await model.pathGet("/status/ext/registered.ext/data-dir")).toEqual({
-      ok: true,
-      found: true,
-      value: "C:\\flmux\\.flmux\\ext\\registered.ext"
-    });
-
-    expect(await model.pathGet("/status/ext/registered.ext")).toEqual({
-      ok: true,
-      found: true,
-      value: { dataDir: "C:\\flmux\\.flmux\\ext\\registered.ext" }
-    });
-
-    expect(await model.pathList("/status/ext/registered.ext")).toEqual({
-      ok: true,
-      found: true,
-      entries: [
-        { name: "data-dir", path: "/status/ext/registered.ext/data-dir", kind: "leaf", writable: false }
-      ]
-    });
-
-    expect(await model.pathGet("/status/ext/missing.ext/data-dir")).toMatchObject({
-      ok: true,
-      found: false
-    });
-
-    // /status/ext root is intentionally not enumerable — no listing contract
-    // for "what extensions are loaded".
-    expect(await model.pathGet("/status/ext")).toMatchObject({ ok: true, found: false });
-    expect(await model.pathList("/status/ext")).toMatchObject({ ok: true, found: false });
-
-    expect(await model.pathGet("/status/ext/registered.ext/garbage")).toMatchObject({
-      ok: true,
-      found: false
-    });
-  });
-
   it("requires runtime caller context for bus publish and preserves named payload fields", async () => {
     const host = new TestShellModelHost({
       workspaceId: "workspace.test",

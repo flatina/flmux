@@ -101,15 +101,22 @@ The optional `shim` field is opt-in: when set, flmux writes a PATH shim at `<roo
 
 **cli.ts**
 ```ts
-import { commonArgs, createFlmuxClient, defineCommand, printJson, toFlmuxCliFlags } from "@flmux/extension-api/cli";
+import {
+  commonArgs,
+  createFlmuxClient,
+  defineExtensionCommand,
+  printJson,
+  toFlmuxCliFlags
+} from "@flmux/extension-api/cli";
 
-export default defineCommand({
+export default defineExtensionCommand({
   meta: { name: "myext", description: "Open a myext pane" },
   args: {
     ...commonArgs,
     title: { type: "positional", description: "Title", required: false }
   },
-  async run({ args }) {
+  async run({ args, ctx }) {
+    // ctx.dataDir is flmux-injected; the extension never claims its own id.
     const client = await createFlmuxClient(toFlmuxCliFlags(args));
     const result = await client.call("/panes/new", { kind: "myext", place: "right" });
     printJson(result);
@@ -117,7 +124,7 @@ export default defineCommand({
 });
 ```
 
-Extension CLI entries default-export a [citty](https://github.com/unjs/citty) `CommandDef` — flmux registers it directly as a root subcommand, so `flmux myext …` goes straight to your `run({ args, rawArgs })`. Spread `commonArgs` into your own `args` to inherit the transport flags (`--origin`, `--client`, `--token`); `createFlmuxClient(flags)` returns a `ShellClient` talking to the flmux HTTP surface; `printJson(value)` writes the canonical stdout format the built-in verbs use.
+Extension CLI entries default-export `defineExtensionCommand({...})`. flmux wraps it as a [citty](https://github.com/unjs/citty) subcommand, dispatches `flmux myext …` straight to your `run({ args, ctx, rawArgs })`, and supplies `ctx` with the flmux-controlled context (currently `dataDir`). Spread `commonArgs` into your own `args` to inherit the transport flags (`--origin`, `--client`, `--token`); `createFlmuxClient(flags)` returns a `ShellClient` talking to the flmux HTTP surface; `printJson(value)` writes the canonical stdout format the built-in verbs use.
 
 ### Column-fill placement helper
 
@@ -147,10 +154,10 @@ The heuristic uses creation order as a proxy for spatial layout — not a guaran
 
 ## Persistent state — `.flmux/ext/<id>/`
 
-flmux carves a per-extension data directory at `<rootDir>/.flmux/ext/<extensionId>/` and exposes only that path — never the parent `.flmux/`. The directory is the extension's writable space; flmux makes no assumptions about its layout (sessions, configs, caches, etc. all welcome).
+flmux carves a per-extension data directory at `<rootDir>/.flmux/ext/<extensionId>/` and hands it to the extension as a readonly `ctx.dataDir` field. flmux is the one running the extension, so the extension never claims its own id — it just reads `ctx.dataDir`. The directory is the extension's writable space; flmux makes no assumptions about its layout (sessions, configs, caches, etc. all welcome) and mkdirs lazily on first need.
 
-- **Server entry** — `ctx.dataDir` is a string handed to `onPaneConnected`. flmux mkdirs lazily on first call, so the directory is always ready when received.
-- **CLI** — `getExtensionDataDir(client, extensionId)` from `@flmux/extension-api/cli` returns the same path. Internally calls `shell.get /status/ext/<id>/data-dir`.
+- **Server entry** — `ctx.dataDir` is supplied to `onPaneConnected(paneId, attachmentId, ctx)`.
+- **CLI entry** — `ctx.dataDir` is supplied to `run({ args, ctx, rawArgs })` (see "CLI extension" above). Use `defineExtensionCommand` from `@flmux/extension-api/cli` so flmux can inject it.
 - **Renderer** — no direct fs access (browser context). Forward writes through the channel to the server entry.
 
 ```ts
@@ -166,14 +173,13 @@ export default defineExtensionServer({
 
 ```ts
 // In an extension CLI entry
-import { commonArgs, createFlmuxClient, defineCommand, getExtensionDataDir, printJson, toFlmuxCliFlags } from "@flmux/extension-api/cli";
+import { commonArgs, defineExtensionCommand, printJson } from "@flmux/extension-api/cli";
 
-export default defineCommand({
+export default defineExtensionCommand({
   meta: { name: "myext-where" },
   args: { ...commonArgs },
-  async run({ args }) {
-    const client = await createFlmuxClient(toFlmuxCliFlags(args));
-    printJson({ dataDir: await getExtensionDataDir(client, "my.extension") });
+  async run({ ctx }) {
+    printJson({ dataDir: ctx.dataDir });
   }
 });
 ```
@@ -222,7 +228,7 @@ await a.bus.publish("signal", { n: 1 });
 | `id` | yes | Non-empty string, unique |
 | `name` | yes | Human-readable |
 | `version` | yes | SemVer recommended |
-| `apiVersion` | yes | Must equal `FLMUX_EXTENSION_API_VERSION` (currently `8`) |
+| `apiVersion` | yes | Must equal `FLMUX_EXTENSION_API_VERSION` (currently `9`) |
 | `entrypoints.renderer` | either renderer or cli | Relative path, stays inside extension dir |
 | `entrypoints.cli` | either renderer or cli | Relative path |
 | `commands` | required if `cli` set | Array of `{ id, description? }`, unique ids |

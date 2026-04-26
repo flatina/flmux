@@ -391,18 +391,23 @@ export class FlmuxWorkbench {
     referencePaneId?: string;
   }) {
     const record = this.workspaces.get(payload.workspaceId);
-    // innerApi is attached synchronously during WorkspaceOuterPanelRenderer.init;
-    // if it is missing here, the outer panel for this workspace hasn't been
-    // materialized yet — drop silently (pane re-materializes on later mount).
+    // Drop silently if outer panel hasn't materialized yet — pane re-mounts later.
     if (!record?.innerApi) {
       return;
     }
     if (record.innerApi.getPanel(payload.paneId)) {
       return;
     }
-    const referencePanel =
-      (payload.referencePaneId && record.innerApi.getPanel(payload.referencePaneId)) ?? record.innerApi.activePanel;
-    const position = referencePanel && payload.place ? { referencePanel, direction: payload.place } : undefined;
+    // Stale referencePaneId → fall back to activePanel. Absent → root-level split
+    // (column-fill helper's "new column" relies on this).
+    const referencePanel = payload.referencePaneId
+      ? record.innerApi.getPanel(payload.referencePaneId) ?? record.innerApi.activePanel
+      : null;
+    const position = payload.place
+      ? referencePanel
+        ? { referencePanel, direction: payload.place }
+        : { direction: payload.place }
+      : undefined;
     record.innerApi.addPanel({
       id: payload.paneId,
       component: payload.snapshot.kind,
@@ -462,7 +467,16 @@ export class FlmuxWorkbench {
                 label: humanizePaneKind(descriptor.kind)
               })),
           onSelect: (kind) => {
-            void this.shellModel.pathCall("/panes/new", { kind, place: "right" });
+            // Pin to this group's active panel so the workbench stays on
+            // the panel-relative split path — without it, the absent-ref
+            // fallback now falls through to Dockview's root-level
+            // absolute placement (used by the column-fill helper for
+            // new-column cases) which would change inner-`+` UX.
+            void this.shellModel.pathCall("/panes/new", {
+              kind,
+              place: "right",
+              referencePaneId: group.activePanel?.id
+            });
           }
         })
     });

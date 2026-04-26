@@ -50,7 +50,10 @@ describe("resolveColumnFillPlacement", () => {
       isTargetKind: isPlot,
       maxRowsPerColumn: 4
     });
-    expect(placement).toEqual({ place: "right", referencePaneId: "pane.plot.4" });
+    // No referencePaneId — the workbench reads that as Dockview's
+    // absolute root-level split, which is what produces a fresh column.
+    // A panel-relative reference would split only the bottom row's group.
+    expect(placement).toEqual({ place: "right" });
   });
 
   it("ignores panes that don't match isTargetKind when counting", async () => {
@@ -78,7 +81,7 @@ describe("resolveColumnFillPlacement", () => {
       }),
       { workspaceId: "ws.1", isTargetKind: isPlot, maxRowsPerColumn: 2 }
     );
-    expect(after2).toEqual({ place: "right", referencePaneId: "pane.plot.2" });
+    expect(after2).toEqual({ place: "right" });
 
     const after1 = await resolveColumnFillPlacement(
       makeClient({ "pane.plot.1": { kind: "plot.trend" } }),
@@ -96,7 +99,7 @@ describe("resolveColumnFillPlacement", () => {
         isTargetKind: isPlot,
         maxRowsPerColumn: 1
       })
-    ).toEqual({ place: "right", referencePaneId: "pane.plot.1" });
+    ).toEqual({ place: "right" });
 
     expect(
       await resolveColumnFillPlacement(
@@ -106,7 +109,7 @@ describe("resolveColumnFillPlacement", () => {
         }),
         { workspaceId: "ws.1", isTargetKind: isPlot, maxRowsPerColumn: 1 }
       )
-    ).toEqual({ place: "right", referencePaneId: "pane.plot.2" });
+    ).toEqual({ place: "right" });
   });
 
   it("rejects an array payload — guards against a future shape change in the route", async () => {

@@ -87,6 +87,41 @@ describe("resolveColumnFillPlacement", () => {
     expect(after1).toEqual({ place: "below", referencePaneId: "pane.plot.1" });
   });
 
+  it("treats maxRowsPerColumn=1 as 'every pane is its own column'", async () => {
+    // count=1 → 1%1==0 → new column. count=2 → same. So once any plot
+    // exists, the next plot always starts a new column off the latest.
+    expect(
+      await resolveColumnFillPlacement(makeClient({ "pane.plot.1": { kind: "plot.trend" } }), {
+        workspaceId: "ws.1",
+        isTargetKind: isPlot,
+        maxRowsPerColumn: 1
+      })
+    ).toEqual({ place: "right", referencePaneId: "pane.plot.1" });
+
+    expect(
+      await resolveColumnFillPlacement(
+        makeClient({
+          "pane.plot.1": { kind: "plot.trend" },
+          "pane.plot.2": { kind: "plot.trend" }
+        }),
+        { workspaceId: "ws.1", isTargetKind: isPlot, maxRowsPerColumn: 1 }
+      )
+    ).toEqual({ place: "right", referencePaneId: "pane.plot.2" });
+  });
+
+  it("rejects an array payload — guards against a future shape change in the route", async () => {
+    const client = createTestShellClient({
+      "get /status/workspaces/ws.1/panes": () => [{ kind: "plot.trend" }]
+    });
+    await expect(
+      resolveColumnFillPlacement(client, {
+        workspaceId: "ws.1",
+        isTargetKind: isPlot,
+        maxRowsPerColumn: 4
+      })
+    ).rejects.toThrow("not found");
+  });
+
   it("rejects invalid maxRowsPerColumn values up front", async () => {
     const client = makeClient({});
     for (const bad of [0, -1, 1.5, Number.NaN]) {

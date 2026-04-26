@@ -1,5 +1,4 @@
 import type { ArgsDef } from "citty";
-import type { PanePlacement } from "./pane";
 import type {
   ShellClient,
   ShellPathCallResult,
@@ -7,6 +6,12 @@ import type {
   ShellPathListResult,
   ShellPathSetResult
 } from "./shell";
+
+// Inlined to keep `@flmux/extension-api/cli` typecheck clean for CLI-only
+// consumers that don't include the DOM lib — `./pane` declares
+// `mount(host: HTMLElement, …)`, so `import type { PanePlacement } from "./pane"`
+// would drag in DOM lib failures via type-resolution.
+type PanePlacement = "within" | "left" | "right" | "above" | "below";
 
 // Re-export the citty surface extensions need so consumers depend only on
 // `@flmux/extension-api` — flmux owns the citty version, extensions stay
@@ -184,12 +189,22 @@ export function printError(message: string): void {
  *   count % maxRows === 0      →  { place: "right",  referencePaneId: last } (new column)
  *   otherwise                  →  { place: "below",  referencePaneId: last } (extend column)
  *
- * `last` = the most recently created matching pane (relies on the host
- * returning panes in creation order, which is the current contract).
+ * `last` = the most recently created matching pane. The "rightmost column"
+ * intuition is a *creation-order proxy*, not a spatial guarantee — after
+ * the user drags or closes panes, the most recently created target may no
+ * longer live in the rightmost column, and the next placement extends the
+ * wrong one. Caller should always allow an explicit `--place` override.
  *
- * Order-dependent and creation-time only — doesn't auto-rebalance after
- * the user drags or closes panes. Caller should still allow `--place`
- * overrides for cases the heuristic gets wrong.
+ * Concurrency: not lock-protected. Two CLI invocations racing on the same
+ * workspace can both observe the same count and pick the same placement.
+ * Acceptable for the human + agent workflow this is intended for; mutual
+ * exclusion would have to come from the caller.
+ *
+ * Pane-ID assumption: relies on `Object.entries` preserving insertion
+ * order on the panes map, which JS only guarantees for non-integer-like
+ * keys. flmux's pane IDs (`pane_<uuid>`, `pane.<…>`) satisfy this; if a
+ * future authority emits all-digit ids, the "last" picked here would be
+ * wrong.
  */
 export async function resolveColumnFillPlacement(
   client: ShellClient,
@@ -202,11 +217,19 @@ export async function resolveColumnFillPlacement(
   if (!Number.isInteger(options.maxRowsPerColumn) || options.maxRowsPerColumn <= 0) {
     throw new Error("resolveColumnFillPlacement: maxRowsPerColumn must be a positive integer");
   }
-  const result = await client.get(`/status/workspaces/${encodeURIComponent(options.workspaceId)}/panes`);
+  // No encodeURIComponent — the shell path parser splits on `/` only and
+  // doesn't URL-decode segments, so encoding `%20` etc. would hit NOT_FOUND
+  // for workspace ids the model otherwise resolves verbatim.
+  const result = await client.get(`/status/workspaces/${options.workspaceId}/panes`);
   if (!result.ok) {
     throw new Error(`resolveColumnFillPlacement: ${result.code} ${result.error}`);
   }
-  if (!result.found || typeof result.value !== "object" || result.value === null) {
+  if (
+    !result.found ||
+    typeof result.value !== "object" ||
+    result.value === null ||
+    Array.isArray(result.value)
+  ) {
     throw new Error(`resolveColumnFillPlacement: workspace '${options.workspaceId}' not found`);
   }
   const targets: string[] = [];
@@ -232,7 +255,10 @@ export async function resolveColumnFillPlacement(
  */
 export async function getExtensionDataDir(client: ShellClient, extensionId: string): Promise<string> {
   if (!extensionId) throw new Error("getExtensionDataDir: extensionId is required");
-  const result = await client.get(`/status/ext/${encodeURIComponent(extensionId)}/data-dir`);
+  // Manifest validator constrains extensionId to `[a-zA-Z0-9._-]+`, so
+  // encoding would be a no-op anyway; drop it for consistency with other
+  // path-tree helpers (the model's path parser doesn't URL-decode).
+  const result = await client.get(`/status/ext/${extensionId}/data-dir`);
   if (!result.ok) {
     throw new Error(`getExtensionDataDir: ${result.code} ${result.error}`);
   }

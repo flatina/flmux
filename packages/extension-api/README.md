@@ -121,11 +121,11 @@ Extension CLI entries default-export a [citty](https://github.com/unjs/citty) `C
 
 ### Column-fill placement helper
 
-For CLIs that spawn many panes (plot dashboards, AI agents, etc.) the default `--place right` quickly produces tall narrow columns. `resolveColumnFillPlacement(client, { workspaceId, isTargetKind, maxRowsPerColumn })` packs new panes into columns of at most `maxRowsPerColumn` rows by inspecting `/status/workspaces/<id>/panes`:
+For CLIs that spawn many panes (plot dashboards, AI agents, etc.) the default `--place right` quickly produces tall narrow columns. `resolveColumnFillPlacement(client, { workspaceId, isTargetKind, maxRowsPerColumn })` packs new panes into columns of at most `maxRowsPerColumn` rows by inspecting `/status/workspaces/<id>/panes`. Reference is the *most recently created* matching pane:
 
 - 1st target pane → `{ place: "right" }` (split off the workspace)
-- target count not yet at `maxRowsPerColumn` → `{ place: "below", referencePaneId: <last target> }` (extend column)
-- count hits `maxRowsPerColumn` → `{ place: "right", referencePaneId: <last target> }` (start a new column)
+- count not yet a multiple of `maxRowsPerColumn` → `{ place: "below", referencePaneId: <last target> }` (extend column the last one is in)
+- count hits `maxRowsPerColumn` → `{ place: "right", referencePaneId: <last target> }` (start a new column off it)
 
 ```ts
 import { resolveColumnFillPlacement } from "@flmux/extension-api/cli";
@@ -138,7 +138,7 @@ const placement = await resolveColumnFillPlacement(client, {
 await client.call("/panes/new", { kind: "myext-trend", ...placement });
 ```
 
-The heuristic only looks at creation order; manually dragging or closing panes will throw it off until you create another. Always allow an explicit `--place` override for those cases.
+The heuristic uses creation order as a proxy for spatial layout — not a guarantee. After manual drag or close, the most recently created target may no longer be in the rightmost column, and "extend" extends the wrong one until the next pane is created. It's also not concurrency-safe: two CLI invocations racing on the same workspace can pick the same placement. Always allow an explicit `--place` override for those cases.
 
 ## Persistent state — `.flmux/ext/<id>/`
 

@@ -119,6 +119,27 @@ export default defineCommand({
 
 Extension CLI entries default-export a [citty](https://github.com/unjs/citty) `CommandDef` — flmux registers it directly as a root subcommand, so `flmux myext …` goes straight to your `run({ args, rawArgs })`. Spread `commonArgs` into your own `args` to inherit the transport flags (`--origin`, `--client`, `--token`); `createFlmuxClient(flags)` returns a `ShellClient` talking to the flmux HTTP surface; `printJson(value)` writes the canonical stdout format the built-in verbs use.
 
+### Column-fill placement helper
+
+For CLIs that spawn many panes (plot dashboards, AI agents, etc.) the default `--place right` quickly produces tall narrow columns. `resolveColumnFillPlacement(client, { workspaceId, isTargetKind, maxRowsPerColumn })` packs new panes into columns of at most `maxRowsPerColumn` rows by inspecting `/status/workspaces/<id>/panes`:
+
+- 1st target pane → `{ place: "right" }` (split off the workspace)
+- target count not yet at `maxRowsPerColumn` → `{ place: "below", referencePaneId: <last target> }` (extend column)
+- count hits `maxRowsPerColumn` → `{ place: "right", referencePaneId: <last target> }` (start a new column)
+
+```ts
+import { resolveColumnFillPlacement } from "@flmux/extension-api/cli";
+
+const placement = await resolveColumnFillPlacement(client, {
+  workspaceId,
+  isTargetKind: (kind) => kind.startsWith("myext-"),
+  maxRowsPerColumn: 4
+});
+await client.call("/panes/new", { kind: "myext-trend", ...placement });
+```
+
+The heuristic only looks at creation order; manually dragging or closing panes will throw it off until you create another. Always allow an explicit `--place` override for those cases.
+
 ## Persistent state — `.flmux/ext/<id>/`
 
 flmux carves a per-extension data directory at `<rootDir>/.flmux/ext/<extensionId>/` and exposes only that path — never the parent `.flmux/`. The directory is the extension's writable space; flmux makes no assumptions about its layout (sessions, configs, caches, etc. all welcome).

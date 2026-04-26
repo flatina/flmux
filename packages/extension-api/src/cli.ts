@@ -1,4 +1,5 @@
 import type { ArgsDef } from "citty";
+import type { PanePlacement } from "./pane";
 import type {
   ShellClient,
   ShellPathCallResult,
@@ -170,6 +171,59 @@ export function printJson(value: unknown): void {
 
 export function printError(message: string): void {
   console.error(message);
+}
+
+/**
+ * Compute a `/panes/new` placement that packs new panes into columns of
+ * at most `maxRowsPerColumn` rows. Inspects the current workspace via
+ * `client.get("/status/workspaces/<id>/panes")`; counts only panes whose
+ * `kind` matches `isTargetKind` (other kinds — terminal, browser — are
+ * ignored). Heuristic:
+ *
+ *   target count = 0           →  { place: "right" }                       (1st split)
+ *   count % maxRows === 0      →  { place: "right",  referencePaneId: last } (new column)
+ *   otherwise                  →  { place: "below",  referencePaneId: last } (extend column)
+ *
+ * `last` = the most recently created matching pane (relies on the host
+ * returning panes in creation order, which is the current contract).
+ *
+ * Order-dependent and creation-time only — doesn't auto-rebalance after
+ * the user drags or closes panes. Caller should still allow `--place`
+ * overrides for cases the heuristic gets wrong.
+ */
+export async function resolveColumnFillPlacement(
+  client: ShellClient,
+  options: {
+    workspaceId: string;
+    isTargetKind: (kind: string) => boolean;
+    maxRowsPerColumn: number;
+  }
+): Promise<{ place: PanePlacement; referencePaneId?: string }> {
+  if (!Number.isInteger(options.maxRowsPerColumn) || options.maxRowsPerColumn <= 0) {
+    throw new Error("resolveColumnFillPlacement: maxRowsPerColumn must be a positive integer");
+  }
+  const result = await client.get(`/status/workspaces/${encodeURIComponent(options.workspaceId)}/panes`);
+  if (!result.ok) {
+    throw new Error(`resolveColumnFillPlacement: ${result.code} ${result.error}`);
+  }
+  if (!result.found || typeof result.value !== "object" || result.value === null) {
+    throw new Error(`resolveColumnFillPlacement: workspace '${options.workspaceId}' not found`);
+  }
+  const targets: string[] = [];
+  for (const [paneId, snapshot] of Object.entries(result.value as Record<string, { kind?: unknown }>)) {
+    const kind = snapshot?.kind;
+    if (typeof kind === "string" && options.isTargetKind(kind)) {
+      targets.push(paneId);
+    }
+  }
+  if (targets.length === 0) {
+    return { place: "right" };
+  }
+  const lastId = targets[targets.length - 1]!;
+  if (targets.length % options.maxRowsPerColumn === 0) {
+    return { place: "right", referencePaneId: lastId };
+  }
+  return { place: "below", referencePaneId: lastId };
 }
 
 /**

@@ -511,11 +511,11 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
           probeTitle: surface?.querySelector('.cowsay-panel strong')?.textContent ?? ''
         };
       })()`);
-        return state.cowsayCount >= 2 && state.probeTitle.includes("cowsay probe") ? state : null;
+        return state.cowsayCount >= 1 && state.probeTitle.includes("cowsay probe") ? state : null;
       },
       { timeoutMs: 20_000, intervalMs: 250, label: "restored cowsay panel" }
     );
-    expect(restoredCowsay.cowsayCount).toBeGreaterThanOrEqual(2);
+    expect(restoredCowsay.cowsayCount).toBeGreaterThanOrEqual(1);
 
     const restoredScratchpad = await waitFor(
       async () => {

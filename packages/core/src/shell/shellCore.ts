@@ -175,7 +175,6 @@ export class ShellCore implements ShellModelHost {
     }
     slot.activeWorkspaceId = workspace.id;
     this.emit({ topic: "workspace.activeChanged", payload: { id: workspace.id } }, this.defaultSlotKey);
-    this.seedWorkspace(workspace, this.defaultSlotKey);
   }
 
   /**
@@ -643,7 +642,6 @@ export class ShellCore implements ShellModelHost {
     if (previousActiveWsId !== slot.activeWorkspaceId) {
       this.emit({ topic: "workspace.activeChanged", payload: { id: slot.activeWorkspaceId } }, slotKey);
     }
-    this.seedWorkspace(workspace, slotKey);
     return this.toWorkspaceStatus(workspace);
   }
 
@@ -659,11 +657,6 @@ export class ShellCore implements ShellModelHost {
         payload: { id: workspace.id, title: workspace.title }
       });
     }
-    // Reseed attributes panes to the default slot. Non-default slots that
-    // happen to be on this workspace keep their existing active (which was
-    // cleared by closePane) — their attachment will pick something on next
-    // user action.
-    this.seedWorkspace(workspace, this.defaultSlotKey);
     return this.toWorkspaceStatus(workspace);
   }
 
@@ -1065,44 +1058,6 @@ export class ShellCore implements ShellModelHost {
     });
   }
 
-  private seedWorkspace(workspace: WorkspaceRecord, slotKey: string) {
-    const kinds = [this.options.paneRegistry.get("cowsay") ? "cowsay" : null, "browser"].filter(
-      (value): value is string => value !== null
-    );
-
-    workspace.paneOrder = [];
-    workspace.paneTitles.clear();
-    workspace.paneStates.clear();
-    workspace.paneParams.clear();
-    // Clear this workspace's active-pane tracking in every slot — panes
-    // about to be rebuilt with fresh ids. Slots keep their own activeWs.
-    // B2 TODO: other slots should also emit pane.activeChanged(null) for
-    // workspace.id if they had one before, so attachment-side mirrors stay
-    // consistent. B1b has a single slot, so this quiet purge is safe.
-    for (const slot of this.activeSlots.values()) {
-      slot.activePaneIdByWorkspace.delete(workspace.id);
-    }
-
-    let firstPaneId: string | null = null;
-    for (const kind of kinds) {
-      const pane = this.addPane(
-        workspace,
-        {
-          kind,
-          title: kind === "browser" ? "Start" : humanizePaneKind(kind),
-          ...(kind === "browser" ? { url: workspace.defaultBrowserPath } : {}),
-          ...(firstPaneId ? { place: "right", referencePaneId: firstPaneId } : {})
-        },
-        slotKey
-      );
-      if (!firstPaneId) {
-        firstPaneId = pane.id;
-      }
-    }
-    // addPane attributes each new pane to `slotKey` and emits
-    // pane.activeChanged for it — final state: browser (last added) is that
-    // slot's active. Matches the pre-slot behavior.
-  }
 
   private createWorkspaceRecord(id: string, title: string) {
     const existing = this.workspaces.get(id);

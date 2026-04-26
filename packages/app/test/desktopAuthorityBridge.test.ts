@@ -403,9 +403,10 @@ describe("desktop shell authority bridge", () => {
   // which external surfaces will hit first.
   it("router.pathCall forwards PathCallerContext to bus.publish", async () => {
     const { authority } = await createTestAuthority();
-    const paneId =
-      authority.shellBootstrap("local").snapshot.panes[authority.shellBootstrap("local").snapshot.workspaces[0].id][0]
-        .id;
+    // Workspaces start empty; create a pane so /bus/publish has a valid
+    // caller.sourcePaneId.
+    const created = await authority.shellModel.pathCall("/panes/new", { kind: "browser", url: "/x" });
+    const paneId = (created.ok ? (created.value as { paneId: string }).paneId : "");
 
     // Router dropped caller on B3 cleanup — caller semantics live on the
     // preload-side shellModel entry point. Go through shellModel directly
@@ -439,9 +440,8 @@ describe("desktop shell authority bridge", () => {
       desktopAuthority: authority
     });
 
-    const paneId =
-      authority.shellBootstrap("local").snapshot.panes[authority.shellBootstrap("local").snapshot.workspaces[0].id][0]
-        .id;
+    const created = await authority.shellModel.pathCall("/panes/new", { kind: "browser", url: "/x" });
+    const paneId = (created.ok ? (created.value as { paneId: string }).paneId : "");
 
     const withoutCaller = await handlers["shellModel.path.call"]({
       path: "/bus/publish",
@@ -462,9 +462,8 @@ describe("desktop shell authority bridge", () => {
     const captured: SequencedShellCoreEvent[] = [];
     authority.subscribe((event) => captured.push(event));
 
-    const reference =
-      authority.shellBootstrap("local").snapshot.panes[authority.shellBootstrap("local").snapshot.workspaces[0].id][0]
-        .id;
+    const seeded = await authority.shellModel.pathCall("/panes/new", { kind: "browser", url: "/x" });
+    const reference = seeded.ok ? (seeded.value as { paneId: string }).paneId : "";
 
     await authority.shellModel.pathCall("/panes/new", {
       kind: "browser",

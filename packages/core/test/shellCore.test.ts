@@ -80,17 +80,12 @@ function buildShellCore(extraSpecs: PaneSpec[] = []) {
 }
 
 describe("ShellCore", () => {
-  it("seeds the initial workspace with a browser pane anchored to the app origin", async () => {
+  it("creates the initial workspace empty — pane seeding is the workbench's responsibility", async () => {
     const { core } = buildShellCore();
 
     const workspace = await core.getWorkspaceStatus();
-    expect(workspace).toMatchObject({ id: "workspace.1", title: "Workspace 1", paneCount: 1 });
-
-    const panes = await core.listPanes();
-    expect(panes).toHaveLength(1);
-    const browser = panes[0]!;
-    expect(browser.kind).toBe("browser");
-    expect(browser.browser?.url.startsWith(ORIGIN)).toBe(true);
+    expect(workspace).toMatchObject({ id: "workspace.1", title: "Workspace 1", paneCount: 0 });
+    expect(await core.listPanes()).toEqual([]);
   });
 
   it("creates and closes panes and tracks paneWorkspaceIds via lookupPane", async () => {
@@ -242,7 +237,7 @@ describe("ShellCore", () => {
     expect(result).toMatchObject({
       ok: true,
       found: true,
-      value: { id: "workspace.1", paneCount: 1 }
+      value: { id: "workspace.1", paneCount: 0 }
     });
   });
 
@@ -430,15 +425,18 @@ describe("ShellCore", () => {
 
   it("listPanesByWorkspace is workspace-scoped and safe for inactive workspaces", async () => {
     const { core } = buildShellCore();
+    // Workspaces are created empty; populate each one explicitly so the
+    // scoping assertion has something to compare.
+    const firstPane = await core.createPane({ kind: "browser", url: "/first" });
     const second = await core.createWorkspace({ title: "Second" });
-    const newPane = await core.createPane({ kind: "browser", url: "/extra" });
+    const secondPane = await core.createPane({ kind: "browser", url: "/extra" });
     core.setActiveWorkspace("workspace.1");
 
     const firstPanes = core.listPanesByWorkspace("workspace.1");
     const secondPanes = core.listPanesByWorkspace(second.id);
 
-    expect(firstPanes.map((pane) => pane.kind)).toEqual(["browser"]);
-    expect(secondPanes.map((pane) => pane.id)).toContain(newPane.id);
+    expect(firstPanes.map((pane) => pane.id)).toEqual([firstPane.id]);
+    expect(secondPanes.map((pane) => pane.id)).toEqual([secondPane.id]);
   });
 
   it("setActiveWorkspace noops on unknown id (no throw)", async () => {
@@ -504,12 +502,14 @@ describe("ShellCore", () => {
 
   it("emitter seq numbers are monotonic", async () => {
     const { core } = buildShellCore();
+    // Workspaces are empty at start — add a pane so closePane has a target.
+    const pane = await core.createPane({ kind: "browser", url: "/x" });
     const seqs: number[] = [];
     core.subscribe((event) => {
       seqs.push(event.seq);
     });
     await core.createWorkspace({ title: "Second" });
-    await core.closePane((await core.listPanes())[0]!.id);
+    await core.closePane(pane.id);
     for (let i = 1; i < seqs.length; i++) {
       expect(seqs[i]).toBeGreaterThan(seqs[i - 1]!);
     }
@@ -578,18 +578,20 @@ describe("ShellCore", () => {
 
   it("two slots maintain independent active workspace + pane state", async () => {
     const { core } = buildShellCore();
+    // Seed ws.1 with a pane so slot B has something to activate.
+    core.setActiveWorkspace("workspace.1");
+    const paneOnWs1 = await core.createPane({ kind: "browser", url: "/ws1" });
     const extra = await core.createWorkspace({ title: "Second" });
     const paneInExtra = await core.createPane({ kind: "browser", url: "/x" });
 
     // Default slot is on `extra` (createWorkspace bumped it). Put slot "B" on ws.1.
     core.setActiveWorkspace("workspace.1", { slotKey: "B" });
-    const firstPaneOnWs1 = core.listPanesByWorkspace("workspace.1")[0]!;
-    core.setActivePane(firstPaneOnWs1.id, { slotKey: "B" });
+    core.setActivePane(paneOnWs1.id, { slotKey: "B" });
 
     expect(core.getSlotActiveWorkspaceId()).toBe(extra.id);
     expect(core.getSlotActiveWorkspaceId("B")).toBe("workspace.1");
     expect(core.getSlotActivePaneId(extra.id)).toBe(paneInExtra.id);
-    expect(core.getSlotActivePaneId("workspace.1", "B")).toBe(firstPaneOnWs1.id);
+    expect(core.getSlotActivePaneId("workspace.1", "B")).toBe(paneOnWs1.id);
     // Slot B has no opinion on `extra`.
     expect(core.getSlotActivePaneId(extra.id, "B")).toBeNull();
   });
@@ -611,8 +613,10 @@ describe("ShellCore", () => {
 
   it("closing active pane emits pane.removed + scope=attachment pane.activeChanged", async () => {
     const { core } = buildShellCore();
+    // Workspaces start empty — seed two panes so closing the active one has
+    // a sibling to fall back onto.
+    const first = await core.createPane({ kind: "browser", url: "/f" });
     const second = await core.createPane({ kind: "browser", url: "/s" });
-    const first = (await core.listPanes()).find((p) => p.id !== second.id)!;
 
     const captured: Array<{ topic: string; scope: string; targetAttachmentId?: string; payload: any }> = [];
     core.subscribe((event) =>

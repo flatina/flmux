@@ -38,7 +38,7 @@ describe("web mode shell authority", () => {
           id: "workspace.1",
           title: "Workspace 1",
           defaultTitle: "Workspace 1",
-          paneCount: 1
+          paneCount: 0
         }
       }
     ]);
@@ -54,7 +54,7 @@ describe("web mode shell authority", () => {
         id: "workspace.1",
         title: "Workspace 1",
         defaultTitle: "Workspace 1",
-        paneCount: 1
+        paneCount: 0
       }
     });
 

@@ -57,7 +57,7 @@ test("workbench bootstraps and mounts in real browser", async ({ browser }) => {
     // the first `shellCore.event` subscribes. Wait for it as the smoke
     // end-state: all of bootstrap + WS attach + dockview render succeeded.
     await expect(page.locator(".dockview-shell")).toBeVisible({ timeout: 20_000 });
-    // Seeded workspace.1 pane should exist (cowsay + browser from seedWorkspace).
+    // workspace.1 panel exists; it's empty by default (no auto-seed).
     await expect(page.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible();
   } finally {
     await context.close();

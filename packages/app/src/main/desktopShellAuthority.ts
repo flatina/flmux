@@ -52,6 +52,9 @@ export async function createDesktopShellAuthority(options: {
   localExtensions?: readonly DiscoveredLocalExtension[];
   extensionModuleImporter?: ExtensionModuleImporter;
   cefCdpPort?: number;
+  /** Backs `/status/ext/<id>/data-dir`; mkdirs and returns the dir, or
+   * null when the id isn't registered. */
+  resolveExtensionDataDir?: (extensionId: string) => string | null;
 }): Promise<DesktopShellAuthority> {
   const paneRegistry = new PaneRegistry<PaneSpec>();
   paneRegistry.register(createPlaceholderPaneSpec());
@@ -74,7 +77,8 @@ export async function createDesktopShellAuthority(options: {
     defaultSlotKey: DESKTOP_ATTACHMENT_ID,
     // Desktop is single-user; surface `"local"` through
     // `/status/attachments/{id}/userId` for extension session keying.
-    authorityUserId: DESKTOP_ATTACHMENT_ID
+    authorityUserId: DESKTOP_ATTACHMENT_ID,
+    resolveExtensionDataDir: options.resolveExtensionDataDir
   });
   const shellModel = createShellModel({
     host: shellCore,

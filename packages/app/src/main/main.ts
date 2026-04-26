@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 import {
   BrowserWindow,
   AppRuntime,
@@ -128,6 +128,24 @@ const sessionStore = runtimeMode === "desktop" ? createSessionStore({ filePath: 
 // slip through are lazily skipped by the forwarder.
 const paneSubscribers = new Map<string, Set<number>>();
 const localExtensions = await discoverConfiguredLocalExtensions(localExtensionsRootDir);
+
+const knownExtensionIds = new Set(localExtensions.map((ext) => ext.id));
+const provisionedExtensionDirs = new Set<string>();
+const extDataRootResolved = resolve(flmuxPaths.extDataRootDir);
+function resolveExtensionDataDir(extensionId: string): string | null {
+  if (!knownExtensionIds.has(extensionId)) return null;
+  const dir = resolve(flmuxPaths.extDataRootDir, extensionId);
+  // Defense in depth: validator rejects path-segment chars in ids, but
+  // re-verify the join stays under extDataRootDir so a validator
+  // regression can't escape into auth/, tmp/, etc.
+  const rootWithSep = extDataRootResolved.endsWith(sep) ? extDataRootResolved : extDataRootResolved + sep;
+  if (!dir.startsWith(rootWithSep)) return null;
+  if (!provisionedExtensionDirs.has(extensionId)) {
+    mkdirSync(dir, { recursive: true });
+    provisionedExtensionDirs.add(extensionId);
+  }
+  return dir;
+}
 
 // Per-extension PATH shims (opt-in via manifest `commands[].shim`). Requires
 // the flmux shim pair to have resolved — shares its bun + cli entry so both
@@ -267,9 +285,17 @@ async function attachExtensionServerChannel(paneId: string, kind: string, attach
   }
   const key = paneInstanceKey(extId, paneId, attachmentId);
   if (paneServerInstances.has(key)) return;
+  const dataDir = resolveExtensionDataDir(extId);
+  if (!dataDir) {
+    // extId came from `findExtensionIdForPaneKind` so this is unreachable
+    // today, but fail closed if discovery ever becomes dynamic — extensions
+    // expect dataDir to be a string.
+    console.warn(`[flmux] extension '${extId}' skipped onPaneConnected — data dir not provisioned`);
+    return;
+  }
   try {
     const channel = demux.channel(paneId);
-    const inst = await server.onPaneConnected(paneId, attachmentId, { channel, shell });
+    const inst = await server.onPaneConnected(paneId, attachmentId, { channel, shell, dataDir });
     if (inst) paneServerInstances.set(key, inst);
   } catch (err) {
     console.warn(`[flmux] extension '${extId}' onPaneConnected error (pane ${paneId}, att ${attachmentId}):`, err);
@@ -313,7 +339,8 @@ const desktopAuthority: DesktopShellAuthority | null =
         sessionStore,
         clientRegistry,
         localExtensions,
-        cefCdpPort: parseOptionalPort(process.env.BUNITE_REMOTE_DEBUGGING_PORT)
+        cefCdpPort: parseOptionalPort(process.env.BUNITE_REMOTE_DEBUGGING_PORT),
+        resolveExtensionDataDir
       })
     : null;
 
@@ -330,6 +357,7 @@ const userAuthorityRegistry: WebModeUserAuthorityRegistry | null =
         terminalService,
         clientRegistry,
         localExtensions,
+        resolveExtensionDataDir,
         getOrigin: () => serverOrigin,
         onAuthorityCreated: (_userId, authority) => {
           trackPaneLifecycle(authority);

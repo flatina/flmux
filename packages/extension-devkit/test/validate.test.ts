@@ -61,6 +61,23 @@ describe("extension manifest validation", () => {
     ]);
   });
 
+  it("rejects extension ids that could escape the per-extension data dir", () => {
+    for (const badId of ["..", ".", "../auth", "..\\auth", "with/slash", "with\\back", "spaces inside", "carriage\rid"]) {
+      const result = validateExtensionManifest({
+        id: badId,
+        name: "Bad",
+        version: "0.1.0",
+        apiVersion: FLMUX_EXTENSION_API_VERSION,
+        entrypoints: { renderer: "./index.ts" }
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error(`id '${badId}' should have been rejected`);
+      expect(result.errors).toContain(
+        "Manifest field 'id' must contain only ASCII letters, digits, '.', '_', '-' and not be '.' or '..'"
+      );
+    }
+  });
+
   it("carries the optional shim field through command validation", () => {
     const result = validateExtensionManifest({
       id: "sample.cowsay",

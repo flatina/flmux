@@ -34,6 +34,17 @@ export interface ExtensionServerPaneContext {
    * place.
    */
   shell: ShellClient;
+  /**
+   * Absolute path of `<rootDir>/.flmux/ext/<extensionId>/`, mkdir'd before
+   * first delivery. The extension owns the directory; the "stay inside"
+   * boundary is advisory, not syscall-enforced.
+   *
+   * Web mode shares one `dataDir` across users — partition under
+   * `<dataDir>/users/<userId>/` (resolve via
+   * `ctx.shell.get("/status/attachments/<attachmentId>/userId")`) or risk
+   * cross-user state leakage.
+   */
+  dataDir: string;
 }
 
 export interface ExtensionServerPaneInstance {

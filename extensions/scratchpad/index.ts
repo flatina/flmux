@@ -123,12 +123,6 @@ const scratchpadPane = definePane({
       await setParams({ note });
       return { value: note };
     },
-    // Two illustrative callState shapes:
-    //   - `stats` is a pure read (args ignored, no state mutation) — the
-    //     query pattern external agents use when they want a computed answer
-    //     without caring about the underlying snapshot shape.
-    //   - `clear` mutates state via patchParams and returns a confirmation —
-    //     the action pattern equivalent to an RPC verb like `reset`.
     canCallStatePath: ({ relativePath }) =>
       relativePath.length === 1 && (relativePath[0] === "stats" || relativePath[0] === "clear"),
     callState: async ({ relativePath, currentParams, patchParams }) => {

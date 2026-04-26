@@ -26,6 +26,11 @@ interface FlmuxPaths {
   desktopSessionFile: string;
   /** `<flmuxDir>/server.toml` — user-editable server config (port etc.). */
   serverConfigFile: string;
+  /** `<flmuxDir>/ext` — parent of per-extension data dirs. Extensions are
+   * handed only `<extDataRootDir>/<extensionId>/`; this parent isn't
+   * advertised. Boundary is advisory (server entries have full fs access),
+   * not syscall-enforced. */
+  extDataRootDir: string;
 }
 
 export function resolveFlmuxRootDir(installRoot: string, env: NodeJS.ProcessEnv = process.env): string {
@@ -49,6 +54,7 @@ export function resolveFlmuxPaths(rootDir: string): FlmuxPaths {
     tokensFile: join(authDir, "users.tokens.toml"),
     webSessionsDir: join(authDir, "sessions"),
     desktopSessionFile: join(flmuxDir, "session.json"),
-    serverConfigFile: join(flmuxDir, "server.toml")
+    serverConfigFile: join(flmuxDir, "server.toml"),
+    extDataRootDir: join(flmuxDir, "ext")
   };
 }

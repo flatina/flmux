@@ -22,6 +22,7 @@ import {
   SHELL_CORE_EVENT_SCOPES,
   type ActiveStateSlot,
   type AppStatusSnapshot,
+  type Awaitable,
   type NewPaneInput,
   type ScopedPropertyTarget,
   type SequencedShellCoreEvent,
@@ -80,6 +81,7 @@ export interface ShellCoreOptions {
    * `/status/attachments/{id}/userId` so extensions can key session state
    * per user (flmux only routes; extensions own their schema). */
   authorityUserId?: string;
+  resolveExtensionDataDir?: (extensionId: string) => Awaitable<string | null>;
 }
 
 const IMPLICIT_DEFAULT_SLOT_KEY = "default";
@@ -907,6 +909,10 @@ export class ShellCore implements ShellModelHost {
     };
     workspace.bus.publish(event);
     return event;
+  }
+
+  resolveExtensionDataDir(extensionId: string): Awaitable<string | null> {
+    return this.options.resolveExtensionDataDir?.(extensionId) ?? null;
   }
 
   // ── Internal helpers ──

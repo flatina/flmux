@@ -2,7 +2,7 @@
   "id": "sample.inspector",
   "name": "Inspector",
   "version": "0.1.0",
-  "apiVersion": 7,
+  "apiVersion": 8,
   "entrypoints": {
     "renderer": "./index.ts"
   },

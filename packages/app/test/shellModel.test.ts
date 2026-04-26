@@ -992,21 +992,16 @@ describe("shell model direct", () => {
     });
     const model = host.createModel();
 
-    // Pure-read call: args ignored, returns a computed shape without
-    // touching state. Demonstrates the query/RPC flavor of callState.
     expect(await model.pathCall("/panes/pane.scratchpad/scratchpad/stats", {})).toEqual({
       ok: true,
       value: { chars: 23, words: 5, lines: 2 }
     });
-    // Note is untouched by `stats`.
     expect(await model.pathGet("/panes/pane.scratchpad/scratchpad/note")).toEqual({
       ok: true,
       found: true,
       value: "hello world\nhow are you"
     });
 
-    // Action call: mutates params via patchParams and returns a
-    // confirmation payload — the RPC-as-verb pattern.
     expect(await model.pathCall("/panes/pane.scratchpad/scratchpad/clear", {})).toEqual({
       ok: true,
       value: { cleared: true }
@@ -1017,7 +1012,6 @@ describe("shell model direct", () => {
       value: ""
     });
 
-    // Ops outside the gate are rejected by canCallStatePath.
     expect(await model.pathCall("/panes/pane.scratchpad/scratchpad/unknown", {})).toEqual({
       ok: false,
       code: "NOT_CALLABLE",
@@ -1308,6 +1302,69 @@ describe("shell model direct", () => {
     expect(await model.pathCall("/panes/pane.browser/probe/ping", { n: 1 })).toEqual({
       ok: true,
       value: { relativePath: ["ping"], args: { n: 1 } }
+    });
+  });
+
+  it("exposes /status/ext/<id>/data-dir from the host resolver", async () => {
+    class ExtDataDirHost extends TestShellModelHost {
+      readonly resolved: string[] = [];
+      override resolveExtensionDataDir(extensionId: string): string | null {
+        this.resolved.push(extensionId);
+        if (extensionId === "registered.ext") return "C:\\flmux\\.flmux\\ext\\registered.ext";
+        return null;
+      }
+    }
+
+    const host = new ExtDataDirHost({
+      workspaceId: "workspace.test",
+      workspaceTitle: "Workspace Test",
+      activePaneId: "pane.term",
+      panes: [
+        {
+          id: "pane.term",
+          kind: "terminal",
+          title: "Terminal",
+          cwd: WORKSPACE_ROOT_DIR,
+          rootKey: WORKSPACE_ROOT_KEY,
+          runtimeId: "term_live"
+        }
+      ]
+    });
+    const model = host.createModel();
+
+    expect(await model.pathGet("/status/ext/registered.ext/data-dir")).toEqual({
+      ok: true,
+      found: true,
+      value: "C:\\flmux\\.flmux\\ext\\registered.ext"
+    });
+
+    expect(await model.pathGet("/status/ext/registered.ext")).toEqual({
+      ok: true,
+      found: true,
+      value: { dataDir: "C:\\flmux\\.flmux\\ext\\registered.ext" }
+    });
+
+    expect(await model.pathList("/status/ext/registered.ext")).toEqual({
+      ok: true,
+      found: true,
+      entries: [
+        { name: "data-dir", path: "/status/ext/registered.ext/data-dir", kind: "leaf", writable: false }
+      ]
+    });
+
+    expect(await model.pathGet("/status/ext/missing.ext/data-dir")).toMatchObject({
+      ok: true,
+      found: false
+    });
+
+    // /status/ext root is intentionally not enumerable — no listing contract
+    // for "what extensions are loaded".
+    expect(await model.pathGet("/status/ext")).toMatchObject({ ok: true, found: false });
+    expect(await model.pathList("/status/ext")).toMatchObject({ ok: true, found: false });
+
+    expect(await model.pathGet("/status/ext/registered.ext/garbage")).toMatchObject({
+      ok: true,
+      found: false
     });
   });
 

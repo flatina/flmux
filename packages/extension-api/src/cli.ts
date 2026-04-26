@@ -171,3 +171,19 @@ export function printJson(value: unknown): void {
 export function printError(message: string): void {
   console.error(message);
 }
+
+/**
+ * Returns `<rootDir>/.flmux/ext/<extensionId>/` from the running flmux,
+ * mkdir'd. Throws when the extension isn't loaded.
+ */
+export async function getExtensionDataDir(client: ShellClient, extensionId: string): Promise<string> {
+  if (!extensionId) throw new Error("getExtensionDataDir: extensionId is required");
+  const result = await client.get(`/status/ext/${encodeURIComponent(extensionId)}/data-dir`);
+  if (!result.ok) {
+    throw new Error(`getExtensionDataDir: ${result.code} ${result.error}`);
+  }
+  if (!result.found || typeof result.value !== "string") {
+    throw new Error(`getExtensionDataDir: extension '${extensionId}' is not registered with this flmux instance`);
+  }
+  return result.value;
+}

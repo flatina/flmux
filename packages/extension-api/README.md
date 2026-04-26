@@ -17,7 +17,7 @@ extensions/myext/
   "id": "myext",
   "name": "My Extension",
   "version": "0.1.0",
-  "apiVersion": 7,
+  "apiVersion": 8,
   "entrypoints": { "renderer": "dist/index.js" },
   "panes": [{ "kind": "myext", "defaultTitle": "My Pane" }]
 }
@@ -119,6 +119,41 @@ export default defineCommand({
 
 Extension CLI entries default-export a [citty](https://github.com/unjs/citty) `CommandDef` — flmux registers it directly as a root subcommand, so `flmux myext …` goes straight to your `run({ args, rawArgs })`. Spread `commonArgs` into your own `args` to inherit the transport flags (`--origin`, `--client`, `--token`); `createFlmuxClient(flags)` returns a `ShellClient` talking to the flmux HTTP surface; `printJson(value)` writes the canonical stdout format the built-in verbs use.
 
+## Persistent state — `.flmux/ext/<id>/`
+
+flmux carves a per-extension data directory at `<rootDir>/.flmux/ext/<extensionId>/` and exposes only that path — never the parent `.flmux/`. The directory is the extension's writable space; flmux makes no assumptions about its layout (sessions, configs, caches, etc. all welcome).
+
+- **Server entry** — `ctx.dataDir` is a string handed to `onPaneConnected`. flmux mkdirs lazily on first call, so the directory is always ready when received.
+- **CLI** — `getExtensionDataDir(client, extensionId)` from `@flmux/extension-api/cli` returns the same path. Internally calls `shell.get /status/ext/<id>/data-dir`.
+- **Renderer** — no direct fs access (browser context). Forward writes through the channel to the server entry.
+
+```ts
+import { defineExtensionServer } from "@flmux/extension-api";
+
+export default defineExtensionServer({
+  async onPaneConnected(paneId, attachmentId, ctx) {
+    const sessionsDir = `${ctx.dataDir}/sessions`;
+    // freely organize your subtree under ctx.dataDir
+  }
+});
+```
+
+```ts
+// In an extension CLI entry
+import { commonArgs, createFlmuxClient, defineCommand, getExtensionDataDir, printJson, toFlmuxCliFlags } from "@flmux/extension-api/cli";
+
+export default defineCommand({
+  meta: { name: "myext-where" },
+  args: { ...commonArgs },
+  async run({ args }) {
+    const client = await createFlmuxClient(toFlmuxCliFlags(args));
+    printJson({ dataDir: await getExtensionDataDir(client, "my.extension") });
+  }
+});
+```
+
+For multi-user web setups, partition under the data dir using the attachment's user (`ctx.shell.get("/status/attachments/<id>/userId")`), e.g. `<dataDir>/users/<userId>/`. Cross-user isolation is the extension's responsibility once it's inside its own dir.
+
 ## Testing without flmux — `@flmux/extension-api/testing`
 
 Separate subpath so nothing bundles into runtime.
@@ -161,7 +196,7 @@ await a.bus.publish("signal", { n: 1 });
 | `id` | yes | Non-empty string, unique |
 | `name` | yes | Human-readable |
 | `version` | yes | SemVer recommended |
-| `apiVersion` | yes | Must equal `FLMUX_EXTENSION_API_VERSION` (currently `7`) |
+| `apiVersion` | yes | Must equal `FLMUX_EXTENSION_API_VERSION` (currently `8`) |
 | `entrypoints.renderer` | either renderer or cli | Relative path, stays inside extension dir |
 | `entrypoints.cli` | either renderer or cli | Relative path |
 | `commands` | required if `cli` set | Array of `{ id, description? }`, unique ids |

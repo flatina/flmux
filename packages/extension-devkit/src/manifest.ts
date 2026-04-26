@@ -6,7 +6,7 @@
 // devkit. Drift is caught by the shared schema's tests and by the small
 // stable surface (rarely changes).
 
-const FLMUX_EXTENSION_API_VERSION = 7;
+const FLMUX_EXTENSION_API_VERSION = 8;
 
 export interface ExtensionManifestEntrypoints {
   renderer?: string;
@@ -55,6 +55,10 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
 
   if (!id) {
     errors.push("Manifest field 'id' must be a non-empty string");
+  } else if (!isValidExtensionId(id)) {
+    errors.push(
+      "Manifest field 'id' must contain only ASCII letters, digits, '.', '_', '-' and not be '.' or '..'"
+    );
   }
   if (!name) {
     errors.push("Manifest field 'name' must be a non-empty string");
@@ -132,6 +136,12 @@ function validateManifestEntrypointPath(value: unknown, label: string) {
 
 function asNonEmptyString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+const VALID_EXTENSION_ID_PATTERN = /^[a-zA-Z0-9._-]+$/;
+function isValidExtensionId(id: string): boolean {
+  if (id === "." || id === "..") return false;
+  return VALID_EXTENSION_ID_PATTERN.test(id);
 }
 
 function validateManifestCommands(value: unknown, hasCliEntrypoint: boolean) {

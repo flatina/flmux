@@ -215,10 +215,11 @@ export class TerminalPaneRenderer implements IContentRenderer {
           return false;
         }
         if (key === "v") {
-          navigator.clipboard
-            .readText()
-            .then((text) => terminal.paste(text))
-            .catch(() => {});
+          // Suppress xterm's default keydown handling and let the
+          // textarea's native `paste` event do the actual paste. A manual
+          // `terminal.paste(await readText())` here used to double-fire
+          // against the native handler (Ctrl+V pasted twice; right-click
+          // paste, which doesn't go through keydown, was unaffected).
           return false;
         }
         return true;

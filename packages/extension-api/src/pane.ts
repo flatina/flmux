@@ -5,7 +5,11 @@ import type { PaneStateStore } from "./state";
 
 // Structurally compatible with `@flmux/core/shell/types` — the host creates
 // panes with exactly these shapes.
-export type PanePlacement = "within" | "left" | "right" | "above" | "below";
+// Re-exported from `./placement` so the same type is reachable from
+// `@flmux/extension-api/cli` without dragging this file's DOM-typed
+// `mount(host: HTMLElement, …)` into CLI typechecks.
+import type { PanePlacement } from "./placement";
+export type { PanePlacement };
 export type PaneKind = "browser" | "terminal" | (string & {});
 
 export interface NewPaneInput {

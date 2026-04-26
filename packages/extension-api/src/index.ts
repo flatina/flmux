@@ -1,6 +1,7 @@
 export * from "./shell";
 export * from "./bus";
 export * from "./state";
+export * from "./placement";
 export * from "./pane";
 export * from "./extension";
 export * from "./manifest";

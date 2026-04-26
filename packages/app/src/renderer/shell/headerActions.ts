@@ -1,4 +1,10 @@
-import type { IHeaderActionsRenderer, IGroupHeaderProps, DockviewGroupPanel } from "dockview-core";
+import type {
+  GroupPanelPartInitParameters,
+  IHeaderActionsRenderer,
+  IGroupHeaderProps,
+  DockviewGroupPanel
+} from "dockview-core";
+import { DefaultTab } from "dockview-core";
 import { getThemePreference, setThemePreference, type ThemePreference } from "../theme";
 
 type Disposer = () => void;
@@ -164,9 +170,56 @@ export class WorkspaceHeaderActions implements IHeaderActionsRenderer {
   }
 }
 
-interface PaneKindOption {
+export interface PaneKindOption {
   kind: string;
   label: string;
+}
+
+/**
+ * Render the pane-kind popup anchored to a button (or any element).
+ * Returns the popup so the caller can `remove()` it on close. Both the
+ * inner `+` (NewPaneHeaderAction) and the outer hamburger (workspace tab)
+ * use this so the menu shape stays in lock-step.
+ */
+export function openPaneKindPopup(
+  anchor: HTMLElement,
+  listKinds: () => PaneKindOption[],
+  onSelect: (kind: string) => void,
+  onClose: () => void
+): HTMLDivElement {
+  const kinds = listKinds();
+  const popup = document.createElement("div");
+  popup.className = "header-action-popup";
+
+  if (kinds.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "header-action-popup__empty";
+    empty.textContent = "No pane kinds registered.";
+    popup.append(empty);
+  } else {
+    for (const option of kinds) {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "header-action-popup__item";
+      item.textContent = `New ${option.label}`;
+      item.dataset.kind = option.kind;
+      item.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onClose();
+        onSelect(option.kind);
+      });
+      popup.append(item);
+    }
+  }
+
+  document.body.append(popup);
+
+  const rect = anchor.getBoundingClientRect();
+  popup.style.top = `${rect.bottom + 4}px`;
+  popup.style.left = `${Math.max(4, rect.right - popup.offsetWidth)}px`;
+
+  return popup;
 }
 
 export class NewPaneHeaderAction extends HeaderActionButton implements IHeaderActionsRenderer {
@@ -206,43 +259,13 @@ export class NewPaneHeaderAction extends HeaderActionButton implements IHeaderAc
     if (this.popup) {
       this.closePopup();
     } else {
-      this.openPopup();
+      this.popup = openPaneKindPopup(
+        this.button,
+        this.options.listKinds,
+        this.options.onSelect,
+        () => this.closePopup()
+      );
     }
-  }
-
-  private openPopup() {
-    const kinds = this.options.listKinds();
-    const popup = document.createElement("div");
-    popup.className = "header-action-popup";
-
-    if (kinds.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "header-action-popup__empty";
-      empty.textContent = "No pane kinds registered.";
-      popup.append(empty);
-    } else {
-      for (const option of kinds) {
-        const item = document.createElement("button");
-        item.type = "button";
-        item.className = "header-action-popup__item";
-        item.textContent = `New ${option.label}`;
-        item.dataset.kind = option.kind;
-        item.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          this.closePopup();
-          this.options.onSelect(option.kind);
-        });
-        popup.append(item);
-      }
-    }
-
-    document.body.append(popup);
-    this.popup = popup;
-
-    const rect = this.button.getBoundingClientRect();
-    popup.style.top = `${rect.bottom + 4}px`;
-    popup.style.left = `${Math.max(4, rect.right - popup.offsetWidth)}px`;
   }
 
   private closePopup() {
@@ -264,4 +287,86 @@ export function humanizePaneKind(kind: string): string {
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(" ") || kind
   );
+}
+
+/**
+ * Outer-tab renderer for workspaces. Extends `DefaultTab` to keep its
+ * built-in click/drag/title behavior, then prepends a hamburger menu in
+ * front of the title. The menu hosts the same pane-kind list as the
+ * inner `+` and creates new panes scoped to *this* workspace — so even
+ * when a workspace's inner Dockview is empty (no groups → no inner `+`),
+ * the user can still add panes here.
+ */
+export class WorkspaceTabRenderer extends DefaultTab {
+  private readonly menuButton = document.createElement("button");
+  private popup: HTMLDivElement | null = null;
+  private workspaceId: string | null = null;
+  private readonly documentPointerDown = (event: PointerEvent) => {
+    const target = event.target as Node | null;
+    if (target && (this.menuButton.contains(target) || this.popup?.contains(target))) return;
+    this.closePopup();
+  };
+
+  constructor(
+    private readonly options: {
+      listKinds: () => PaneKindOption[];
+      onSelect: (kind: string, workspaceId: string) => void;
+    }
+  ) {
+    super();
+    this.menuButton.type = "button";
+    this.menuButton.className = "workspace-tab-menu-btn";
+    this.menuButton.textContent = "≡";
+    this.menuButton.title = "New pane in this workspace";
+    this.element.classList.add("workspace-tab");
+    this.element.insertBefore(this.menuButton, this.element.firstChild);
+  }
+
+  override init(parameters: GroupPanelPartInitParameters): void {
+    super.init(parameters);
+    this.workspaceId = parameters.api.id;
+
+    const onMenuPointerDown = (event: PointerEvent) => {
+      // Stop the tab's default activate/drag behavior on the menu button.
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    const onMenuClick = (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.togglePopup();
+    };
+    this.menuButton.addEventListener("pointerdown", onMenuPointerDown);
+    this.menuButton.addEventListener("click", onMenuClick);
+    document.addEventListener("pointerdown", this.documentPointerDown);
+
+    this.addDisposables({
+      dispose: () => {
+        this.menuButton.removeEventListener("pointerdown", onMenuPointerDown);
+        this.menuButton.removeEventListener("click", onMenuClick);
+        document.removeEventListener("pointerdown", this.documentPointerDown);
+        this.closePopup();
+      }
+    });
+  }
+
+  private togglePopup(): void {
+    if (this.popup) {
+      this.closePopup();
+      return;
+    }
+    const workspaceId = this.workspaceId;
+    if (!workspaceId) return;
+    this.popup = openPaneKindPopup(
+      this.menuButton,
+      this.options.listKinds,
+      (kind) => this.options.onSelect(kind, workspaceId),
+      () => this.closePopup()
+    );
+  }
+
+  private closePopup(): void {
+    this.popup?.remove();
+    this.popup = null;
+  }
 }

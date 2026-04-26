@@ -32,7 +32,12 @@ import {
 } from "@flmux/core/shell";
 import { PaneRegistry, type PaneDescriptor } from "./paneRegistry";
 import { registerBuiltinPaneDescriptors } from "./builtinPaneDescriptors";
-import { NewPaneHeaderAction, WorkspaceHeaderActions, humanizePaneKind } from "./headerActions";
+import {
+  NewPaneHeaderAction,
+  WorkspaceHeaderActions,
+  WorkspaceTabRenderer,
+  humanizePaneKind
+} from "./headerActions";
 import type {
   FlmuxHostRequestProxy,
   FlmuxRendererBootstrapConfig,
@@ -575,7 +580,32 @@ export class FlmuxWorkbench {
       theme: currentDockviewTheme(),
       disableFloatingGroups: true,
       defaultRenderer: "always",
+      // Workspace tabs get a hamburger menu before the title so panes can
+      // be added to a workspace whose inner Dockview is empty (the inner
+      // `+` only renders on a group, and we don't auto-seed a placeholder
+      // group on the last-pane-removed event).
+      defaultTabComponent: "workspace-tab",
       createComponent: (options) => this.createOuterPanelRenderer(options),
+      createTabComponent: (options) =>
+        options.name === "workspace-tab"
+          ? new WorkspaceTabRenderer({
+              listKinds: () =>
+                this.paneRegistry
+                  .list()
+                  .filter((descriptor) => descriptor.kind !== PLACEHOLDER_PANE_KIND)
+                  .map((descriptor) => ({
+                    kind: descriptor.kind,
+                    label: humanizePaneKind(descriptor.kind)
+                  })),
+              onSelect: (kind, workspaceId) => {
+                void this.shellModel.pathCall("/panes/new", {
+                  kind,
+                  workspaceId,
+                  place: "right"
+                });
+              }
+            })
+          : undefined,
       createRightHeaderActionComponent: (group) =>
         new WorkspaceHeaderActions(group, {
           onAdd: () => {

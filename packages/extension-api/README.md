@@ -228,11 +228,11 @@ await a.bus.publish("signal", { n: 1 });
 | `id` | yes | Non-empty string, unique |
 | `name` | yes | Human-readable |
 | `version` | yes | SemVer recommended |
-| `apiVersion` | yes | Must equal `FLMUX_EXTENSION_API_VERSION` (currently `10`) |
+| `apiVersion` | yes | Must equal `FLMUX_EXTENSION_API_VERSION` (currently `1`) |
 | `entrypoints.renderer` | either renderer or cli | Relative path, stays inside extension dir |
 | `entrypoints.cli` | either renderer or cli | Relative path |
 | `commands` | required if `cli` set | Array of `{ id, description? }`, unique ids |
-| `panes` | optional | Array of `{ kind, defaultTitle?, singletonPerWorkspace? }`, unique kinds. `singletonPerWorkspace: true` makes `/panes/new` activate the existing pane of this kind in the target workspace instead of creating a duplicate. |
+| `panes` | optional | Array of `{ kind, defaultTitle?, singletonScope? }`, unique kinds. `singletonScope: "workspace"` keeps one pane per workspace; `"app"` keeps one across the whole shell (active only when it lives in caller's active workspace — never auto-switches workspaces). |
 
 Validate programmatically with `validateExtensionManifest(json)`.
 

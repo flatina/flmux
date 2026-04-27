@@ -1,4 +1,4 @@
-export const FLMUX_EXTENSION_API_VERSION = 10;
+export const FLMUX_EXTENSION_API_VERSION = 1;
 
 export interface ExtensionManifestEntrypoints {
   renderer?: string;
@@ -20,12 +20,19 @@ export interface ExtensionManifestCommand {
   shim?: string;
 }
 
+export type PaneSingletonScope = "workspace" | "app";
+
 export interface ExtensionManifestPane {
   kind: string;
   defaultTitle?: string;
-  /** When true, `/panes/new` activates the existing pane of this kind in
-   *  the target workspace instead of creating a duplicate. */
-  singletonPerWorkspace?: boolean;
+  /** Constrain `/panes/new` to a single instance.
+   *  - `"workspace"`: at most one pane of this kind per workspace; subsequent
+   *    `/panes/new` activates the existing one.
+   *  - `"app"`: at most one across all workspaces. When the existing pane
+   *    lives in the caller's active workspace, it gets activated; otherwise
+   *    its snapshot is returned without changing active state (callers
+   *    deciding how to surface it). */
+  singletonScope?: PaneSingletonScope;
 }
 
 export interface ExtensionManifest {
@@ -248,7 +255,7 @@ function validateManifestPanes(value: unknown) {
 
     const kind = asNonEmptyString(entry.kind);
     const defaultTitle = entry.defaultTitle === undefined ? undefined : asNonEmptyString(entry.defaultTitle);
-    const singletonPerWorkspace = entry.singletonPerWorkspace;
+    const singletonScope = entry.singletonScope;
 
     if (!kind) {
       errors.push(`Manifest field 'panes[${index}].kind' must be a non-empty string`);
@@ -258,8 +265,8 @@ function validateManifestPanes(value: unknown) {
       errors.push(`Manifest field 'panes[${index}].defaultTitle' must be a non-empty string when provided`);
       return;
     }
-    if (singletonPerWorkspace !== undefined && typeof singletonPerWorkspace !== "boolean") {
-      errors.push(`Manifest field 'panes[${index}].singletonPerWorkspace' must be a boolean when provided`);
+    if (singletonScope !== undefined && singletonScope !== "workspace" && singletonScope !== "app") {
+      errors.push(`Manifest field 'panes[${index}].singletonScope' must be 'workspace' or 'app' when provided`);
       return;
     }
     if (seenKinds.has(kind)) {
@@ -271,7 +278,7 @@ function validateManifestPanes(value: unknown) {
     panes.push({
       kind,
       ...(defaultTitle ? { defaultTitle } : {}),
-      ...(singletonPerWorkspace ? { singletonPerWorkspace: true } : {})
+      ...(singletonScope ? { singletonScope } : {})
     });
   });
 

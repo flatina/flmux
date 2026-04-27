@@ -70,11 +70,14 @@ export interface PanePathMount<TRecord extends PaneStateRecord = PaneStateRecord
 
 export type PaneSubtreeMount<TRecord extends PaneStateRecord = PaneStateRecord> = PanePathMount<TRecord>;
 
+export type PaneSingletonScope = "workspace" | "app";
+
 export interface PaneSpec<TRecord extends PaneStateRecord = PaneStateRecord> {
   kind: string;
-  /** When true, `/panes/new` activates the existing pane of this kind in
-   *  the target workspace instead of creating a duplicate. */
-  singletonPerWorkspace?: boolean;
+  /** Constrain `/panes/new` to a single instance — `"workspace"`: one per
+   *  workspace; `"app"`: one across the whole shell (active only when the
+   *  existing pane sits in caller's active workspace). */
+  singletonScope?: PaneSingletonScope;
   lifecycle?: PaneLifecycleHooks<TRecord>;
   persistence?: PanePersistenceHooks<TRecord>;
   subtreeMounts?: PaneSubtreeMount<TRecord>[];

@@ -1094,20 +1094,45 @@ export class ShellCore implements ShellModelHost {
     return undefined;
   }
 
+  private findAppSingleton(kind: string): { workspace: WorkspaceRecord; paneId: string } | undefined {
+    for (const workspace of this.workspaces.values()) {
+      const paneId = this.findPaneOfKind(workspace, kind);
+      if (paneId) return { workspace, paneId };
+    }
+    return undefined;
+  }
+
+  private activateExistingSingleton(
+    workspace: WorkspaceRecord,
+    paneId: string,
+    slotKey: string
+  ): ShellPaneRecordSnapshot {
+    const slot = this.ensureSlot(slotKey);
+    if (slot.activePaneIdByWorkspace.get(workspace.id) !== paneId) {
+      slot.activePaneIdByWorkspace.set(workspace.id, paneId);
+      this.emit({ topic: "pane.activeChanged", payload: { workspaceId: workspace.id, paneId } }, slotKey);
+    }
+    return this.createPaneSnapshot(workspace, paneId);
+  }
+
   private addPane(workspace: WorkspaceRecord, input: NewPaneInput, slotKey: string): ShellPaneRecordSnapshot {
     const spec = this.options.paneRegistry.get(input.kind);
     if (!spec) {
       throw new Error(`Unknown pane kind '${input.kind}'`);
     }
-    if (spec.singletonPerWorkspace) {
+    if (spec.singletonScope === "workspace") {
       const existing = this.findPaneOfKind(workspace, input.kind);
       if (existing) {
-        const slot = this.ensureSlot(slotKey);
-        if (slot.activePaneIdByWorkspace.get(workspace.id) !== existing) {
-          slot.activePaneIdByWorkspace.set(workspace.id, existing);
-          this.emit({ topic: "pane.activeChanged", payload: { workspaceId: workspace.id, paneId: existing } }, slotKey);
-        }
-        return this.createPaneSnapshot(workspace, existing);
+        return this.activateExistingSingleton(workspace, existing, slotKey);
+      }
+    } else if (spec.singletonScope === "app") {
+      const hit = this.findAppSingleton(input.kind);
+      if (hit) {
+        // Only activate when it lives in caller's active workspace —
+        // never silently switch the active workspace itself.
+        return hit.workspace === workspace
+          ? this.activateExistingSingleton(workspace, hit.paneId, slotKey)
+          : this.createPaneSnapshot(hit.workspace, hit.paneId);
       }
     }
     const paneId = `pane_${crypto.randomUUID()}`;

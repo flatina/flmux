@@ -128,10 +128,10 @@ describe("ShellCore", () => {
     expect(backend.killCalls.map((call) => call.runtimeId).sort()).toEqual(["rt_1", "rt_2"]);
   });
 
-  it("singletonPerWorkspace activates the existing pane instead of creating a duplicate", async () => {
+  it("singletonScope=workspace activates the existing pane instead of creating a duplicate", async () => {
     const singletonSpec: PaneSpec = {
       kind: "myext.tag-tree",
-      singletonPerWorkspace: true,
+      singletonScope: "workspace",
       lifecycle: {
         createRecord: () => ({ kind: "myext.tag-tree" }),
         createSnapshot: ({ paneId, title }) => ({ id: paneId, kind: "myext.tag-tree", title }),
@@ -152,9 +152,43 @@ describe("ShellCore", () => {
 
     expect(second.id).toBe(first.id);
     expect((await core.listPanes()).map((p) => p.id)).toEqual([first.id]);
-    // pane.added once; pane.activeChanged on first create (was no active),
-    // none on second since the same pane was already active.
     expect(events.filter((e) => e.topic === "pane.added")).toHaveLength(1);
+  });
+
+  it("singletonScope=app — same workspace activates; cross-workspace returns snapshot without switching", async () => {
+    const appSingletonSpec: PaneSpec = {
+      kind: "myext.agent",
+      singletonScope: "app",
+      lifecycle: {
+        createRecord: () => ({ kind: "myext.agent" }),
+        createSnapshot: ({ paneId, title }) => ({ id: paneId, kind: "myext.agent", title }),
+        getTitle: () => "Agent"
+      }
+    };
+    const { core } = buildShellCore([appSingletonSpec]);
+
+    const ws1 = (await core.getWorkspaceStatus()).id;
+    const ws2 = (await core.createWorkspace()).id;
+
+    // Create the singleton in ws1.
+    const created = await core.createPane({ kind: "myext.agent" }, { workspaceId: ws1 });
+
+    // Switch caller's active workspace to ws2 and try again — must NOT
+    // switch active workspace, must NOT create a duplicate.
+    core.setActiveWorkspace(ws2);
+    const before = core.getSlotActiveWorkspaceId();
+    const reused = await core.createPane({ kind: "myext.agent" }, { workspaceId: ws2 });
+    const after = core.getSlotActiveWorkspaceId();
+
+    expect(reused.id).toBe(created.id);
+    expect(after).toBe(before);
+    expect((await Promise.resolve(core.listPanesByWorkspace(ws1))).map((p) => p.id)).toEqual([created.id]);
+    expect(await Promise.resolve(core.listPanesByWorkspace(ws2))).toEqual([]);
+
+    // Calling from ws1 (where it lives) is a no-op for state — still single.
+    core.setActiveWorkspace(ws1);
+    await core.createPane({ kind: "myext.agent" }, { workspaceId: ws1 });
+    expect((await Promise.resolve(core.listPanesByWorkspace(ws1))).map((p) => p.id)).toEqual([created.id]);
   });
 
   it("setAppOrigin stores the origin without rewriting existing panes (adapter owns re-normalization)", async () => {

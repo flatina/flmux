@@ -1087,12 +1087,30 @@ export class ShellCore implements ShellModelHost {
     };
   }
 
+  private findPaneOfKind(workspace: WorkspaceRecord, kind: string): string | undefined {
+    for (const paneId of workspace.paneOrder) {
+      if (workspace.paneStates.get(paneId)?.kind === kind) return paneId;
+    }
+    return undefined;
+  }
+
   private addPane(workspace: WorkspaceRecord, input: NewPaneInput, slotKey: string): ShellPaneRecordSnapshot {
-    const paneId = `pane_${crypto.randomUUID()}`;
     const spec = this.options.paneRegistry.get(input.kind);
     if (!spec) {
       throw new Error(`Unknown pane kind '${input.kind}'`);
     }
+    if (spec.singletonPerWorkspace) {
+      const existing = this.findPaneOfKind(workspace, input.kind);
+      if (existing) {
+        const slot = this.ensureSlot(slotKey);
+        if (slot.activePaneIdByWorkspace.get(workspace.id) !== existing) {
+          slot.activePaneIdByWorkspace.set(workspace.id, existing);
+          this.emit({ topic: "pane.activeChanged", payload: { workspaceId: workspace.id, paneId: existing } }, slotKey);
+        }
+        return this.createPaneSnapshot(workspace, existing);
+      }
+    }
+    const paneId = `pane_${crypto.randomUUID()}`;
     const workspaceContext = this.toWorkspaceContext(workspace);
     const params = resolvePaneCreateParams({
       spec,

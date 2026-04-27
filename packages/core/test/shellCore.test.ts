@@ -128,6 +128,35 @@ describe("ShellCore", () => {
     expect(backend.killCalls.map((call) => call.runtimeId).sort()).toEqual(["rt_1", "rt_2"]);
   });
 
+  it("singletonPerWorkspace activates the existing pane instead of creating a duplicate", async () => {
+    const singletonSpec: PaneSpec = {
+      kind: "myext.tag-tree",
+      singletonPerWorkspace: true,
+      lifecycle: {
+        createRecord: () => ({ kind: "myext.tag-tree" }),
+        createSnapshot: ({ paneId, title }) => ({ id: paneId, kind: "myext.tag-tree", title }),
+        getTitle: () => "Tag Tree"
+      }
+    };
+    const { core } = buildShellCore([singletonSpec]);
+
+    const events: Array<{ topic: string; paneId?: string }> = [];
+    core.subscribe((event) => {
+      if (event.topic === "pane.added" || event.topic === "pane.activeChanged") {
+        events.push({ topic: event.topic, paneId: (event.payload as { paneId?: string }).paneId });
+      }
+    });
+
+    const first = await core.createPane({ kind: "myext.tag-tree" });
+    const second = await core.createPane({ kind: "myext.tag-tree" });
+
+    expect(second.id).toBe(first.id);
+    expect((await core.listPanes()).map((p) => p.id)).toEqual([first.id]);
+    // pane.added once; pane.activeChanged on first create (was no active),
+    // none on second since the same pane was already active.
+    expect(events.filter((e) => e.topic === "pane.added")).toHaveLength(1);
+  });
+
   it("setAppOrigin stores the origin without rewriting existing panes (adapter owns re-normalization)", async () => {
     const { core } = buildShellCore();
     const pane = await core.createPane({ kind: "browser", url: "/foo" });

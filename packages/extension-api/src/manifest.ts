@@ -1,4 +1,4 @@
-export const FLMUX_EXTENSION_API_VERSION = 9;
+export const FLMUX_EXTENSION_API_VERSION = 10;
 
 export interface ExtensionManifestEntrypoints {
   renderer?: string;
@@ -23,6 +23,9 @@ export interface ExtensionManifestCommand {
 export interface ExtensionManifestPane {
   kind: string;
   defaultTitle?: string;
+  /** When true, `/panes/new` activates the existing pane of this kind in
+   *  the target workspace instead of creating a duplicate. */
+  singletonPerWorkspace?: boolean;
 }
 
 export interface ExtensionManifest {
@@ -245,6 +248,7 @@ function validateManifestPanes(value: unknown) {
 
     const kind = asNonEmptyString(entry.kind);
     const defaultTitle = entry.defaultTitle === undefined ? undefined : asNonEmptyString(entry.defaultTitle);
+    const singletonPerWorkspace = entry.singletonPerWorkspace;
 
     if (!kind) {
       errors.push(`Manifest field 'panes[${index}].kind' must be a non-empty string`);
@@ -254,13 +258,21 @@ function validateManifestPanes(value: unknown) {
       errors.push(`Manifest field 'panes[${index}].defaultTitle' must be a non-empty string when provided`);
       return;
     }
+    if (singletonPerWorkspace !== undefined && typeof singletonPerWorkspace !== "boolean") {
+      errors.push(`Manifest field 'panes[${index}].singletonPerWorkspace' must be a boolean when provided`);
+      return;
+    }
     if (seenKinds.has(kind)) {
       errors.push(`Manifest field 'panes' contains duplicate pane kind '${kind}'`);
       return;
     }
 
     seenKinds.add(kind);
-    panes.push(defaultTitle ? { kind, defaultTitle } : { kind });
+    panes.push({
+      kind,
+      ...(defaultTitle ? { defaultTitle } : {}),
+      ...(singletonPerWorkspace ? { singletonPerWorkspace: true } : {})
+    });
   });
 
   return errors.length > 0 ? { ok: false as const, errors } : { ok: true as const, panes };

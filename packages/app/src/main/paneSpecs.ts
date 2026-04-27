@@ -123,13 +123,15 @@ function createExtensionPaneSpec(
   definition: ExtensionPaneDefinition | undefined
 ): PaneSpec {
   const defaultTitle = manifestPane.defaultTitle;
+  const singletonPerWorkspace = manifestPane.singletonPerWorkspace || undefined;
 
   if (!definition) {
     if (!defaultTitle) {
-      return { kind: manifestPane.kind };
+      return { kind: manifestPane.kind, singletonPerWorkspace };
     }
     return {
       kind: manifestPane.kind,
+      singletonPerWorkspace,
       lifecycle: {
         getTitle: ({ input }) => input.title?.trim() || defaultTitle
       }
@@ -148,6 +150,7 @@ function createExtensionPaneSpec(
 
   return {
     kind: manifestPane.kind,
+    singletonPerWorkspace,
     lifecycle: mergedLifecycle,
     persistence: adaptExtensionPersistence(definition),
     pathMount: definition.pathMount ? adaptExtensionPanePathMount(definition.pathMount) : undefined

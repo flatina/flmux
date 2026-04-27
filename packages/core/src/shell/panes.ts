@@ -72,6 +72,9 @@ export type PaneSubtreeMount<TRecord extends PaneStateRecord = PaneStateRecord> 
 
 export interface PaneSpec<TRecord extends PaneStateRecord = PaneStateRecord> {
   kind: string;
+  /** When true, `/panes/new` activates the existing pane of this kind in
+   *  the target workspace instead of creating a duplicate. */
+  singletonPerWorkspace?: boolean;
   lifecycle?: PaneLifecycleHooks<TRecord>;
   persistence?: PanePersistenceHooks<TRecord>;
   subtreeMounts?: PaneSubtreeMount<TRecord>[];

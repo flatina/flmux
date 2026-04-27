@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync } from "node:fs";
-import { dirname, resolve, sep } from "node:path";
+import { delimiter, dirname, resolve, sep } from "node:path";
 import {
   BrowserWindow,
   AppRuntime,
@@ -65,6 +65,16 @@ function parseOptionalPort(value: string | undefined): number | undefined {
   return Number.isFinite(n) && n > 0 && n < 65536 ? n : undefined;
 }
 
+function prependFlmuxBinToPath(binDir: string): void {
+  // Reuse the existing PATH key's casing (Windows preserves source casing
+  // even though the var is case-insensitive); a blind `process.env.PATH =`
+  // would create a sibling entry.
+  const existingKey = Object.keys(process.env).find((key) => key.toUpperCase() === "PATH");
+  const key = existingKey ?? "PATH";
+  const current = existingKey ? process.env[existingKey] : undefined;
+  process.env[key] = current ? `${binDir}${delimiter}${current}` : binDir;
+}
+
 function readDevAuthAsFlag(argv: readonly string[]): string | undefined {
   const i = argv.indexOf("--dev-auth-as");
   if (i < 0 || i + 1 >= argv.length) return undefined;
@@ -108,6 +118,13 @@ const shimResult = ensureFlmuxCliShim({ binDir: flmuxPaths.binDir, baseDir });
 if (!shimResult.ok) {
   console.warn(`[flmux] cli shim skipped (${shimResult.reason})`);
 }
+
+// Mirror the env terminal panes get into the flmux process itself so
+// extension server entries (and anything else flmux spawns) inherit
+// `<.flmux/bin>` on PATH and `FLMUX_ROOT` — making `flmux <cmd>` reachable
+// without each extension reconstructing the path.
+process.env.FLMUX_ROOT = flmuxPaths.rootDir;
+prependFlmuxBinToPath(flmuxPaths.binDir);
 const app =
   runtimeMode === "desktop"
     ? new AppRuntime({
@@ -949,6 +966,10 @@ const server = startFlmuxServer({
   rpcWebHandler: rendererWebHandler
 });
 serverOrigin = server.origin;
+// FLMUX_ORIGIN parity: only known after server.listen, so set on env now —
+// child processes spawned by extensions can reach the same server without
+// passing --origin.
+process.env.FLMUX_ORIGIN = serverOrigin;
 if (desktopAuthority) {
   // Subscribe BEFORE start() so any pane.added emitted during session
   // restore indexes correctly for terminal routing.

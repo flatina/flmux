@@ -20,7 +20,7 @@
     "@flmux/extension-api": "workspace:*",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
-    "bunite-core": "^0.3.1",
+    "bunite-core": "^0.4.0",
     "bunite-native-win-x64": "^0.0.3",
     "citty": "^0.2.2",
     "dockview-core": "^5.1.0",

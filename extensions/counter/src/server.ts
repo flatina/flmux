@@ -1,4 +1,4 @@
-import { defineBunRPC } from "bunite-core";
+import { defineBunRpc } from "bunite-core";
 import { defineExtensionServer } from "@flmux/extension-api";
 import type { CounterSchema } from "./schema";
 
@@ -16,7 +16,7 @@ function notifyAll(sourcePaneId: string | null) {
 
 export default defineExtensionServer({
   async onPaneConnected(paneId, _attachmentId, ctx) {
-    const rpc = defineBunRPC<CounterSchema>({
+    const rpc = defineBunRpc<CounterSchema>({
       handlers: {
         requests: {
           getCount: () => ({ count }),
@@ -35,7 +35,7 @@ export default defineExtensionServer({
     });
     // Wait for the HELLO handshake so any `send` below reaches the pane
     // instead of racing the peer's handler registration.
-    await ctx.channel.bindTo(rpc);
+    await ctx.rpcChannel.bindTo(rpc);
 
     const peer: Peer = {
       broadcast: (sourcePaneId) => {

@@ -1,4 +1,4 @@
-import { BuniteView, createTransportDemuxer, defineWebviewRPC } from "bunite-core/view";
+import { BuniteView, createRpcTransportDemuxer, defineWebviewRpc } from "bunite-core/view";
 import type { FlmuxRendererBridgeSchema } from "../shared/rendererBridge";
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
 import type { SequencedShellCoreEvent } from "@flmux/core/shell";
@@ -15,7 +15,7 @@ void bootstrap().catch((error) => {
 
 async function bootstrap() {
   setupTheme();
-  const rpc = defineWebviewRPC<FlmuxRendererBridgeSchema>({
+  const rpc = defineWebviewRpc<FlmuxRendererBridgeSchema>({
     handlers: {
       messages: {
         "terminal.event": (event: TerminalRuntimeEvent) => {
@@ -28,12 +28,12 @@ async function bootstrap() {
     }
   });
   const view = new BuniteView();
-  const demux = createTransportDemuxer(view.transport);
+  const demux = createRpcTransportDemuxer(view.transport);
   // Await the HELLO handshake before any request is sent — `getConfig()`
   // below races the peer's handler registration without this.
   await demux.channel("default").bindTo(rpc);
   // Expose to external pane runtime so extension panes can claim their own
-  // channel via `ctx.channel.bindTo(rpc)` on mount.
+  // channel via `ctx.rpcChannel.bindTo(rpc)` on mount.
   setExtensionPaneDemuxer(demux);
 
   const config = await rpc.requestProxy["flmux.getConfig"]();

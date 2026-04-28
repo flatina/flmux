@@ -3,10 +3,10 @@ import { delimiter, dirname, resolve, sep } from "node:path";
 import {
   BrowserWindow,
   AppRuntime,
-  defineBunRPC,
-  createTransportDemuxer,
+  defineBunRpc,
+  createRpcTransportDemuxer,
   createWebSocketTransport,
-  type TransportDemuxer,
+  type RpcTransportDemuxer,
   type WebSocketLike
 } from "bunite-core";
 import type { SequencedShellCoreEvent, ShellModelAPI } from "@flmux/core/shell";
@@ -202,8 +202,8 @@ for (const ext of localExtensions) {
 // indexes used to drive attach/detach in pane and attachment lifecycles.
 const paneServerInstances = new Map<string, ExtensionServerPaneInstance>();
 const paneKinds = new Map<string, string>();
-const attachmentIdToDemux = new Map<string, TransportDemuxer>();
-const webViewIdToDemux = new Map<number, TransportDemuxer>();
+const attachmentIdToDemux = new Map<string, RpcTransportDemuxer>();
+const webViewIdToDemux = new Map<number, RpcTransportDemuxer>();
 
 function findExtensionIdForPaneKind(kind: string): string | undefined {
   return localExtensions.find((ext) => ext.runtimeManifest.panes?.some((p) => p.kind === kind))?.id;
@@ -311,8 +311,8 @@ async function attachExtensionServerChannel(paneId: string, kind: string, attach
     return;
   }
   try {
-    const channel = demux.channel(paneId);
-    const inst = await server.onPaneConnected(paneId, attachmentId, { channel, shell, dataDir });
+    const rpcChannel = demux.channel(paneId);
+    const inst = await server.onPaneConnected(paneId, attachmentId, { rpcChannel, shell, dataDir });
     if (inst) paneServerInstances.set(key, inst);
   } catch (err) {
     console.warn(`[flmux] extension '${extId}' onPaneConnected error (pane ${paneId}, att ${attachmentId}):`, err);
@@ -770,7 +770,7 @@ const resolveShellModelRouter = (viewId: number, hints?: { attachmentId?: string
   return resolveAuthorityForViewId(viewId, hints)?.router ?? null;
 };
 
-const rendererRpc = defineBunRPC<FlmuxRendererBridgeSchema>({
+const rendererRpc = defineBunRpc<FlmuxRendererBridgeSchema>({
   handlers: {
     requests: createFlmuxHostRequestHandlers({
       mode: runtimeMode,
@@ -801,8 +801,8 @@ const rendererRpc = defineBunRPC<FlmuxRendererBridgeSchema>({
 // can later mint their own channels off the same connection.
 type WebClient = {
   ws: WebSocketLike;
-  rpc: ReturnType<typeof defineBunRPC<FlmuxRendererBridgeSchema>>;
-  demux: TransportDemuxer;
+  rpc: ReturnType<typeof defineBunRpc<FlmuxRendererBridgeSchema>>;
+  demux: RpcTransportDemuxer;
 };
 
 const webConnections = new Map<
@@ -813,8 +813,8 @@ const webConnections = new Map<
 const rendererWebHandler = {
   open(ws: WebSocketLike) {
     const pipe = createWebSocketTransport(ws);
-    const demux = createTransportDemuxer(pipe.transport);
-    const rpc = defineBunRPC<FlmuxRendererBridgeSchema>({ handlers: {} });
+    const demux = createRpcTransportDemuxer(pipe.transport);
+    const rpc = defineBunRpc<FlmuxRendererBridgeSchema>({ handlers: {} });
     // Fire-and-forget: the WS pipe is already up; the HELLO handshake
     // resolves once the renderer binds its own side of the channel.
     // Nothing on the server path needs to wait for that resolution —
@@ -1035,9 +1035,9 @@ if (runtimeMode === "desktop" && app) {
   // Wrap the preload pipe in a demuxer so the "default" channel carries
   // ShellModelAPI and extension channels can mount alongside (one channel
   // per extension pane, keyed by paneId).
-  const desktopDemux = createTransportDemuxer(win.view.transport);
+  const desktopDemux = createRpcTransportDemuxer(win.view.transport);
   // Fire-and-forget bindTo — the CEF renderer comes up later and its
-  // `defineWebviewRPC(...).bindTo(...)` call completes the handshake.
+  // `defineWebviewRpc(...).bindTo(...)` call completes the handshake.
   void desktopDemux.channel("default").bindTo(rendererRpc);
   attachmentIdToDemux.set(DESKTOP_ATTACHMENT_ID, desktopDemux);
   // Session-restored panes fire pane.added before this point — pick them up.

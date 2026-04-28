@@ -74,7 +74,7 @@ function createExternalPaneContext(
       }
     },
     state,
-    channel: channelForPane(paneId)
+    rpcChannel: channelForPane(paneId)
   };
 }
 

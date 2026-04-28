@@ -1,5 +1,5 @@
 import type { WorkspaceBusClient } from "./bus";
-import type { ChannelHandle } from "./server";
+import type { RpcChannelHandle } from "./server";
 import type { ShellClient } from "./shell";
 import type { PaneStateStore } from "./state";
 
@@ -29,18 +29,13 @@ export interface ExtensionPaneContext {
   bus: WorkspaceBusClient;
   state: PaneStateStore;
   /**
-   * Isolated bunite channel handle for private pane↔server-entry RPC. The
-   * extension pairs its own `BuniteRPCSchema` to it via
-   * `defineWebviewRPC<Schema>(...)` and `await ctx.channel.bindTo(rpc)` on
-   * mount, then disposes the rpc in `ExtensionPaneInstance.dispose`.
-   * Awaiting `bindTo` before the first request is mandatory — otherwise
-   * the first packet may race the peer's handler registration.
-   *
-   * Optional — only present when the extension has a server entry and the
-   * host has wired a channel for this pane. Absent in test fixtures that
-   * don't exercise the channel axis.
+   * Isolated bunite RPC channel for private pane↔server-entry calls.
+   * Pair via `defineWebviewRpc<Schema>(...)` + `await ctx.rpcChannel.bindTo(rpc)`
+   * on mount; dispose the rpc in `ExtensionPaneInstance.dispose`. Awaiting
+   * `bindTo` is required — the first packet otherwise races handler
+   * registration. Absent when the extension has no server entry.
    */
-  channel?: ChannelHandle;
+  rpcChannel?: RpcChannelHandle;
 }
 
 export interface ExtensionPaneInstance {

@@ -1,7 +1,7 @@
 // Import from the thin `shared/rpc` subpath — `bunite-core/view` pulls in the
 // webview polyfill which touches `window` at module load, breaking the
 // main-side `import()` that flmux performs to extract pane definitions.
-import { defineWebviewRPC } from "bunite-core/shared/rpc";
+import { defineWebviewRpc } from "bunite-core/shared/rpc";
 import {
   defineExtension,
   definePane,
@@ -24,7 +24,7 @@ function ensureStylesheet() {
 }
 
 class CounterPane implements ExtensionPaneInstance {
-  private readonly rpc = defineWebviewRPC<CounterSchema>({
+  private readonly rpc = defineWebviewRpc<CounterSchema>({
     handlers: {
       messages: {
         "count.changed": ({ count }) => this.render(count)
@@ -62,7 +62,7 @@ class CounterPane implements ExtensionPaneInstance {
     this.host.querySelector<HTMLElement>('[data-role="pane-id"]')!.textContent = this.ctx.paneId;
     this.valueEl = this.host.querySelector<HTMLElement>('[data-role="value"]');
 
-    if (!this.ctx.channel) {
+    if (!this.ctx.rpcChannel) {
       if (this.valueEl) this.valueEl.textContent = "(server entry not wired)";
       return;
     }
@@ -76,7 +76,7 @@ class CounterPane implements ExtensionPaneInstance {
     // as soon as it sees us, so the initial render arrives through the
     // message listener, not a round-trip.
     try {
-      await this.ctx.channel.bindTo(this.rpc);
+      await this.ctx.rpcChannel.bindTo(this.rpc);
       if (this.disposed) return;
       inc.addEventListener("click", () => this.apply(this.rpc.requestProxy.increment({ delta: 1 })));
       dec.addEventListener("click", () => this.apply(this.rpc.requestProxy.increment({ delta: -1 })));

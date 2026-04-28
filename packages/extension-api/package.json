@@ -13,7 +13,7 @@
     "./testing": "./src/testing.ts"
   },
   "dependencies": {
-    "bunite-core": "^0.3.1",
+    "bunite-core": "^0.4.0",
     "citty": "^0.2.2"
   }
 }

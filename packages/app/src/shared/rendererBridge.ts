@@ -1,4 +1,4 @@
-import type { RPCSchema } from "bunite-core";
+import type { RpcSchema } from "bunite-core";
 import type {
   AppStatusSnapshot,
   PathCallerContext,
@@ -107,11 +107,11 @@ export type FlmuxHostMessages = {
 // ── RPC schema ──
 
 export type FlmuxRendererBridgeSchema = {
-  bun: RPCSchema<{
+  bun: RpcSchema<{
     requests: FlmuxHostRequests;
     messages: FlmuxHostMessages;
   }>;
-  webview: RPCSchema<Record<string, never>>;
+  webview: RpcSchema<Record<string, never>>;
 };
 
 // ── Host request proxy (used by renderer to call main) ──

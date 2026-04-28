@@ -291,6 +291,25 @@ describe("ShellCore", () => {
     expect(status?.title).toBe("Custom");
   });
 
+  it("exposes lastActive at /status/panes/{id}/lastActive — null before activate, object after", async () => {
+    const { core } = buildShellCore();
+    const terminal = core.createTerminalDelegate();
+    const shellModel = createShellModel({ host: core, terminal });
+
+    const pane = await core.createPane({ kind: "browser", url: "/x" });
+
+    expect(await shellModel.pathGet(`/status/panes/${pane.id}/lastActive`)).toEqual({
+      ok: true,
+      found: true,
+      value: null
+    });
+
+    core.setActivePane(pane.id, { source: "user" });
+    const after = await shellModel.pathGet(`/status/panes/${pane.id}/lastActive`);
+    expect(after.ok).toBe(true);
+    expect((after as { value: { source: string } }).value.source).toBe("user");
+  });
+
   it("integrates with createShellModel for path-based workspace listing", async () => {
     const { core } = buildShellCore();
     const terminal = core.createTerminalDelegate();

@@ -1151,7 +1151,9 @@ class ShellModel implements ShellModelAPI {
     }
 
     if (segments.length === 2 && isPaneStatusLeaf(segments[1])) {
-      return { ok: true, found: true, value: status[segments[1]] };
+      // Coerce missing keys (e.g. `lastActive` before first activate) to null
+      // so JSON serialization keeps the `value` field present.
+      return { ok: true, found: true, value: status[segments[1]] ?? null };
     }
 
     const subtreeMount = await this.resolvePaneSubtreeMount(pane.id, segments[1]);
@@ -1632,7 +1634,12 @@ function paneStateEntries(_pane: ShellPaneRecordSnapshot, basePath: string): She
 
 function paneStatusEntries(_pane: ShellPaneRecordSnapshot, basePath: string): ShellPathEntry[] {
   const propertyEntries = statePropertyEntries(PANE_STATE_PROPERTIES, basePath, "key", false);
-  return [leafEntry("id", `${basePath}/id`), leafEntry("kind", `${basePath}/kind`), ...propertyEntries];
+  return [
+    leafEntry("id", `${basePath}/id`),
+    leafEntry("kind", `${basePath}/kind`),
+    leafEntry("lastActive", `${basePath}/lastActive`),
+    ...propertyEntries
+  ];
 }
 
 function leafEntry(name: string, path: string, writable = false): ShellPathEntry {
@@ -1656,7 +1663,7 @@ function isWorkspaceStatusKey(value: string): value is keyof ReturnType<ShellMod
 }
 
 function isPaneStatusKey(value: string): value is keyof ReturnType<typeof toPaneStatusSnapshot> {
-  return value === "id" || value === "kind" || value === "title";
+  return value === "id" || value === "kind" || value === "title" || value === "lastActive";
 }
 
 function isPaneStatusLeaf(value: string): value is keyof ReturnType<typeof toPaneStatusSnapshot> {

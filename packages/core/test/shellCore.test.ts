@@ -362,6 +362,35 @@ describe("ShellCore", () => {
     expect(core.getSlotActivePaneId(extra.id)).toBe(pane.id);
   });
 
+  it("setActivePane records lastActive on the pane snapshot with source carry-through", async () => {
+    const { core } = buildShellCore();
+    const a = await core.createPane({ kind: "browser", url: "/a" });
+    const b = await core.createPane({ kind: "browser", url: "/b" });
+
+    expect((await core.getPane(a.id))?.lastActive).toBeUndefined();
+
+    core.setActivePane(a.id, { source: "user" });
+    const afterUser = await core.getPane(a.id);
+    expect(afterUser?.lastActive?.source).toBe("user");
+    expect(typeof afterUser?.lastActive?.at).toBe("string");
+
+    core.setActivePane(b.id);
+    const afterCall = await core.getPane(b.id);
+    expect(afterCall?.lastActive?.source).toBe("call");
+
+    // Re-clicking the already-active pane refreshes the timestamp.
+    const t1 = afterCall!.lastActive!.at;
+    await new Promise((r) => setTimeout(r, 5));
+    core.setActivePane(b.id, { source: "user" });
+    const refreshed = await core.getPane(b.id);
+    expect(refreshed?.lastActive?.source).toBe("user");
+    expect(refreshed!.lastActive!.at >= t1).toBe(true);
+
+    // closePane wipes the entry.
+    await core.closePane(a.id);
+    expect(await core.getPane(a.id)).toBeUndefined();
+  });
+
   it("creates separate workspaces whose bus is scoped to each id", async () => {
     const { core } = buildShellCore();
     const extra = await core.createWorkspace({ title: "Second" });

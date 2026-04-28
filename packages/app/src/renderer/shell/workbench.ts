@@ -714,7 +714,7 @@ export class FlmuxWorkbench {
         return;
       }
       if (panel) {
-        void this.shellModel.pathCall(`/panes/${panel.id}/setActive`);
+        void this.shellModel.pathCall(`/panes/${panel.id}/setActive`, { source: "user" });
       }
       this.pushLayout();
     });

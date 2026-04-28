@@ -99,6 +99,17 @@ export interface PaneStatusSnapshot extends PaneStateSnapshot {
   id: string;
   browser?: BrowserPaneStateSnapshot;
   terminal?: TerminalPaneStatusSnapshot;
+  /** Last time `setActive` (path call or host method) targeted this pane.
+   * Absent when the pane has never been explicitly activated post-create. */
+  lastActive?: PaneActiveRecord;
+}
+
+export type PaneActiveSource = "user" | "call";
+
+export interface PaneActiveRecord {
+  /** ISO-8601 UTC. */
+  at: string;
+  source: PaneActiveSource;
 }
 
 export interface ShellPaneRecordSnapshot extends PaneStatusSnapshot {}
@@ -149,6 +160,11 @@ export interface ShellSlotOptions {
   slotKey?: string;
 }
 
+export interface ShellSetActivePaneOptions extends ShellSlotOptions {
+  /** Records the activation origin on the pane's status snapshot. Default `"call"`. */
+  source?: PaneActiveSource;
+}
+
 export interface ShellCreatePaneOptions extends ShellSlotOptions {
   /** Explicit target workspace. When omitted the slot's current active workspace is used; if that too is null, the call fails with INVALID_VALUE. */
   workspaceId?: string;
@@ -184,7 +200,7 @@ export interface ShellModelHost {
   getPane(paneId: string): Awaitable<ShellPaneRecordSnapshot | undefined>;
   createPane(input: NewPaneInput, options?: ShellCreatePaneOptions): Awaitable<ShellPaneRecordSnapshot>;
   closePane(paneId: string): Awaitable<{ paneId: string; closed: boolean }>;
-  setActivePane(paneId: string, options?: ShellSlotOptions): Awaitable<void>;
+  setActivePane(paneId: string, options?: ShellSetActivePaneOptions): Awaitable<void>;
   setScopedProperty(target: ScopedPropertyTarget, key: string, value: unknown): Awaitable<{ value: unknown }>;
   getPaneParams(paneId: string): Awaitable<Record<string, unknown> | undefined>;
   setPaneParams(paneId: string, nextParams: Record<string, unknown>): Awaitable<Record<string, unknown>>;

@@ -447,7 +447,11 @@ class ShellModel implements ShellModelAPI {
     }
 
     if (segments.length === 3 && segments[2] === "setActive") {
-      await this.host.setActivePane(pane.id, caller.attachmentId ? { slotKey: caller.attachmentId } : undefined);
+      const source = args.source === "user" ? "user" : "call";
+      await this.host.setActivePane(pane.id, {
+        ...(caller.attachmentId ? { slotKey: caller.attachmentId } : {}),
+        source
+      });
       return { ok: true, value: { paneId: pane.id } };
     }
 
@@ -1612,21 +1616,13 @@ function toPaneStateSnapshot(pane: ShellPaneRecordSnapshot) {
 }
 
 function toPaneStatusSnapshot(pane: ShellPaneRecordSnapshot) {
+  const base = { id: pane.id, kind: pane.kind, title: pane.title };
+  const withActive = pane.lastActive ? { ...base, lastActive: pane.lastActive } : base;
   return pane.kind === "browser"
-    ? {
-        id: pane.id,
-        kind: pane.kind,
-        title: pane.title,
-        browser: toBrowserStatusSnapshot(pane)
-      }
+    ? { ...withActive, browser: toBrowserStatusSnapshot(pane) }
     : pane.kind === "terminal"
-      ? {
-          id: pane.id,
-          kind: pane.kind,
-          title: pane.title,
-          terminal: toTerminalStatusSnapshot(pane)
-        }
-      : { id: pane.id, kind: pane.kind, title: pane.title };
+      ? { ...withActive, terminal: toTerminalStatusSnapshot(pane) }
+      : withActive;
 }
 
 function paneStateEntries(_pane: ShellPaneRecordSnapshot, basePath: string): ShellPathEntry[] {

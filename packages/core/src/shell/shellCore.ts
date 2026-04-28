@@ -32,8 +32,10 @@ import {
   type ShellPaneRecordSnapshot,
   type ShellResolvedPanePathMount,
   type ShellResolvedPaneSubtreeMount,
+  type ShellSetActivePaneOptions,
   type ShellSlotOptions,
   type ShellTerminalDelegate,
+  type PaneActiveRecord,
   type WorkspaceBus,
   type WorkspaceBusEvent,
   type WorkspaceStatusSnapshot
@@ -88,6 +90,7 @@ const IMPLICIT_DEFAULT_SLOT_KEY = "default";
 export class ShellCore implements ShellModelHost {
   private readonly workspaces = new Map<string, WorkspaceRecord>();
   private readonly paneWorkspaceIds = new Map<string, string>();
+  private readonly paneLastActive = new Map<string, PaneActiveRecord>();
   private readonly eventSubscribers = new Set<(event: SequencedShellCoreEvent) => void>();
   // Per-slot active state. `slotKey` is opaque to core — authority treats it
   // as attachmentId; tests treat it as a harness id. Core only routes.
@@ -323,11 +326,14 @@ export class ShellCore implements ShellModelHost {
     this.emit({ topic: "workspace.activeChanged", payload: { id: next } }, slotKey);
   }
 
-  setActivePane(paneId: string, options?: ShellSlotOptions) {
+  setActivePane(paneId: string, options?: ShellSetActivePaneOptions) {
     const workspaceId = this.paneWorkspaceIds.get(paneId);
     if (!workspaceId) {
       return;
     }
+    // Always refresh `lastActive` — re-clicking the already-active tab is
+    // still a fresh user signal that should sort newest.
+    this.paneLastActive.set(paneId, { at: new Date().toISOString(), source: options?.source ?? "call" });
     const slotKey = this.resolveSlotKey(options);
     const slot = this.ensureSlot(slotKey);
     if (slot.activePaneIdByWorkspace.get(workspaceId) === paneId) {
@@ -741,6 +747,7 @@ export class ShellCore implements ShellModelHost {
     workspace.paneTitles.delete(paneId);
     workspace.paneOrder = workspace.paneOrder.filter((candidate) => candidate !== paneId);
     this.paneWorkspaceIds.delete(paneId);
+    this.paneLastActive.delete(paneId);
 
     // Per-slot active update: only slots that had this pane active in this
     // workspace need to move. Each gets its own attachment-scoped event.
@@ -1045,12 +1052,14 @@ export class ShellCore implements ShellModelHost {
     if (!spec) {
       throw new Error(`Unknown pane kind '${record.kind}'`);
     }
-    return createPaneSnapshotHelper({
+    const snapshot = createPaneSnapshotHelper({
       spec,
       paneId,
       title: titleOverride ?? workspace.paneTitles.get(paneId) ?? humanizePaneKind(record.kind),
       record
     });
+    const lastActive = this.paneLastActive.get(paneId);
+    return lastActive ? { ...snapshot, lastActive } : snapshot;
   }
 
 

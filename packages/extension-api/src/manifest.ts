@@ -33,6 +33,9 @@ export interface ExtensionManifestPane {
    *    its snapshot is returned without changing active state (callers
    *    deciding how to surface it). */
   singletonScope?: PaneSingletonScope;
+  /** Relative path to an SVG/PNG icon. Replaces the default hamburger
+   *  glyph on the pane's tab header. */
+  icon?: string;
 }
 
 export interface ExtensionManifest {
@@ -256,6 +259,7 @@ function validateManifestPanes(value: unknown) {
     const kind = asNonEmptyString(entry.kind);
     const defaultTitle = entry.defaultTitle === undefined ? undefined : asNonEmptyString(entry.defaultTitle);
     const singletonScope = entry.singletonScope;
+    const iconPath = validateManifestEntrypointPath(entry.icon, `panes[${index}].icon`);
 
     if (!kind) {
       errors.push(`Manifest field 'panes[${index}].kind' must be a non-empty string`);
@@ -269,16 +273,22 @@ function validateManifestPanes(value: unknown) {
       errors.push(`Manifest field 'panes[${index}].singletonScope' must be 'workspace' or 'app' when provided`);
       return;
     }
+    if (iconPath) {
+      errors.push(iconPath);
+      return;
+    }
     if (seenKinds.has(kind)) {
       errors.push(`Manifest field 'panes' contains duplicate pane kind '${kind}'`);
       return;
     }
 
+    const icon = entry.icon === undefined ? undefined : (entry.icon as string).trim().replace(/\\/g, "/");
     seenKinds.add(kind);
     panes.push({
       kind,
       ...(defaultTitle ? { defaultTitle } : {}),
-      ...(singletonScope ? { singletonScope } : {})
+      ...(singletonScope ? { singletonScope } : {}),
+      ...(icon ? { icon } : {})
     });
   });
 

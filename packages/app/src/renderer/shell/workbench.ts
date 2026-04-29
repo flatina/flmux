@@ -81,6 +81,7 @@ export class FlmuxWorkbench {
   private readonly paneRegistry = new PaneRegistry();
 
   private readonly workspaces = new Map<string, WorkspaceRecord>();
+  private readonly paneIdToKind = new Map<string, string>();
   // disposingWorkspace covers the user-originated outer-panel-close path where
   // applyingCoreState is false but dockview's synchronous inner-disposal
   // cascade needs inner onDidRemovePanel handlers to skip /panes/{id}/close.
@@ -416,13 +417,21 @@ export class FlmuxWorkbench {
       params: payload.params,
       position
     });
+    this.paneIdToKind.set(payload.paneId, payload.snapshot.kind);
   }
 
   private applyPaneRemoved(payload: { paneId: string; workspaceId: string }) {
     const record = this.workspaces.get(payload.workspaceId);
     record?.innerApi?.getPanel(payload.paneId)?.api.close();
+    this.paneIdToKind.delete(payload.paneId);
     // New-active selection now arrives as a separate scope=attachment
     // pane.activeChanged — this handler only closes the panel.
+  }
+
+  private resolvePaneIcon(paneId: string): string | undefined {
+    const kind = this.paneIdToKind.get(paneId);
+    if (!kind) return undefined;
+    return this.paneRegistry.get(kind)?.iconUrl;
   }
 
   private applyPaneTitleChanged(payload: { paneId: string; workspaceId: string; title: string }) {
@@ -458,7 +467,10 @@ export class FlmuxWorkbench {
       disableFloatingGroups: true,
       defaultTabComponent: "pane-tab",
       createComponent: (options) => this.createInnerPanelRenderer(record, options),
-      createTabComponent: (options) => (options.name === "pane-tab" ? new PaneTabRenderer() : undefined),
+      createTabComponent: (options) =>
+        options.name === "pane-tab"
+          ? new PaneTabRenderer({ resolveIconUrl: (paneId) => this.resolvePaneIcon(paneId) })
+          : undefined,
       createRightHeaderActionComponent: (group) =>
         new NewPaneHeaderAction(group, {
           listKinds: () =>
@@ -511,6 +523,9 @@ export class FlmuxWorkbench {
       if (record.pendingInnerLayout) {
         try {
           record.innerApi.fromJSON(record.pendingInnerLayout);
+          for (const panel of record.innerApi.panels) {
+            this.paneIdToKind.set(panel.id, panel.view.contentComponent);
+          }
         } catch (error) {
           console.warn(`failed to restore workspace '${record.id}' inner layout; falling back to reset`, error);
           this.disposingWorkspace.add(record.id);
@@ -540,6 +555,7 @@ export class FlmuxWorkbench {
                 }
               : undefined
           });
+          this.paneIdToKind.set(pane.id, pane.kind);
           if (firstPanelId === null) {
             firstPanelId = pane.id;
           }

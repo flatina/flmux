@@ -28,8 +28,11 @@ export async function registerLocalExternalPaneDescriptors(
   }
 
   for (const extension of discovered) {
+    const paneIcons = extension.loadEntry.paneIcons ?? {};
     for (const pane of extension.definition.panes ?? []) {
-      host.registerExternalPane(createExternalPaneDescriptor(pane));
+      const descriptor = createExternalPaneDescriptor(pane);
+      if (paneIcons[pane.kind]) descriptor.iconUrl = paneIcons[pane.kind];
+      host.registerExternalPane(descriptor);
     }
   }
 }

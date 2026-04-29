@@ -65,6 +65,31 @@ Every pane receives `ExtensionPaneContext` on mount:
 - **`bus: WorkspaceBusClient`** — transient pub/sub scoped to the current workspace + current renderer client. `publish(topic, payload?)` stamps the pane's id as `sourcePaneId`; `subscribe(topic, handler)` receives events. Topic patterns: `*`, `prefix.*`, exact match. **Subscribers see their own events** — filter with `event.sourcePaneId !== myPaneId` if that matters. Cross-renderer forwarding is a deferred feature; publishes from CLI/HTTP do not reach renderer subscribers today.
 - **`state: PaneStateStore`** — `getParams/setParams/patchParams/getTitle/setTitle`. Per-pane, persisted as part of the workspace layout. External writes through `pathMount.setState` go here.
 
+## Tab-header menu
+
+Every pane gets a hamburger button before its tab title. Click opens a popup whose contents come from the pane runtime via `ctx.setHeaderMenu(menu)`:
+
+```ts
+ctx.setHeaderMenu({
+  items: [
+    { id: "refresh", label: "Refresh", icon: "🔄", onClick: () => reload() },
+    { id: "settings", label: "Settings…", onClick: () => openSettings() }
+  ]
+});
+
+// Or own the popup contents:
+ctx.setHeaderMenu({
+  build(container, { close }) {
+    const ui = renderCustomMenu(container, close);
+    return () => ui.dispose();
+  }
+});
+
+ctx.setHeaderMenu(null); // remove
+```
+
+If no menu is set, the click is a no-op. The button can be replaced with a custom icon via the manifest `panes[].icon` field.
+
 ## pathMount — exposing pane internals on the path surface
 
 A `pathMount` lets external callers (CLI, another pane, an AI agent) reach a specific pane's internals via `/panes/{paneId}/<mountKey>/…`. Three scopes:
@@ -232,7 +257,7 @@ await a.bus.publish("signal", { n: 1 });
 | `entrypoints.renderer` | either renderer or cli | Relative path, stays inside extension dir |
 | `entrypoints.cli` | either renderer or cli | Relative path |
 | `commands` | required if `cli` set | Array of `{ id, description? }`, unique ids |
-| `panes` | optional | Array of `{ kind, defaultTitle?, singletonScope? }`, unique kinds. `singletonScope: "workspace"` keeps one pane per workspace; `"app"` keeps one across the whole shell (active only when it lives in caller's active workspace — never auto-switches workspaces). Each pane's last activation is published at `/status/panes/{id}/lastActive` as `{at, source: "user" \| "call"}` — pass `args.source = "user"` from `/panes/{id}/setActive` for human-driven activations (mouse/keyboard), default `"call"` for programmatic ones. |
+| `panes` | optional | Array of `{ kind, defaultTitle?, singletonScope?, icon? }`, unique kinds. `singletonScope: "workspace"` keeps one pane per workspace; `"app"` keeps one across the whole shell (active only when it lives in caller's active workspace — never auto-switches workspaces). `icon` is a relative path to an SVG/PNG file that replaces the default hamburger glyph on the pane's tab header. Each pane's last activation is published at `/status/panes/{id}/lastActive` as `{at, source: "user" \| "call"}` — pass `args.source = "user"` from `/panes/{id}/setActive` for human-driven activations (mouse/keyboard), default `"call"` for programmatic ones. |
 
 Validate programmatically with `validateExtensionManifest(json)`.
 

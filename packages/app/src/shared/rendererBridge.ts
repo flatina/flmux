@@ -51,6 +51,9 @@ export interface FlmuxLocalExtensionLoadEntry {
   version: string;
   manifestUrl: string;
   rendererEntryUrl: string;
+  /** kind → fully-qualified icon URL (manifest `panes[].icon`). Empty when
+   *  the extension declares no per-pane icons. */
+  paneIcons: Record<string, string>;
 }
 
 export interface FlmuxRendererBootstrapConfig {

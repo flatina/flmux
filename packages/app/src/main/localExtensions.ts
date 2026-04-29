@@ -129,12 +129,19 @@ export function createLocalExtensionLoadEntries(
     .map((extension) => {
       const baseUrl = `${appOrigin}/__flmux/ext/${encodeURIComponent(extension.id)}/${encodeURIComponent(extension.version)}`;
       const rendererEntrypoint = extension.rendererEntryRelativePath!;
+      const paneIcons: Record<string, string> = {};
+      for (const pane of extension.runtimeManifest.panes ?? []) {
+        if (pane.icon) {
+          paneIcons[pane.kind] = `${baseUrl}/${toServedExtensionPath(pane.icon)}${query}`;
+        }
+      }
       return {
         id: extension.id,
         name: extension.name,
         version: extension.version,
         manifestUrl: `${baseUrl}/manifest.json${query}`,
-        rendererEntryUrl: `${baseUrl}/${toServedExtensionPath(rendererEntrypoint)}${query}`
+        rendererEntryUrl: `${baseUrl}/${toServedExtensionPath(rendererEntrypoint)}${query}`,
+        paneIcons
       } satisfies FlmuxLocalExtensionLoadEntry;
     });
 }

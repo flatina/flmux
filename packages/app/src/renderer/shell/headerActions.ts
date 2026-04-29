@@ -383,6 +383,12 @@ export class WorkspaceTabRenderer extends DefaultTab {
  * fresh so updates between mount and click flow through. No registered
  * menu = no-op click.
  */
+export interface PaneTabRendererOptions {
+  /** Resolved at init/refresh — when present, replaces the default
+   *  hamburger SVG with `<img src=...>`. */
+  resolveIconUrl?(paneId: string): string | undefined;
+}
+
 export class PaneTabRenderer extends DefaultTab {
   private readonly menuButton = document.createElement("button");
   private popup: HTMLDivElement | null = null;
@@ -394,7 +400,7 @@ export class PaneTabRenderer extends DefaultTab {
     this.closePopup();
   };
 
-  constructor() {
+  constructor(private readonly options: PaneTabRendererOptions = {}) {
     super();
     this.menuButton.type = "button";
     this.menuButton.className = "pane-tab-menu-btn";
@@ -407,6 +413,7 @@ export class PaneTabRenderer extends DefaultTab {
   override init(parameters: GroupPanelPartInitParameters): void {
     super.init(parameters);
     this.paneId = parameters.api.id;
+    this.applyIcon();
 
     const onMenuPointerDown = (event: PointerEvent) => {
       event.preventDefault();
@@ -429,6 +436,20 @@ export class PaneTabRenderer extends DefaultTab {
         this.closePopup();
       }
     });
+  }
+
+  private applyIcon(): void {
+    const url = this.options.resolveIconUrl?.(this.paneId);
+    if (!url) {
+      this.menuButton.innerHTML = HAMBURGER_SVG;
+      return;
+    }
+    this.menuButton.replaceChildren();
+    const img = document.createElement("img");
+    img.src = url;
+    img.alt = "";
+    img.className = "pane-tab-menu-btn__icon";
+    this.menuButton.append(img);
   }
 
   private togglePopup(): void {

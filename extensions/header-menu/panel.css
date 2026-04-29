@@ -1,0 +1,60 @@
+.hm-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  font: 13px/1.5 system-ui, sans-serif;
+  color: var(--dv-activegroup-visiblepanel-tab-color, #ddd);
+}
+
+.hm-panel h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.hm-panel p {
+  margin: 0;
+  opacity: 0.75;
+}
+
+.hm-panel pre {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  margin: 0;
+}
+
+.hm-build-popup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  min-width: 180px;
+}
+
+.hm-build-popup label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.hm-build-popup .hm-swatches {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.hm-build-popup .hm-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+}
+
+.hm-build-popup .hm-swatch[aria-pressed="true"] {
+  outline: 2px solid #6cf;
+  outline-offset: 1px;
+}

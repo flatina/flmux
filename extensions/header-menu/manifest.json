@@ -1,0 +1,19 @@
+{
+  "id": "sample.header-menu",
+  "name": "Header Menu Examples",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "entrypoints": {
+    "renderer": "./index.ts"
+  },
+  "panes": [
+    {
+      "kind": "header-menu.items",
+      "defaultTitle": "Header Menu — items"
+    },
+    {
+      "kind": "header-menu.build",
+      "defaultTitle": "Header Menu — build"
+    }
+  ]
+}

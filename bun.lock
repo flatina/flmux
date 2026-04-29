@@ -25,6 +25,12 @@
         "@flmux/extension-api": "workspace:*",
       },
     },
+    "extensions/header-menu": {
+      "name": "@flmux-ext/header-menu",
+      "dependencies": {
+        "@flmux/extension-api": "workspace:*",
+      },
+    },
     "extensions/inspector": {
       "name": "@flmux-ext/inspector",
       "dependencies": {
@@ -167,6 +173,8 @@
     "@flmux-ext/counter": ["@flmux-ext/counter@workspace:extensions/counter"],
 
     "@flmux-ext/cowsay": ["@flmux-ext/cowsay@workspace:extensions/cowsay"],
+
+    "@flmux-ext/header-menu": ["@flmux-ext/header-menu@workspace:extensions/header-menu"],
 
     "@flmux-ext/inspector": ["@flmux-ext/inspector@workspace:extensions/inspector"],
 

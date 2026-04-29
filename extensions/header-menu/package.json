@@ -1,0 +1,9 @@
+{
+  "name": "@flmux-ext/header-menu",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@flmux/extension-api": "workspace:*"
+  },
+  "main": "index.ts"
+}

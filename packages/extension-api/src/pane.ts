@@ -2,6 +2,7 @@ import type { WorkspaceBusClient } from "./bus";
 import type { RpcChannelHandle } from "./server";
 import type { ShellClient } from "./shell";
 import type { PaneStateStore } from "./state";
+import type { WorkspaceStatusStoreClient } from "./status";
 
 // Structurally compatible with `@flmux/core/shell/types` — the host creates
 // panes with exactly these shapes.
@@ -44,6 +45,10 @@ export interface ExtensionPaneContext {
   workspaceId: string;
   shell: ShellClient;
   bus: WorkspaceBusClient;
+  /** Retained KV store shared with every pane in the same workspace.
+   *  Non-persistent. `subscribe` replays the current value immediately so
+   *  late mounts don't miss it. */
+  workspaceStatus: WorkspaceStatusStoreClient;
   state: PaneStateStore;
   /** Set/clear the pane's tab-header menu. Pass `null` to remove. The
    *  hamburger button is always rendered; with no menu set the click is a

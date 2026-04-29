@@ -1,4 +1,5 @@
 import type { WorkspaceBusClient, WorkspaceBusEvent } from "./bus";
+import type { WorkspaceStatusStoreClient } from "./status";
 import type { PaneStateStore } from "./state";
 import type {
   ShellClient,
@@ -181,6 +182,7 @@ export interface TestPaneContextOptions {
   workspaceId?: string;
   shell?: ShellClient;
   bus?: TestBus | WorkspaceBusClient;
+  workspaceStatus?: WorkspaceStatusStoreClient;
   state?: PaneStateStore;
 }
 
@@ -190,7 +192,57 @@ export function createTestPaneContext(options: TestPaneContextOptions = {}): Ext
   const shell = options.shell ?? createTestShellClient();
   const state = options.state ?? createTestPaneStateStore();
   const bus = resolveBus(options.bus, workspaceId, paneId);
-  return { paneId, workspaceId, shell, bus, state, setHeaderMenu: () => {} };
+  const workspaceStatus = options.workspaceStatus ?? createTestWorkspaceStatusStore();
+  return { paneId, workspaceId, shell, bus, workspaceStatus, state, setHeaderMenu: () => {} };
+}
+
+/** In-memory `WorkspaceStatusStoreClient` matching flmux's
+ *  `createWorkspaceStatusStore` semantics: retained values, immediate replay
+ *  on subscribe, `Object.is`-equal sets suppress emit. */
+export function createTestWorkspaceStatusStore(): WorkspaceStatusStoreClient {
+  const values = new Map<string, unknown>();
+  const subscribers = new Map<string, Set<(value: unknown) => void>>();
+
+  return {
+    get<T = unknown>(key: string) {
+      return values.get(key) as T | undefined;
+    },
+    set<T>(key: string, value: T) {
+      const had = values.has(key);
+      const prev = values.get(key);
+      if (had && Object.is(prev, value)) return;
+      values.set(key, value);
+      const handlers = subscribers.get(key);
+      if (!handlers) return;
+      for (const handler of handlers) {
+        try {
+          handler(value);
+        } catch (error) {
+          console.warn("test workspace status subscriber failed", { key, error });
+        }
+      }
+    },
+    subscribe<T = unknown>(key: string, handler: (value: T | undefined) => void) {
+      const wrapped = handler as (value: unknown) => void;
+      let handlers = subscribers.get(key);
+      if (!handlers) {
+        handlers = new Set();
+        subscribers.set(key, handlers);
+      }
+      handlers.add(wrapped);
+      try {
+        wrapped(values.get(key));
+      } catch (error) {
+        console.warn("test workspace status subscriber failed", { key, error });
+      }
+      return () => {
+        const set = subscribers.get(key);
+        if (!set) return;
+        set.delete(wrapped);
+        if (set.size === 0) subscribers.delete(key);
+      };
+    }
+  };
 }
 
 function resolveBus(

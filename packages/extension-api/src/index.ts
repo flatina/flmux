@@ -1,5 +1,6 @@
 export * from "./shell";
 export * from "./bus";
+export * from "./status";
 export * from "./state";
 export * from "./placement";
 export * from "./pane";

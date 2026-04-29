@@ -23,6 +23,8 @@ import { setupDropIndicatorMasks } from "../maskHelper";
 import { createTerminalHost } from "../terminalHost";
 import {
   createWorkspaceBus,
+  createWorkspaceStatusStore,
+  type WorkspaceStatusStore,
   PLACEHOLDER_PANE_KIND,
   type PaneWorkspaceContext,
   type SequencedShellCoreEvent,
@@ -62,6 +64,7 @@ type PendingPane = {
 type WorkspaceRecord = {
   id: string;
   bus: WorkspaceBus;
+  statusStore: WorkspaceStatusStore;
   outerPanelApi: DockviewPanelApi | null;
   innerApi: DockviewApi | null;
   innerHost: HTMLElement | null;
@@ -367,6 +370,8 @@ export class FlmuxWorkbench {
     // workspace.activeChanged (scope=attachment, target=this attachment)
     // re-points outer setActive; this handler just closes the panel.
     this.outerApi?.getPanel(payload.id)?.api.close();
+    const removed = this.workspaces.get(payload.id);
+    removed?.statusStore.dispose();
     this.workspaces.delete(payload.id);
   }
 
@@ -413,6 +418,8 @@ export class FlmuxWorkbench {
       : undefined;
     // Set BEFORE addPanel — addPanel synchronously triggers the tab
     // renderer's init() → applyIcon(), which reads this map.
+    // kind is immutable per pane; populated only here and at fromJSON,
+    // cleared at applyPaneRemoved.
     this.paneIdToKind.set(payload.paneId, payload.snapshot.kind);
     record.innerApi.addPanel({
       id: payload.paneId,
@@ -611,6 +618,7 @@ export class FlmuxWorkbench {
     return buildPaneWorkspaceContext({
       workspaceId,
       bus: record.bus,
+      workspaceStatus: record.statusStore,
       appOrigin: this.config.appOrigin
     });
   }
@@ -797,6 +805,7 @@ export class FlmuxWorkbench {
       // via their PaneWorkspaceContext.bus. Cross-client broadcast (main-side
       // publishers reaching renderer subscribers) is Phase B per plan v2.
       bus: createWorkspaceBus(workspaceId),
+      statusStore: createWorkspaceStatusStore(),
       outerPanelApi: null,
       innerApi: null,
       innerHost: null,

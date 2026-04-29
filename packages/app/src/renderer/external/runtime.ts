@@ -74,6 +74,7 @@ function createExternalPaneContext(
         return unsubscribe;
       }
     },
+    workspaceStatus: args.workspace.workspaceStatus,
     state,
     rpcChannel: channelForPane(paneId),
     setHeaderMenu: (menu) => setPaneHeaderMenu(paneId, menu)

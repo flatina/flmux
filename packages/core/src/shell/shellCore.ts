@@ -18,6 +18,7 @@ import {
 } from "./panes";
 import { ModelPathError } from "./model";
 import { createWorkspaceBus } from "./workspaceBus";
+import { createWorkspaceStatusStore, type WorkspaceStatusStore } from "./workspaceStatusStore";
 import {
   SHELL_CORE_EVENT_SCOPES,
   type ActiveStateSlot,
@@ -47,6 +48,7 @@ interface WorkspaceRecord {
   defaultTitle: string;
   defaultBrowserPath: string;
   bus: WorkspaceBus;
+  statusStore: WorkspaceStatusStore;
   paneOrder: string[];
   paneTitles: Map<string, string>;
   paneStates: Map<string, PaneStateRecord>;
@@ -395,6 +397,11 @@ export class ShellCore implements ShellModelHost {
    * Drop a workspace. Uses `closePane` per pane so terminal runtimes are
    * killed through the single existing cleanup path; no last-workspace
    * invariant is enforced (the caller owns re-seeding).
+   *
+   * Invariant: deleting a workspace fans out `pane.removed` for every
+   * pane it owned. Every paneId-keyed index downstream
+   * (renderer `paneIdToKind`, `paneTabMenuRegistry`, attachment registry,
+   * …) relies on this hook as its sole cleanup signal.
    */
   async deleteWorkspace(workspaceId: string): Promise<void> {
     const workspace = this.workspaces.get(workspaceId);
@@ -402,6 +409,7 @@ export class ShellCore implements ShellModelHost {
       return;
     }
     await Promise.all([...workspace.paneOrder].map((paneId) => this.closePane(paneId)));
+    workspace.statusStore.dispose();
     this.workspaces.delete(workspaceId);
     const nextWorkspaceId = this.workspaces.keys().next().value ?? null;
 
@@ -1039,6 +1047,7 @@ export class ShellCore implements ShellModelHost {
       id: workspace.id,
       defaultBrowserPath: workspace.defaultBrowserPath,
       bus: workspace.bus,
+      workspaceStatus: workspace.statusStore,
       appOrigin: this.appOrigin
     };
   }
@@ -1075,6 +1084,7 @@ export class ShellCore implements ShellModelHost {
       defaultTitle: title,
       defaultBrowserPath: `/__flmux/internal/start?workspace=${encodeURIComponent(id)}`,
       bus: createWorkspaceBus(id),
+      statusStore: createWorkspaceStatusStore(),
       paneOrder: [],
       paneTitles: new Map(),
       paneStates: new Map(),

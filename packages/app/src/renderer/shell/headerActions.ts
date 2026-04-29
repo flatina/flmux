@@ -306,10 +306,20 @@ export class WorkspaceTabRenderer extends DefaultTab {
   private readonly menuButton = document.createElement("button");
   private popup: HTMLDivElement | null = null;
   private workspaceId: string | null = null;
+  private initialized = false;
   private readonly documentPointerDown = (event: PointerEvent) => {
     const target = event.target as Node | null;
     if (target && (this.menuButton.contains(target) || this.popup?.contains(target))) return;
     this.closePopup();
+  };
+  private readonly onMenuPointerDown = (event: PointerEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  private readonly onMenuClick = (event: MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    this.togglePopup();
   };
 
   constructor(
@@ -330,25 +340,17 @@ export class WorkspaceTabRenderer extends DefaultTab {
   override init(parameters: GroupPanelPartInitParameters): void {
     super.init(parameters);
     this.workspaceId = parameters.api.id;
+    if (this.initialized) return;
+    this.initialized = true;
 
-    const onMenuPointerDown = (event: PointerEvent) => {
-      // Stop the tab's default activate/drag behavior on the menu button.
-      event.preventDefault();
-      event.stopPropagation();
-    };
-    const onMenuClick = (event: MouseEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-      this.togglePopup();
-    };
-    this.menuButton.addEventListener("pointerdown", onMenuPointerDown);
-    this.menuButton.addEventListener("click", onMenuClick);
+    this.menuButton.addEventListener("pointerdown", this.onMenuPointerDown);
+    this.menuButton.addEventListener("click", this.onMenuClick);
     document.addEventListener("pointerdown", this.documentPointerDown);
 
     this.addDisposables({
       dispose: () => {
-        this.menuButton.removeEventListener("pointerdown", onMenuPointerDown);
-        this.menuButton.removeEventListener("click", onMenuClick);
+        this.menuButton.removeEventListener("pointerdown", this.onMenuPointerDown);
+        this.menuButton.removeEventListener("click", this.onMenuClick);
         document.removeEventListener("pointerdown", this.documentPointerDown);
         this.closePopup();
       }
@@ -394,10 +396,20 @@ export class PaneTabRenderer extends DefaultTab {
   private popup: HTMLDivElement | null = null;
   private popupDispose: (() => void) | null = null;
   private paneId = "";
+  private initialized = false;
   private readonly documentPointerDown = (event: PointerEvent) => {
     const target = event.target as Node | null;
     if (target && (this.menuButton.contains(target) || this.popup?.contains(target))) return;
     this.closePopup();
+  };
+  private readonly onMenuPointerDown = (event: PointerEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  private readonly onMenuClick = (event: MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    this.togglePopup();
   };
 
   constructor(private readonly options: PaneTabRendererOptions = {}) {
@@ -415,23 +427,20 @@ export class PaneTabRenderer extends DefaultTab {
     this.paneId = parameters.api.id;
     this.applyIcon();
 
-    const onMenuPointerDown = (event: PointerEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-    };
-    const onMenuClick = (event: MouseEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-      this.togglePopup();
-    };
-    this.menuButton.addEventListener("pointerdown", onMenuPointerDown);
-    this.menuButton.addEventListener("click", onMenuClick);
+    // dockview can re-init the same renderer instance (panel moved between
+    // groups, etc.). Bind document/menu listeners once; re-init only
+    // refreshes the icon for the new pane id.
+    if (this.initialized) return;
+    this.initialized = true;
+
+    this.menuButton.addEventListener("pointerdown", this.onMenuPointerDown);
+    this.menuButton.addEventListener("click", this.onMenuClick);
     document.addEventListener("pointerdown", this.documentPointerDown);
 
     this.addDisposables({
       dispose: () => {
-        this.menuButton.removeEventListener("pointerdown", onMenuPointerDown);
-        this.menuButton.removeEventListener("click", onMenuClick);
+        this.menuButton.removeEventListener("pointerdown", this.onMenuPointerDown);
+        this.menuButton.removeEventListener("click", this.onMenuClick);
         document.removeEventListener("pointerdown", this.documentPointerDown);
         this.closePopup();
       }

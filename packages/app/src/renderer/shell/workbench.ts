@@ -31,6 +31,7 @@ import {
   type WorkspaceBus
 } from "@flmux/core/shell";
 import { PaneRegistry, type PaneDescriptor } from "./paneRegistry";
+import { clearPaneHeaderMenu } from "../external/paneTabMenuRegistry";
 import { registerBuiltinPaneDescriptors } from "./builtinPaneDescriptors";
 import {
   NewPaneHeaderAction,
@@ -410,6 +411,9 @@ export class FlmuxWorkbench {
         ? { referencePanel, direction: payload.place }
         : { direction: payload.place }
       : undefined;
+    // Set BEFORE addPanel — addPanel synchronously triggers the tab
+    // renderer's init() → applyIcon(), which reads this map.
+    this.paneIdToKind.set(payload.paneId, payload.snapshot.kind);
     record.innerApi.addPanel({
       id: payload.paneId,
       component: payload.snapshot.kind,
@@ -417,13 +421,13 @@ export class FlmuxWorkbench {
       params: payload.params,
       position
     });
-    this.paneIdToKind.set(payload.paneId, payload.snapshot.kind);
   }
 
   private applyPaneRemoved(payload: { paneId: string; workspaceId: string }) {
     const record = this.workspaces.get(payload.workspaceId);
     record?.innerApi?.getPanel(payload.paneId)?.api.close();
     this.paneIdToKind.delete(payload.paneId);
+    clearPaneHeaderMenu(payload.paneId);
     // New-active selection now arrives as a separate scope=attachment
     // pane.activeChanged — this handler only closes the panel.
   }
@@ -522,10 +526,14 @@ export class FlmuxWorkbench {
     try {
       if (record.pendingInnerLayout) {
         try {
-          record.innerApi.fromJSON(record.pendingInnerLayout);
-          for (const panel of record.innerApi.panels) {
-            this.paneIdToKind.set(panel.id, panel.view.contentComponent);
+          // Pre-populate kind map BEFORE fromJSON — fromJSON synchronously
+          // builds tabs (each running PaneTabRenderer.init → applyIcon),
+          // which read this map.
+          const layout = record.pendingInnerLayout as { panels?: Record<string, { contentComponent?: string }> };
+          for (const [id, state] of Object.entries(layout.panels ?? {})) {
+            if (state.contentComponent) this.paneIdToKind.set(id, state.contentComponent);
           }
+          record.innerApi.fromJSON(record.pendingInnerLayout);
         } catch (error) {
           console.warn(`failed to restore workspace '${record.id}' inner layout; falling back to reset`, error);
           this.disposingWorkspace.add(record.id);
@@ -543,6 +551,8 @@ export class FlmuxWorkbench {
         const innerApi = record.innerApi;
         let firstPanelId: string | null = null;
         for (const pane of record.pendingPanes) {
+          // Set BEFORE addPanel — see applyPaneAdded for the same ordering.
+          this.paneIdToKind.set(pane.id, pane.kind);
           innerApi.addPanel({
             id: pane.id,
             component: pane.kind,
@@ -555,7 +565,6 @@ export class FlmuxWorkbench {
                 }
               : undefined
           });
-          this.paneIdToKind.set(pane.id, pane.kind);
           if (firstPanelId === null) {
             firstPanelId = pane.id;
           }

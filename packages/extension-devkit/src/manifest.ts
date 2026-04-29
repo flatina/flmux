@@ -20,9 +20,13 @@ export interface ExtensionManifestCommand {
   shim?: string;
 }
 
+export type PaneSingletonScope = "workspace" | "app";
+
 export interface ExtensionManifestPane {
   kind: string;
   defaultTitle?: string;
+  singletonScope?: PaneSingletonScope;
+  icon?: string;
 }
 
 export interface ExtensionManifest {
@@ -218,6 +222,8 @@ function validateManifestPanes(value: unknown) {
     }
     const kind = asNonEmptyString(entry.kind);
     const defaultTitle = entry.defaultTitle === undefined ? undefined : asNonEmptyString(entry.defaultTitle);
+    const singletonScope = entry.singletonScope;
+    const iconPath = validateManifestEntrypointPath(entry.icon, `panes[${index}].icon`);
     if (!kind) {
       errors.push(`Manifest field 'panes[${index}].kind' must be a non-empty string`);
       return;
@@ -226,12 +232,26 @@ function validateManifestPanes(value: unknown) {
       errors.push(`Manifest field 'panes[${index}].defaultTitle' must be a non-empty string when provided`);
       return;
     }
+    if (singletonScope !== undefined && singletonScope !== "workspace" && singletonScope !== "app") {
+      errors.push(`Manifest field 'panes[${index}].singletonScope' must be 'workspace' or 'app' when provided`);
+      return;
+    }
+    if (iconPath) {
+      errors.push(iconPath);
+      return;
+    }
     if (seenKinds.has(kind)) {
       errors.push(`Manifest field 'panes' contains duplicate pane kind '${kind}'`);
       return;
     }
+    const icon = entry.icon === undefined ? undefined : (entry.icon as string).trim().replace(/\\/g, "/");
     seenKinds.add(kind);
-    panes.push(defaultTitle ? { kind, defaultTitle } : { kind });
+    panes.push({
+      kind,
+      ...(defaultTitle ? { defaultTitle } : {}),
+      ...(singletonScope ? { singletonScope } : {}),
+      ...(icon ? { icon } : {})
+    });
   });
 
   return errors.length > 0 ? { ok: false as const, errors } : { ok: true as const, panes };

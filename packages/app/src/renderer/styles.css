@@ -271,6 +271,21 @@ select:focus {
   color: var(--fl-foreground);
   font-size: 12px;
   text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.header-action-popup__icon {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 14px;
+}
+.header-action-popup__icon img {
+  max-width: 14px;
+  max-height: 14px;
 }
 
 .header-action-popup__item:hover {

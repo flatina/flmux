@@ -483,7 +483,8 @@ export class FlmuxWorkbench {
               .filter((descriptor) => descriptor.kind !== PLACEHOLDER_PANE_KIND)
               .map((descriptor) => ({
                 kind: descriptor.kind,
-                label: humanizePaneKind(descriptor.kind)
+                label: humanizePaneKind(descriptor.kind),
+                iconUrl: descriptor.iconUrl
               })),
           onSelect: (kind) => {
             // Pin to this group's active panel so the workbench stays on
@@ -637,7 +638,8 @@ export class FlmuxWorkbench {
                   .filter((descriptor) => descriptor.kind !== PLACEHOLDER_PANE_KIND)
                   .map((descriptor) => ({
                     kind: descriptor.kind,
-                    label: humanizePaneKind(descriptor.kind)
+                    label: humanizePaneKind(descriptor.kind),
+                    iconUrl: descriptor.iconUrl
                   })),
               onSelect: (kind, workspaceId) => {
                 void this.shellModel.pathCall("/panes/new", {

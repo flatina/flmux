@@ -178,6 +178,7 @@ export class WorkspaceHeaderActions implements IHeaderActionsRenderer {
 export interface PaneKindOption {
   kind: string;
   label: string;
+  iconUrl?: string;
 }
 
 /**
@@ -206,8 +207,18 @@ export function openPaneKindPopup(
       const item = document.createElement("button");
       item.type = "button";
       item.className = "header-action-popup__item";
-      item.textContent = `New ${option.label}`;
       item.dataset.kind = option.kind;
+      const icon = document.createElement("span");
+      icon.className = "header-action-popup__icon";
+      if (option.iconUrl) {
+        const img = document.createElement("img");
+        img.src = option.iconUrl;
+        img.alt = "";
+        icon.append(img);
+      }
+      const label = document.createElement("span");
+      label.textContent = option.label;
+      item.append(icon, label);
       item.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();

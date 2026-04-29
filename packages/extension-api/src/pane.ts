@@ -22,12 +22,33 @@ export interface NewPaneInput {
   referencePaneId?: string;
 }
 
+export interface PaneHeaderMenuItem {
+  id: string;
+  label: string;
+  /** data: URL, http(s) URL, or short text/emoji. Resolved via `<img>` for
+   *  URL-shaped values, otherwise rendered as plain text. */
+  icon?: string;
+  disabled?: boolean;
+  onClick(): void;
+}
+
+/** Either a flat list (rendered as a popup menu) or a `build` callback
+ *  that owns the popup contents. flmux opens an empty popup container,
+ *  calls `build`, and disposes the returned cleanup on close. */
+export type PaneHeaderMenu =
+  | { items: PaneHeaderMenuItem[] }
+  | { build(container: HTMLElement, api: { close(): void }): (() => void) | void };
+
 export interface ExtensionPaneContext {
   paneId: string;
   workspaceId: string;
   shell: ShellClient;
   bus: WorkspaceBusClient;
   state: PaneStateStore;
+  /** Set/clear the pane's tab-header menu. Pass `null` to remove. The
+   *  hamburger button is always rendered; with no menu set the click is a
+   *  no-op (or surfaces debug info in dev). */
+  setHeaderMenu(menu: PaneHeaderMenu | null): void;
   /**
    * Isolated bunite RPC channel for private pane↔server-entry calls.
    * Pair via `defineWebviewRpc<Schema>(...)` + `await ctx.rpcChannel.bindTo(rpc)`

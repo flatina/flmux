@@ -312,6 +312,79 @@ select:focus {
   background: var(--fl-button-hover-background);
 }
 
+.pane-tab-menu-btn {
+  width: 18px;
+  height: 18px;
+  margin-right: 4px;
+  padding: 0;
+  border-radius: 3px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fl-description-foreground);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.pane-tab-menu-btn svg {
+  width: 12px;
+  height: 12px;
+}
+.pane-tab-menu-btn:hover {
+  border-color: var(--fl-widget-border);
+  color: var(--fl-foreground);
+  background: var(--fl-button-hover-background);
+}
+
+.pane-header-menu-popup {
+  position: fixed;
+  z-index: 1000;
+  min-width: 160px;
+  background: var(--fl-widget-background);
+  border: 1px solid var(--fl-widget-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px var(--fl-widget-shadow);
+  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+}
+.pane-header-menu-popup__item {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 6px 10px;
+  text-align: left;
+  color: var(--fl-foreground);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: inherit;
+}
+.pane-header-menu-popup__item:hover:not(:disabled) {
+  background: var(--fl-button-hover-background);
+}
+.pane-header-menu-popup__item:disabled {
+  color: var(--fl-description-foreground);
+  cursor: default;
+}
+.pane-header-menu-popup__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+}
+.pane-header-menu-popup__icon img {
+  max-width: 14px;
+  max-height: 14px;
+}
+.pane-header-menu-popup__empty {
+  padding: 6px 10px;
+  color: var(--fl-description-foreground);
+  font-size: 12px;
+}
+
 .browser-panel,
 .terminal-panel {
   height: 100%;

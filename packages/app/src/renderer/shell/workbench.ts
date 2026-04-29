@@ -34,6 +34,7 @@ import { PaneRegistry, type PaneDescriptor } from "./paneRegistry";
 import { registerBuiltinPaneDescriptors } from "./builtinPaneDescriptors";
 import {
   NewPaneHeaderAction,
+  PaneTabRenderer,
   WorkspaceHeaderActions,
   WorkspaceTabRenderer,
   humanizePaneKind
@@ -455,7 +456,9 @@ export class FlmuxWorkbench {
     const innerApi = createDockview(host, {
       theme: currentDockviewTheme(),
       disableFloatingGroups: true,
+      defaultTabComponent: "pane-tab",
       createComponent: (options) => this.createInnerPanelRenderer(record, options),
+      createTabComponent: (options) => (options.name === "pane-tab" ? new PaneTabRenderer() : undefined),
       createRightHeaderActionComponent: (group) =>
         new NewPaneHeaderAction(group, {
           listKinds: () =>

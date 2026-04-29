@@ -190,7 +190,7 @@ export function createTestPaneContext(options: TestPaneContextOptions = {}): Ext
   const shell = options.shell ?? createTestShellClient();
   const state = options.state ?? createTestPaneStateStore();
   const bus = resolveBus(options.bus, workspaceId, paneId);
-  return { paneId, workspaceId, shell, bus, state };
+  return { paneId, workspaceId, shell, bus, state, setHeaderMenu: () => {} };
 }
 
 function resolveBus(

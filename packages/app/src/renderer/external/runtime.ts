@@ -19,6 +19,7 @@ import {
   adaptExtensionPersistence
 } from "../../shared/extensionPaneAdapter";
 import { channelForPane } from "./paneChannelRegistry";
+import { setPaneHeaderMenu } from "./paneTabMenuRegistry";
 
 export function createExternalPaneDescriptor(options: ExtensionPaneDefinition): PaneDescriptor {
   return {
@@ -74,7 +75,8 @@ function createExternalPaneContext(
       }
     },
     state,
-    rpcChannel: channelForPane(paneId)
+    rpcChannel: channelForPane(paneId),
+    setHeaderMenu: (menu) => setPaneHeaderMenu(paneId, menu)
   };
 }
 

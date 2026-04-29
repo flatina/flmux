@@ -5,7 +5,12 @@ import type {
   DockviewGroupPanel
 } from "dockview-core";
 import { DefaultTab } from "dockview-core";
+import type { PaneHeaderMenu, PaneHeaderMenuItem } from "@flmux/extension-api";
+import { getPaneHeaderMenu } from "../external/paneTabMenuRegistry";
 import { getThemePreference, setThemePreference, type ThemePreference } from "../theme";
+
+/** Inline hamburger SVG — three short bars, currentColor for theming. */
+const HAMBURGER_SVG = `<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
 
 type Disposer = () => void;
 
@@ -366,6 +371,136 @@ export class WorkspaceTabRenderer extends DefaultTab {
   }
 
   private closePopup(): void {
+    this.popup?.remove();
+    this.popup = null;
+  }
+}
+
+/**
+ * Inner-pane tab renderer with a hamburger menu before the title. Pane
+ * runtimes (extension panes via `ctx.setHeaderMenu`, built-ins via
+ * `setPaneHeaderMenu` directly) populate the registry; click reads it
+ * fresh so updates between mount and click flow through. No registered
+ * menu = no-op click.
+ */
+export class PaneTabRenderer extends DefaultTab {
+  private readonly menuButton = document.createElement("button");
+  private popup: HTMLDivElement | null = null;
+  private popupDispose: (() => void) | null = null;
+  private paneId = "";
+  private readonly documentPointerDown = (event: PointerEvent) => {
+    const target = event.target as Node | null;
+    if (target && (this.menuButton.contains(target) || this.popup?.contains(target))) return;
+    this.closePopup();
+  };
+
+  constructor() {
+    super();
+    this.menuButton.type = "button";
+    this.menuButton.className = "pane-tab-menu-btn";
+    this.menuButton.title = "Pane menu";
+    this.menuButton.innerHTML = HAMBURGER_SVG;
+    this.element.classList.add("pane-tab");
+    this.element.insertBefore(this.menuButton, this.element.firstChild);
+  }
+
+  override init(parameters: GroupPanelPartInitParameters): void {
+    super.init(parameters);
+    this.paneId = parameters.api.id;
+
+    const onMenuPointerDown = (event: PointerEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    const onMenuClick = (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.togglePopup();
+    };
+    this.menuButton.addEventListener("pointerdown", onMenuPointerDown);
+    this.menuButton.addEventListener("click", onMenuClick);
+    document.addEventListener("pointerdown", this.documentPointerDown);
+
+    this.addDisposables({
+      dispose: () => {
+        this.menuButton.removeEventListener("pointerdown", onMenuPointerDown);
+        this.menuButton.removeEventListener("click", onMenuClick);
+        document.removeEventListener("pointerdown", this.documentPointerDown);
+        this.closePopup();
+      }
+    });
+  }
+
+  private togglePopup(): void {
+    if (this.popup) {
+      this.closePopup();
+      return;
+    }
+    const menu = getPaneHeaderMenu(this.paneId);
+    if (!menu) return; // no-op when pane has nothing registered
+    this.openPopup(menu);
+  }
+
+  private openPopup(menu: PaneHeaderMenu): void {
+    const popup = document.createElement("div");
+    popup.className = "pane-header-menu-popup";
+    document.body.append(popup);
+    this.popup = popup;
+
+    if ("items" in menu) {
+      this.renderItems(popup, menu.items);
+    } else {
+      const dispose = menu.build(popup, { close: () => this.closePopup() });
+      if (typeof dispose === "function") this.popupDispose = dispose;
+    }
+
+    const rect = this.menuButton.getBoundingClientRect();
+    popup.style.top = `${rect.bottom + 4}px`;
+    popup.style.left = `${Math.max(4, rect.left)}px`;
+  }
+
+  private renderItems(popup: HTMLDivElement, items: PaneHeaderMenuItem[]): void {
+    if (items.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "pane-header-menu-popup__empty";
+      empty.textContent = "No actions";
+      popup.append(empty);
+      return;
+    }
+    for (const item of items) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "pane-header-menu-popup__item";
+      button.disabled = item.disabled === true;
+      if (item.icon) {
+        const icon = document.createElement("span");
+        icon.className = "pane-header-menu-popup__icon";
+        if (/^(data:|https?:)/.test(item.icon)) {
+          const img = document.createElement("img");
+          img.src = item.icon;
+          img.alt = "";
+          icon.append(img);
+        } else {
+          icon.textContent = item.icon;
+        }
+        button.append(icon);
+      }
+      const label = document.createElement("span");
+      label.textContent = item.label;
+      button.append(label);
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.closePopup();
+        if (!item.disabled) item.onClick();
+      });
+      popup.append(button);
+    }
+  }
+
+  private closePopup(): void {
+    this.popupDispose?.();
+    this.popupDispose = null;
     this.popup?.remove();
     this.popup = null;
   }

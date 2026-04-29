@@ -483,7 +483,7 @@ export class FlmuxWorkbench {
               .filter((descriptor) => descriptor.kind !== PLACEHOLDER_PANE_KIND)
               .map((descriptor) => ({
                 kind: descriptor.kind,
-                label: humanizePaneKind(descriptor.kind),
+                label: descriptor.defaultTitle ?? humanizePaneKind(descriptor.kind),
                 iconUrl: descriptor.iconUrl
               })),
           onSelect: (kind) => {
@@ -638,7 +638,7 @@ export class FlmuxWorkbench {
                   .filter((descriptor) => descriptor.kind !== PLACEHOLDER_PANE_KIND)
                   .map((descriptor) => ({
                     kind: descriptor.kind,
-                    label: humanizePaneKind(descriptor.kind),
+                    label: descriptor.defaultTitle ?? humanizePaneKind(descriptor.kind),
                     iconUrl: descriptor.iconUrl
                   })),
               onSelect: (kind, workspaceId) => {

@@ -29,9 +29,11 @@ export async function registerLocalExternalPaneDescriptors(
 
   for (const extension of discovered) {
     const paneIcons = extension.loadEntry.paneIcons ?? {};
+    const paneDefaultTitles = extension.loadEntry.paneDefaultTitles ?? {};
     for (const pane of extension.definition.panes ?? []) {
       const descriptor = createExternalPaneDescriptor(pane);
       if (paneIcons[pane.kind]) descriptor.iconUrl = paneIcons[pane.kind];
+      if (paneDefaultTitles[pane.kind]) descriptor.defaultTitle = paneDefaultTitles[pane.kind];
       host.registerExternalPane(descriptor);
     }
   }

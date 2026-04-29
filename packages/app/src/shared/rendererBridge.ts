@@ -54,6 +54,8 @@ export interface FlmuxLocalExtensionLoadEntry {
   /** kind → fully-qualified icon URL (manifest `panes[].icon`). Empty when
    *  the extension declares no per-pane icons. */
   paneIcons: Record<string, string>;
+  /** kind → manifest `panes[].defaultTitle`. Used for popup labels. */
+  paneDefaultTitles: Record<string, string>;
 }
 
 export interface FlmuxRendererBootstrapConfig {

@@ -130,9 +130,13 @@ export function createLocalExtensionLoadEntries(
       const baseUrl = `${appOrigin}/__flmux/ext/${encodeURIComponent(extension.id)}/${encodeURIComponent(extension.version)}`;
       const rendererEntrypoint = extension.rendererEntryRelativePath!;
       const paneIcons: Record<string, string> = {};
+      const paneDefaultTitles: Record<string, string> = {};
       for (const pane of extension.runtimeManifest.panes ?? []) {
         if (pane.icon) {
           paneIcons[pane.kind] = `${baseUrl}/${toServedExtensionPath(pane.icon)}${query}`;
+        }
+        if (pane.defaultTitle) {
+          paneDefaultTitles[pane.kind] = pane.defaultTitle;
         }
       }
       return {
@@ -141,7 +145,8 @@ export function createLocalExtensionLoadEntries(
         version: extension.version,
         manifestUrl: `${baseUrl}/manifest.json${query}`,
         rendererEntryUrl: `${baseUrl}/${toServedExtensionPath(rendererEntrypoint)}${query}`,
-        paneIcons
+        paneIcons,
+        paneDefaultTitles
       } satisfies FlmuxLocalExtensionLoadEntry;
     });
 }

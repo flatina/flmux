@@ -18,7 +18,6 @@ import {
 } from "./panes";
 import { ModelPathError } from "./model";
 import { createWorkspaceBus } from "./workspaceBus";
-import { createWorkspaceStatusStore, type WorkspaceStatusStore } from "./workspaceStatusStore";
 import {
   SHELL_CORE_EVENT_SCOPES,
   type ActiveStateSlot,
@@ -48,7 +47,6 @@ interface WorkspaceRecord {
   defaultTitle: string;
   defaultBrowserPath: string;
   bus: WorkspaceBus;
-  statusStore: WorkspaceStatusStore;
   paneOrder: string[];
   paneTitles: Map<string, string>;
   paneStates: Map<string, PaneStateRecord>;
@@ -409,7 +407,6 @@ export class ShellCore implements ShellModelHost {
       return;
     }
     await Promise.all([...workspace.paneOrder].map((paneId) => this.closePane(paneId)));
-    workspace.statusStore.dispose();
     this.workspaces.delete(workspaceId);
     const nextWorkspaceId = this.workspaces.keys().next().value ?? null;
 
@@ -1047,7 +1044,6 @@ export class ShellCore implements ShellModelHost {
       id: workspace.id,
       defaultBrowserPath: workspace.defaultBrowserPath,
       bus: workspace.bus,
-      workspaceStatus: workspace.statusStore,
       appOrigin: this.appOrigin
     };
   }
@@ -1084,7 +1080,6 @@ export class ShellCore implements ShellModelHost {
       defaultTitle: title,
       defaultBrowserPath: `/__flmux/internal/start?workspace=${encodeURIComponent(id)}`,
       bus: createWorkspaceBus(id),
-      statusStore: createWorkspaceStatusStore(),
       paneOrder: [],
       paneTitles: new Map(),
       paneStates: new Map(),

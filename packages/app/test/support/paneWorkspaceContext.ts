@@ -1,4 +1,4 @@
-import { createWorkspaceStatusStore, type PaneWorkspaceContext, type WorkspaceBus } from "@flmux/core/shell";
+import type { PaneWorkspaceContext, WorkspaceBus } from "@flmux/core/shell";
 
 const noopBus: WorkspaceBus = {
   publish() {},
@@ -13,7 +13,6 @@ export function makePaneWorkspaceContext(overrides: Partial<PaneWorkspaceContext
     id,
     defaultBrowserPath: overrides.defaultBrowserPath ?? `/__flmux/internal/start?workspace=${id}`,
     bus: overrides.bus ?? noopBus,
-    workspaceStatus: overrides.workspaceStatus ?? createWorkspaceStatusStore(),
     appOrigin: overrides.appOrigin ?? "http://localhost:0"
   };
 }

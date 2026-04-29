@@ -9,9 +9,19 @@ export interface WorkspaceStatusStore {
   set<T>(key: string, value: T): void;
   /** Invokes `handler` immediately with the current value (or `undefined` if
    *  unset), then on every subsequent change. `Object.is`-equal `set` calls
-   *  are skipped. Returns an unsubscribe. */
+   *  are skipped. Returns an unsubscribe.
+   *
+   *  Re-entrant `set` from inside a handler is allowed but discouraged: the
+   *  inner emit runs synchronously to completion before the outer iteration
+   *  resumes, so subscribers added during the inner emit see the inner value
+   *  twice and the original outer subscribers will see whichever value is
+   *  current when their slot in the iteration is reached. The handler list
+   *  is snapshotted, so set/unsubscribe during emit don't corrupt iteration.
+   *
+   *  After `dispose`, `subscribe` is a no-op and the handler is never called. */
   subscribe<T = unknown>(key: string, handler: (value: T | undefined) => void): () => void;
-  /** Workspace teardown; clears subscribers and values. */
+  /** Workspace teardown; clears subscribers and values. After dispose, `set`
+   *  is silently dropped and `subscribe` returns a no-op unsubscribe. */
   dispose(): void;
 }
 
@@ -33,7 +43,8 @@ export function createWorkspaceStatusStore(): WorkspaceStatusStore {
       values.set(key, value);
       const handlers = subscribers.get(key);
       if (!handlers) return;
-      for (const handler of handlers) {
+      // Snapshot — handlers may unsubscribe / re-subscribe / set during emit.
+      for (const handler of [...handlers]) {
         try {
           handler(value);
         } catch (error) {

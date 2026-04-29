@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { createWorkspaceBus, createWorkspaceStatusStore } from "@flmux/core/shell";
+import { createWorkspaceBus } from "@flmux/core/shell";
 import { buildPaneWorkspaceContext } from "../src/renderer/shell/workspaceContext";
 
 describe("buildPaneWorkspaceContext", () => {
@@ -11,7 +11,6 @@ describe("buildPaneWorkspaceContext", () => {
     const ctx = buildPaneWorkspaceContext({
       workspaceId: "workspace.1",
       bus,
-      workspaceStatus: createWorkspaceStatusStore(),
       appOrigin: "http://127.0.0.1:0"
     });
     expect(ctx.bus).toBe(bus);
@@ -22,7 +21,6 @@ describe("buildPaneWorkspaceContext", () => {
     const ctx = buildPaneWorkspaceContext({
       workspaceId: "workspace.1",
       bus,
-      workspaceStatus: createWorkspaceStatusStore(),
       appOrigin: "http://127.0.0.1:0"
     });
     const received: unknown[] = [];
@@ -41,7 +39,6 @@ describe("buildPaneWorkspaceContext", () => {
     const ctx = buildPaneWorkspaceContext({
       workspaceId: "workspace with space",
       bus: createWorkspaceBus("workspace with space"),
-      workspaceStatus: createWorkspaceStatusStore(),
       appOrigin: "http://127.0.0.1:0"
     });
     expect(ctx.id).toBe("workspace with space");

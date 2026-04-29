@@ -74,7 +74,20 @@ function createExternalPaneContext(
         return unsubscribe;
       }
     },
-    workspaceStatus: args.workspace.workspaceStatus,
+    // Facade — never expose the host store directly. `dispose()` lives on it
+    // and an `as any` cast would otherwise let an extension tear down the
+    // shared store for every pane in the workspace.
+    workspaceStatus: {
+      get: (key) => args.runtime.workspaceStatus.get(key),
+      set: (key, value) => args.runtime.workspaceStatus.set(key, value),
+      subscribe: (key, handler) => {
+        const unsubscribe = args.runtime.workspaceStatus.subscribe(key, handler);
+        if (state instanceof ExternalPaneStateController) {
+          state.trackCleanup(unsubscribe);
+        }
+        return unsubscribe;
+      }
+    },
     state,
     rpcChannel: channelForPane(paneId),
     setHeaderMenu: (menu) => setPaneHeaderMenu(paneId, menu)

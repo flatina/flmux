@@ -618,7 +618,6 @@ export class FlmuxWorkbench {
     return buildPaneWorkspaceContext({
       workspaceId,
       bus: record.bus,
-      workspaceStatus: record.statusStore,
       appOrigin: this.config.appOrigin
     });
   }
@@ -734,6 +733,7 @@ export class FlmuxWorkbench {
         shellModel: this.shellModel,
         browserPanelTemplate: this.browserPanelTemplate,
         terminalHost: this.terminalHost,
+        workspaceStatus: record.statusStore,
         normalizeBrowserUrl: (value) => this.normalizeBrowserUrlFromInput(value),
         onBrowserUrlChange: (paneId, url) => {
           void this.shellModel.pathSet(`/panes/${paneId}/browser/url`, url).catch((error) => {

@@ -1,14 +1,10 @@
 import type { TerminalRuntimeSummary } from "../terminal/types";
 import type { Awaitable, NewPaneInput, ShellPaneRecordSnapshot, WorkspaceBus } from "./types";
-import type { WorkspaceStatusStore } from "./workspaceStatusStore";
 
 export interface PaneWorkspaceContext {
   id: string;
   defaultBrowserPath: string;
   bus: WorkspaceBus;
-  /** Retained KV store shared across panes in this workspace.
-   *  Renderer-local, non-persistent. */
-  workspaceStatus: WorkspaceStatusStore;
   appOrigin: string;
 }
 

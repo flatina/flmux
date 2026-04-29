@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { ExtensionPaneContext } from "@flmux/extension-api";
 import { createExternalPaneDescriptor } from "../src/renderer/external/runtime";
 import { PaneRegistry, type PaneRendererRuntimeContext } from "../src/renderer/shell/paneRegistry";
+import { createWorkspaceStatusStore } from "@flmux/core/shell";
 import type { PathCallerContext, ShellModelAPI, WorkspaceBus, WorkspaceBusEvent } from "@flmux/core/shell/types";
 import { makePaneWorkspaceContext } from "./support/paneWorkspaceContext";
 
@@ -67,6 +68,7 @@ describe("external pane runtime", () => {
         shellModel,
         browserPanelTemplate: null as never,
         terminalHost: null as never,
+        workspaceStatus: createWorkspaceStatusStore(),
         normalizeBrowserUrl: () => null,
         onBrowserUrlChange() {}
       } satisfies PaneRendererRuntimeContext
@@ -182,6 +184,7 @@ describe("external pane runtime", () => {
         },
         browserPanelTemplate: null as never,
         terminalHost: null as never,
+        workspaceStatus: createWorkspaceStatusStore(),
         normalizeBrowserUrl: () => null,
         onBrowserUrlChange() {}
       }
@@ -319,6 +322,7 @@ describe("external pane runtime", () => {
         },
         browserPanelTemplate: null as never,
         terminalHost: null as never,
+        workspaceStatus: createWorkspaceStatusStore(),
         normalizeBrowserUrl: () => null,
         onBrowserUrlChange() {}
       }
@@ -338,6 +342,109 @@ describe("external pane runtime", () => {
     renderer.dispose?.();
     expect(rendererDisposed).toBe(true);
     expect(unsubscribeCalls).toBe(1);
+  });
+
+  it("cleans up workspaceStatus subscriptions when an external pane is disposed", () => {
+    const sharedStatus = createWorkspaceStatusStore();
+    let received = 0;
+
+    const descriptor = createExternalPaneDescriptor({
+      kind: "sample.status-cleanup",
+      mount(_host, context) {
+        context.workspaceStatus.subscribe("k", () => {
+          received += 1;
+        });
+      }
+    });
+
+    const renderer = descriptor.createRenderer({
+      workspace: makePaneWorkspaceContext({ id: EXTERNAL_ID }),
+      options: { id: "pane.status-cleanup", name: "sample.status-cleanup" },
+      runtime: {
+        shellModel: {
+          pathGet: async () => ({ ok: true, found: true, value: null }),
+          pathList: async () => ({ ok: true, found: true, entries: [] }),
+          pathSet: async (_path, value) => ({ ok: true, value }),
+          pathCall: async () => ({ ok: true, value: null })
+        },
+        browserPanelTemplate: null as never,
+        terminalHost: null as never,
+        workspaceStatus: sharedStatus,
+        normalizeBrowserUrl: () => null,
+        onBrowserUrlChange() {}
+      }
+    });
+    renderer.init?.({
+      api: {
+        id: "pane.status-cleanup",
+        title: "Cleanup",
+        updateParameters() {},
+        setTitle() {}
+      } as never,
+      containerApi: null as never,
+      title: "Cleanup",
+      params: {}
+    });
+
+    // initial replay = 1 invocation
+    expect(received).toBe(1);
+    sharedStatus.set("k", 1);
+    expect(received).toBe(2);
+
+    renderer.dispose?.();
+
+    // After dispose, the surviving store should not invoke the disposed
+    // pane's handler. Without auto-cleanup the count would keep growing.
+    sharedStatus.set("k", 2);
+    expect(received).toBe(2);
+  });
+
+  it("does not expose the host store dispose() through ctx.workspaceStatus", () => {
+    const sharedStatus = createWorkspaceStatusStore();
+    let captured: unknown;
+
+    const descriptor = createExternalPaneDescriptor({
+      kind: "sample.status-facade",
+      mount(_host, context) {
+        captured = context.workspaceStatus;
+      }
+    });
+
+    const renderer = descriptor.createRenderer({
+      workspace: makePaneWorkspaceContext({ id: EXTERNAL_ID }),
+      options: { id: "pane.status-facade", name: "sample.status-facade" },
+      runtime: {
+        shellModel: {
+          pathGet: async () => ({ ok: true, found: true, value: null }),
+          pathList: async () => ({ ok: true, found: true, entries: [] }),
+          pathSet: async (_path, value) => ({ ok: true, value }),
+          pathCall: async () => ({ ok: true, value: null })
+        },
+        browserPanelTemplate: null as never,
+        terminalHost: null as never,
+        workspaceStatus: sharedStatus,
+        normalizeBrowserUrl: () => null,
+        onBrowserUrlChange() {}
+      }
+    });
+    renderer.init?.({
+      api: {
+        id: "pane.status-facade",
+        title: "Facade",
+        updateParameters() {},
+        setTitle() {}
+      } as never,
+      containerApi: null as never,
+      title: "Facade",
+      params: {}
+    });
+
+    // The facade exposes only get/set/subscribe — even an `as any` cast
+    // can't reach the host's dispose().
+    expect((captured as { dispose?: unknown }).dispose).toBeUndefined();
+    // And the host store stays alive.
+    sharedStatus.set("k", "alive");
+    expect(sharedStatus.get<string>("k")).toBe("alive");
   });
 
   it("maps external path mounts onto the internal descriptor contract", async () => {

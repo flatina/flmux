@@ -16,23 +16,18 @@ export interface ExtensionServerPaneContext {
   rpcChannel: RpcChannelHandle;
   /**
    * ACL-aware ShellModelAPI client scoped to this subscription's
-   * attachment/user. Use for identity lookup (e.g. `/status/attachments/
-   * {attachmentId}/userId` to key user-scoped session state) and for any
-   * shell queries the extension needs. Calls route through the owning
-   * user's `allow_paths` — permission is governed by the same config file
-   * that drives HTTP ACL, so extension access per user is managed in one
-   * place.
+   * attachment/user. Calls route through the owning user's `allow_paths`
+   * (same config file as HTTP ACL). Use `/status/attachments/{id}/userId`
+   * for identity lookup when keying user-scoped session state.
    */
   shell: ShellClient;
   /**
    * Absolute path of `<rootDir>/.flmux/ext/<extensionId>/`, mkdir'd before
-   * first delivery. The extension owns the directory; the "stay inside"
-   * boundary is advisory, not syscall-enforced.
-   *
+   * first delivery. "Stay inside" boundary is advisory, not syscall-enforced.
    * Web mode shares one `dataDir` across users — partition under
    * `<dataDir>/users/<userId>/` (resolve via
-   * `ctx.shell.get("/status/attachments/<attachmentId>/userId")`) or risk
-   * cross-user state leakage.
+   * `ctx.shell.get("/status/attachments/<id>/userId")`) to avoid cross-user
+   * leakage.
    */
   dataDir: string;
 }
@@ -41,7 +36,16 @@ export interface ExtensionServerPaneInstance {
   dispose?(): void;
 }
 
+export interface ExtensionServerInitContext {
+  dataDir: string;
+}
+
 export interface ExtensionServerDefinition {
+  /**
+   * Eager once-per-process setup, runs at extension load before any
+   * `onPaneConnected`. Throw → server entry disabled.
+   */
+  onInit?(ctx: ExtensionServerInitContext): void | Promise<void>;
   onPaneConnected?(
     paneId: string,
     attachmentId: string,

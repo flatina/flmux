@@ -183,7 +183,7 @@ The heuristic uses creation order as a proxy for spatial layout — not a guaran
 
 flmux carves a per-extension data directory at `<rootDir>/.flmux/ext/<extensionId>/` and hands it to the extension as a readonly `ctx.dataDir` field. flmux is the one running the extension, so the extension never claims its own id — it just reads `ctx.dataDir`. The directory is the extension's writable space; flmux makes no assumptions about its layout (sessions, configs, caches, etc. all welcome) and mkdirs lazily on first need.
 
-- **Server entry** — `ctx.dataDir` is supplied to `onPaneConnected(paneId, attachmentId, ctx)`.
+- **Server entry** — `ctx.dataDir` is supplied to both `onInit(ctx)` (process-wide one-time setup) and `onPaneConnected(paneId, attachmentId, ctx)`.
 - **CLI entry** — `ctx.dataDir` is supplied to `run({ args, ctx, rawArgs })` (see "CLI extension" above). Use `defineExtensionCommand` from `@flmux/extension-api/cli` so flmux can inject it.
 - **Renderer** — no direct fs access (browser context). Forward writes through the channel to the server entry.
 
@@ -191,6 +191,10 @@ flmux carves a per-extension data directory at `<rootDir>/.flmux/ext/<extensionI
 import { defineExtensionServer } from "@flmux/extension-api";
 
 export default defineExtensionServer({
+  async onInit(ctx) {
+    // runs once per process at extension load, before any onPaneConnected
+    await openDb(`${ctx.dataDir}/store.db`);
+  },
   async onPaneConnected(paneId, attachmentId, ctx) {
     const sessionsDir = `${ctx.dataDir}/sessions`;
     // freely organize your subtree under ctx.dataDir

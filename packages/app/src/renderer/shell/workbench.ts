@@ -417,9 +417,8 @@ export class FlmuxWorkbench {
         : { direction: payload.place }
       : undefined;
     // Set BEFORE addPanel — addPanel synchronously triggers the tab
-    // renderer's init() → applyIcon(), which reads this map.
-    // kind is immutable per pane; populated only here and at fromJSON,
-    // cleared at applyPaneRemoved.
+    // renderer's init() → applyIcon(), which reads this map. kind is
+    // immutable per pane, so no refresh path is needed.
     this.paneIdToKind.set(payload.paneId, payload.snapshot.kind);
     record.innerApi.addPanel({
       id: payload.paneId,

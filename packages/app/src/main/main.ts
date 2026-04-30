@@ -186,13 +186,33 @@ if (shimResult.ok && shimResult.entry && shimResult.bunCommand) {
 // subscription. Module-level state lives inside the extension's server module
 // (e.g. a cache keyed by paneId) — flmux only wires the transport channel.
 const extensionServers = new Map<string, ExtensionServerDefinition>();
+const extensionServerInits = new Map<string, Promise<void>>();
 for (const ext of localExtensions) {
   if (!ext.serverEntryRelativePath) continue;
   try {
     const url = await ext.resolveEntryImportUrl(ext.serverEntryRelativePath);
     if (!url) continue;
     const mod = (await import(url)) as { default?: ExtensionServerDefinition };
-    if (mod.default) extensionServers.set(ext.id, mod.default);
+    const def = mod.default;
+    if (!def) continue;
+    extensionServers.set(ext.id, def);
+    if (def.onInit) {
+      const dataDir = resolveExtensionDataDir(ext.id);
+      if (!dataDir) {
+        console.warn(`[flmux] extension '${ext.id}' onInit skipped — data dir not provisioned; server entry disabled`);
+        extensionServers.delete(ext.id);
+        continue;
+      }
+      const initPromise = (async () => {
+        try {
+          await def.onInit!({ dataDir });
+        } catch (err) {
+          console.warn(`[flmux] extension '${ext.id}' onInit failed; server entry disabled:`, err);
+          extensionServers.delete(ext.id);
+        }
+      })();
+      extensionServerInits.set(ext.id, initPromise);
+    }
   } catch (err) {
     console.warn(`[flmux] failed to load server entry for extension '${ext.id}':`, err);
   }
@@ -214,15 +234,12 @@ function paneInstanceKey(extId: string, paneId: string, attachmentId: string) {
 }
 
 /**
- * ACL-aware ShellClient handed to the extension server entry. Calls route
- * through the same `allow_paths` + `allow_pane_kinds` gates that guard HTTP
- * — so extension reach is configured alongside the user's other permissions
- * in one policy surface. Desktop (no authorizer) grants through by default,
- * same as preload/WS trust.
+ * ACL-aware ShellClient for an extension server entry. Calls route through
+ * the same `allow_paths` + `allow_pane_kinds` gates as HTTP. Desktop
+ * (no authorizer) grants through, same as preload/WS trust.
  *
- * Returns null only when the pane→authority mapping isn't established yet
- * (racing `attachmentIdToDemux` writes); caller warns and retries when
- * lifecycle resolves.
+ * Returns null when the pane→authority mapping isn't established yet
+ * (racing `attachmentIdToDemux` writes); caller warns and retries.
  */
 function createExtensionShellClient(paneId: string, attachmentId: string): ShellClientImport | null {
   const authority = paneIdToAuthority.get(paneId);
@@ -231,9 +248,8 @@ function createExtensionShellClient(paneId: string, attachmentId: string): Shell
   const authorizer = webModeAuthorizer;
   const caller = { attachmentId, sourcePaneId: paneId };
 
-  // Resolve userId per call so session cleanup / token revocation during
-  // the pane's lifetime drops the extension's ACL-admitted reach on the
-  // next shell call rather than leaving a stale snapshot.
+  // Per-call resolve: session cleanup / token revocation drops ACL on the
+  // next shell call instead of using a stale snapshot.
   function resolveUser(): FlmuxUserImport | null {
     if (!authorizer) return null;
     const userId = attachmentIdToUserId.get(attachmentId);
@@ -245,8 +261,7 @@ function createExtensionShellClient(paneId: string, attachmentId: string): Shell
     if (!authorizer) return;
     const user = resolveUser();
     if (!user) {
-      // Fail closed: writes/calls must not slip through when the
-      // attachment's user can't be identified against the configured ACL.
+      // Fail closed when the attachment's user can't be identified.
       throw new Error(`No resolvable user for attachment '${attachmentId}' (shell ${method} '${path}')`);
     }
     if (!authorizer.isPathAllowed(user, method, path)) {
@@ -289,6 +304,9 @@ function createExtensionShellClient(paneId: string, attachmentId: string): Shell
 async function attachExtensionServerChannel(paneId: string, kind: string, attachmentId: string) {
   const extId = findExtensionIdForPaneKind(kind);
   if (!extId) return;
+  // Await before fetching server: init failure deletes the entry.
+  const initPromise = extensionServerInits.get(extId);
+  if (initPromise) await initPromise;
   const server = extensionServers.get(extId);
   if (!server?.onPaneConnected) return;
   const demux = attachmentIdToDemux.get(attachmentId);

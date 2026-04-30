@@ -17,7 +17,7 @@ extensions/myext/
   "id": "myext",
   "name": "My Extension",
   "version": "0.1.0",
-  "apiVersion": 8,
+  "apiVersion": 1,
   "entrypoints": { "renderer": "dist/index.js" },
   "panes": [{ "kind": "myext", "defaultTitle": "My Pane" }]
 }
@@ -57,13 +57,15 @@ class MyPaneRenderer implements ExtensionPaneInstance {
 export default defineExtension({ panes: [myPane] });
 ```
 
-## Pane context — the three axes
+## Pane context
 
 Every pane receives `ExtensionPaneContext` on mount:
 
 - **`shell: ShellClient`** — `get/list/set/call` against flmux's path surface. Lets the pane read app state (`/status/app/origin`), create other panes (`call /panes/new`), write to another pane's subtree, etc.
 - **`bus: WorkspaceBusClient`** — transient pub/sub scoped to the current workspace + current renderer client. `publish(topic, payload?)` stamps the pane's id as `sourcePaneId`; `subscribe(topic, handler)` receives events. Topic patterns: `*`, `prefix.*`, exact match. **Subscribers see their own events** — filter with `event.sourcePaneId !== myPaneId` if that matters. Cross-renderer forwarding is a deferred feature; publishes from CLI/HTTP do not reach renderer subscribers today.
+- **`workspaceStatus: WorkspaceStatusStoreClient`** — retained KV store shared with every pane in the same workspace. Non-persistent. `subscribe(key, fn)` replays the current value (or `undefined`) immediately, then emits on change; `Object.is`-equal `set` calls suppress emit. Subscriptions auto-unsubscribe when the pane disposes. Use this for transient cross-pane status (selection, cursor, hover) — `bus` is the right tool when you only need the event, `workspaceStatus` is the right tool when late mounts also need the *current value*.
 - **`state: PaneStateStore`** — `getParams/setParams/patchParams/getTitle/setTitle`. Per-pane, persisted as part of the workspace layout. External writes through `pathMount.setState` go here.
+- **`rpcChannel?: RpcChannelHandle`** — bunite RPC channel paired with the extension's server entry. Present only when the extension declares `entrypoints.server`. Pair via `defineWebviewRpc<Schema>(...)` + `await ctx.rpcChannel.bindTo(rpc)`; await is required since the first send/receive otherwise races handler registration.
 
 ## Tab-header menu
 
@@ -324,4 +326,5 @@ document.addEventListener("flmux-theme-change", (event) => {
 - `packages/core/src/shell/model.ts` — path surface (`/status/app`, `/panes`, `/status/panes/{id}`, etc.)
 - `extensions/counter/` — minimal pane with writable `pathMount`
 - `extensions/cowsay/` — pane + CLI command example
+- `extensions/header-menu/` — both `setHeaderMenu` modes (flat items + custom build)
 - `extensions/scratchpad/` — pane with richer state

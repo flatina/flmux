@@ -9,8 +9,6 @@ import type { PaneHeaderMenu, PaneHeaderMenuItem } from "@flmux/extension-api";
 import { getPaneHeaderMenu } from "../external/paneTabMenuRegistry";
 import { getThemePreference, setThemePreference, type ThemePreference } from "../theme";
 
-/** Inline hamburger SVG — three short bars, currentColor for theming. */
-const HAMBURGER_SVG = `<svg viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
 
 type Disposer = () => void;
 
@@ -210,12 +208,10 @@ export function openPaneKindPopup(
       item.dataset.kind = option.kind;
       const icon = document.createElement("span");
       icon.className = "header-action-popup__icon";
-      if (option.iconUrl) {
-        const img = document.createElement("img");
-        img.src = option.iconUrl;
-        img.alt = "";
-        icon.append(img);
-      }
+      const img = document.createElement("img");
+      img.src = option.iconUrl ?? "/__flmux/assets/pane.svg";
+      img.alt = "";
+      icon.append(img);
       const label = document.createElement("span");
       label.textContent = option.label;
       item.append(icon, label);
@@ -397,8 +393,8 @@ export class WorkspaceTabRenderer extends DefaultTab {
  * menu = no-op click.
  */
 export interface PaneTabRendererOptions {
-  /** Resolved at init/refresh — when present, replaces the default
-   *  hamburger SVG with `<img src=...>`. */
+  /** Resolved at init/refresh. When present, replaces the default
+   *  generic pane glyph with the manifest icon. */
   resolveIconUrl?(paneId: string): string | undefined;
 }
 
@@ -428,7 +424,6 @@ export class PaneTabRenderer extends DefaultTab {
     this.menuButton.type = "button";
     this.menuButton.className = "pane-tab-menu-btn";
     this.menuButton.title = "Pane menu";
-    this.menuButton.innerHTML = HAMBURGER_SVG;
     this.element.classList.add("pane-tab");
     this.element.insertBefore(this.menuButton, this.element.firstChild);
   }
@@ -459,11 +454,7 @@ export class PaneTabRenderer extends DefaultTab {
   }
 
   private applyIcon(): void {
-    const url = this.options.resolveIconUrl?.(this.paneId);
-    if (!url) {
-      this.menuButton.innerHTML = HAMBURGER_SVG;
-      return;
-    }
+    const url = this.options.resolveIconUrl?.(this.paneId) ?? "/__flmux/assets/pane.svg";
     this.menuButton.replaceChildren();
     const img = document.createElement("img");
     img.src = url;

@@ -9,6 +9,7 @@ import type {
   FlmuxSessionSaveLayouts,
   FlmuxShellBootstrapResponse
 } from "../shared/rendererBridge";
+import paneSvg from "./assets/pane.svg" with { type: "text" };
 import type { DiscoveredLocalExtension } from "./localExtensions";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
 import type { FlmuxAuthorizationContext, FlmuxWebModeAuthorizer } from "./webModeAuth";
@@ -77,6 +78,17 @@ export function startFlmuxServer(options: {
         ok: true,
         clients: await router.listClients()
       };
+    })
+    // Shared static assets at /__flmux/assets/<file>. One route per asset
+    // for now — keeps the surface trivial; if/when shared assets need
+    // theme overlays (e.g. /__flmux/assets/theme/<file>), pivot to a
+    // small dispatcher.
+    .get("/__flmux/assets/pane.svg", ({ request, set }) => {
+      const auth = authorizeRequest(request, set, options.authorizer);
+      if (!auth.ok) {
+        return "Unauthorized";
+      }
+      return new Response(paneSvg, { headers: { "content-type": "image/svg+xml" } });
     })
     .get("/__flmux/ext/:extensionId/:version/manifest.json", ({ request, params, set }) => {
       const auth = authorizeRequest(request, set, options.authorizer);

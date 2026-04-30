@@ -341,7 +341,6 @@ select:focus {
   justify-content: center;
   cursor: pointer;
 }
-.pane-tab-menu-btn svg,
 .pane-tab-menu-btn__icon {
   width: 12px;
   height: 12px;

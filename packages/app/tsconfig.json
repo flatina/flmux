@@ -4,5 +4,5 @@
     "rootDir": ".",
     "lib": ["ES2022", "DOM"]
   },
-  "include": ["src/main.ts", "src/cli.ts", "test/**/*.ts"]
+  "include": ["src/main.ts", "src/cli.ts", "src/main/**/*.d.ts", "test/**/*.ts"]
 }

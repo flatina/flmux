@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./test/browser",
-  testMatch: /\.spec\.ts$/,
+  testMatch: /\.playwright\.ts$/,
   // ptyd daemon is install-scoped — sequential only.
   workers: 1,
   fullyParallel: false,

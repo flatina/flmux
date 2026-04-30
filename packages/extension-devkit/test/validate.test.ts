@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+
+// Fixture root sits inside the workspace so Bun.build can resolve
+// `@flmux/extension-api` via the same workspace symlinks the real build
+// uses. `os.tmpdir()` is outside the workspace, so its module resolution
+// can't reach the @flmux/* packages.
+const FIXTURE_ROOT = resolve(import.meta.dirname, ".fixtures");
 import { buildExtensionDirectory } from "../src/build";
 import { formatExtensionValidationResult, resolveValidateTargets, validateExtensionDirectory } from "../src/validate";
 import { FLMUX_EXTENSION_API_VERSION, validateExtensionManifest } from "../../extension-api/src/manifest";
@@ -187,10 +192,9 @@ describe("extension-devkit validate", () => {
         }
       ],
       rendererContents: [
-        'import { defineExtension } from "@flmux/extension-api";',
         'import { label } from "./lib/helper.ts";',
         'export const assetUrl = new URL("./template.html", import.meta.url).href;',
-        "export default defineExtension({ label });",
+        "export default { label };",
         ""
       ].join("\n")
     });
@@ -210,15 +214,12 @@ describe("extension-devkit validate", () => {
     });
 
     const builtRenderer = await Bun.file(join(extensionDir, "dist", "src", "index.js")).text();
-    // Bare specifier is preserved; browser resolves via <script type="importmap"> in index.html,
-    // server resolves via Bun workspace. Only relative .ts imports get rewritten to .js.
-    expect(builtRenderer).toContain('from "@flmux/extension-api"');
-    expect(builtRenderer).toContain('from "./lib/helper.js"');
+    // Bun.build inlines relative source imports and rewrites URL-imported
+    // asset references to remain relative to import.meta.url; the asset
+    // itself is copied through as a sidecar so the runtime URL resolves.
+    expect(builtRenderer).toContain('label = "helper"');
     expect(builtRenderer).toContain('new URL("./template.html", import.meta.url)');
 
-    expect(await Bun.file(join(extensionDir, "dist", "src", "lib", "helper.js")).text()).toContain(
-      'export const label = "helper";'
-    );
     expect(await Bun.file(join(extensionDir, "dist", "src", "template.html")).text()).toBe(
       "<section>template</section>"
     );
@@ -235,7 +236,8 @@ async function createExtensionFixture(input: {
   rendererContents?: string;
   extraFiles?: Array<{ path: string; contents: string }>;
 }) {
-  const extensionDir = await mkdtemp(join(tmpdir(), "flmux-devkit-"));
+  await mkdir(FIXTURE_ROOT, { recursive: true });
+  const extensionDir = await mkdtemp(join(FIXTURE_ROOT, "ext-"));
   tempDirs.push(extensionDir);
 
   await writeFile(

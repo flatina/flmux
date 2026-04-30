@@ -1,7 +1,14 @@
-import type { ExtensionPaneContext, ExtensionPaneInstance, ShellPathGetResult } from "@flmux/extension-api";
+import type { ExtensionPaneContext, ExtensionPaneInstance } from "@flmux/extension-api";
 import { defineExtension, definePane } from "@flmux/extension-api";
+import {
+  type OutputMode,
+  ensureStylesheet,
+  formatTime,
+  formatValue,
+  parser,
+  unwrapValue
+} from "./helpers";
 
-type OutputMode = "pretty" | "compact";
 type LogKind = "input" | "result" | "error" | "event" | "system";
 
 interface LogEntry {
@@ -14,15 +21,6 @@ interface LogEntry {
 const panelTemplateUrl = new URL("./panel.html", import.meta.url).href;
 const panelStylesheetUrl = new URL("./panel.css", import.meta.url).href;
 const STYLESHEET_ID = "cowsay-panel-styles";
-
-function ensureStylesheet() {
-  if (document.getElementById(STYLESHEET_ID)) return;
-  const link = document.createElement("link");
-  link.id = STYLESHEET_ID;
-  link.rel = "stylesheet";
-  link.href = panelStylesheetUrl;
-  document.head.appendChild(link);
-}
 
 class CowsayPaneRenderer implements ExtensionPaneInstance {
   private outputMode: OutputMode = "pretty";
@@ -43,7 +41,7 @@ class CowsayPaneRenderer implements ExtensionPaneInstance {
     private readonly context: ExtensionPaneContext
   ) {
     this.host.classList.add("cowsay-panel");
-    ensureStylesheet();
+    ensureStylesheet(STYLESHEET_ID, panelStylesheetUrl);
     void this.mount();
   }
 
@@ -122,30 +120,30 @@ class CowsayPaneRenderer implements ExtensionPaneInstance {
   }
 
   private async executeCommand(command: string): Promise<unknown> {
-    const tokens = tokenize(command);
+    const tokens = parser.tokenize(command);
     if (tokens.length === 0) return undefined;
 
     const [verb, ...rest] = tokens;
     switch (verb) {
       case "get":
-        return this.context.shell.get(requiredToken(rest[0], "get <path> requires a path"));
+        return this.context.shell.get(parser.required(rest[0], "get <path> requires a path"));
       case "ls":
-        return this.context.shell.list(requiredToken(rest[0], "ls <path> requires a path"));
+        return this.context.shell.list(parser.required(rest[0], "ls <path> requires a path"));
       case "ls-each-get":
-        return this.runListEachGet(requiredToken(rest[0], "ls-each-get <path> requires a path"));
+        return this.runListEachGet(parser.required(rest[0], "ls-each-get <path> requires a path"));
       case "set": {
-        const path = requiredToken(rest[0], "set <path> <value> requires a path");
-        return this.context.shell.set(path, coerceScalar(rest.slice(1).join(" ")));
+        const path = parser.required(rest[0], "set <path> <value> requires a path");
+        return this.context.shell.set(path, parser.coerceScalar(rest.slice(1).join(" ")));
       }
       case "call": {
-        const path = requiredToken(rest[0], "call <path> requires a path");
-        const { named, extras } = parseNamedArgs(rest.slice(1));
+        const path = parser.required(rest[0], "call <path> requires a path");
+        const { named, extras } = parser.parseNamedArgs(rest.slice(1));
         if (extras.length > 0) throw new Error("call only accepts key=value arguments");
         return this.context.shell.call(path, named);
       }
       case "pub": {
-        const topic = requiredToken(rest[0], "pub <topic> requires a topic");
-        const { named, extras } = parseNamedArgs(rest.slice(1));
+        const topic = parser.required(rest[0], "pub <topic> requires a topic");
+        const { named, extras } = parser.parseNamedArgs(rest.slice(1));
         const payload =
           Object.keys(named).length > 0
             ? { ...named, ...(extras.length > 0 ? { args: extras } : {}) }
@@ -155,7 +153,7 @@ class CowsayPaneRenderer implements ExtensionPaneInstance {
         return this.context.bus.publish(topic, payload);
       }
       case "sub": {
-        const pattern = requiredToken(rest[0], "sub <pattern> requires a topic pattern");
+        const pattern = parser.required(rest[0], "sub <pattern> requires a topic pattern");
         this.updateSubscription(pattern);
         return { ok: true, subscription: this.subscription };
       }
@@ -225,96 +223,3 @@ const cowsayPane = definePane({
 export default defineExtension({
   panes: [cowsayPane]
 });
-
-function requiredToken(token: string | undefined, message: string): string {
-  if (!token) throw new Error(message);
-  return token;
-}
-
-function unwrapValue(result: ShellPathGetResult) {
-  if (!result.ok) return result;
-  return result.found ? result.value : { found: false };
-}
-
-function parseNamedArgs(tokens: string[]) {
-  const named: Record<string, unknown> = {};
-  const extras: string[] = [];
-  for (const token of tokens) {
-    const equalsIndex = token.indexOf("=");
-    if (equalsIndex <= 0) {
-      extras.push(token);
-      continue;
-    }
-    named[token.slice(0, equalsIndex)] = coerceScalar(token.slice(equalsIndex + 1));
-  }
-  return { named, extras };
-}
-
-function coerceScalar(rawValue: string): unknown {
-  if (rawValue === "true") return true;
-  if (rawValue === "false") return false;
-  if (rawValue === "null") return null;
-  if (/^-?\d+(\.\d+)?$/.test(rawValue)) return Number(rawValue);
-  if ((rawValue.startsWith("{") && rawValue.endsWith("}")) || (rawValue.startsWith("[") && rawValue.endsWith("]"))) {
-    try {
-      return JSON.parse(rawValue);
-    } catch {
-      return rawValue;
-    }
-  }
-  return rawValue;
-}
-
-function tokenize(command: string): string[] {
-  const tokens: string[] = [];
-  let current = "";
-  let quote: '"' | "'" | null = null;
-  let escaping = false;
-  for (const char of command.trim()) {
-    if (escaping) {
-      current += char;
-      escaping = false;
-      continue;
-    }
-    if (char === "\\") {
-      escaping = true;
-      continue;
-    }
-    if (quote) {
-      if (char === quote) {
-        quote = null;
-        continue;
-      }
-      current += char;
-      continue;
-    }
-    if (char === '"' || char === "'") {
-      quote = char;
-      continue;
-    }
-    if (/\s/.test(char)) {
-      if (current) {
-        tokens.push(current);
-        current = "";
-      }
-      continue;
-    }
-    current += char;
-  }
-  if (quote) throw new Error("Unterminated quoted string");
-  if (current) tokens.push(current);
-  return tokens;
-}
-
-function formatValue(value: unknown, mode: OutputMode): string {
-  if (typeof value === "string") return value;
-  return mode === "compact" ? JSON.stringify(value) : JSON.stringify(value, null, 2);
-}
-
-function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit"
-  });
-}

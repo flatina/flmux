@@ -2,9 +2,9 @@ import { defineBunRpc } from "bunite-core";
 import { defineExtensionServer } from "@flmux/extension-api";
 import type { CounterSchema } from "./schema";
 
-// Module-level state — survives for the flmux process lifetime and is shared
-// across every (paneId × attachmentId) rpc instance. This is the whole point
-// of a server entry: one counter, many viewers.
+// Module-level state — survives the flmux process lifetime and is shared
+// across every (paneId × attachmentId) rpc instance. This is what makes the
+// "app-scope" half of the counter pane app-scope.
 let count = 0;
 
 type Peer = { broadcast: (sourcePaneId: string | null) => void };
@@ -33,8 +33,8 @@ export default defineExtensionServer({
         }
       }
     });
-    // Wait for the HELLO handshake so any `send` below reaches the pane
-    // instead of racing the peer's handler registration.
+    // Wait for HELLO so the `peer.broadcast(null)` below reaches the pane
+    // instead of racing handler registration on the renderer side.
     await ctx.rpcChannel.bindTo(rpc);
 
     const peer: Peer = {
@@ -44,8 +44,8 @@ export default defineExtensionServer({
     };
     peers.add(peer);
 
-    // Push the current value on mount so the renderer doesn't have to
-    // issue its own initial `getCount()` round-trip.
+    // Push the current value on connect so the renderer skips the initial
+    // `getCount()` round-trip.
     peer.broadcast(null);
 
     return {

@@ -283,7 +283,7 @@ describe("flmux harness smoke", () => {
           active: boolean;
         };
       };
-    }>(["cowsay", "hello", "from", "cli"]);
+    }>(["cowsay", "hello from cli"]);
 
     const paneId = result.value.paneId;
     expect(result.value).toMatchObject({

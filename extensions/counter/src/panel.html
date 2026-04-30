@@ -1,18 +1,36 @@
 <section class="counter-hero">
   <div>
     <strong>counter</strong>
-    <p>Server-held count shared across every pane over its own RPC channel.</p>
+    <p>Same pane, two scopes. Open another counter pane in a different workspace to see workspace-scope isolate while app-scope stays shared.</p>
   </div>
   <div class="counter-identities">
     <span data-role="workspace-id"></span>
     <span data-role="pane-id"></span>
   </div>
 </section>
-<section class="counter-card">
-  <div class="counter-value" data-role="value">--</div>
-  <div class="counter-actions">
-    <button type="button" data-action="dec">-1</button>
-    <button type="button" data-action="reset">reset</button>
-    <button type="button" data-action="inc">+1</button>
-  </div>
+<section class="counter-grid">
+  <article class="counter-card" data-scope="app">
+    <header>
+      <strong>app-scope</strong>
+      <p>Server-held; shared across every workspace in this flmux process.</p>
+    </header>
+    <div class="counter-value" data-role="app-value">--</div>
+    <div class="counter-actions">
+      <button type="button" data-action="app-dec">-1</button>
+      <button type="button" data-action="app-reset">reset</button>
+      <button type="button" data-action="app-inc">+1</button>
+    </div>
+  </article>
+  <article class="counter-card" data-scope="workspace">
+    <header>
+      <strong>workspace-scope</strong>
+      <p>Retained KV (<code>ctx.workspaceStatus</code>); isolated per workspace.</p>
+    </header>
+    <div class="counter-value" data-role="workspace-value">--</div>
+    <div class="counter-actions">
+      <button type="button" data-action="workspace-dec">-1</button>
+      <button type="button" data-action="workspace-reset">reset</button>
+      <button type="button" data-action="workspace-inc">+1</button>
+    </div>
+  </article>
 </section>

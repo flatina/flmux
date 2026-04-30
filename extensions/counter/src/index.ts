@@ -1,109 +1,110 @@
-// Import from the thin `shared/rpc` subpath — `bunite-core/view` pulls in the
-// webview polyfill which touches `window` at module load, breaking the
-// main-side `import()` that flmux performs to extract pane definitions.
-import { defineWebviewRpc } from "bunite-core/shared/rpc";
+import { defineWebviewRpc } from "bunite-core/view";
 import {
   defineExtension,
   definePane,
   type ExtensionPaneContext,
   type ExtensionPaneInstance
 } from "@flmux/extension-api";
+import { type PanelDom, type ScopeDom, ensureStylesheet, mountPanelShell } from "./helpers";
 import type { CounterSchema } from "./schema";
 
 const panelTemplateUrl = new URL("./panel.html", import.meta.url).href;
 const panelStylesheetUrl = new URL("./panel.css", import.meta.url).href;
 const STYLESHEET_ID = "counter-panel-styles";
+const WORKSPACE_STATUS_KEY = "count";
 
-function ensureStylesheet() {
-  if (document.getElementById(STYLESHEET_ID)) return;
-  const link = document.createElement("link");
-  link.id = STYLESHEET_ID;
-  link.rel = "stylesheet";
-  link.href = panelStylesheetUrl;
-  document.head.appendChild(link);
-}
-
+// Single pane that exercises both scopes:
+//   - app    → server-held count (shared across every workspace in the process)
+//   - workspace → `ctx.workspaceStatus` retained KV (shared across panes in
+//                 this workspace, isolated from other workspaces)
 class CounterPane implements ExtensionPaneInstance {
   private readonly rpc = defineWebviewRpc<CounterSchema>({
     handlers: {
       messages: {
-        "count.changed": ({ count }) => this.render(count)
+        "count.changed": ({ count }) => this.renderApp(count)
       }
     }
   });
-  private valueEl: HTMLElement | null = null;
+  private dom: PanelDom | null = null;
   private disposed = false;
+  private unsubscribeWorkspace?: () => void;
 
   constructor(
     private readonly host: HTMLElement,
     private readonly ctx: ExtensionPaneContext
   ) {
     this.host.classList.add("counter-panel");
-    ensureStylesheet();
+    ensureStylesheet(STYLESHEET_ID, panelStylesheetUrl);
     void this.mount();
   }
 
+  dispose() {
+    this.disposed = true;
+    this.unsubscribeWorkspace?.();
+    this.rpc.dispose();
+  }
+
   private async mount() {
-    let html: string;
-    try {
-      html = await fetch(panelTemplateUrl).then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.text();
-      });
-    } catch (error) {
-      console.warn("[counter] panel template fetch failed", error);
-      if (!this.disposed) this.host.textContent = "(panel template failed to load)";
-      return;
-    }
-    if (this.disposed) return;
+    this.dom = await mountPanelShell(this.host, panelTemplateUrl, this.ctx);
+    if (this.disposed || !this.dom) return;
+    this.wireApp(this.dom.app);
+    this.wireWorkspace(this.dom.workspace);
+  }
 
-    this.host.innerHTML = html;
-    this.host.querySelector<HTMLElement>('[data-role="workspace-id"]')!.textContent = this.ctx.workspaceId;
-    this.host.querySelector<HTMLElement>('[data-role="pane-id"]')!.textContent = this.ctx.paneId;
-    this.valueEl = this.host.querySelector<HTMLElement>('[data-role="value"]');
-
+  private async wireApp(dom: ScopeDom) {
     if (!this.ctx.rpcChannel) {
-      if (this.valueEl) this.valueEl.textContent = "(server entry not wired)";
+      dom.valueEl.textContent = "(server entry not wired)";
       return;
     }
-
-    const inc = this.host.querySelector<HTMLButtonElement>('[data-action="inc"]')!;
-    const dec = this.host.querySelector<HTMLButtonElement>('[data-action="dec"]')!;
-    const reset = this.host.querySelector<HTMLButtonElement>('[data-action="reset"]')!;
-
-    // Await the channel handshake before wiring anything that sends a
-    // request — the server publishes the current count via `count.changed`
-    // as soon as it sees us, so the initial render arrives through the
-    // message listener, not a round-trip.
+    // Bind first; the server pushes the current count via `count.changed` on
+    // connect, so the initial render arrives through the message listener.
     try {
       await this.ctx.rpcChannel.bindTo(this.rpc);
       if (this.disposed) return;
-      inc.addEventListener("click", () => this.apply(this.rpc.requestProxy.increment({ delta: 1 })));
-      dec.addEventListener("click", () => this.apply(this.rpc.requestProxy.increment({ delta: -1 })));
-      reset.addEventListener("click", () => this.apply(this.rpc.requestProxy.reset()));
+      dom.inc.addEventListener("click", () => this.applyApp(this.rpc.requestProxy.increment({ delta: 1 })));
+      dom.dec.addEventListener("click", () => this.applyApp(this.rpc.requestProxy.increment({ delta: -1 })));
+      dom.reset.addEventListener("click", () => this.applyApp(this.rpc.requestProxy.reset()));
     } catch (error) {
       console.warn("[counter] channel handshake failed", error);
-      if (!this.disposed && this.valueEl) this.valueEl.textContent = "(handshake failed)";
+      if (!this.disposed) dom.valueEl.textContent = "(handshake failed)";
     }
   }
 
-  private async apply(promise: Promise<{ count: number }>) {
+  private wireWorkspace(dom: ScopeDom) {
+    dom.inc.addEventListener("click", () => this.bumpWorkspace((c) => c + 1));
+    dom.dec.addEventListener("click", () => this.bumpWorkspace((c) => c - 1));
+    dom.reset.addEventListener("click", () => this.writeWorkspace(0));
+    this.unsubscribeWorkspace = this.ctx.workspaceStatus.subscribe<number>(WORKSPACE_STATUS_KEY, (value) => {
+      this.renderWorkspace(value ?? 0);
+    });
+  }
+
+  private async applyApp(promise: Promise<{ count: number }>) {
     try {
       const { count } = await promise;
-      this.render(count);
+      this.renderApp(count);
     } catch (error) {
       console.warn("[counter] rpc failed", error);
     }
   }
 
-  private render(count: number) {
-    if (this.disposed || !this.valueEl) return;
-    this.valueEl.textContent = String(count);
+  private bumpWorkspace(transform: (current: number) => number) {
+    const current = this.ctx.workspaceStatus.get<number>(WORKSPACE_STATUS_KEY) ?? 0;
+    this.writeWorkspace(transform(current));
   }
 
-  dispose() {
-    this.disposed = true;
-    this.rpc.dispose();
+  private writeWorkspace(next: number) {
+    this.ctx.workspaceStatus.set(WORKSPACE_STATUS_KEY, next);
+  }
+
+  private renderApp(count: number) {
+    if (this.disposed || !this.dom) return;
+    this.dom.app.valueEl.textContent = String(count);
+  }
+
+  private renderWorkspace(count: number) {
+    if (this.disposed || !this.dom) return;
+    this.dom.workspace.valueEl.textContent = String(count);
   }
 }
 

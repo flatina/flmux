@@ -218,7 +218,9 @@ test("C3 two tabs of the same user keep independent active workspaces (B1b)", as
   try {
     const pageA = await contextA.newPage();
     await pageA.goto(`${handle.origin}/?token=${encodeURIComponent(handle.token)}`);
-    await expect(pageA.locator(".dockview-shell")).toBeVisible({ timeout: 20_000 });
+    // Wait for a bootstrap-derived element, not the eager outer container —
+    // the cookie is set by the bootstrap POST response.
+    await expect(pageA.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
 
     const cookieHeaderA = (await contextA.cookies(handle.origin)).map((c) => `${c.name}=${c.value}`).join("; ");
     const attachA = (await contextA.cookies(handle.origin)).find((c) => c.name === "flmux-attachment")!.value;
@@ -244,7 +246,7 @@ test("C3 two tabs of the same user keep independent active workspaces (B1b)", as
     // Tab B bootstraps into the same user but a fresh attachment.
     const pageB = await contextB.newPage();
     await pageB.goto(`${handle.origin}/?token=${encodeURIComponent(handle.token)}`);
-    await expect(pageB.locator(".dockview-shell")).toBeVisible({ timeout: 20_000 });
+    await expect(pageB.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
 
     const attachB = (await contextB.cookies(handle.origin)).find((c) => c.name === "flmux-attachment")!.value;
     expect(attachB).not.toBe(attachA);
@@ -469,6 +471,7 @@ test("C5 authority evicts after attachment+authority grace", async ({ browser })
 // exercise because it has no real-WS transport to drop.
 test("C7 terminal runtime survives browser WS drop across page.reload", async ({ browser }) => {
   if (!handle) throw new Error("web app not running");
+  const { origin: webOrigin } = handle;
 
   const context = await browser.newContext();
   try {
@@ -514,9 +517,9 @@ test("C7 terminal runtime survives browser WS drop across page.reload", async ({
     // session history buffer regardless of who wrote it.
     const marker = "flmux-c7-marker";
     await httpPath("call", `/panes/${paneId}/terminal/write`, { args: { data: `echo ${marker}\r` } });
-    await page.waitForTimeout(500);
-    const historyBefore = await readHistory(handle.origin, cookieHeader, clientId, paneId);
-    expect(historyBefore).toContain(marker);
+    await expect
+      .poll(() => readHistory(webOrigin, cookieHeader, clientId, paneId), { timeout: 3_000 })
+      .toContain(marker);
 
     await page.reload();
     await expect(page.locator(".dockview-shell")).toBeVisible({ timeout: 20_000 });
@@ -545,10 +548,9 @@ test("C7 terminal runtime survives browser WS drop across page.reload", async ({
         args: { data: `echo ${marker2}\r` }
       })
     });
-    await page.waitForTimeout(500);
-    const historyFinal = await readHistory(handle.origin, cookieHeaderAfter, clientId, paneId);
-    expect(historyFinal).toContain(marker);
-    expect(historyFinal).toContain(marker2);
+    await expect
+      .poll(() => readHistory(webOrigin, cookieHeaderAfter, clientId, paneId), { timeout: 3_000 })
+      .toMatch(new RegExp(`${marker}[\\s\\S]*${marker2}`));
   } finally {
     await context.close();
   }

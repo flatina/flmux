@@ -28,8 +28,8 @@ export interface FlmuxExtensionCommand<A extends ArgsDef = ArgsDef> {
   readonly [FLMUX_EXTENSION_COMMAND]: true;
   readonly meta?: CommandDef<A>["meta"];
   readonly args?: A;
-  readonly subCommands?: CommandDef<A>["subCommands"];
-  run(input: { args: ParsedArgs<A>; ctx: FlmuxExtensionCliContext; rawArgs: string[] }): unknown | Promise<unknown>;
+  readonly subCommands?: Record<string, FlmuxExtensionCommand>;
+  run(parsedArgs: ParsedArgs<A>, ctx: FlmuxExtensionCliContext, rawArgs: string[]): unknown | Promise<unknown>;
 }
 
 /**
@@ -159,9 +159,9 @@ export async function resolveClientId(origin: string, flags: FlmuxCliFlags): Pro
 
 /**
  * Build a `ShellClient` that talks to a running flmux via HTTP. Extension
- * CommandDefs typically call this inside `run({ args })`:
+ * CommandDefs typically call this inside `run(parsedArgs)`:
  *
- *   const flags = toFlmuxCliFlags(args);
+ *   const flags = toFlmuxCliFlags(parsedArgs);
  *   const client = await createFlmuxClient(flags);
  *   const result = await client.call("/panes/new", { kind: "cowsay" });
  */

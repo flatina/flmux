@@ -13,9 +13,10 @@ export default defineExtensionCommand({
       required: false
     }
   },
-  async run({ args }) {
-    const client = await createFlmuxClient(toFlmuxCliFlags(args));
-    const title = args.title?.trim();
+  async run(parsedArgs, ctx) {
+    console.info(`[cowsay] dataDir = ${ctx.dataDir}`);
+    const client = await createFlmuxClient(toFlmuxCliFlags(parsedArgs));
+    const title = parsedArgs.title?.trim();
     const result = await client.call("/panes/new", {
       kind: "cowsay",
       place: "right",

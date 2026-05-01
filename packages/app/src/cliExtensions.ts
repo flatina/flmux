@@ -80,19 +80,36 @@ function isFlmuxExtensionCommand(value: unknown): value is FlmuxExtensionCommand
 function wrapAsCommandDef(
   def: FlmuxExtensionCommand,
   extensionId: string,
-  options: LoadCliCommandDefOptions
+  options: LoadCliCommandDefOptions,
+  seen: WeakSet<FlmuxExtensionCommand> = new WeakSet()
 ): CommandDef {
+  if (seen.has(def)) {
+    throw new Error(`[flmux] extension '${extensionId}' subCommand graph contains a cycle`);
+  }
+  seen.add(def);
+  const subCommands = def.subCommands
+    ? Object.fromEntries(
+        Object.entries(def.subCommands).map(([name, sub]) => {
+          if (!isFlmuxExtensionCommand(sub)) {
+            throw new Error(
+              `[flmux] extension '${extensionId}' subCommand '${name}' is not a defineExtensionCommand result`
+            );
+          }
+          return [name, wrapAsCommandDef(sub, extensionId, options, seen)];
+        })
+      )
+    : undefined;
   return {
     meta: def.meta,
     args: def.args,
-    subCommands: def.subCommands,
+    subCommands,
     async run(input) {
       const dataDir = options.resolveExtensionDataDir(extensionId);
       if (!dataDir) {
         throw new Error(`[flmux] extension '${extensionId}' is not registered — refusing to run CLI`);
       }
       const ctx: FlmuxExtensionCliContext = { dataDir };
-      await def.run({ args: input.args, ctx, rawArgs: input.rawArgs });
+      await def.run(input.args, ctx, input.rawArgs);
     }
   } as CommandDef;
 }

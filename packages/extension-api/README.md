@@ -142,16 +142,16 @@ export default defineExtensionCommand({
     ...commonArgs,
     title: { type: "positional", description: "Title", required: false }
   },
-  async run({ args, ctx }) {
+  async run(parsedArgs, ctx) {
     // ctx.dataDir is flmux-injected; the extension never claims its own id.
-    const client = await createFlmuxClient(toFlmuxCliFlags(args));
+    const client = await createFlmuxClient(toFlmuxCliFlags(parsedArgs));
     const result = await client.call("/panes/new", { kind: "myext", place: "right" });
     printJson(result);
   }
 });
 ```
 
-Extension CLI entries default-export `defineExtensionCommand({...})`. flmux wraps it as a [citty](https://github.com/unjs/citty) subcommand, dispatches `flmux myext …` straight to your `run({ args, ctx, rawArgs })`, and supplies `ctx` with the flmux-controlled context (currently `dataDir`). Spread `commonArgs` into your own `args` to inherit the transport flags (`--origin`, `--client`, `--token`); `createFlmuxClient(flags)` returns a `ShellClient` talking to the flmux HTTP surface; `printJson(value)` writes the canonical stdout format the built-in verbs use.
+Extension CLI entries default-export `defineExtensionCommand({...})`. flmux wraps it as a [citty](https://github.com/unjs/citty) subcommand, dispatches `flmux myext …` straight to your `run(parsedArgs, ctx, rawArgs)`, and supplies `ctx` with the flmux-controlled context (currently `dataDir`). Spread `commonArgs` into your own `args` to inherit the transport flags (`--origin`, `--client`, `--token`); `createFlmuxClient(flags)` returns a `ShellClient` talking to the flmux HTTP surface; `printJson(value)` writes the canonical stdout format the built-in verbs use.
 
 ### Column-fill placement helper
 
@@ -184,7 +184,7 @@ The heuristic uses creation order as a proxy for spatial layout — not a guaran
 flmux carves a per-extension data directory at `<rootDir>/.flmux/ext/<extensionId>/` and hands it to the extension as a readonly `ctx.dataDir` field. flmux is the one running the extension, so the extension never claims its own id — it just reads `ctx.dataDir`. The directory is the extension's writable space; flmux makes no assumptions about its layout (sessions, configs, caches, etc. all welcome) and mkdirs lazily on first need.
 
 - **Server entry** — `ctx.dataDir` is supplied to both `onInit(ctx)` (process-wide one-time setup) and `onPaneConnected(paneId, attachmentId, ctx)`.
-- **CLI entry** — `ctx.dataDir` is supplied to `run({ args, ctx, rawArgs })` (see "CLI extension" above). Use `defineExtensionCommand` from `@flmux/extension-api/cli` so flmux can inject it.
+- **CLI entry** — `ctx.dataDir` is supplied to `run(parsedArgs, ctx, rawArgs)` (see "CLI extension" above). Use `defineExtensionCommand` from `@flmux/extension-api/cli` so flmux can inject it.
 - **Renderer** — no direct fs access (browser context). Forward writes through the channel to the server entry.
 
 ```ts
@@ -209,7 +209,7 @@ import { commonArgs, defineExtensionCommand, printJson } from "@flmux/extension-
 export default defineExtensionCommand({
   meta: { name: "myext-where" },
   args: { ...commonArgs },
-  async run({ ctx }) {
+  async run(_parsedArgs, ctx) {
     printJson({ dataDir: ctx.dataDir });
   }
 });

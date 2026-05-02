@@ -163,7 +163,21 @@ async function runCliJson<T>(
     throw new Error(`CLI failed (${exitCode}): ${stderr || stdout}`.trim());
   }
 
-  return JSON.parse(stdout) as T;
+  return parseTrailingJson<T>(stdout);
+}
+
+/**
+ * `printJson` writes the result as pretty-printed JSON whose opening `{` or
+ * `[` sits at column 0. Lines before it (CLI info logs etc.) are skipped.
+ */
+export function parseTrailingJson<T>(stdout: string): T {
+  const lines = stdout.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (/^[\{\[]/.test(lines[i])) {
+      return JSON.parse(lines.slice(i).join("\n")) as T;
+    }
+  }
+  throw new Error(`No JSON value found in CLI stdout:\n${stdout}`);
 }
 
 function resolveBunCommand() {

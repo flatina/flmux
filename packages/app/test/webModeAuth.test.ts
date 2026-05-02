@@ -6,6 +6,7 @@ import { resolveFlmuxAuthPaths } from "../src/main/auth/authConfig";
 import { createFlmuxWebModeAuthorizer } from "../src/main/webModeAuth";
 import { runTokensCli } from "../src/cliTokens";
 import { startFlmuxServer } from "../src/main/server";
+import { parseTrailingJson } from "./smokeHarness";
 
 const tempDirs: string[] = [];
 
@@ -414,7 +415,7 @@ async function runCliJson(args: string[]) {
     throw new Error(`CLI failed (${exitCode}): ${stderr || stdout}`.trim());
   }
 
-  return JSON.parse(stdout) as unknown;
+  return parseTrailingJson(stdout);
 }
 
 function resolveBunCommand() {

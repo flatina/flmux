@@ -15,6 +15,7 @@
     "pack:extensions": "bun scripts/pack-extensions.ts",
     "build": "bun run --filter @flmux/app build",
     "dev": "bun run --filter @flmux/app dev",
+    "dev:reload": "bun scripts/dev-reload.ts",
     "test:direct": "cd packages/app && bun run test:direct",
     "test:smoke": "cd packages/app && bun run test:smoke",
     "test:harness-smoke": "cd packages/app && bun run test:harness-smoke",

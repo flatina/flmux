@@ -713,7 +713,7 @@ describe("shell model direct", () => {
     expect(defaultBrowser).toMatchObject({
       ok: true,
       value: {
-        path: expect.stringMatching(/^\/panes\/pane_/),
+        path: expect.stringMatching(/^\/panes\/p[0-9a-z]{7}$/),
         pane: {
           kind: "browser",
           title: "Start",
@@ -757,7 +757,7 @@ describe("shell model direct", () => {
     expect(created).toMatchObject({
       ok: true,
       value: {
-        path: expect.stringMatching(/^\/panes\/pane_/),
+        path: expect.stringMatching(/^\/panes\/p[0-9a-z]{7}$/),
         pane: {
           kind: "browser",
           title: "Fixture Browser",

@@ -22,6 +22,15 @@ import type {
 import { resolveTerminalCwdFromRoot } from "@flmux/core/terminal/path";
 import { createSyntheticTerminalService } from "./syntheticTerminalService";
 
+const PANE_ID_EPOCH_MS = Date.UTC(2026, 0, 1);
+let testPaneCounter = 0;
+function newTestPaneId(): string {
+  const minutes = Math.max(0, Math.floor((Date.now() - PANE_ID_EPOCH_MS) / 60_000));
+  const t = minutes.toString(36).padStart(5, "0").slice(-5);
+  const n = (testPaneCounter++ % 1296).toString(36).padStart(2, "0");
+  return `p${t}${n}`;
+}
+
 type StoredPane =
   | { id: string; kind: "browser"; title: string; url: string }
   | { id: string; kind: "cowsay"; title: string }
@@ -372,7 +381,7 @@ export class TestShellModelHost implements ShellModelHost {
 
   createPane(input: NewPaneInput): ShellPaneRecordSnapshot {
     this.calls.createPane.push(input);
-    const paneId = `pane_${crypto.randomUUID()}`;
+    const paneId = newTestPaneId();
     const pane = this.createStoredPane(paneId, input);
     this.panes.set(paneId, pane);
     this.paneParams.set(paneId, this.createPaneParamsFromInput(pane, input));
@@ -814,8 +823,8 @@ export class TestShellModelHost implements ShellModelHost {
   }
 
   private seedDefaultWorkspaceLayout() {
-    const cowsayId = `pane_${crypto.randomUUID()}`;
-    const browserId = `pane_${crypto.randomUUID()}`;
+    const cowsayId = newTestPaneId();
+    const browserId = newTestPaneId();
     const cowsay = this.createStoredPane(cowsayId, {
       kind: "cowsay",
       title: "Cowsay"

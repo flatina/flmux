@@ -475,6 +475,11 @@ export class FlmuxWorkbench {
     const innerApi = createDockview(host, {
       theme: currentDockviewTheme(),
       disableFloatingGroups: true,
+      // Keep pane content in OverlayRenderContainer so gridview restructure
+      // (e.g. addView's wrap-leaf-in-branch path) only updates CSS positions
+      // instead of detaching+re-attaching the pane host DOM — that orphan
+      // window resets scrollTop on overflow:auto descendants.
+      defaultRenderer: "always",
       defaultTabComponent: "pane-tab",
       createComponent: (options) => this.createInnerPanelRenderer(record, options),
       createTabComponent: (options) =>

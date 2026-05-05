@@ -24,8 +24,9 @@ interface FlmuxPaths {
   webSessionsDir: string;
   /** `<flmuxDir>/session.json` — desktop single-user session snapshot. */
   desktopSessionFile: string;
-  /** `<flmuxDir>/server.toml` — user-editable server config (port etc.). */
-  serverConfigFile: string;
+  /** `<flmuxDir>/app.toml` — user-editable app config. Sections:
+   * `[server] port`, `[app] title`. */
+  appConfigFile: string;
   /** `<flmuxDir>/ext` — parent of per-extension data dirs. Extensions are
    * handed only `<extDataRootDir>/<extensionId>/`; this parent isn't
    * advertised. Boundary is advisory (server entries have full fs access),
@@ -54,7 +55,7 @@ export function resolveFlmuxPaths(rootDir: string): FlmuxPaths {
     tokensFile: join(authDir, "users.tokens.toml"),
     webSessionsDir: join(authDir, "sessions"),
     desktopSessionFile: join(flmuxDir, "session.json"),
-    serverConfigFile: join(flmuxDir, "server.toml"),
+    appConfigFile: join(flmuxDir, "app.toml"),
     extDataRootDir: join(flmuxDir, "ext")
   };
 }

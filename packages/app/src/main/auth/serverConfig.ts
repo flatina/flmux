@@ -9,7 +9,7 @@ interface FlmuxServerPortResolution {
  * Resolve the server port with a 3-tier priority:
  *   1. `--port <n>` CLI flag
  *   2. `FLMUX_PORT` env var
- *   3. `configFile` — `[server] port` (typically `<flmuxDir>/server.toml`)
+ *   3. `configFile` — `[server] port` (typically `<flmuxDir>/app.toml`)
  * Returns `{ port: undefined, source: "default" }` when nothing is set —
  * the caller should treat that as "let the OS pick" (Bun listens on 0).
  */

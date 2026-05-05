@@ -67,6 +67,10 @@ export interface ShellCoreOptions {
   /** Host app version. Defaults to `"0.0.0"` for tests; production callers
    * pass `FLMUX_APP_VERSION`. Surfaced through `/status/app/version`. */
   appVersion?: string;
+  /** Initial app title. Seeds `appTitle` before any session restore; runtime
+   * `setAppTitle` (persisted in session.json) overrides on subsequent boots.
+   * Defaults to `"flmux"`. */
+  initialAppTitle?: string;
   /**
    * Slot key used when a mutation/read doesn't pass an explicit slot — i.e.
    * the "owner" attachment for initialize(), restoreWorkspace, and the
@@ -104,12 +108,13 @@ export class ShellCore implements ShellModelHost {
   private readonly activeSlots = new Map<string, ActiveStateSlot>();
   private readonly defaultSlotKey: string;
   private paneIdCounter = 0;
-  private appTitle = "flmux";
+  private appTitle: string;
   private appOrigin: string;
   private seq = 0;
 
   constructor(private readonly options: ShellCoreOptions) {
     this.appOrigin = options.initialAppOrigin ?? "http://127.0.0.1:0";
+    this.appTitle = options.initialAppTitle ?? "flmux";
     this.defaultSlotKey = options.defaultSlotKey ?? IMPLICIT_DEFAULT_SLOT_KEY;
   }
 

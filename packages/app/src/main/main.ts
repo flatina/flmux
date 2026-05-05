@@ -34,6 +34,7 @@ import {
 import type { FlmuxUser as FlmuxUserImport } from "./auth/userStore";
 import { eventToReadPath } from "./auth/eventAclPath";
 import { resolveFlmuxServerPort } from "./auth/serverConfig";
+import { resolveFlmuxAppTitle } from "./appConfig";
 import { resolveFlmuxRuntimeMode } from "./runtimeMode";
 import { resolveFlmuxRootDir, resolveFlmuxPaths } from "./flmuxPaths";
 import { ensureFlmuxCliShim, ensureExtensionCliShims } from "./cliShim";
@@ -372,6 +373,7 @@ const desktopAuthority: DesktopShellAuthority | null =
         projectDir,
         runtimeLabel: "desktop local-http preload ok",
         appVersion: FLMUX_APP_VERSION,
+        initialAppTitle: resolveFlmuxAppTitle(flmuxPaths.appConfigFile),
         terminalService,
         sessionStore,
         clientRegistry,
@@ -391,6 +393,7 @@ const userAuthorityRegistry: WebModeUserAuthorityRegistry | null =
     ? createWebModeUserAuthorityRegistry({
         projectDir,
         appVersion: FLMUX_APP_VERSION,
+        initialAppTitle: resolveFlmuxAppTitle(flmuxPaths.appConfigFile),
         terminalService,
         clientRegistry,
         localExtensions,
@@ -919,7 +922,7 @@ rendererWebHandler.onWebClientDisconnected = (client) => {
 };
 
 const portResolution = resolveFlmuxServerPort({
-  configFile: flmuxPaths.serverConfigFile
+  configFile: flmuxPaths.appConfigFile
 });
 
 const server = startFlmuxServer({

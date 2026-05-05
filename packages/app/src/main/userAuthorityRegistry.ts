@@ -8,6 +8,7 @@ import type { TerminalService } from "./terminal-service";
 interface WebModeUserAuthorityRegistryOptions {
   projectDir: string;
   appVersion?: string;
+  initialAppTitle?: string;
   terminalService: TerminalService;
   clientRegistry: FlmuxClientRegistry;
   localExtensions?: readonly DiscoveredLocalExtension[];
@@ -72,6 +73,7 @@ export function createWebModeUserAuthorityRegistry(
       projectDir: options.projectDir,
       runtimeLabel: `web server authority (${userId})`,
       appVersion: options.appVersion,
+      initialAppTitle: options.initialAppTitle,
       terminalService: options.terminalService,
       clientRegistry: options.clientRegistry,
       localExtensions: options.localExtensions,

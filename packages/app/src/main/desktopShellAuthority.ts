@@ -47,6 +47,7 @@ export async function createDesktopShellAuthority(options: {
   projectDir: string;
   runtimeLabel: string;
   appVersion?: string;
+  initialAppTitle?: string;
   terminalService: TerminalService;
   sessionStore: FlmuxSessionStore;
   clientRegistry: FlmuxClientRegistry;
@@ -67,6 +68,7 @@ export async function createDesktopShellAuthority(options: {
     paneRegistry,
     runtimeLabel: options.runtimeLabel,
     appVersion: options.appVersion,
+    initialAppTitle: options.initialAppTitle,
     projectDir: options.projectDir,
     terminalBackend: options.terminalService,
     cefCdpPort: options.cefCdpPort,

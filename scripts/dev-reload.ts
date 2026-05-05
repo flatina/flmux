@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 // Kill any flmux listening on the configured port, then hand off to `bun run dev`.
 // `bun run dev` already chains `build:extensions`, so this collapses kill+build+restart
 // into a single tool invocation. Port resolution mirrors `auth/serverConfig.ts`:
-// FLMUX_PORT env > <rootDir>/.flmux/server.toml. No port pinned → skip kill (assume nothing running).
+// FLMUX_PORT env > <rootDir>/.flmux/app.toml. No port pinned → skip kill (assume nothing running).
 const rootDir = process.env.FLMUX_ROOT_DIR ?? resolve(import.meta.dir, "..");
 const forwarded = process.argv.slice(2);
 const port = resolvePort(rootDir, forwarded);
@@ -21,7 +21,7 @@ function resolvePort(root: string, argv: readonly string[]): number | undefined 
   if (fromArg !== undefined) return fromArg;
   const fromEnv = parsePort(process.env.FLMUX_PORT);
   if (fromEnv !== undefined) return fromEnv;
-  const tomlPath = resolve(root, ".flmux", "server.toml");
+  const tomlPath = resolve(root, ".flmux", "app.toml");
   if (!existsSync(tomlPath)) return undefined;
   const m = /^\s*port\s*=\s*(\d+)/m.exec(readFileSync(tomlPath, "utf8"));
   return m ? parsePort(m[1]) : undefined;

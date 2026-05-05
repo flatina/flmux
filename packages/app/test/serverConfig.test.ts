@@ -12,7 +12,7 @@ describe("resolveFlmuxServerPort", () => {
 
   it("prefers --port CLI flag over env + config", () => {
     const dir = mkdtempSync(join(tmpdir(), "flmux-cfg-"));
-    const configFile = resolve(dir, "server.toml");
+    const configFile = resolve(dir, "app.toml");
     try {
       writeFileSync(configFile, `[server]\nport = 5000\n`, "utf8");
       const result = resolveFlmuxServerPort({
@@ -28,7 +28,7 @@ describe("resolveFlmuxServerPort", () => {
 
   it("falls through CLI → env → config → default", () => {
     const dir = mkdtempSync(join(tmpdir(), "flmux-cfg-"));
-    const configFile = resolve(dir, "server.toml");
+    const configFile = resolve(dir, "app.toml");
     try {
       writeFileSync(configFile, `[server]\nport = 5000\n`, "utf8");
       expect(resolveFlmuxServerPort({ argv: [], env: { FLMUX_PORT: "6000" }, configFile })).toEqual({
@@ -47,7 +47,7 @@ describe("resolveFlmuxServerPort", () => {
 
   it("rejects malformed values (non-integer, out-of-range) and keeps falling through", () => {
     const dir = mkdtempSync(join(tmpdir(), "flmux-cfg-"));
-    const configFile = resolve(dir, "server.toml");
+    const configFile = resolve(dir, "app.toml");
     try {
       writeFileSync(configFile, `[server]\nport = 4095\n`, "utf8");
       // Bad CLI → falls through to env
@@ -81,10 +81,10 @@ describe("resolveFlmuxServerPort", () => {
     });
   });
 
-  it("ignores missing server.toml silently", () => {
+  it("ignores missing app.toml silently", () => {
     const dir = mkdtempSync(join(tmpdir(), "flmux-cfg-"));
     try {
-      const configFile = resolve(dir, "server.toml");
+      const configFile = resolve(dir, "app.toml");
       expect(resolveFlmuxServerPort({ argv: [], env: {}, configFile })).toEqual({ port: undefined, source: "default" });
     } finally {
       rmSync(dir, { recursive: true, force: true });

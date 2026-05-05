@@ -64,6 +64,9 @@ export interface ShellCoreOptions {
    * `/status/app/cefCdpPort` so external tools can drive browser panes via
    * CDP without a private channel. */
   cefCdpPort?: number;
+  /** Host app version. Defaults to `"0.0.0"` for tests; production callers
+   * pass `FLMUX_APP_VERSION`. Surfaced through `/status/app/version`. */
+  appVersion?: string;
   /**
    * Slot key used when a mutation/read doesn't pass an explicit slot — i.e.
    * the "owner" attachment for initialize(), restoreWorkspace, and the
@@ -388,6 +391,7 @@ export class ShellCore implements ShellModelHost {
       title: this.appTitle,
       origin: this.appOrigin,
       runtimeLabel: this.options.runtimeLabel,
+      version: this.options.appVersion ?? "0.0.0",
       cefCdpPort: this.options.cefCdpPort
     };
   }
@@ -635,6 +639,7 @@ export class ShellCore implements ShellModelHost {
       title: this.appTitle,
       origin: this.appOrigin,
       runtimeLabel: this.options.runtimeLabel,
+      version: this.options.appVersion ?? "0.0.0",
       cefCdpPort: this.options.cefCdpPort
     };
   }

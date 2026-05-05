@@ -46,6 +46,7 @@ export const DESKTOP_ATTACHMENT_ID = "local";
 export async function createDesktopShellAuthority(options: {
   projectDir: string;
   runtimeLabel: string;
+  appVersion?: string;
   terminalService: TerminalService;
   sessionStore: FlmuxSessionStore;
   clientRegistry: FlmuxClientRegistry;
@@ -65,6 +66,7 @@ export async function createDesktopShellAuthority(options: {
   const shellCore = new ShellCore({
     paneRegistry,
     runtimeLabel: options.runtimeLabel,
+    appVersion: options.appVersion,
     projectDir: options.projectDir,
     terminalBackend: options.terminalService,
     cefCdpPort: options.cefCdpPort,

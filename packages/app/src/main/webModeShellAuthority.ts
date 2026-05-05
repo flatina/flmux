@@ -40,6 +40,7 @@ export interface WebModeShellAuthority {
 export async function createWebModeShellAuthority(options: {
   projectDir: string;
   runtimeLabel: string;
+  appVersion?: string;
   terminalService: TerminalService;
   clientRegistry: FlmuxClientRegistry;
   localExtensions?: readonly DiscoveredLocalExtension[];
@@ -65,6 +66,7 @@ export async function createWebModeShellAuthority(options: {
   const shellCore = new ShellCore({
     paneRegistry,
     runtimeLabel: options.runtimeLabel,
+    appVersion: options.appVersion,
     projectDir: options.projectDir,
     terminalBackend: options.terminalService,
     // Web-mode authority's default slot is the server-side ShellModelAPI

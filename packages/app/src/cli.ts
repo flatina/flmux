@@ -6,6 +6,7 @@ import { runTokensCli } from "./cliTokens";
 import { resolveFlmuxPaths, resolveFlmuxRootDir } from "./main/flmuxPaths";
 import { commonArgs, printJson, resolveClientId, resolveOrigin, toFlmuxCliFlags } from "@flmux/extension-api/cli";
 import type { FlmuxCliFlags } from "@flmux/extension-api/cli";
+import { FLMUX_APP_VERSION } from "./version";
 
 type Flags = FlmuxCliFlags;
 
@@ -174,6 +175,7 @@ const tokensCmd = defineCommand({
 const rootCmd = defineCommand({
   meta: {
     name: "flmux",
+    version: FLMUX_APP_VERSION,
     description: "flmux CLI — ShellModelAPI over HTTP (get/ls/set/call) + extension commands"
   },
   subCommands: await buildSubCommands()

@@ -37,6 +37,7 @@ import { resolveFlmuxServerPort } from "./auth/serverConfig";
 import { resolveFlmuxRuntimeMode } from "./runtimeMode";
 import { resolveFlmuxRootDir, resolveFlmuxPaths } from "./flmuxPaths";
 import { ensureFlmuxCliShim, ensureExtensionCliShims } from "./cliShim";
+import { FLMUX_APP_VERSION } from "../version";
 import { PtydLockFile } from "@flmux/core/terminal/ptyd/lockFile";
 import { callJsonRpcIpc } from "@flmux/core/terminal/ptyd/jsonRpcIpc";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
@@ -370,6 +371,7 @@ const desktopAuthority: DesktopShellAuthority | null =
     ? await createDesktopShellAuthority({
         projectDir,
         runtimeLabel: "desktop local-http preload ok",
+        appVersion: FLMUX_APP_VERSION,
         terminalService,
         sessionStore,
         clientRegistry,
@@ -388,6 +390,7 @@ const userAuthorityRegistry: WebModeUserAuthorityRegistry | null =
   runtimeMode === "web"
     ? createWebModeUserAuthorityRegistry({
         projectDir,
+        appVersion: FLMUX_APP_VERSION,
         terminalService,
         clientRegistry,
         localExtensions,

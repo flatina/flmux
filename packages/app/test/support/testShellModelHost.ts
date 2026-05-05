@@ -208,7 +208,8 @@ export class TestShellModelHost implements ShellModelHost {
     return {
       title: this.appTitle,
       origin: this.appOrigin,
-      runtimeLabel: this.runtimeLabel
+      runtimeLabel: this.runtimeLabel,
+      version: "0.0.0"
     };
   }
 

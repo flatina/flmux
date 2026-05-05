@@ -884,6 +884,7 @@ class ShellModel implements ShellModelAPI {
           leafEntry("title", "/status/app/title"),
           leafEntry("origin", "/status/app/origin"),
           leafEntry("runtimeLabel", "/status/app/runtimeLabel"),
+          leafEntry("version", "/status/app/version"),
           leafEntry("cefCdpPort", "/status/app/cefCdpPort")
         ]
       };
@@ -1655,7 +1656,13 @@ function actionEntry(name: string, path: string): ShellPathEntry {
 }
 
 function isAppStatusKey(value: string): value is keyof AppStatusSnapshot {
-  return value === "title" || value === "origin" || value === "runtimeLabel" || value === "cefCdpPort";
+  return (
+    value === "title" ||
+    value === "origin" ||
+    value === "runtimeLabel" ||
+    value === "version" ||
+    value === "cefCdpPort"
+  );
 }
 
 function isWorkspaceStatusKey(value: string): value is keyof ReturnType<ShellModelHost["getWorkspaceStatus"]> {

@@ -22,7 +22,7 @@ describe("flmux host requests", () => {
     const handlers = createFlmuxHostRequestHandlers({
       mode: "desktop",
       getAppOrigin: () => "http://127.0.0.1:4321",
-      getProjectDir: () => "C:/project",
+      getProjectDir: () => "/flmux-test",
       getAuthorityClientId: () => null,
       getCallerViewId: () => 77,
       paneSubscribers,
@@ -43,7 +43,7 @@ describe("flmux host requests", () => {
     expect(handlers["flmux.getConfig"]()).toMatchObject({
       mode: "desktop",
       appOrigin: "http://127.0.0.1:4321",
-      projectDir: "C:/project",
+      projectDir: "/flmux-test",
       authorityClientId: null
     });
     expect(handlers["flmux.client.register"]({})).toEqual({
@@ -107,7 +107,7 @@ describe("flmux host requests", () => {
     const handlers = createFlmuxHostRequestHandlers({
       mode: "web",
       getAppOrigin: () => "http://127.0.0.1:4321",
-      getProjectDir: () => "C:/project",
+      getProjectDir: () => "/flmux-test",
       getAuthorityClientId: () => "server_authority",
       getCallerViewId: () => 5,
       paneSubscribers: new Map(),

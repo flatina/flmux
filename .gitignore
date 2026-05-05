@@ -1,7 +1,16 @@
 .tmp/
 .flmux/
+internal-notes/
 dist/
 node_modules/
 test-results/
 playwright-report/
 .fixtures/
+
+# Allow-list extensions: anything not first-party stays local-only.
+extensions/*
+!extensions/cowsay/
+!extensions/counter/
+!extensions/header-menu/
+!extensions/inspector/
+!extensions/scratchpad/

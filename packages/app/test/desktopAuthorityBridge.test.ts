@@ -29,7 +29,7 @@ async function createTestAuthority(options: { initial?: FlmuxSessionSnapshot | n
   const clientRegistry = new FlmuxClientRegistry();
   const sessionStore = createMemorySessionStore(options.initial ?? null);
   const authority = await createDesktopShellAuthority({
-    projectDir: "C:/project",
+    projectDir: "/flmux-test",
     runtimeLabel: "desktop-test",
     terminalService,
     sessionStore,
@@ -258,7 +258,7 @@ describe("desktop shell authority bridge", () => {
     const preloadHandlers = createFlmuxHostRequestHandlers({
       mode: "desktop",
       getAppOrigin: () => "http://127.0.0.1:0",
-      getProjectDir: () => "C:/project",
+      getProjectDir: () => "/flmux-test",
       getAuthorityClientId: () => authority.clientId,
       getCallerViewId: () => 1,
       paneSubscribers: new Map(),
@@ -296,7 +296,7 @@ describe("desktop shell authority bridge", () => {
     const handlers = createFlmuxHostRequestHandlers({
       mode: "desktop",
       getAppOrigin: () => "http://127.0.0.1:0",
-      getProjectDir: () => "C:/project",
+      getProjectDir: () => "/flmux-test",
       getAuthorityClientId: () => authority.clientId,
       getCallerViewId: () => viewId,
       paneSubscribers: new Map(),
@@ -345,7 +345,7 @@ describe("desktop shell authority bridge", () => {
     const handlers = createFlmuxHostRequestHandlers({
       mode: "desktop",
       getAppOrigin: () => "http://127.0.0.1:0",
-      getProjectDir: () => "C:/project",
+      getProjectDir: () => "/flmux-test",
       getAuthorityClientId: () => authority.clientId,
       getCallerViewId: () => 42,
       paneSubscribers,
@@ -374,7 +374,7 @@ describe("desktop shell authority bridge", () => {
     const secondAttachHandlers = createFlmuxHostRequestHandlers({
       mode: "desktop",
       getAppOrigin: () => "http://127.0.0.1:0",
-      getProjectDir: () => "C:/project",
+      getProjectDir: () => "/flmux-test",
       getAuthorityClientId: () => authority.clientId,
       getCallerViewId: () => 99,
       paneSubscribers,
@@ -430,7 +430,7 @@ describe("desktop shell authority bridge", () => {
     const handlers = createFlmuxHostRequestHandlers({
       mode: "desktop",
       getAppOrigin: () => "http://127.0.0.1:0",
-      getProjectDir: () => "C:/project",
+      getProjectDir: () => "/flmux-test",
       getAuthorityClientId: () => authority.clientId,
       getCallerViewId: () => 1,
       paneSubscribers: new Map(),

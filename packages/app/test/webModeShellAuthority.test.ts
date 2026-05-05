@@ -12,7 +12,7 @@ describe("web mode shell authority", () => {
     const clientRegistry = new FlmuxClientRegistry();
     const terminalService = createTerminalService(createInMemoryTerminalBackend());
     const authority = await createWebModeShellAuthority({
-      projectDir: "C:/project",
+      projectDir: "/flmux-test",
       runtimeLabel: "web server authority",
       terminalService,
       clientRegistry
@@ -91,7 +91,7 @@ describe("web mode shell authority", () => {
     const clientRegistry = new FlmuxClientRegistry();
     const terminalService = createTerminalService(createInMemoryTerminalBackend());
     const authority = await createWebModeShellAuthority({
-      projectDir: "C:/project",
+      projectDir: "/flmux-test",
       runtimeLabel: "web server authority",
       terminalService,
       clientRegistry
@@ -133,7 +133,7 @@ describe("web mode shell authority", () => {
     const terminalService = createTerminalService(createInMemoryTerminalBackend());
     const saved: FlmuxSessionSnapshot[] = [];
     const authority = await createWebModeShellAuthority({
-      projectDir: "C:/project",
+      projectDir: "/flmux-test",
       runtimeLabel: "web server authority",
       terminalService,
       clientRegistry,
@@ -164,7 +164,7 @@ describe("web mode shell authority", () => {
     const clientRegistry = new FlmuxClientRegistry();
     const terminalService = createTerminalService(createInMemoryTerminalBackend());
     const authority = await createWebModeShellAuthority({
-      projectDir: "C:/project",
+      projectDir: "/flmux-test",
       runtimeLabel: "web server authority",
       terminalService,
       clientRegistry
@@ -180,7 +180,7 @@ describe("web mode shell authority", () => {
     const clientRegistry = new FlmuxClientRegistry();
     const terminalService = createTerminalService(createInMemoryTerminalBackend());
     const authority = await createWebModeShellAuthority({
-      projectDir: "C:/project",
+      projectDir: "/flmux-test",
       runtimeLabel: "web server authority",
       terminalService,
       clientRegistry,
@@ -251,7 +251,7 @@ describe("web mode shell authority", () => {
     const clientRegistry = new FlmuxClientRegistry();
     const terminalService = createTerminalService(createInMemoryTerminalBackend());
     const authority = await createWebModeShellAuthority({
-      projectDir: "C:/project",
+      projectDir: "/flmux-test",
       runtimeLabel: "web server authority",
       terminalService,
       clientRegistry,
@@ -297,7 +297,7 @@ describe("web mode shell authority", () => {
     const clientRegistry = new FlmuxClientRegistry();
     const terminalService = createTerminalService(createInMemoryTerminalBackend());
     const authority = await createWebModeShellAuthority({
-      projectDir: "C:/project",
+      projectDir: "/flmux-test",
       runtimeLabel: "web server authority",
       terminalService,
       clientRegistry

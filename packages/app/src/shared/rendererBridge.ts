@@ -51,11 +51,14 @@ export interface FlmuxLocalExtensionLoadEntry {
   version: string;
   manifestUrl: string;
   rendererEntryUrl: string;
-  /** kind → fully-qualified icon URL (manifest `panes[].icon`). Empty when
-   *  the extension declares no per-pane icons. */
+  // kind → fully-qualified icon URL (manifest `panes[].icon`). Empty when the extension declares no per-pane icons.
   paneIcons: Record<string, string>;
-  /** kind → manifest `panes[].defaultTitle`. Used for popup labels. */
+  // kind → manifest `panes[].defaultTitle`. Used for popup labels.
   paneDefaultTitles: Record<string, string>;
+  // kind → manifest `panes[].minimumWidth`. Forwarded to dockview's panel constraint after `addPanel`.
+  paneMinimumWidths: Record<string, number>;
+  // kind → manifest `panes[].maximumWidth`. Forwarded to dockview's panel constraint after `addPanel`.
+  paneMaximumWidths: Record<string, number>;
 }
 
 export interface FlmuxRendererBootstrapConfig {

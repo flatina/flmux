@@ -25,17 +25,11 @@ export type PaneSingletonScope = "workspace" | "app";
 export interface ExtensionManifestPane {
   kind: string;
   defaultTitle?: string;
-  /** Constrain `/panes/new` to a single instance.
-   *  - `"workspace"`: at most one pane of this kind per workspace; subsequent
-   *    `/panes/new` activates the existing one.
-   *  - `"app"`: at most one across all workspaces. When the existing pane
-   *    lives in the caller's active workspace, it gets activated; otherwise
-   *    its snapshot is returned without changing active state (callers
-   *    deciding how to surface it). */
   singletonScope?: PaneSingletonScope;
-  /** Relative path to an SVG/PNG icon. Replaces the default hamburger
-   *  glyph on the pane's tab header. */
+  // Relative path to an SVG/PNG icon. Replaces the default hamburger glyph on the pane's tab header.
   icon?: string;
+  minimumWidth?: number;
+  maximumWidth?: number;
 }
 
 export interface ExtensionManifest {
@@ -260,6 +254,24 @@ function validateManifestPanes(value: unknown) {
     const defaultTitle = entry.defaultTitle === undefined ? undefined : asNonEmptyString(entry.defaultTitle);
     const singletonScope = entry.singletonScope;
     const iconPath = validateManifestEntrypointPath(entry.icon, `panes[${index}].icon`);
+    const minimumWidthRaw = entry.minimumWidth;
+    let minimumWidth: number | undefined;
+    if (minimumWidthRaw !== undefined) {
+      if (typeof minimumWidthRaw !== "number" || !Number.isFinite(minimumWidthRaw) || minimumWidthRaw <= 0) {
+        errors.push(`Manifest field 'panes[${index}].minimumWidth' must be a positive finite number when provided`);
+        return;
+      }
+      minimumWidth = minimumWidthRaw;
+    }
+    const maximumWidthRaw = entry.maximumWidth;
+    let maximumWidth: number | undefined;
+    if (maximumWidthRaw !== undefined) {
+      if (typeof maximumWidthRaw !== "number" || !Number.isFinite(maximumWidthRaw) || maximumWidthRaw <= 0) {
+        errors.push(`Manifest field 'panes[${index}].maximumWidth' must be a positive finite number when provided`);
+        return;
+      }
+      maximumWidth = maximumWidthRaw;
+    }
 
     if (!kind) {
       errors.push(`Manifest field 'panes[${index}].kind' must be a non-empty string`);
@@ -288,7 +300,9 @@ function validateManifestPanes(value: unknown) {
       kind,
       ...(defaultTitle ? { defaultTitle } : {}),
       ...(singletonScope ? { singletonScope } : {}),
-      ...(icon ? { icon } : {})
+      ...(icon ? { icon } : {}),
+      ...(minimumWidth !== undefined ? { minimumWidth } : {}),
+      ...(maximumWidth !== undefined ? { maximumWidth } : {})
     });
   });
 

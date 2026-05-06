@@ -27,6 +27,8 @@ export interface ExtensionManifestPane {
   defaultTitle?: string;
   singletonScope?: PaneSingletonScope;
   icon?: string;
+  minimumWidth?: number;
+  maximumWidth?: number;
 }
 
 export interface ExtensionManifest {
@@ -224,6 +226,24 @@ function validateManifestPanes(value: unknown) {
     const defaultTitle = entry.defaultTitle === undefined ? undefined : asNonEmptyString(entry.defaultTitle);
     const singletonScope = entry.singletonScope;
     const iconPath = validateManifestEntrypointPath(entry.icon, `panes[${index}].icon`);
+    const minimumWidthRaw = entry.minimumWidth;
+    let minimumWidth: number | undefined;
+    if (minimumWidthRaw !== undefined) {
+      if (typeof minimumWidthRaw !== "number" || !Number.isFinite(minimumWidthRaw) || minimumWidthRaw <= 0) {
+        errors.push(`Manifest field 'panes[${index}].minimumWidth' must be a positive finite number when provided`);
+        return;
+      }
+      minimumWidth = minimumWidthRaw;
+    }
+    const maximumWidthRaw = entry.maximumWidth;
+    let maximumWidth: number | undefined;
+    if (maximumWidthRaw !== undefined) {
+      if (typeof maximumWidthRaw !== "number" || !Number.isFinite(maximumWidthRaw) || maximumWidthRaw <= 0) {
+        errors.push(`Manifest field 'panes[${index}].maximumWidth' must be a positive finite number when provided`);
+        return;
+      }
+      maximumWidth = maximumWidthRaw;
+    }
     if (!kind) {
       errors.push(`Manifest field 'panes[${index}].kind' must be a non-empty string`);
       return;
@@ -250,7 +270,9 @@ function validateManifestPanes(value: unknown) {
       kind,
       ...(defaultTitle ? { defaultTitle } : {}),
       ...(singletonScope ? { singletonScope } : {}),
-      ...(icon ? { icon } : {})
+      ...(icon ? { icon } : {}),
+      ...(minimumWidth !== undefined ? { minimumWidth } : {}),
+      ...(maximumWidth !== undefined ? { maximumWidth } : {})
     });
   });
 

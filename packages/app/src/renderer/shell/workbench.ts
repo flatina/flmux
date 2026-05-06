@@ -425,8 +425,17 @@ export class FlmuxWorkbench {
       component: payload.snapshot.kind,
       title: payload.snapshot.title,
       params: payload.params,
-      position
+      position,
+      ...this.paneAddPanelConstraints(payload.snapshot.kind)
     });
+  }
+
+  private paneAddPanelConstraints(kind: string): { minimumWidth?: number; maximumWidth?: number } {
+    const descriptor = this.paneRegistry.get(kind);
+    const constraints: { minimumWidth?: number; maximumWidth?: number } = {};
+    if (descriptor?.minimumWidth !== undefined) constraints.minimumWidth = descriptor.minimumWidth;
+    if (descriptor?.maximumWidth !== undefined) constraints.maximumWidth = descriptor.maximumWidth;
+    return constraints;
   }
 
   private applyPaneRemoved(payload: { paneId: string; workspaceId: string }) {
@@ -575,7 +584,8 @@ export class FlmuxWorkbench {
                   referencePanel: innerApi.getPanel(firstPanelId)!,
                   direction: "right"
                 }
-              : undefined
+              : undefined,
+            ...this.paneAddPanelConstraints(pane.kind)
           });
           if (firstPanelId === null) {
             firstPanelId = pane.id;

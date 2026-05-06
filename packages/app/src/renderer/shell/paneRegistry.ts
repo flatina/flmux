@@ -24,12 +24,11 @@ export interface PaneDescriptor<TStateRecord extends PaneStateRecord = PaneState
     options: CreateComponentOptions;
     runtime: PaneRendererRuntimeContext;
   }): IContentRenderer;
-  /** Manifest-declared tab-header icon URL. When set, the per-pane
-   *  hamburger button renders this in place of the default glyph. */
+
   iconUrl?: string;
-  /** Manifest `panes[].defaultTitle`. Used as the popup label fallback —
-   *  beats `humanizePaneKind(kind)` when present. */
   defaultTitle?: string;
+  minimumWidth?: number;
+  maximumWidth?: number;
 }
 
 export class PaneRegistry extends CorePaneRegistry<PaneDescriptor> {}

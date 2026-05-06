@@ -131,12 +131,20 @@ export function createLocalExtensionLoadEntries(
       const rendererEntrypoint = extension.rendererEntryRelativePath!;
       const paneIcons: Record<string, string> = {};
       const paneDefaultTitles: Record<string, string> = {};
+      const paneMinimumWidths: Record<string, number> = {};
+      const paneMaximumWidths: Record<string, number> = {};
       for (const pane of extension.runtimeManifest.panes ?? []) {
         if (pane.icon) {
           paneIcons[pane.kind] = `${baseUrl}/${toServedExtensionPath(pane.icon)}${query}`;
         }
         if (pane.defaultTitle) {
           paneDefaultTitles[pane.kind] = pane.defaultTitle;
+        }
+        if (pane.minimumWidth !== undefined) {
+          paneMinimumWidths[pane.kind] = pane.minimumWidth;
+        }
+        if (pane.maximumWidth !== undefined) {
+          paneMaximumWidths[pane.kind] = pane.maximumWidth;
         }
       }
       return {
@@ -146,7 +154,9 @@ export function createLocalExtensionLoadEntries(
         manifestUrl: `${baseUrl}/manifest.json${query}`,
         rendererEntryUrl: `${baseUrl}/${toServedExtensionPath(rendererEntrypoint)}${query}`,
         paneIcons,
-        paneDefaultTitles
+        paneDefaultTitles,
+        paneMinimumWidths,
+        paneMaximumWidths
       } satisfies FlmuxLocalExtensionLoadEntry;
     });
 }

@@ -30,10 +30,14 @@ export async function registerLocalExternalPaneDescriptors(
   for (const extension of discovered) {
     const paneIcons = extension.loadEntry.paneIcons ?? {};
     const paneDefaultTitles = extension.loadEntry.paneDefaultTitles ?? {};
+    const paneMinimumWidths = extension.loadEntry.paneMinimumWidths ?? {};
+    const paneMaximumWidths = extension.loadEntry.paneMaximumWidths ?? {};
     for (const pane of extension.definition.panes ?? []) {
       const descriptor = createExternalPaneDescriptor(pane);
       if (paneIcons[pane.kind]) descriptor.iconUrl = paneIcons[pane.kind];
       if (paneDefaultTitles[pane.kind]) descriptor.defaultTitle = paneDefaultTitles[pane.kind];
+      if (paneMinimumWidths[pane.kind] !== undefined) descriptor.minimumWidth = paneMinimumWidths[pane.kind];
+      if (paneMaximumWidths[pane.kind] !== undefined) descriptor.maximumWidth = paneMaximumWidths[pane.kind];
       host.registerExternalPane(descriptor);
     }
   }

@@ -74,7 +74,9 @@ describe("local extension loading", () => {
         manifestUrl: "http://127.0.0.1:4321/__flmux/ext/sample.cowsay/0.1.0/manifest.json",
         rendererEntryUrl: "http://127.0.0.1:4321/__flmux/ext/sample.cowsay/0.1.0/index.js",
         paneIcons: {},
-        paneDefaultTitles: {}
+        paneDefaultTitles: {},
+        paneMinimumWidths: {},
+        paneMaximumWidths: {}
       }
     ]);
 
@@ -401,7 +403,9 @@ describe("local extension loading", () => {
         manifestUrl: "http://127.0.0.1:4321/__flmux/ext/sample.cowsay/0.1.0/manifest.json",
         rendererEntryUrl: "http://127.0.0.1:4321/__flmux/ext/sample.cowsay/0.1.0/index.js",
         paneIcons: {},
-        paneDefaultTitles: {}
+        paneDefaultTitles: {},
+        paneMinimumWidths: {},
+        paneMaximumWidths: {}
       },
       {
         id: "sample.inspector",
@@ -410,7 +414,9 @@ describe("local extension loading", () => {
         manifestUrl: "http://127.0.0.1:4321/__flmux/ext/sample.inspector/0.1.0/manifest.json",
         rendererEntryUrl: "http://127.0.0.1:4321/__flmux/ext/sample.inspector/0.1.0/index.js",
         paneIcons: {},
-        paneDefaultTitles: {}
+        paneDefaultTitles: {},
+        paneMinimumWidths: {},
+        paneMaximumWidths: {}
       }
     ];
 

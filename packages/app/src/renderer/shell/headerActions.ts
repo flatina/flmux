@@ -403,6 +403,7 @@ export class PaneTabRenderer extends DefaultTab {
   private popup: HTMLDivElement | null = null;
   private popupDispose: (() => void) | null = null;
   private paneId = "";
+  private api: GroupPanelPartInitParameters["api"] | null = null;
   private initialized = false;
   private readonly documentPointerDown = (event: PointerEvent) => {
     const target = event.target as Node | null;
@@ -418,6 +419,12 @@ export class PaneTabRenderer extends DefaultTab {
     event.stopPropagation();
     this.togglePopup();
   };
+  private readonly onTabPointerDown = (event: PointerEvent) => {
+    if (event.button !== 1) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.api?.close();
+  };
 
   constructor(private readonly options: PaneTabRendererOptions = {}) {
     super();
@@ -431,6 +438,7 @@ export class PaneTabRenderer extends DefaultTab {
   override init(parameters: GroupPanelPartInitParameters): void {
     super.init(parameters);
     this.paneId = parameters.api.id;
+    this.api = parameters.api;
     this.applyIcon();
 
     // dockview can re-init the same renderer instance (panel moved between
@@ -441,12 +449,14 @@ export class PaneTabRenderer extends DefaultTab {
 
     this.menuButton.addEventListener("pointerdown", this.onMenuPointerDown);
     this.menuButton.addEventListener("click", this.onMenuClick);
+    this.element.addEventListener("pointerdown", this.onTabPointerDown);
     document.addEventListener("pointerdown", this.documentPointerDown);
 
     this.addDisposables({
       dispose: () => {
         this.menuButton.removeEventListener("pointerdown", this.onMenuPointerDown);
         this.menuButton.removeEventListener("click", this.onMenuClick);
+        this.element.removeEventListener("pointerdown", this.onTabPointerDown);
         document.removeEventListener("pointerdown", this.documentPointerDown);
         this.closePopup();
       }

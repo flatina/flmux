@@ -26,16 +26,16 @@ export interface ShellPathEntry {
 
 export interface PathCallerContext {
   sourcePaneId?: string;
-  // Phase B: routing/context hints. `attachmentId` names the attachment
+  // Phase B: routing/context hints. `clientId` names the client
   // whose view-state a mutation/read targets — the slot key for
   // implicit-current paths like /status/workspace/*, /panes list, /title
-  // set, and attachment-scoped mutations like /workspaces/{id}/setActive.
+  // set, and client-scoped mutations like /workspaces/{id}/setActive.
   // `workspaceId` is a per-call hint for /panes/new's resolution chain
   // (args > caller.workspaceId > slot active). Both populated by preload
-  // (via hostRequests.ts, view→attachmentId) or post-auth WS; external
+  // (via hostRequests.ts, view→clientId) or post-auth WS; external
   // HTTP/CLI leave them unset and hit INVALID_VALUE on paths that need
   // the resolution.
-  attachmentId?: string;
+  clientId?: string;
   workspaceId?: string;
 }
 
@@ -79,9 +79,9 @@ export interface WorkspaceStatusSnapshot {
   paneCount: number;
 }
 
-// Phase B per-attachment active state. `slotKey` is an opaque id the core
+// Phase B per-client active state. `slotKey` is an opaque id the core
 // does not interpret; the authority (or test harness) chooses what it names
-// — desktop maps one attachment to `"local"`. Core just routes.
+// — desktop maps one client to `"local"`. Core just routes.
 export interface ActiveStateSlot {
   activeWorkspaceId: string | null;
   activePaneIdByWorkspace: Map<string, string>;
@@ -159,7 +159,7 @@ export type ScopedPropertyTarget =
   | { scope: "pane"; paneId: string };
 
 export interface ShellSlotOptions {
-  /** Opaque slot id (= attachmentId at authority level). Omit to use the core's default slot. */
+  /** Opaque slot id (= clientId at authority level). Omit to use the core's default slot. */
   slotKey?: string;
 }
 
@@ -173,13 +173,13 @@ export interface ShellCreatePaneOptions extends ShellSlotOptions {
   workspaceId?: string;
 }
 
-/** Shape returned by `/status/attachments/*`. Slot-level view state only —
+/** Shape returned by `/status/clients/*`. Slot-level view state only —
  * transport-level metadata (connected, lastSeen) is a higher-layer concern. */
-export interface AttachmentSlotSummary {
-  attachmentId: string;
+export interface ClientSlotSummary {
+  clientId: string;
   /** Owning user. Desktop authority uses `"local"`; web authority fills in
    * the authenticated user name. Surfaced so extension server entries can
-   * key session state per user via `/status/attachments/{id}/userId`. */
+   * key session state per user via `/status/clients/{id}/userId`. */
   userId: string;
   activeWorkspaceId: string | null;
   activePaneIdByWorkspace: Record<string, string>;
@@ -194,7 +194,7 @@ export interface ShellModelHost {
   setActiveWorkspace(workspaceId: string, options?: ShellSlotOptions): Awaitable<void>;
   getWorkspaceStatus(options?: ShellSlotOptions): Awaitable<WorkspaceStatusSnapshot>;
   getWorkspaceStatusById(workspaceId: string): Awaitable<WorkspaceStatusSnapshot>;
-  listAttachmentSlots(): Awaitable<AttachmentSlotSummary[]>;
+  listClientSlots(): Awaitable<ClientSlotSummary[]>;
   /** Slot-scoped "/panes/current" resolver. B1b interim; B1e retires the /current path entirely. */
   getCurrentPaneId(options?: ShellSlotOptions): Awaitable<string | null>;
   hasPaneKind(kind: string): Awaitable<boolean>;
@@ -275,8 +275,8 @@ export type ShellCoreEvent =
 export type ShellCoreEventTopic = ShellCoreEvent["topic"];
 
 /**
- * Topic→scope policy. `"attachment"` events go to one slot only
- * (targetAttachmentId on the envelope); `"all"` events broadcast to every
+ * Topic→scope policy. `"client"` events go to one slot only
+ * (targetClientId on the envelope); `"all"` events broadcast to every
  * subscriber. New topics must add an entry here — the envelope builder reads
  * from this table so forgetting the entry fails compilation.
  */
@@ -285,23 +285,23 @@ export const SHELL_CORE_EVENT_SCOPES = {
   "workspace.added": "all",
   "workspace.removed": "all",
   "workspace.titleChanged": "all",
-  "workspace.activeChanged": "attachment",
+  "workspace.activeChanged": "client",
   "pane.added": "all",
   "pane.removed": "all",
   "pane.titleChanged": "all",
   "pane.paramsChanged": "all",
-  "pane.activeChanged": "attachment"
-} as const satisfies Record<ShellCoreEventTopic, "all" | "attachment">;
+  "pane.activeChanged": "client"
+} as const satisfies Record<ShellCoreEventTopic, "all" | "client">;
 
 /**
  * Routing metadata on top of the semantic payload. `scope` is derived by the
- * core from the topic (see SHELL_CORE_EVENT_SCOPES); `targetAttachmentId` is
+ * core from the topic (see SHELL_CORE_EVENT_SCOPES); `targetClientId` is
  * supplied by whoever drove the mutation (authority/preload passes
- * caller.attachmentId through) when scope === "attachment". Forwarders
+ * caller.clientId through) when scope === "client". Forwarders
  * filter on these two fields alone — handlers never re-check.
  */
 export type SequencedShellCoreEvent = ShellCoreEvent & {
   seq: number;
-  scope: "all" | "attachment";
-  targetAttachmentId?: string;
+  scope: "all" | "client";
+  targetClientId?: string;
 };

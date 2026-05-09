@@ -1,5 +1,5 @@
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
-import type { FlmuxClientRegistry } from "./clientRegistry";
+import type { ClientRegistry } from "./clientRegistry";
 
 /**
  * Fan out a terminal event to every live subscriber of the pane. Stale
@@ -10,7 +10,7 @@ import type { FlmuxClientRegistry } from "./clientRegistry";
 export function forwardTerminalEventToSubscribers(options: {
   event: TerminalRuntimeEvent;
   paneSubscribers: Map<string, Set<number>>;
-  clientRegistry: FlmuxClientRegistry;
+  clientRegistry: ClientRegistry;
 }): boolean {
   const { event, paneSubscribers, clientRegistry } = options;
   const paneId = event.paneId ?? null;
@@ -25,7 +25,7 @@ export function forwardTerminalEventToSubscribers(options: {
 
   let delivered = false;
   for (const viewId of [...subscribers]) {
-    const client = clientRegistry.resolveByViewId(viewId);
+    const client = clientRegistry.resolveRendererByViewId(viewId);
     if (!client) {
       subscribers.delete(viewId);
       continue;

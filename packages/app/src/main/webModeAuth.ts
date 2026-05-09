@@ -19,7 +19,7 @@ export interface FlmuxWebModeAuthorizer {
   authorize(tokenValue: string): FlmuxAuthorizationContext | null;
   /** Look up a user by name. Used by the WS event forwarder to check
    * `allow_paths.read` against shellCore events — we only have the
-   * userId via `attachmentIdToUserId`, not a token. */
+   * userId via `clientIdToUserId`, not a token. */
   getUser(name: string): FlmuxUser | null;
   /** Same as `getUser`, plus honors the `--dev-auth-as` synthetic-user
    * fallback — returns the permissive dev user when its name matches and

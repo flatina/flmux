@@ -114,9 +114,9 @@ export async function waitForSingleClientId(origin: string, label: string) {
     async () => {
       const clients = await fetchJson<{
         ok: true;
-        clients: Array<{ clientId: string }>;
+        clients: Array<{ authorityClientId: string }>;
       }>(`${origin}/api/clients`);
-      return clients.clients[0]?.clientId ?? null;
+      return clients.clients[0]?.authorityClientId ?? null;
     },
     { timeoutMs: 20_000, intervalMs: 250, label }
   );

@@ -1,5 +1,5 @@
 import type { ShellModelAPI, WorkspaceStatusSnapshot } from "@flmux/core/shell";
-import type { FlmuxClientRegistry } from "./clientRegistry";
+import type { ClientRegistry } from "./clientRegistry";
 import type {
   ClientScopedPathCallInput,
   ClientScopedPathGetInput,
@@ -13,28 +13,29 @@ export function createServerShellModelRouter(options: {
   authorityViewId?: number;
   shellModel: ShellModelAPI;
   getWorkspace(): Promise<WorkspaceStatusSnapshot>;
-  clientRegistry: FlmuxClientRegistry;
+  clientRegistry: ClientRegistry;
 }): FlmuxShellModelRouter {
   const authorityViewId = options.authorityViewId ?? 0;
 
   return {
-    registerClient(viewId: number): ClientRegistration {
-      // `clientId` is for HTTP/CLI scoping only — the preload-owned desktop
-      // renderer routes through `shellModel.path.*` / `flmux.*` and never sends
-      // its clientId back. Return only {clientId}: the full registry record
-      // carries `bridge`, a Proxy whose get resolves every key to a function;
-      // if it crosses the preload wire msgpackr's `value.toJSON` probe
-      // succeeds, invokes toJSON as a nested RPC, and the resulting unhandled
-      // rejection crashes Bun. Same risk on any other RPC that might be
-      // tempted to return a RegisteredFlmuxClient verbatim.
-      const { clientId } = options.clientRegistry.registerRenderer(viewId);
+    registerClient(viewId: number, clientId: string): ClientRegistration {
+      // The clientId is supplied by the caller — web from `/api/shell/bootstrap`
+      // (cookie continuity), desktop pinned to `DESKTOP_CLIENT_ID`. We bind
+      // the viewId↔clientId pair (pulling the renderer bridge from
+      // `attachRenderer`'s pending queue) and return the same id for echo.
+      // The full record carries `bridge`, a Proxy whose get resolves every
+      // key to a function; if it crosses the preload wire msgpackr's
+      // `value.toJSON` probe succeeds, invokes toJSON as a nested RPC, and
+      // the resulting unhandled rejection crashes Bun — return only
+      // {clientId} here.
+      options.clientRegistry.bindClient(viewId, clientId);
       return { clientId };
     },
 
     async listClients(): Promise<FlmuxClientSummary[]> {
       return [
         {
-          clientId: options.authorityClientId,
+          authorityClientId: options.authorityClientId,
           viewId: authorityViewId,
           workspace: await options.getWorkspace()
         }
@@ -42,22 +43,22 @@ export function createServerShellModelRouter(options: {
     },
 
     async pathGet(input: ClientScopedPathGetInput) {
-      assertAuthorityClientId(input.clientId, options.authorityClientId);
+      assertAuthorityClientId(input.authorityClientId, options.authorityClientId);
       return await options.shellModel.pathGet(input.path);
     },
 
     async pathList(input: ClientScopedPathListInput) {
-      assertAuthorityClientId(input.clientId, options.authorityClientId);
+      assertAuthorityClientId(input.authorityClientId, options.authorityClientId);
       return await options.shellModel.pathList(input.path);
     },
 
     async pathSet(input: ClientScopedPathSetInput) {
-      assertAuthorityClientId(input.clientId, options.authorityClientId);
+      assertAuthorityClientId(input.authorityClientId, options.authorityClientId);
       return await options.shellModel.pathSet(input.path, input.value);
     },
 
     async pathCall(input: ClientScopedPathCallInput) {
-      assertAuthorityClientId(input.clientId, options.authorityClientId);
+      assertAuthorityClientId(input.authorityClientId, options.authorityClientId);
       return await options.shellModel.pathCall(input.path, input.args);
     }
   };

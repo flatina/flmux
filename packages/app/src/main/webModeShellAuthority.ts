@@ -12,7 +12,7 @@ import { buildBootstrapResponse, composeSessionSnapshot, restoreFromSession } fr
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
 import type { TerminalService } from "./terminal-service";
 import { createServerShellModelRouter } from "./serverShellModelRouter";
-import type { FlmuxClientRegistry } from "./clientRegistry";
+import type { ClientRegistry } from "./clientRegistry";
 import type { DiscoveredLocalExtension } from "./localExtensions";
 import { createBuiltinPaneSpecs, createExtensionPaneSpecs, type ExtensionModuleImporter } from "./paneSpecs";
 import type { FlmuxSessionStore } from "./sessionStore";
@@ -24,13 +24,13 @@ export interface WebModeShellAuthority {
   subscribe(handler: (event: SequencedShellCoreEvent) => void): () => void;
   start(origin: string): Promise<void>;
   applyTerminalEvent(event: TerminalRuntimeEvent): void;
-  /** Mirror of the desktop helper — seeds the attachment's active ws when
+  /** Mirror of the desktop helper — seeds the client's active ws when
    * the slot is fresh. Idempotent. */
-  bootstrapAttachment(attachmentId: string): void;
-  /** Build the snapshot for a browser attachment. Includes `outerLayout` /
+  bootstrapClient(clientId: string): void;
+  /** Build the snapshot for a browser client. Includes `outerLayout` /
    * `innerLayouts` when a session store is wired and the last save was
    * restored at startup; empty otherwise. */
-  shellBootstrap(attachmentId: string): FlmuxShellBootstrapResponse;
+  shellBootstrap(clientId: string): FlmuxShellBootstrapResponse;
   /** Persist the caller's layout delta to this authority's session store.
    * `undefined` when no store is wired (single-user dev mode / tests) —
    * callers should tolerate absence the same way desktop does. */
@@ -43,7 +43,7 @@ export async function createWebModeShellAuthority(options: {
   appVersion?: string;
   initialAppTitle?: string;
   terminalService: TerminalService;
-  clientRegistry: FlmuxClientRegistry;
+  clientRegistry: ClientRegistry;
   localExtensions?: readonly DiscoveredLocalExtension[];
   extensionModuleImporter?: ExtensionModuleImporter;
   /** Per-user persistent store. When present, `start()` attempts
@@ -51,7 +51,7 @@ export async function createWebModeShellAuthority(options: {
    * `initialize()`; `persistSession` writes through to the store. */
   sessionStore?: FlmuxSessionStore;
   /** Authenticated user this authority serves. Surfaced through
-   * `/status/attachments/{id}/userId` so extensions can key session state
+   * `/status/clients/{id}/userId` so extensions can key session state
    * per user. `undefined` (legacy single-tenant tests) maps to `"local"`. */
   userId?: string;
 }): Promise<WebModeShellAuthority> {
@@ -72,8 +72,8 @@ export async function createWebModeShellAuthority(options: {
     projectDir: options.projectDir,
     terminalBackend: options.terminalService,
     // Web-mode authority's default slot is the server-side ShellModelAPI
-    // driver (CLI, external HTTP calls without a browser attachment). B2
-    // replaces this with per-attachment (browser) slots.
+    // driver (CLI, external HTTP calls without a browser client). B2
+    // replaces this with per-client (browser) slots.
     defaultSlotKey: "server",
     authorityUserId: options.userId
   });
@@ -85,30 +85,30 @@ export async function createWebModeShellAuthority(options: {
 
   // Persisted snapshot layouts survive across restarts if a session store
   // is wired. Populated at start() via load+restore; consumed by
-  // shellBootstrap so the first attachment sees the restored workspace
+  // shellBootstrap so the first client sees the restored workspace
   // tree instead of the seed.
   let persistedOuterLayout: unknown | null = null;
   let persistedInnerLayouts: Record<string, unknown | null> = {};
 
-  function bootstrapAttachment(attachmentId: string) {
-    if (shellCore.getSlotActiveWorkspaceId(attachmentId) !== null) {
+  function bootstrapClient(clientId: string) {
+    if (shellCore.getSlotActiveWorkspaceId(clientId) !== null) {
       return;
     }
     const [firstWs] = shellCore.getWorkspaceIds();
     if (!firstWs) {
-      throw new Error("bootstrapAttachment: shell has no workspaces to seed active");
+      throw new Error("bootstrapClient: shell has no workspaces to seed active");
     }
-    shellCore.setActiveWorkspace(firstWs, { slotKey: attachmentId });
+    shellCore.setActiveWorkspace(firstWs, { slotKey: clientId });
   }
 
-  function shellBootstrap(attachmentId: string): FlmuxShellBootstrapResponse {
+  function shellBootstrap(clientId: string): FlmuxShellBootstrapResponse {
     // Mirror of the desktop path: mutate (bootstrap helper) BEFORE capturing
     // seqStart (inside buildBootstrapResponse) so the emitted
     // `workspace.activeChanged` is already folded into the snapshot boundary
     // (Preflight #1 §S3 + feedback Q4).
-    bootstrapAttachment(attachmentId);
+    bootstrapClient(clientId);
     return buildBootstrapResponse({
-      attachmentId,
+      clientId,
       shellCore,
       outerLayout: persistedOuterLayout,
       innerLayouts: persistedInnerLayouts
@@ -139,7 +139,7 @@ export async function createWebModeShellAuthority(options: {
     applyTerminalEvent(event) {
       shellCore.applyTerminalEvent(event);
     },
-    bootstrapAttachment,
+    bootstrapClient,
     shellBootstrap,
     persistSession: options.sessionStore
       ? async (layouts: FlmuxSessionSaveLayouts) => {

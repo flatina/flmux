@@ -138,10 +138,10 @@ export async function resolveClientId(origin: string, flags: FlmuxCliFlags): Pro
 
   const payload = await apiGet<{
     ok: true;
-    clients: Array<{ clientId: string; workspace?: { id?: string; title?: string } | null }>;
+    clients: Array<{ authorityClientId: string; workspace?: { id?: string; title?: string } | null }>;
   }>(origin, "/api/clients", flags);
 
-  if (payload.clients.length === 1) return payload.clients[0].clientId;
+  if (payload.clients.length === 1) return payload.clients[0].authorityClientId;
   if (payload.clients.length === 0) {
     throw new Error("No flmux clients are connected. Start the app first or provide --client <clientId>.");
   }
@@ -151,7 +151,7 @@ export async function resolveClientId(origin: string, flags: FlmuxCliFlags): Pro
       const ws = c.workspace
         ? ` (${c.workspace.id ?? "unknown"}${c.workspace.title ? `: ${c.workspace.title}` : ""})`
         : "";
-      return `${c.clientId}${ws}`;
+      return `${c.authorityClientId}${ws}`;
     })
     .join(", ");
   throw new Error(`Multiple flmux clients are connected. Use --client <clientId>. Available: ${available}`);
@@ -173,28 +173,28 @@ export async function createFlmuxClient(flags: FlmuxCliFlags, explicitClientId?:
       modelResultPost(
         origin,
         "/api/model/path/get",
-        { clientId: await resolveClientId(origin, merged), path },
+        { authorityClientId: await resolveClientId(origin, merged), path },
         flags
       ),
     list: async (path: string): Promise<ShellPathListResult> =>
       modelResultPost(
         origin,
         "/api/model/path/list",
-        { clientId: await resolveClientId(origin, merged), path },
+        { authorityClientId: await resolveClientId(origin, merged), path },
         flags
       ),
     set: async (path: string, value: unknown): Promise<ShellPathSetResult> =>
       modelResultPost(
         origin,
         "/api/model/path/set",
-        { clientId: await resolveClientId(origin, merged), path, value },
+        { authorityClientId: await resolveClientId(origin, merged), path, value },
         flags
       ),
     call: async (path: string, args?: Record<string, unknown>): Promise<ShellPathCallResult> =>
       modelResultPost(
         origin,
         "/api/model/path/call",
-        { clientId: await resolveClientId(origin, merged), path, args },
+        { authorityClientId: await resolveClientId(origin, merged), path, args },
         flags
       )
   };

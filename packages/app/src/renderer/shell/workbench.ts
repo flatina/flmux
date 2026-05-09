@@ -141,7 +141,7 @@ export class FlmuxWorkbench {
   // Programmatic outer-tab activation. Skips dockview entirely and drives
   // the same `shellModel.pathCall` the `onDidActivePanelChange` handler
   // would invoke — routes through preload/WS so `hostRequests.ts` injects
-  // `caller.attachmentId`. Dockview's synthetic-click and
+  // `caller.clientId`. Dockview's synthetic-click and
   // `panel.api.setActive()` paths don't reliably reach this RPC.
   setActiveWorkspace(workspaceId: string): void {
     void this.shellModel.pathCall(`/workspaces/${workspaceId}/setActive`);
@@ -151,11 +151,11 @@ export class FlmuxWorkbench {
     this.initializeOuterShell();
 
     if (this.config.mode === "web") {
-      // Web: HTTP POST bootstrap mints the attachmentId server-side and
+      // Web: HTTP POST bootstrap mints the clientId server-side and
       // installs the ring-buffer subscriber; apply snapshot; THEN register
-      // with the attachmentId so the server flushes any replay + installs
+      // with the clientId so the server flushes any replay + installs
       // the live forwarder. Order matters — forwarder can't exist before
-      // attachmentId does.
+      // clientId does.
       const bootstrap = await this.fetchWebBootstrap();
       this.applyBootstrap(bootstrap);
       this.lastAppliedSeq = bootstrap.seqStart;
@@ -168,12 +168,12 @@ export class FlmuxWorkbench {
       // this ordering assumption dies and events can arrive before the
       // gate is armed.
       const registration = await this.hostProxy["flmux.client.register"]({
-        attachmentId: bootstrap.attachmentId,
+        clientId: bootstrap.clientId,
         lastAppliedSeq: bootstrap.seqStart
       });
       if (registration.status === "rebootstrap-required") {
         // Ring buffer overflowed between bootstrap and register (rare in
-        // B1d single-attachment; possible under server-side event storms).
+        // B1d single-client; possible under server-side event storms).
         // Simplest recovery: reload the page to restart the cycle.
         console.warn("[flmux] rebootstrap-required on first register — reloading");
         window.location.reload();
@@ -181,7 +181,7 @@ export class FlmuxWorkbench {
       }
     } else {
       // Desktop: register first (installs forwarder on the pinned "local"
-      // attachment), then preload-RPC bootstrap. Live events emitted during
+      // client), then preload-RPC bootstrap. Live events emitted during
       // bootstrap reach the renderer and are buffered by the seq gate.
       // Desktop register never carries a binding arg → server-side
       // `onClientRegister` returns void → response is always `"ok"`. The
@@ -367,7 +367,7 @@ export class FlmuxWorkbench {
     // applyingCoreState is already true, so outer/inner onDidRemovePanel
     // callbacks fired by dockview's disposal cascade short-circuit before
     // the pathCall branch — no extra guard needed here. A follow-up
-    // workspace.activeChanged (scope=attachment, target=this attachment)
+    // workspace.activeChanged (scope=client, target=this client)
     // re-points outer setActive; this handler just closes the panel.
     this.outerApi?.getPanel(payload.id)?.api.close();
     const removed = this.workspaces.get(payload.id);
@@ -443,7 +443,7 @@ export class FlmuxWorkbench {
     record?.innerApi?.getPanel(payload.paneId)?.api.close();
     this.paneIdToKind.delete(payload.paneId);
     clearPaneHeaderMenu(payload.paneId);
-    // New-active selection now arrives as a separate scope=attachment
+    // New-active selection now arrives as a separate scope=client
     // pane.activeChanged — this handler only closes the panel.
   }
 

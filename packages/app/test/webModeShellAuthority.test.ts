@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { resolve } from "node:path";
-import { FlmuxClientRegistry } from "../src/main/clientRegistry";
+import { ClientRegistry } from "../src/main/clientRegistry";
 import { createInMemoryTerminalBackend, createTerminalService } from "../src/main/terminal-service";
 import type { DiscoveredLocalExtension } from "../src/main/localExtensions";
 import { createWebModeShellAuthority } from "../src/main/webModeShellAuthority";
@@ -9,7 +9,7 @@ import type { FlmuxSessionSnapshot } from "../src/shared/session";
 
 describe("web mode shell authority", () => {
   it("routes external model calls through a single server-owned authority", async () => {
-    const clientRegistry = new FlmuxClientRegistry();
+    const clientRegistry = new ClientRegistry();
     const terminalService = createTerminalService(createInMemoryTerminalBackend());
     const authority = await createWebModeShellAuthority({
       projectDir: "/flmux-test",
@@ -27,13 +27,13 @@ describe("web mode shell authority", () => {
       }
     };
     clientRegistry.attachRenderer(101, rendererBridge);
-    const rendererClient = authority.router.registerClient(101);
-    expect(rendererClient.clientId).toMatch(/^client_/);
+    const rendererClient = authority.router.registerClient(101, "web_test");
+    expect(rendererClient.clientId).toBe("web_test");
 
     const listedClients = await authority.router.listClients();
     expect(listedClients).toEqual([
       {
-        clientId: authority.clientId,
+        authorityClientId: authority.clientId,
         viewId: 0,
         workspace: {
           id: "workspace.1",
@@ -47,7 +47,7 @@ describe("web mode shell authority", () => {
     // HTTP envelope (router) deliberately drops caller — external HTTP
     // can't reach implicit-current paths. Go through shellModel directly
     // to exercise the narrowing with a preload-equivalent caller.
-    const workspace = await authority.shellModel.pathGet("/status/workspace", { attachmentId: "server" });
+    const workspace = await authority.shellModel.pathGet("/status/workspace", { clientId: "server" });
     expect(workspace).toEqual({
       ok: true,
       found: true,
@@ -60,7 +60,7 @@ describe("web mode shell authority", () => {
     });
 
     const browserPane = await authority.router.pathCall({
-      clientId: authority.clientId,
+      authorityClientId: authority.clientId,
       path: "/panes/new",
       args: {
         kind: "browser",
@@ -81,14 +81,14 @@ describe("web mode shell authority", () => {
 
     await expect(
       authority.router.pathGet({
-        clientId: rendererClient.clientId,
+        authorityClientId: rendererClient.clientId,
         path: "/status/workspace"
       })
     ).rejects.toThrow(`Unknown flmux client: ${rendererClient.clientId}`);
   });
 
-  it("shellBootstrap(attachmentId) seeds a fresh slot and captures seqStart after mutation", async () => {
-    const clientRegistry = new FlmuxClientRegistry();
+  it("shellBootstrap(clientId) seeds a fresh slot and captures seqStart after mutation", async () => {
+    const clientRegistry = new ClientRegistry();
     const terminalService = createTerminalService(createInMemoryTerminalBackend());
     const authority = await createWebModeShellAuthority({
       projectDir: "/flmux-test",
@@ -99,18 +99,18 @@ describe("web mode shell authority", () => {
     await authority.start("http://127.0.0.1:4321");
 
     // Subscribe BEFORE bootstrap to count active-change emits targeted at
-    // the new slot — preflight #2 "authority injects targetAttachmentId"
-    // says bootstrapAttachment emits exactly one `workspace.activeChanged`
+    // the new slot — preflight #2 "authority injects targetClientId"
+    // says bootstrapClient emits exactly one `workspace.activeChanged`
     // on first call, zero on idempotent re-entry.
     const activeChangesForAlpha: number[] = [];
     const unsub = authority.subscribe((event) => {
-      if (event.topic === "workspace.activeChanged" && event.targetAttachmentId === "web_alpha") {
+      if (event.topic === "workspace.activeChanged" && event.targetClientId === "web_alpha") {
         activeChangesForAlpha.push(event.seq);
       }
     });
 
     const fresh = authority.shellBootstrap("web_alpha");
-    expect(fresh.attachmentId).toBe("web_alpha");
+    expect(fresh.clientId).toBe("web_alpha");
     expect(fresh.snapshot.activeWorkspaceId).toBe("workspace.1");
     expect(fresh.outerLayout).toBeNull();
     expect(fresh.innerLayouts).toEqual({});
@@ -129,7 +129,7 @@ describe("web mode shell authority", () => {
   });
 
   it("shellBootstrap reflects the latest persistSession layouts (refresh within authority lifetime)", async () => {
-    const clientRegistry = new FlmuxClientRegistry();
+    const clientRegistry = new ClientRegistry();
     const terminalService = createTerminalService(createInMemoryTerminalBackend());
     const saved: FlmuxSessionSnapshot[] = [];
     const authority = await createWebModeShellAuthority({
@@ -161,7 +161,7 @@ describe("web mode shell authority", () => {
   });
 
   it("shellBootstrap returns synchronously — preflight #1 §S3 parity with desktop", async () => {
-    const clientRegistry = new FlmuxClientRegistry();
+    const clientRegistry = new ClientRegistry();
     const terminalService = createTerminalService(createInMemoryTerminalBackend());
     const authority = await createWebModeShellAuthority({
       projectDir: "/flmux-test",
@@ -177,7 +177,7 @@ describe("web mode shell authority", () => {
   });
 
   it("registers manifest-declared extension pane kinds", async () => {
-    const clientRegistry = new FlmuxClientRegistry();
+    const clientRegistry = new ClientRegistry();
     const terminalService = createTerminalService(createInMemoryTerminalBackend());
     const authority = await createWebModeShellAuthority({
       projectDir: "/flmux-test",
@@ -196,7 +196,7 @@ describe("web mode shell authority", () => {
     await authority.start("http://127.0.0.1:4322");
 
     const created = await authority.router.pathCall({
-      clientId: authority.clientId,
+      authorityClientId: authority.clientId,
       path: "/panes/new",
       args: { kind: "cowsay" }
     });
@@ -210,7 +210,7 @@ describe("web mode shell authority", () => {
       }
     });
 
-    const panes = (await authority.shellModel.pathGet("/status/panes", { attachmentId: "server" })) as {
+    const panes = (await authority.shellModel.pathGet("/status/panes", { clientId: "server" })) as {
       ok: true;
       found: true;
       value: Record<string, { kind: string }>;
@@ -248,7 +248,7 @@ describe("web mode shell authority", () => {
       }
     };
 
-    const clientRegistry = new FlmuxClientRegistry();
+    const clientRegistry = new ClientRegistry();
     const terminalService = createTerminalService(createInMemoryTerminalBackend());
     const authority = await createWebModeShellAuthority({
       projectDir: "/flmux-test",
@@ -261,40 +261,40 @@ describe("web mode shell authority", () => {
     await authority.start("http://127.0.0.1:4324");
 
     const created = (await authority.router.pathCall({
-      clientId: authority.clientId,
+      authorityClientId: authority.clientId,
       path: "/panes/new",
       args: { kind: "scratchpad", note: "hello" }
     })) as { ok: true; value: { pane: { id: string } } };
     const paneId = created.value.pane.id;
 
     const initialState = await authority.router.pathGet({
-      clientId: authority.clientId,
+      authorityClientId: authority.clientId,
       path: `/panes/${paneId}/scratchpad/note`
     });
     expect(initialState).toEqual({ ok: true, found: true, value: "hello" });
 
     const setResult = await authority.router.pathSet({
-      clientId: authority.clientId,
+      authorityClientId: authority.clientId,
       path: `/panes/${paneId}/scratchpad/note`,
       value: "updated"
     });
     expect(setResult).toEqual({ ok: true, value: "updated" });
 
     const afterSet = await authority.router.pathGet({
-      clientId: authority.clientId,
+      authorityClientId: authority.clientId,
       path: `/panes/${paneId}/scratchpad/note`
     });
     expect(afterSet).toEqual({ ok: true, found: true, value: "updated" });
 
     const status = await authority.router.pathGet({
-      clientId: authority.clientId,
+      authorityClientId: authority.clientId,
       path: `/status/panes/${paneId}/scratchpad/noteLength`
     });
     expect(status).toEqual({ ok: true, found: true, value: 7 });
   });
 
   it("rejects /panes/new for pane kinds not declared by any built-in or extension", async () => {
-    const clientRegistry = new FlmuxClientRegistry();
+    const clientRegistry = new ClientRegistry();
     const terminalService = createTerminalService(createInMemoryTerminalBackend());
     const authority = await createWebModeShellAuthority({
       projectDir: "/flmux-test",
@@ -306,7 +306,7 @@ describe("web mode shell authority", () => {
     await authority.start("http://127.0.0.1:4323");
 
     const result = (await authority.router.pathCall({
-      clientId: authority.clientId,
+      authorityClientId: authority.clientId,
       path: "/panes/new",
       args: { kind: "cowsay" }
     })) as { ok: boolean; error?: string };

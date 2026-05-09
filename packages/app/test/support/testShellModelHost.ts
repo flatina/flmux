@@ -307,10 +307,10 @@ export class TestShellModelHost implements ShellModelHost {
     };
   }
 
-  listAttachmentSlots() {
+  listClientSlots() {
     return [
       {
-        attachmentId: "test",
+        clientId: "test",
         userId: "test-user",
         activeWorkspaceId: this.workspaceId,
         activePaneIdByWorkspace: this.activePaneId ? { [this.workspaceId]: this.activePaneId } : {}

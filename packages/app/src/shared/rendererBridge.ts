@@ -22,11 +22,11 @@ export interface FlmuxShellSnapshot {
 }
 
 export interface FlmuxShellBootstrapResponse {
-  /** Opaque attachment identity. Client echoes this back in subsequent
-   * pathCalls as `caller.attachmentId` so the core routes attachment-scoped
+  /** Opaque client identity. The renderer echoes this back in subsequent
+   * pathCalls as `caller.clientId` so the core routes client-scoped
    * events + mutations to the right slot. Desktop CEF always receives
-   * `"local"`; web attachments get a server-minted id. */
-  attachmentId: string;
+   * `"local"`; web clients get a server-minted id. */
+  clientId: string;
   snapshot: FlmuxShellSnapshot;
   outerLayout: unknown | null;
   innerLayouts: Record<string, unknown | null>;
@@ -76,7 +76,7 @@ export type FlmuxHostRequests = {
     response: FlmuxRendererBootstrapConfig;
   };
   "flmux.client.register": {
-    params: { attachmentId?: string; lastAppliedSeq?: number };
+    params: { clientId?: string; lastAppliedSeq?: number };
     response: ClientRegistrationResult;
   };
   "flmux.layout.push": {
@@ -147,28 +147,28 @@ export type ClientRegistrationResult = { status: "ok"; clientId: string } | { st
 
 // HTTP envelopes deliberately omit `caller` — only preload + post-auth WS
 // (which route through `hostRequests.ts`) are trusted to inject caller
-// context. External HTTP clients that try to forge attachmentId /
+// context. External HTTP clients that try to forge clientId /
 // sourcePaneId via the request body would otherwise bypass the
 // implicit-current narrowing at the model layer.
 
 export interface ClientScopedPathGetInput {
-  clientId: string;
+  authorityClientId: string;
   path: string;
 }
 
 export interface ClientScopedPathListInput {
-  clientId: string;
+  authorityClientId: string;
   path: string;
 }
 
 export interface ClientScopedPathSetInput {
-  clientId: string;
+  authorityClientId: string;
   path: string;
   value: unknown;
 }
 
 export interface ClientScopedPathCallInput {
-  clientId: string;
+  authorityClientId: string;
   path: string;
   args?: Record<string, unknown>;
 }

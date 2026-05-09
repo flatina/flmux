@@ -21,7 +21,7 @@ describe("flmux harness smoke", () => {
     const payload = await harness.fetchJson<{
       ok: true;
       clients: Array<{
-        clientId: string;
+        authorityClientId: string;
         viewId: number;
         workspace: {
           id: string;
@@ -34,7 +34,7 @@ describe("flmux harness smoke", () => {
     expect(payload.ok).toBe(true);
     expect(payload.clients).toHaveLength(1);
     expect(payload.clients[0]).toMatchObject({
-      clientId: harness.clientId,
+      authorityClientId: harness.clientId,
       workspace: {
         id: harness.workspaceId,
         title: "Workspace Smoke",

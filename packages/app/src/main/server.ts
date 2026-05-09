@@ -44,13 +44,13 @@ export function startFlmuxServer(options: {
    * Undefined when the calling authority has no sessionStore wired. */
   saveSession?(context: FlmuxAuthorizationContext | null, layouts: FlmuxSessionSaveLayouts): Promise<void>;
   /** Build the bootstrap snapshot for the authenticated user. When
-   * `existingAttachmentId` is the cookie value from a prior bootstrap
-   * and the server still owns that attachment for this user, the
+   * `existingClientId` is the cookie value from a prior bootstrap
+   * and the server still owns that client for this user, the
    * callback may reuse it (B2 Phase 3 cookie continuity) — otherwise
    * it mints fresh. Only wired in web mode. */
-  bootstrapAttachment?(
+  bootstrapClient?(
     context: FlmuxAuthorizationContext | null,
-    existingAttachmentId: string | null
+    existingClientId: string | null
   ): Promise<FlmuxShellBootstrapResponse>;
   authorizer?: FlmuxWebModeAuthorizer;
   /** Explicit listen port. Undefined → OS-assigned (current default). */
@@ -156,7 +156,7 @@ export function startFlmuxServer(options: {
         return "Unauthorized";
       }
 
-      if (!options.bootstrapAttachment) {
+      if (!options.bootstrapClient) {
         set.status = 404;
         return "Not Found";
       }
@@ -167,9 +167,9 @@ export function startFlmuxServer(options: {
       // is still sync (preflight #1 §S3) so the snapshot boundary invariant
       // holds. What's async is the user's authority creation, not the
       // bootstrap body.
-      const existingAttachmentId = readCookie(request.headers.get("cookie"), "flmux-attachment");
-      const response = await options.bootstrapAttachment(auth.context, existingAttachmentId);
-      const cookie = `flmux-attachment=${response.attachmentId}; HttpOnly; Path=/; SameSite=Strict`;
+      const existingClientId = readCookie(request.headers.get("cookie"), "flmux-client");
+      const response = await options.bootstrapClient(auth.context, existingClientId);
+      const cookie = `flmux-client=${response.clientId}; HttpOnly; Path=/; SameSite=Strict`;
       setHeader(set, "set-cookie", cookie);
       setHeader(set, "content-type", "application/json; charset=utf-8");
       return response;

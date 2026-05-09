@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { FlmuxClientRegistry } from "../src/main/clientRegistry";
+import { ClientRegistry } from "../src/main/clientRegistry";
 import { startFlmuxServer } from "../src/main/server";
 import { createServerShellModelRouter } from "../src/main/serverShellModelRouter";
 import { forwardTerminalEventToSubscribers } from "../src/main/terminalEventForwarding";
@@ -55,7 +55,7 @@ export async function createSmokeHarness(): Promise<SmokeHarness> {
     }
   });
   const shellModel = host.createModel();
-  const registry = new FlmuxClientRegistry();
+  const registry = new ClientRegistry();
   const authorityClientId = `smoke_${crypto.randomUUID()}`;
   const router = createServerShellModelRouter({
     authorityClientId,

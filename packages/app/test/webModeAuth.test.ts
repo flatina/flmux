@@ -369,7 +369,7 @@ function createStubShellModelRouter() {
     registerClient: () => ({ clientId: "server-client" }),
     listClients: async () => [
       {
-        clientId: "server-client",
+        authorityClientId: "server-client",
         viewId: 0,
         workspace: {
           id: "workspace.1",

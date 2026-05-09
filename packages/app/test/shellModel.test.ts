@@ -27,7 +27,7 @@ describe("shell model direct", () => {
     });
     const model = host.createModel();
 
-    const workspaceStatus = await model.pathGet("/status/workspace", { attachmentId: "test" });
+    const workspaceStatus = await model.pathGet("/status/workspace", { clientId: "test" });
     expect(workspaceStatus).toEqual({
       ok: true,
       found: true,
@@ -39,7 +39,7 @@ describe("shell model direct", () => {
       }
     });
 
-    const paneList = await model.pathList("/panes", { attachmentId: "test" });
+    const paneList = await model.pathList("/panes", { clientId: "test" });
     expect(paneList).toMatchObject({ ok: true, found: true });
     if (paneList.ok && paneList.found) {
       expect(paneList.entries.map((entry) => entry.name)).toEqual(["pane.browser", "pane.term"]);
@@ -67,7 +67,7 @@ describe("shell model direct", () => {
     });
   });
 
-  it("implicit-current reads/writes require caller.attachmentId; external callers get INVALID_VALUE (B3)", async () => {
+  it("implicit-current reads/writes require caller.clientId; external callers get INVALID_VALUE (B3)", async () => {
     const host = new TestShellModelHost({
       workspaceId: "workspace.test",
       workspaceTitle: "Workspace Test",
@@ -82,7 +82,7 @@ describe("shell model direct", () => {
     expect(await model.pathSet("/title", "Rename")).toMatchObject({ ok: false, code: "INVALID_VALUE" });
   });
 
-  it("exposes /status/attachments/* and /status/workspaces/{id}/* explicit-target reads (B1e)", async () => {
+  it("exposes /status/clients/* and /status/workspaces/{id}/* explicit-target reads (B1e)", async () => {
     const host = new TestShellModelHost({
       workspaceId: "workspace.test",
       workspaceTitle: "Workspace Test",
@@ -91,12 +91,12 @@ describe("shell model direct", () => {
     });
     const model = host.createModel();
 
-    const attachments = await model.pathGet("/status/attachments");
-    expect(attachments).toMatchObject({ ok: true, found: true });
-    if (attachments.ok && attachments.found) {
-      expect(attachments.value).toEqual({
+    const clients = await model.pathGet("/status/clients");
+    expect(clients).toMatchObject({ ok: true, found: true });
+    if (clients.ok && clients.found) {
+      expect(clients.value).toEqual({
         test: {
-          attachmentId: "test",
+          clientId: "test",
           userId: "test-user",
           activeWorkspaceId: "workspace.test",
           activePaneIdByWorkspace: { "workspace.test": "pane.alpha" }
@@ -104,14 +104,14 @@ describe("shell model direct", () => {
       });
     }
 
-    const current = await model.pathGet("/status/attachments/test/currentWorkspace");
+    const current = await model.pathGet("/status/clients/test/currentWorkspace");
     expect(current).toMatchObject({
       ok: true,
       found: true,
       value: { id: "workspace.test", title: "Workspace Test", paneCount: 1 }
     });
 
-    const currentTitle = await model.pathGet("/status/attachments/test/currentWorkspace/title");
+    const currentTitle = await model.pathGet("/status/clients/test/currentWorkspace/title");
     expect(currentTitle).toEqual({ ok: true, found: true, value: "Workspace Test" });
 
     const explicit = await model.pathGet("/status/workspaces/workspace.test");
@@ -130,13 +130,13 @@ describe("shell model direct", () => {
     const missingWorkspace = await model.pathGet("/status/workspaces/workspace.unknown");
     expect(missingWorkspace).toMatchObject({ ok: true, found: false });
 
-    const missingAttachment = await model.pathGet("/status/attachments/web_does_not_exist");
-    expect(missingAttachment).toMatchObject({ ok: true, found: false });
+    const missingClient = await model.pathGet("/status/clients/web_does_not_exist");
+    expect(missingClient).toMatchObject({ ok: true, found: false });
 
-    const attachmentsList = await model.pathList("/status/attachments");
-    expect(attachmentsList).toMatchObject({ ok: true, found: true });
-    if (attachmentsList.ok && attachmentsList.found) {
-      expect(attachmentsList.entries.map((entry) => entry.name)).toEqual(["test"]);
+    const clientsList = await model.pathList("/status/clients");
+    expect(clientsList).toMatchObject({ ok: true, found: true });
+    if (clientsList.ok && clientsList.found) {
+      expect(clientsList.entries.map((entry) => entry.name)).toEqual(["test"]);
     }
   });
 
@@ -191,7 +191,7 @@ describe("shell model direct", () => {
       found: true,
       value: createdValue.workspace
     });
-    expect(await model.pathGet("/status/workspace", { attachmentId: "test" })).toEqual({
+    expect(await model.pathGet("/status/workspace", { clientId: "test" })).toEqual({
       ok: true,
       found: true,
       value: createdValue.workspace
@@ -239,7 +239,7 @@ describe("shell model direct", () => {
       }
     });
 
-    const status = await model.pathGet("/status/workspace", { attachmentId: "test" });
+    const status = await model.pathGet("/status/workspace", { clientId: "test" });
     expect(status).toMatchObject({ ok: true, found: true, value: { id: "workspace.test", paneCount: 2 } });
   });
 
@@ -266,7 +266,7 @@ describe("shell model direct", () => {
       ok: true,
       value: "Flmux Test"
     });
-    expect(await model.pathSet("/title", "Workspace Renamed", { attachmentId: "test" })).toEqual({
+    expect(await model.pathSet("/title", "Workspace Renamed", { clientId: "test" })).toEqual({
       ok: true,
       value: "Workspace Renamed"
     });

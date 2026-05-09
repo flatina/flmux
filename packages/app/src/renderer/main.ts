@@ -42,7 +42,7 @@ async function bootstrap() {
   // Register + bootstrap live inside `workbench.start()` — ordering differs
   // by mode (desktop: register→bootstrap so the forwarder is up for events
   // emitted during bootstrap; web: HTTP bootstrap→register so the server
-  // has an attachmentId before it can install the forwarder).
+  // has an clientId before it can install the forwarder).
   await workbench.start();
 
   if (config.devMode) {

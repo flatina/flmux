@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { FlmuxClientRegistry } from "../src/main/clientRegistry";
+import { ClientRegistry } from "../src/main/clientRegistry";
 import { createInMemoryTerminalBackend, createTerminalService } from "../src/main/terminal-service";
 import { createWebModeUserAuthorityRegistry } from "../src/main/userAuthorityRegistry";
 
@@ -19,7 +19,7 @@ describe("web-mode user authority registry (B2 Phase 1)", () => {
     return createWebModeUserAuthorityRegistry({
       projectDir: PROJECT_DIR,
       terminalService: createTerminalService(createInMemoryTerminalBackend()),
-      clientRegistry: new FlmuxClientRegistry(),
+      clientRegistry: new ClientRegistry(),
       getOrigin: () => "http://127.0.0.1:4321",
       ...options
     });
@@ -44,16 +44,16 @@ describe("web-mode user authority registry (B2 Phase 1)", () => {
 
     // alpha creates an extra workspace; beta sees only its own default seed.
     await alpha.router.pathCall({
-      clientId: alpha.clientId,
+      authorityClientId: alpha.clientId,
       path: "/workspaces/new"
     });
 
     const alphaWorkspaces = (await alpha.router.pathGet({
-      clientId: alpha.clientId,
+      authorityClientId: alpha.clientId,
       path: "/workspaces"
     })) as { ok: true; found: true; value: Record<string, unknown> };
     const betaWorkspaces = (await beta.router.pathGet({
-      clientId: beta.clientId,
+      authorityClientId: beta.clientId,
       path: "/workspaces"
     })) as { ok: true; found: true; value: Record<string, unknown> };
 
@@ -72,13 +72,13 @@ describe("web-mode user authority registry (B2 Phase 1)", () => {
     // fails closed.
     await expect(
       beta.router.pathGet({
-        clientId: alpha.clientId,
+        authorityClientId: alpha.clientId,
         path: "/status/app"
       })
     ).rejects.toThrow(`Unknown flmux client: ${alpha.clientId}`);
   });
 
-  it("emits scope=attachment events to the slot targeted by the mutation, not cross-user", async () => {
+  it("emits scope=client events to the slot targeted by the mutation, not cross-user", async () => {
     const registry = makeRegistry();
 
     const alpha = await registry.getOrCreate("alpha");
@@ -86,10 +86,10 @@ describe("web-mode user authority registry (B2 Phase 1)", () => {
 
     const alphaEvents: string[] = [];
     const betaEvents: string[] = [];
-    alpha.subscribe((event) => alphaEvents.push(`${event.topic}:${event.targetAttachmentId ?? "*"}`));
-    beta.subscribe((event) => betaEvents.push(`${event.topic}:${event.targetAttachmentId ?? "*"}`));
+    alpha.subscribe((event) => alphaEvents.push(`${event.topic}:${event.targetClientId ?? "*"}`));
+    beta.subscribe((event) => betaEvents.push(`${event.topic}:${event.targetClientId ?? "*"}`));
 
-    // Bootstrap alpha's attachment "alpha_view" — this seeds its slot and
+    // Bootstrap alpha's client "alpha_view" — this seeds its slot and
     // emits workspace.activeChanged targeted at that slot.
     alpha.shellBootstrap("alpha_view");
 
@@ -108,7 +108,7 @@ describe("web-mode user authority registry (B2 Phase 1)", () => {
     const alpha = await registry.getOrCreate("alpha");
     expect(alpha.persistSession).toBeDefined();
     const createRes = (await alpha.router.pathCall({
-      clientId: alpha.clientId,
+      authorityClientId: alpha.clientId,
       path: "/workspaces/new"
     })) as { ok: true; value: { workspaceId: string } };
     const newWorkspaceId = createRes.value.workspaceId;
@@ -161,7 +161,7 @@ describe("web-mode user authority registry (B2 Phase 1)", () => {
     const registry = createWebModeUserAuthorityRegistry({
       projectDir: PROJECT_DIR,
       terminalService: createTerminalService(createInMemoryTerminalBackend()),
-      clientRegistry: new FlmuxClientRegistry(),
+      clientRegistry: new ClientRegistry(),
       getOrigin: () => "http://127.0.0.1:4321",
       onAuthorityEvicted: (userId, authority) => {
         evictions.push({ userId, clientId: authority.clientId });
@@ -187,7 +187,7 @@ describe("web-mode user authority registry (B2 Phase 1)", () => {
     const registry1 = makeRegistry({ sessionsDir });
     const alpha1 = await registry1.getOrCreate("alpha");
     const createRes = (await alpha1.router.pathCall({
-      clientId: alpha1.clientId,
+      authorityClientId: alpha1.clientId,
       path: "/workspaces/new"
     })) as { ok: true; value: { workspaceId: string } };
     await alpha1.persistSession!({
@@ -205,13 +205,13 @@ describe("web-mode user authority registry (B2 Phase 1)", () => {
     const registry2 = makeRegistry({ sessionsDir });
     const alpha2 = await registry2.getOrCreate("alpha");
     const workspaces = (await alpha2.router.pathGet({
-      clientId: alpha2.clientId,
+      authorityClientId: alpha2.clientId,
       path: "/workspaces"
     })) as { ok: true; found: true; value: Record<string, unknown> };
     expect(Object.keys(workspaces.value).sort()).toEqual(["workspace.1", createRes.value.workspaceId].sort());
 
     // The restored authority also exposes the layout via shellBootstrap
-    // so browser attachments get the saved outer/inner layouts.
+    // so browser clients get the saved outer/inner layouts.
     const bootstrap = alpha2.shellBootstrap("alpha_view");
     expect(bootstrap.outerLayout).not.toBeNull();
   });

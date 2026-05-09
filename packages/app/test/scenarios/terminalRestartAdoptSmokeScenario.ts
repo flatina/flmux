@@ -40,7 +40,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
         };
       };
     }>(`${firstOrigin}/api/model/path/call`, {
-      clientId: firstClientId,
+      authorityClientId: firstClientId,
       path: "/panes/new",
       args: {
         kind: "terminal",
@@ -64,7 +64,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
             };
           };
         }>(`${firstOrigin}/api/model/path/get`, {
-          clientId: firstClientId,
+          authorityClientId: firstClientId,
           path: `/status/panes/${paneId}/terminal`
         });
         return status.result.value.attached && status.result.value.rootKey && status.result.value.runtimeId
@@ -87,7 +87,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
         };
       };
     }>(`${firstOrigin}/api/model/path/call`, {
-      clientId: firstClientId,
+      authorityClientId: firstClientId,
       path: `/panes/${paneId}/terminal/write`,
       args: {
         data: `echo ${marker}\r`
@@ -103,7 +103,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
         };
       };
     }>(`${firstOrigin}/api/model/path/call`, {
-      clientId: firstClientId,
+      authorityClientId: firstClientId,
       path: "/panes/new",
       args: {
         kind: "browser",
@@ -123,7 +123,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
         };
       };
     }>(`${firstOrigin}/api/model/path/call`, {
-      clientId: firstClientId,
+      authorityClientId: firstClientId,
       path: "/panes/new",
       args: {
         kind: "cowsay",
@@ -142,7 +142,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
         };
       };
     }>(`${firstOrigin}/api/model/path/call`, {
-      clientId: firstClientId,
+      authorityClientId: firstClientId,
       path: "/panes/new",
       args: {
         kind: "inspector",
@@ -163,7 +163,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
         };
       };
     }>(`${firstOrigin}/api/model/path/get`, {
-      clientId: firstClientId,
+      authorityClientId: firstClientId,
       path: `/panes/${inspectorPaneId}/inspector`
     });
     expect(inspectorState.result.value).toEqual({
@@ -180,7 +180,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
         };
       };
     }>(`${firstOrigin}/api/model/path/call`, {
-      clientId: firstClientId,
+      authorityClientId: firstClientId,
       path: "/panes/new",
       args: {
         kind: "scratchpad",
@@ -197,7 +197,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
         value: string;
       };
     }>(`${firstOrigin}/api/model/path/set`, {
-      clientId: firstClientId,
+      authorityClientId: firstClientId,
       path: `/panes/${scratchpadPaneId}/scratchpad/note`,
       value: scratchpadMarker
     });
@@ -213,7 +213,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
         };
       };
     }>(`${firstOrigin}/api/model/path/get`, {
-      clientId: firstClientId,
+      authorityClientId: firstClientId,
       path: `/panes/${scratchpadPaneId}/scratchpad`
     });
     expect(scratchpadState.result.value.note).toBe(scratchpadMarker);
@@ -228,7 +228,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
         };
       };
     }>(`${firstOrigin}/api/model/path/get`, {
-      clientId: firstClientId,
+      authorityClientId: firstClientId,
       path: `/status/panes/${scratchpadPaneId}/scratchpad`
     });
     expect(scratchpadStatus.result.value.noteLength).toBe(scratchpadMarker.length);
@@ -248,7 +248,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
             };
           };
         }>(`${firstOrigin}/api/model/path/get`, {
-          clientId: firstClientId,
+          authorityClientId: firstClientId,
           path: `/status/panes/${paneId}/terminal`
         });
 
@@ -329,7 +329,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
             } | null;
           };
         }>(`${secondOrigin}/api/model/path/get`, {
-          clientId: secondClientId,
+          authorityClientId: secondClientId,
           path: `/panes/${paneId}/terminal`
         });
 
@@ -362,7 +362,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
             };
           };
         }>(`${secondOrigin}/api/model/path/get`, {
-          clientId: secondClientId,
+          authorityClientId: secondClientId,
           path: `/status/panes/${paneId}/terminal`
         });
         return status.result.value.attached && status.result.value.rootKey === rootKey ? status.result.value : null;
@@ -389,7 +389,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
             };
           };
         }>(`${secondOrigin}/api/model/path/call`, {
-          clientId: secondClientId,
+          authorityClientId: secondClientId,
           path: `/panes/${paneId}/terminal/history`,
           args: {
             maxBytes: 20_000
@@ -411,7 +411,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
         value: string;
       };
     }>(`${secondOrigin}/api/model/path/get`, {
-      clientId: secondClientId,
+      authorityClientId: secondClientId,
       path: `/status/panes/${browserPaneId}/browser/url`
     });
     expect(restoredBrowser.result.value).toBe(`${secondOrigin}/__flmux/internal/start?workspace=restored-browser`);
@@ -429,7 +429,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
         };
       };
     }>(`${secondOrigin}/api/model/path/get`, {
-      clientId: secondClientId,
+      authorityClientId: secondClientId,
       path: `/status/panes/${cowsayPaneId}`
     });
     expect(restoredCowsayPane.result.value).toMatchObject({
@@ -451,7 +451,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
         };
       };
     }>(`${secondOrigin}/api/model/path/get`, {
-      clientId: secondClientId,
+      authorityClientId: secondClientId,
       path: `/status/panes/${inspectorPaneId}`
     });
     expect(restoredInspectorPane.result.value).toMatchObject({
@@ -470,7 +470,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
         };
       };
     }>(`${secondOrigin}/api/model/path/get`, {
-      clientId: secondClientId,
+      authorityClientId: secondClientId,
       path: `/panes/${inspectorPaneId}/inspector`
     });
     expect(restoredInspectorState.result.value).toEqual({
@@ -490,7 +490,7 @@ export async function runTerminalRestartAdoptSmokeScenario(appHandles: AppProces
         };
       };
     }>(`${secondOrigin}/api/model/path/get`, {
-      clientId: secondClientId,
+      authorityClientId: secondClientId,
       path: `/status/panes/${scratchpadPaneId}`
     });
     expect(restoredScratchpadPane.result.value).toMatchObject({

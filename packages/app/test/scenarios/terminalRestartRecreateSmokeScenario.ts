@@ -37,7 +37,7 @@ export async function runTerminalRestartRecreateSmokeScenario(appHandles: AppPro
         };
       };
     }>(`${firstOrigin}/api/model/path/call`, {
-      clientId: firstClientId,
+      authorityClientId: firstClientId,
       path: "/panes/new",
       args: {
         kind: "terminal",
@@ -61,7 +61,7 @@ export async function runTerminalRestartRecreateSmokeScenario(appHandles: AppPro
             };
           };
         }>(`${firstOrigin}/api/model/path/get`, {
-          clientId: firstClientId,
+          authorityClientId: firstClientId,
           path: `/status/panes/${paneId}/terminal`
         });
         return status.result.value.attached && status.result.value.rootKey && status.result.value.runtimeId
@@ -131,7 +131,7 @@ export async function runTerminalRestartRecreateSmokeScenario(appHandles: AppPro
             };
           };
         }>(`${secondOrigin}/api/model/path/get`, {
-          clientId: secondClientId,
+          authorityClientId: secondClientId,
           path: `/status/panes/${paneId}/terminal`
         });
 
@@ -163,7 +163,7 @@ export async function runTerminalRestartRecreateSmokeScenario(appHandles: AppPro
             };
           };
         }>(`${secondOrigin}/api/model/path/call`, {
-          clientId: secondClientId,
+          authorityClientId: secondClientId,
           path: `/panes/${paneId}/terminal/history`,
           args: {
             maxBytes: 20_000

@@ -2,7 +2,7 @@ import { join } from "node:path";
 import type { DiscoveredLocalExtension } from "./localExtensions";
 import { createSessionStore } from "./sessionStore";
 import { createWebModeShellAuthority, type WebModeShellAuthority } from "./webModeShellAuthority";
-import type { FlmuxClientRegistry } from "./clientRegistry";
+import type { ClientRegistry } from "./clientRegistry";
 import type { TerminalService } from "./terminal-service";
 
 interface WebModeUserAuthorityRegistryOptions {
@@ -10,7 +10,7 @@ interface WebModeUserAuthorityRegistryOptions {
   appVersion?: string;
   initialAppTitle?: string;
   terminalService: TerminalService;
-  clientRegistry: FlmuxClientRegistry;
+  clientRegistry: ClientRegistry;
   localExtensions?: readonly DiscoveredLocalExtension[];
   /** Server origin set at startup; forwarded to each user's authority on
    * first use so browser-pane URLs resolve against the live port. */
@@ -36,7 +36,7 @@ export interface WebModeUserAuthorityRegistry {
   get(userId: string): WebModeShellAuthority | undefined;
   list(): Array<{ userId: string; authority: WebModeShellAuthority }>;
   /** Remove an authority from the registry. Main.ts calls this after the
-   * no-attachment grace expires; the authority's `ShellCore` subscribers
+   * no-client grace expires; the authority's `ShellCore` subscribers
    * are torn down via the `onAuthorityEvicted` callback. Returns the
    * evicted authority (or undefined if it wasn't registered). */
   evict(userId: string): WebModeShellAuthority | undefined;
@@ -57,7 +57,7 @@ export interface WebModeUserAuthorityRegistry {
  * - **Authority eviction** — authorities live for the process lifetime.
  *   Every user who ever authenticated contributes a `ShellCore` that
  *   receives every terminal event forever. Phase 2+ adds a
- *   no-attachment-in-grace-period sweep here.
+ *   no-client-in-grace-period sweep here.
  */
 export function createWebModeUserAuthorityRegistry(
   options: WebModeUserAuthorityRegistryOptions

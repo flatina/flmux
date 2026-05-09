@@ -16,7 +16,7 @@ import type {
 import type { FlmuxSessionSnapshot, FlmuxWorkspaceSessionSnapshot } from "../shared/session";
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
 import { createServerShellModelRouter } from "./serverShellModelRouter";
-import type { FlmuxClientRegistry } from "./clientRegistry";
+import type { ClientRegistry } from "./clientRegistry";
 import type { DiscoveredLocalExtension } from "./localExtensions";
 import { createBuiltinPaneSpecs, createExtensionPaneSpecs, type ExtensionModuleImporter } from "./paneSpecs";
 import type { FlmuxSessionStore } from "./sessionStore";
@@ -30,18 +30,18 @@ export interface DesktopShellAuthority {
   subscribe(handler: (event: SequencedShellCoreEvent) => void): () => void;
   start(origin: string): Promise<void>;
   applyTerminalEvent(event: TerminalRuntimeEvent): void;
-  /** Seed the attachment's active workspace if the slot is fresh. Idempotent
+  /** Seed the client's active workspace if the slot is fresh. Idempotent
    * by design: slots that already hold an active ws short-circuit, so tab
    * refresh within grace and desktop repeat-calls are both safe. */
-  bootstrapAttachment(attachmentId: string): void;
-  /** Build the bootstrap snapshot for `attachmentId`. Desktop callers pass
-   * `DESKTOP_ATTACHMENT_ID` ("local") via the preload RPC; web browsers
-   * pass the server-minted attachmentId via the HTTP bootstrap route. */
-  shellBootstrap(attachmentId: string): FlmuxShellBootstrapResponse;
+  bootstrapClient(clientId: string): void;
+  /** Build the bootstrap snapshot for `clientId`. Desktop callers pass
+   * `DESKTOP_CLIENT_ID` ("local") via the preload RPC; web browsers
+   * pass the server-minted clientId via the HTTP bootstrap route. */
+  shellBootstrap(clientId: string): FlmuxShellBootstrapResponse;
   persistSession(layouts: FlmuxSessionSaveLayouts): Promise<void>;
 }
 
-export const DESKTOP_ATTACHMENT_ID = "local";
+export const DESKTOP_CLIENT_ID = "local";
 
 export async function createDesktopShellAuthority(options: {
   projectDir: string;
@@ -50,7 +50,7 @@ export async function createDesktopShellAuthority(options: {
   initialAppTitle?: string;
   terminalService: TerminalService;
   sessionStore: FlmuxSessionStore;
-  clientRegistry: FlmuxClientRegistry;
+  clientRegistry: ClientRegistry;
   localExtensions?: readonly DiscoveredLocalExtension[];
   extensionModuleImporter?: ExtensionModuleImporter;
   cefCdpPort?: number;
@@ -72,13 +72,13 @@ export async function createDesktopShellAuthority(options: {
     projectDir: options.projectDir,
     terminalBackend: options.terminalService,
     cefCdpPort: options.cefCdpPort,
-    // Phase B: the CEF renderer is a single attachment; name its slot
-    // `"local"` so scope=attachment event envelopes are self-describing.
-    // B2 switches to per-attachment slotKey = real attachmentId.
-    defaultSlotKey: DESKTOP_ATTACHMENT_ID,
+    // Phase B: the CEF renderer is a single client; name its slot
+    // `"local"` so scope=client event envelopes are self-describing.
+    // B2 switches to per-client slotKey = real clientId.
+    defaultSlotKey: DESKTOP_CLIENT_ID,
     // Desktop is single-user; surface `"local"` through
-    // `/status/attachments/{id}/userId` for extension session keying.
-    authorityUserId: DESKTOP_ATTACHMENT_ID
+    // `/status/clients/{id}/userId` for extension session keying.
+    authorityUserId: DESKTOP_CLIENT_ID
   });
   const shellModel = createShellModel({
     host: shellCore,
@@ -101,15 +101,15 @@ export async function createDesktopShellAuthority(options: {
     shellCore.initialize();
   }
 
-  function bootstrapAttachment(attachmentId: string) {
-    if (shellCore.getSlotActiveWorkspaceId(attachmentId) !== null) {
+  function bootstrapClient(clientId: string) {
+    if (shellCore.getSlotActiveWorkspaceId(clientId) !== null) {
       return;
     }
     const [firstWs] = shellCore.getWorkspaceIds();
     if (!firstWs) {
-      throw new Error("bootstrapAttachment: shell has no workspaces to seed active");
+      throw new Error("bootstrapClient: shell has no workspaces to seed active");
     }
-    shellCore.setActiveWorkspace(firstWs, { slotKey: attachmentId });
+    shellCore.setActiveWorkspace(firstWs, { slotKey: clientId });
   }
 
   return {
@@ -125,15 +125,15 @@ export async function createDesktopShellAuthority(options: {
     subscribe: (handler) => shellCore.subscribe(handler),
     start,
     applyTerminalEvent: (event) => shellCore.applyTerminalEvent(event),
-    bootstrapAttachment,
-    shellBootstrap: (attachmentId: string) => {
+    bootstrapClient,
+    shellBootstrap: (clientId: string) => {
       // Preflight #1 §S3 + feedback Q4: mutate (bootstrap helper) THEN
       // capture seqStart inside buildBootstrapResponse so any
       // `workspace.activeChanged` emitted here has seq ≤ seqStart and is
       // filtered by the client's seq gate (no double-apply).
-      bootstrapAttachment(attachmentId);
+      bootstrapClient(clientId);
       return buildBootstrapResponse({
-        attachmentId,
+        clientId,
         shellCore,
         outerLayout: persistedOuterLayout,
         innerLayouts: persistedInnerLayouts
@@ -223,7 +223,7 @@ function rebuildPaneRecordsFromLayout(shellCore: ShellCore, workspaceId: string,
 }
 
 export function buildBootstrapResponse(options: {
-  attachmentId: string;
+  clientId: string;
   shellCore: ShellCore;
   outerLayout: unknown | null;
   innerLayouts: Record<string, unknown | null>;
@@ -249,12 +249,12 @@ export function buildBootstrapResponse(options: {
     workspaces: workspaceIds.map((id) => shellCore.getWorkspaceSnapshot(id)!),
     panes,
     paneParams,
-    // Read the attachment's slot explicitly — coupling to defaultSlotKey
+    // Read the client's slot explicitly — coupling to defaultSlotKey
     // should be visible here.
-    activeWorkspaceId: shellCore.getSlotActiveWorkspaceId(options.attachmentId)
+    activeWorkspaceId: shellCore.getSlotActiveWorkspaceId(options.clientId)
   };
   return {
-    attachmentId: options.attachmentId,
+    clientId: options.clientId,
     snapshot,
     outerLayout: options.outerLayout,
     innerLayouts: options.innerLayouts,

@@ -51,7 +51,7 @@ describe("flmux host requests", () => {
       clientId: "client-77"
     });
     expect(onClientRegister).toHaveBeenCalledWith(77, undefined);
-    expect(registerClient).toHaveBeenCalledWith(77);
+    expect(registerClient).toHaveBeenCalledWith(77, "local");
 
     // Attach path pre-subscribes the caller viewId before the RPC; the
     // model layer then owns adopt-or-create routing through shellCore.
@@ -143,14 +143,14 @@ describe("flmux host requests", () => {
     // authority — web clients reach it via HTTP `/api/shell/bootstrap`.
     expect(() => handlers["flmux.shellBootstrap"]()).toThrow("flmux.shellBootstrap is only available in desktop mode");
 
-    // Web `flmux.client.register` requires an attachmentId binding —
+    // Web `flmux.client.register` requires an clientId binding —
     // bare `{}` is a protocol violation (browser must have done HTTP
     // bootstrap first).
     const layouts: FlmuxSessionSaveLayouts = { outerLayout: null, innerLayouts: {} };
     expect(handlers["flmux.layout.push"](layouts)).toEqual({ ok: true });
   });
 
-  it("preload injects caller.attachmentId on every shellModel.path.* RPC (get/list/set/call)", async () => {
+  it("preload injects caller.clientId on every shellModel.path.* RPC (get/list/set/call)", async () => {
     const pathGet = mock(async () => ({ ok: true as const, found: true, value: null }));
     const pathList = mock(async () => ({ ok: true as const, found: true, entries: [] }));
     const pathSet = mock(async () => ({ ok: true as const, value: null }));
@@ -161,7 +161,7 @@ describe("flmux host requests", () => {
       getProjectDir: () => ".",
       getAuthorityClientId: () => null,
       getCallerViewId: () => 1,
-      getCallerAttachmentId: () => "local",
+      getCallerClientId: () => "local",
       paneSubscribers: new Map(),
       resolveShellModelRouter: () => ({
         registerClient: () => ({ clientId: "client-1" }),
@@ -181,13 +181,13 @@ describe("flmux host requests", () => {
     await handlers["shellModel.path.set"]({ path: "/title", value: "Renamed" });
     await handlers["shellModel.path.call"]({ path: "/panes/new", args: { kind: "browser" } });
 
-    // Preload path = shellModel sees caller.attachmentId, so implicit-current
-    // narrowing doesn't reject. External HTTP callers (no getCallerAttachmentId
+    // Preload path = shellModel sees caller.clientId, so implicit-current
+    // narrowing doesn't reject. External HTTP callers (no getCallerClientId
     // equivalent) are the ones that hit INVALID_VALUE at the model layer.
-    expect(pathGet).toHaveBeenCalledWith("/status/workspace", { attachmentId: "local" });
-    expect(pathList).toHaveBeenCalledWith("/panes", { attachmentId: "local" });
-    expect(pathSet).toHaveBeenCalledWith("/title", "Renamed", { attachmentId: "local" });
-    expect(pathCall).toHaveBeenCalledWith("/panes/new", { kind: "browser" }, { attachmentId: "local" });
+    expect(pathGet).toHaveBeenCalledWith("/status/workspace", { clientId: "local" });
+    expect(pathList).toHaveBeenCalledWith("/panes", { clientId: "local" });
+    expect(pathSet).toHaveBeenCalledWith("/title", "Renamed", { clientId: "local" });
+    expect(pathCall).toHaveBeenCalledWith("/panes/new", { kind: "browser" }, { clientId: "local" });
   });
 
   it("desktop register returns {status: 'ok'} when no binding is passed (invariant guard)", () => {
@@ -228,10 +228,10 @@ describe("flmux host requests", () => {
     const onClientRegister = mock(
       (
         _viewId: number,
-        _binding?: { attachmentId: string; lastAppliedSeq: number }
+        _binding?: { clientId: string; lastAppliedSeq: number }
       ): "rebootstrap-required" | undefined => {
         throw new Error(
-          "flmux.client.register: web clients must pass {attachmentId, lastAppliedSeq} obtained from /api/shell/bootstrap"
+          "flmux.client.register: web clients must pass {clientId, lastAppliedSeq} obtained from /api/shell/bootstrap"
         );
       }
     );
@@ -264,9 +264,9 @@ describe("flmux host requests", () => {
     expect(() => handlers["flmux.client.register"]({})).toThrow("/api/shell/bootstrap");
   });
 
-  it("web register returns rebootstrap-required when the attachmentId is unknown server-side", () => {
-    // Simulates a browser replaying an attachmentId the server no longer
-    // knows — attachment aged out during grace, never minted, or a
+  it("web register returns rebootstrap-required when the clientId is unknown server-side", () => {
+    // Simulates a browser replaying an clientId the server no longer
+    // knows — client aged out during grace, never minted, or a
     // scripted client sent a bogus id. The register handler must signal
     // recovery (not raw RPC error) so the client reloads via HTTP
     // bootstrap (Codex B2 Phase 1 review B1).
@@ -283,12 +283,12 @@ describe("flmux host requests", () => {
       desktopAuthority: null
     });
 
-    expect(handlers["flmux.client.register"]({ attachmentId: "web_bogus", lastAppliedSeq: 0 })).toEqual({
+    expect(handlers["flmux.client.register"]({ clientId: "web_bogus", lastAppliedSeq: 0 })).toEqual({
       status: "rebootstrap-required"
     });
   });
 
-  it("web shellModel.path.* rejects before register (attachment not bound)", async () => {
+  it("web shellModel.path.* rejects before register (client not bound)", async () => {
     const handlers = createFlmuxHostRequestHandlers({
       mode: "web",
       getAppOrigin: () => "http://127.0.0.1:0",
@@ -304,6 +304,6 @@ describe("flmux host requests", () => {
 
     // Throws synchronously (requireShellModel is called before the
     // handler returns a Promise) — use the sync `toThrow` matcher.
-    expect(() => handlers["shellModel.path.get"]({ path: "/workspaces" })).toThrow("attachment not bound");
+    expect(() => handlers["shellModel.path.get"]({ path: "/workspaces" })).toThrow("client not bound");
   });
 });

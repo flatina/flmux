@@ -34,7 +34,7 @@ const getCmd = defineCommand({
         origin,
         "/api/model/path/get",
         {
-          clientId: await resolveClientId(origin, flags),
+          authorityClientId: await resolveClientId(origin, flags),
           path: args.path
         },
         flags
@@ -57,7 +57,7 @@ const lsCmd = defineCommand({
         origin,
         "/api/model/path/list",
         {
-          clientId: await resolveClientId(origin, flags),
+          authorityClientId: await resolveClientId(origin, flags),
           path: args.path
         },
         flags
@@ -79,7 +79,7 @@ const lsEachGetCmd = defineCommand({
     const listed = await apiPost<{
       ok: true;
       result: { ok: boolean; found?: boolean; entries?: Array<{ path: string }> };
-    }>(origin, "/api/model/path/list", { clientId, path: args.path }, flags);
+    }>(origin, "/api/model/path/list", { authorityClientId: clientId, path: args.path }, flags);
 
     if (!listed.ok || !listed.result.ok || listed.result.found === false || !listed.result.entries) {
       printJson(listed);
@@ -89,7 +89,7 @@ const lsEachGetCmd = defineCommand({
     const values = Object.fromEntries(
       await Promise.all(
         listed.result.entries.map(async (entry) => {
-          const value = await apiPost(origin, "/api/model/path/get", { clientId, path: entry.path }, flags);
+          const value = await apiPost(origin, "/api/model/path/get", { authorityClientId: clientId, path: entry.path }, flags);
           return [entry.path, value];
         })
       )
@@ -121,7 +121,7 @@ const setCmd = defineCommand({
         origin,
         "/api/model/path/set",
         {
-          clientId: await resolveClientId(origin, flags),
+          authorityClientId: await resolveClientId(origin, flags),
           path: args.path,
           value
         },
@@ -147,7 +147,7 @@ const callCmd = defineCommand({
         origin,
         "/api/model/path/call",
         {
-          clientId: await resolveClientId(origin, flags),
+          authorityClientId: await resolveClientId(origin, flags),
           path: args.path,
           args: callArgs
         },

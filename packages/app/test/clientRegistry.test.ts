@@ -1,29 +1,29 @@
 import { describe, expect, it } from "bun:test";
 import type { SequencedShellCoreEvent } from "@flmux/core/shell";
-import { AttachmentRegistry } from "../src/main/attachmentRegistry";
+import { ClientRegistry } from "../src/main/clientRegistry";
 
-function mkEvent(seq: number, attachmentId?: string): SequencedShellCoreEvent {
+function mkEvent(seq: number, clientId?: string): SequencedShellCoreEvent {
   return {
     topic: "workspace.activeChanged",
     payload: { id: `workspace.${seq}` },
     seq,
-    scope: "attachment",
-    targetAttachmentId: attachmentId ?? "a"
+    scope: "client",
+    targetClientId: clientId ?? "a"
   } as SequencedShellCoreEvent;
 }
 
-describe("AttachmentRegistry", () => {
+describe("ClientRegistry", () => {
   it("ensure() is idempotent and returns the same state", () => {
-    const registry = new AttachmentRegistry();
+    const registry = new ClientRegistry();
     const first = registry.ensure("a");
     const second = registry.ensure("a");
     expect(first).toBe(second);
-    expect(first.attachmentId).toBe("a");
+    expect(first.clientId).toBe("a");
     expect(first.viewId).toBeNull();
   });
 
   it("ring buffer retains the most recent events up to bufferSize", () => {
-    const registry = new AttachmentRegistry({ bufferSize: 3 });
+    const registry = new ClientRegistry({ bufferSize: 3 });
     registry.ensure("a");
     for (let i = 1; i <= 5; i += 1) {
       registry.pushBuffered("a", mkEvent(i));
@@ -33,7 +33,7 @@ describe("AttachmentRegistry", () => {
   });
 
   it("replayAfter returns events strictly greater than lastAppliedSeq", () => {
-    const registry = new AttachmentRegistry({ bufferSize: 5 });
+    const registry = new ClientRegistry({ bufferSize: 5 });
     registry.ensure("a");
     for (let i = 10; i <= 14; i += 1) {
       registry.pushBuffered("a", mkEvent(i));
@@ -43,7 +43,7 @@ describe("AttachmentRegistry", () => {
   });
 
   it("replayAfter returns null when lastAppliedSeq is older than buffer's oldest", () => {
-    const registry = new AttachmentRegistry({ bufferSize: 3 });
+    const registry = new ClientRegistry({ bufferSize: 3 });
     registry.ensure("a");
     // After shift-cap, oldest in buffer is seq 3.
     for (let i = 1; i <= 5; i += 1) registry.pushBuffered("a", mkEvent(i));
@@ -53,13 +53,13 @@ describe("AttachmentRegistry", () => {
   });
 
   it("replayAfter returns empty when buffer is empty", () => {
-    const registry = new AttachmentRegistry();
+    const registry = new ClientRegistry();
     registry.ensure("a");
     expect(registry.replayAfter("a", 0)).toEqual([]);
   });
 
   it("attachLive stores viewId and replaces a prior live subscriber", () => {
-    const registry = new AttachmentRegistry();
+    const registry = new ClientRegistry();
     let firstUnsubs = 0;
     let secondUnsubs = 0;
     registry.attachLive("a", 10, () => firstUnsubs++);
@@ -70,7 +70,7 @@ describe("AttachmentRegistry", () => {
   });
 
   it("markDisconnected tears down live subscriber but keeps buffer alive", async () => {
-    const registry = new AttachmentRegistry({ graceMs: 10 });
+    const registry = new ClientRegistry({ graceMs: 10 });
     let liveUnsub = 0;
     let bufferUnsub = 0;
     registry.setBufferSubscriber("a", () => bufferUnsub++);
@@ -89,7 +89,7 @@ describe("AttachmentRegistry", () => {
   });
 
   it("attachLive cancels a pending disconnect timer (reconnect within grace)", async () => {
-    const registry = new AttachmentRegistry({ graceMs: 20 });
+    const registry = new ClientRegistry({ graceMs: 20 });
     let evictFired = false;
     registry.attachLive("a", 10, () => {});
     registry.markDisconnected("a", () => {
@@ -102,26 +102,26 @@ describe("AttachmentRegistry", () => {
     expect(registry.get("a")?.viewId).toBe(11);
   });
 
-  it("resolveByViewId finds live attachments", () => {
-    const registry = new AttachmentRegistry();
+  it("resolveByViewId finds live clients", () => {
+    const registry = new ClientRegistry();
     registry.attachLive("a", 7, () => {});
     registry.attachLive("b", 8, () => {});
-    expect(registry.resolveByViewId(7)?.attachmentId).toBe("a");
+    expect(registry.resolveByViewId(7)?.clientId).toBe("a");
     expect(registry.resolveByViewId(9)).toBeUndefined();
   });
 
   it("onEvict fires AFTER evict() clears the entry — pins ordering for main.ts userId-map cleanup", async () => {
     // main.ts's markDisconnected callback deletes
-    // `attachmentIdToUserId.set(attachmentId, …)` — that cleanup relies
+    // `clientIdToUserId.set(clientId, …)` — that cleanup relies
     // on the entry already being gone so downstream code that observes
-    // the map cannot see a half-evicted attachment. A future refactor
+    // the map cannot see a half-evicted client. A future refactor
     // that moves onEvict ahead of evict() would silently break the
     // buffer-sub-teardown ↔ user-map-cleanup ordering (Claude B2 Phase 1
     // review B1 follow-up).
-    const registry = new AttachmentRegistry({ graceMs: 5 });
+    const registry = new ClientRegistry({ graceMs: 5 });
     registry.setBufferSubscriber("a", () => {});
     registry.markDisconnected("a", (state) => {
-      expect(registry.get(state.attachmentId)).toBeUndefined();
+      expect(registry.get(state.clientId)).toBeUndefined();
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
   });

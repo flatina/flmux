@@ -1,7 +1,7 @@
 import type { PathCallerContext, ShellModelAPI } from "@flmux/core/shell";
 import type { FlmuxRendererBootstrapConfig, FlmuxSessionSaveLayouts } from "../shared/rendererBridge";
 import type { FlmuxRuntimeMode } from "../shared/runtimeMode";
-import { DESKTOP_ATTACHMENT_ID, type DesktopShellAuthority } from "./desktopShellAuthority";
+import { DESKTOP_CLIENT_ID, type DesktopShellAuthority } from "./desktopShellAuthority";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
 import type { DiscoveredLocalExtension } from "./localExtensions";
 import { createLocalExtensionLoadEntries } from "./localExtensions";
@@ -14,37 +14,37 @@ export function createFlmuxHostRequestHandlers(options: {
   getProjectDir(): string;
   getAuthorityClientId(): string | null;
   getCallerViewId(): number;
-  /** Resolve the caller's attachmentId for a viewId; null before the
-   * attachment forwarder has been installed. Injected into the
+  /** Resolve the caller's clientId for a viewId; null before the
+   * client forwarder has been installed. Injected into the
    * PathCallerContext of every `shellModel.path.call` so the core routes
-   * attachment-scoped events and mutations to the right slot.
-   * Optional — tests can omit (defaults to "no attachment", mutations land
+   * client-scoped events and mutations to the right slot.
+   * Optional — tests can omit (defaults to "no client", mutations land
    * on the authority's defaultSlotKey). */
-  getCallerAttachmentId?(viewId: number): string | null;
+  getCallerClientId?(viewId: number): string | null;
   /** Pane → set of subscribed viewIds. Terminal events fan out to every
    * subscriber. See `main.ts` for the shared instance and `releaseView`
    * cleanup path. */
   paneSubscribers: Map<string, Set<number>>;
   /** Resolve the caller's authority `ShellModelAPI`. Desktop ignores args
-   * and returns the single authority; web needs the caller's attachment
-   * binding (`viewId` for post-register calls, or `hints.attachmentId`
-   * during register itself when `viewIdToAttachmentId` isn't set yet).
+   * and returns the single authority; web needs the caller's client
+   * binding (`viewId` for post-register calls, or `hints.clientId`
+   * during register itself when `viewIdToClientId` isn't set yet).
    * Throws the RPC back to the client if the binding can't be resolved
    * (should be impossible for well-behaved clients). */
-  resolveShellModel(viewId: number, hints?: { attachmentId?: string }): ShellModelAPI | null;
+  resolveShellModel(viewId: number, hints?: { clientId?: string }): ShellModelAPI | null;
   /** Resolve the caller's `FlmuxShellModelRouter` — used for clientId
    * minting at register time. Same input shape as `resolveShellModel`. */
-  resolveShellModelRouter(viewId: number, hints?: { attachmentId?: string }): FlmuxShellModelRouter | null;
+  resolveShellModelRouter(viewId: number, hints?: { clientId?: string }): FlmuxShellModelRouter | null;
   localExtensions: DiscoveredLocalExtension[];
   desktopAuthority: DesktopShellAuthority | null;
-  /** Bind a freshly-registered view to its attachment. Returning
+  /** Bind a freshly-registered view to its client. Returning
    * `"rebootstrap-required"` short-circuits the RPC with the same status,
    * telling the client to drop local state and re-POST `/api/shell/bootstrap`.
-   * Desktop ignores `binding`; web passes `{attachmentId, lastAppliedSeq}`
+   * Desktop ignores `binding`; web passes `{clientId, lastAppliedSeq}`
    * after the HTTP bootstrap response. */
   onClientRegister?(
     viewId: number,
-    binding?: { attachmentId: string; lastAppliedSeq: number }
+    binding?: { clientId: string; lastAppliedSeq: number }
   ): "rebootstrap-required" | void;
   /** Record a layout delta for the main-side debounced session write.
    * `viewId` is the caller's renderer id — main resolves which user's
@@ -72,30 +72,30 @@ export function createFlmuxHostRequestHandlers(options: {
   const requireShellModel = (op: string): ShellModelAPI => {
     const shellModel = options.resolveShellModel(options.getCallerViewId());
     if (!shellModel) {
-      throw new Error(`${op}: no authority resolvable for caller (attachment not bound)`);
+      throw new Error(`${op}: no authority resolvable for caller (client not bound)`);
     }
     return shellModel;
   };
 
   const resolvePreloadCaller = (incoming?: PathCallerContext): PathCallerContext | undefined => {
-    const attachmentId = options.getCallerAttachmentId?.(options.getCallerViewId()) ?? null;
-    if (!attachmentId) return incoming;
-    return { ...(incoming ?? {}), attachmentId: incoming?.attachmentId ?? attachmentId };
+    const clientId = options.getCallerClientId?.(options.getCallerViewId()) ?? null;
+    if (!clientId) return incoming;
+    return { ...(incoming ?? {}), clientId: incoming?.clientId ?? clientId };
   };
 
   return {
     "flmux.getConfig": () => buildConfig(),
 
-    "flmux.client.register": (params: { attachmentId?: string; lastAppliedSeq?: number }) => {
+    "flmux.client.register": (params: { clientId?: string; lastAppliedSeq?: number }) => {
       const viewId = options.getCallerViewId();
-      const binding = params?.attachmentId
+      const binding = params?.clientId
         ? {
-            attachmentId: params.attachmentId,
+            clientId: params.clientId,
             lastAppliedSeq: params.lastAppliedSeq ?? 0
           }
         : undefined;
       // Resolve the caller's router from the binding hint. When the
-      // attachment is unknown server-side (aged out during grace, never
+      // client is unknown server-side (aged out during grace, never
       // minted, or the client replayed a stale/bogus id), the web resolver
       // returns null — signal `rebootstrap-required` so the client recovers
       // via HTTP bootstrap instead of surfacing a raw RPC error. Desktop
@@ -108,11 +108,11 @@ export function createFlmuxHostRequestHandlers(options: {
         }
         throw new Error("flmux.client.register: no authority resolvable for caller");
       }
-      // Mint clientId first — `onClientRegister` installs the forwarder which
-      // may resolve the client by viewId (requires a minted id). On
-      // "rebootstrap-required" the dangling clientId is cleaned up when the
-      // client closes its WS to re-bootstrap.
-      const registration = router.registerClient(viewId);
+      // Bind viewId to the supplied clientId — desktop pins `DESKTOP_CLIENT_ID`,
+      // web carries the bootstrap-minted clientId via the binding payload.
+      // `onClientRegister` then installs the forwarder.
+      const clientId = binding?.clientId ?? DESKTOP_CLIENT_ID;
+      const registration = router.registerClient(viewId, clientId);
       const outcome = options.onClientRegister?.(viewId, binding);
       if (outcome === "rebootstrap-required") {
         return { status: "rebootstrap-required" as const };
@@ -121,10 +121,10 @@ export function createFlmuxHostRequestHandlers(options: {
     },
 
     "flmux.shellBootstrap": () => {
-      // Desktop CEF pins `"local"` as its attachment. Web clients receive
-      // their server-minted `attachmentId` via `/api/shell/bootstrap` HTTP
+      // Desktop CEF pins `"local"` as its client. Web clients receive
+      // their server-minted `clientId` via `/api/shell/bootstrap` HTTP
       // POST instead — they never reach this preload-only RPC.
-      return requireDesktopAuthority("flmux.shellBootstrap").shellBootstrap(DESKTOP_ATTACHMENT_ID);
+      return requireDesktopAuthority("flmux.shellBootstrap").shellBootstrap(DESKTOP_CLIENT_ID);
     },
 
     "flmux.layout.push": (params: FlmuxSessionSaveLayouts) => {
@@ -132,7 +132,7 @@ export function createFlmuxHostRequestHandlers(options: {
       return { ok: true as const };
     },
 
-    // Inject caller.attachmentId from the view's bound attachment on every
+    // Inject caller.clientId from the view's bound client on every
     // shellModel.path.* RPC so the model layer can route slot-aware reads
     // (/status/workspace/*) and mutations (setActive*, createPane with
     // implicit ws, etc.) without relying on defaultSlotKey.

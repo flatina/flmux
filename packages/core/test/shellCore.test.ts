@@ -503,7 +503,7 @@ describe("ShellCore", () => {
 
     const captured: Array<{ topic: string; target?: string; payload: any }> = [];
     core.subscribe((event) =>
-      captured.push({ topic: event.topic, target: event.targetAttachmentId, payload: event.payload })
+      captured.push({ topic: event.topic, target: event.targetClientId, payload: event.payload })
     );
 
     await core.deleteWorkspace("workspace.1");
@@ -639,51 +639,51 @@ describe("ShellCore", () => {
     expect(events.filter((t) => t === "workspace.activeChanged")).toHaveLength(0);
   });
 
-  it("broadcast topics carry scope='all' and no targetAttachmentId", async () => {
+  it("broadcast topics carry scope='all' and no targetClientId", async () => {
     const { core } = buildShellCore();
-    const captured: Array<{ topic: string; scope: string; targetAttachmentId?: string }> = [];
+    const captured: Array<{ topic: string; scope: string; targetClientId?: string }> = [];
     core.subscribe((event) =>
-      captured.push({ topic: event.topic, scope: event.scope, targetAttachmentId: event.targetAttachmentId })
+      captured.push({ topic: event.topic, scope: event.scope, targetClientId: event.targetClientId })
     );
 
     await core.createWorkspace({ title: "Second" });
     const wsAdded = captured.find((e) => e.topic === "workspace.added")!;
     expect(wsAdded.scope).toBe("all");
-    expect(wsAdded.targetAttachmentId).toBeUndefined();
+    expect(wsAdded.targetClientId).toBeUndefined();
 
     const pane = await core.createPane({ kind: "browser", url: "/x" });
     const paneAdded = captured.find((e) => e.topic === "pane.added")!;
     expect(paneAdded.scope).toBe("all");
-    expect(paneAdded.targetAttachmentId).toBeUndefined();
+    expect(paneAdded.targetClientId).toBeUndefined();
 
     await core.setScopedProperty({ scope: "app" }, "title", "flmux-test-scope");
     const titleChanged = captured.find((e) => e.topic === "app.titleChanged")!;
     expect(titleChanged.scope).toBe("all");
-    expect(titleChanged.targetAttachmentId).toBeUndefined();
+    expect(titleChanged.targetClientId).toBeUndefined();
     expect(pane.id).toBeTruthy();
   });
 
   it("setActiveWorkspace with explicit slotKey routes event to that target", async () => {
     const { core } = buildShellCore();
     await core.createWorkspace({ title: "Second" });
-    const captured: Array<{ topic: string; scope: string; targetAttachmentId?: string; payload: any }> = [];
+    const captured: Array<{ topic: string; scope: string; targetClientId?: string; payload: any }> = [];
     core.subscribe((event) =>
       captured.push({
         topic: event.topic,
         scope: event.scope,
-        targetAttachmentId: event.targetAttachmentId,
+        targetClientId: event.targetClientId,
         payload: event.payload
       })
     );
 
-    core.setActiveWorkspace("workspace.1", { slotKey: "other.attachment" });
+    core.setActiveWorkspace("workspace.1", { slotKey: "other.client" });
     const activeChanged = captured.find((e) => e.topic === "workspace.activeChanged")!;
-    expect(activeChanged.scope).toBe("attachment");
-    expect(activeChanged.targetAttachmentId).toBe("other.attachment");
+    expect(activeChanged.scope).toBe("client");
+    expect(activeChanged.targetClientId).toBe("other.client");
     expect(activeChanged.payload).toEqual({ id: "workspace.1" });
 
     // Default slot's active is unchanged by a targeted mutation.
-    expect(core.getSlotActiveWorkspaceId("other.attachment")).toBe("workspace.1");
+    expect(core.getSlotActiveWorkspaceId("other.client")).toBe("workspace.1");
     expect(core.getSlotActiveWorkspaceId()).not.toBe("workspace.1");
   });
 
@@ -722,19 +722,19 @@ describe("ShellCore", () => {
     });
   });
 
-  it("closing active pane emits pane.removed + scope=attachment pane.activeChanged", async () => {
+  it("closing active pane emits pane.removed + scope=client pane.activeChanged", async () => {
     const { core } = buildShellCore();
     // Workspaces start empty — seed two panes so closing the active one has
     // a sibling to fall back onto.
     const first = await core.createPane({ kind: "browser", url: "/f" });
     const second = await core.createPane({ kind: "browser", url: "/s" });
 
-    const captured: Array<{ topic: string; scope: string; targetAttachmentId?: string; payload: any }> = [];
+    const captured: Array<{ topic: string; scope: string; targetClientId?: string; payload: any }> = [];
     core.subscribe((event) =>
       captured.push({
         topic: event.topic,
         scope: event.scope,
-        targetAttachmentId: event.targetAttachmentId,
+        targetClientId: event.targetClientId,
         payload: event.payload
       })
     );
@@ -746,8 +746,8 @@ describe("ShellCore", () => {
 
     const activeChanged = captured.find((e) => e.topic === "pane.activeChanged")!;
     expect(activeChanged.payload).toEqual({ workspaceId: "workspace.1", paneId: first.id });
-    expect(activeChanged.scope).toBe("attachment");
-    expect(activeChanged.targetAttachmentId).toBeTruthy();
+    expect(activeChanged.scope).toBe("client");
+    expect(activeChanged.targetClientId).toBeTruthy();
   });
 
   it("terminal.applyTerminalEvent does not emit shellCore.event topics", async () => {

@@ -103,7 +103,7 @@ describe("cli extension registration", () => {
         const body = req.method === "POST" ? await req.json() : null;
         calls.push({ pathname: url.pathname, body });
         if (url.pathname === "/api/clients") {
-          return Response.json({ ok: true, clients: [{ clientId: "stub.client" }] });
+          return Response.json({ ok: true, clients: [{ authorityClientId: "stub.client" }] });
         }
         if (url.pathname === "/api/model/path/call") {
           return Response.json({ ok: true, result: { ok: true, value: { paneId: "pane.stub" } } });
@@ -136,7 +136,7 @@ describe("cli extension registration", () => {
         {
           pathname: "/api/model/path/call",
           body: {
-            clientId: "stub.client",
+            authorityClientId: "stub.client",
             path: "/panes/new",
             args: { kind: "cowsay", place: "right", title: "moo moo" }
           }

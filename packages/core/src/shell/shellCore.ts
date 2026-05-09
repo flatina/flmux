@@ -73,13 +73,13 @@ export interface ShellCoreOptions {
   initialAppTitle?: string;
   /**
    * Slot key used when a mutation/read doesn't pass an explicit slot — i.e.
-   * the "owner" attachment for initialize(), restoreWorkspace, and the
+   * the "owner" client for initialize(), restoreWorkspace, and the
    * requireCurrentWorkspace() preload-convenience read. Authority callers
-   * pass their attachmentId here (desktop: `"local"`); tests may omit.
+   * pass their clientId here (desktop: `"local"`); tests may omit.
    *
    * **B1b transition**: core treats defaultSlotKey as the implicit target
-   * for initialize/restore so the single-attachment world behaves like the
-   * pre-split core. When B2 lands per-attachment routing, initialize/restore
+   * for initialize/restore so the single-client world behaves like the
+   * pre-split core. When B2 lands per-client routing, initialize/restore
    * need an explicit slotKey argument or the shell bootstrap needs to be
    * driven from the authority rather than the core — at that point
    * defaultSlotKey should either go away or become strictly test-scoped.
@@ -87,7 +87,7 @@ export interface ShellCoreOptions {
   defaultSlotKey?: string;
   /** Owning user. Authority passes its own user id — desktop: `"local"`,
    * web: authenticated `user.name`. Surfaced through
-   * `/status/attachments/{id}/userId` so extensions can key session state
+   * `/status/clients/{id}/userId` so extensions can key session state
    * per user (flmux only routes; extensions own their schema). */
   authorityUserId?: string;
 }
@@ -104,7 +104,7 @@ export class ShellCore implements ShellModelHost {
   private readonly paneLastActive = new Map<string, PaneActiveRecord>();
   private readonly eventSubscribers = new Set<(event: SequencedShellCoreEvent) => void>();
   // Per-slot active state. `slotKey` is opaque to core — authority treats it
-  // as attachmentId; tests treat it as a harness id. Core only routes.
+  // as clientId; tests treat it as a harness id. Core only routes.
   private readonly activeSlots = new Map<string, ActiveStateSlot>();
   private readonly defaultSlotKey: string;
   private paneIdCounter = 0;
@@ -133,12 +133,12 @@ export class ShellCore implements ShellModelHost {
   }
 
   /**
-   * Emit with a routing envelope. `target` matters only for attachment-scoped
+   * Emit with a routing envelope. `target` matters only for client-scoped
    * topics (per SHELL_CORE_EVENT_SCOPES); for all-broadcast topics the
    * argument is silently dropped — "routing isn't payload" made mechanical.
    * Callers that accidentally pass target to a broadcast topic won't leak
    * that into the envelope. Authority/mutation callers supply `target` via
-   * caller.attachmentId → options.slotKey → here.
+   * caller.clientId → options.slotKey → here.
    */
   private emit(event: ShellCoreEvent, target?: string) {
     this.seq += 1;
@@ -147,7 +147,7 @@ export class ShellCore implements ShellModelHost {
       ...event,
       seq: this.seq,
       scope,
-      targetAttachmentId: scope === "attachment" ? target : undefined
+      targetClientId: scope === "client" ? target : undefined
     } as SequencedShellCoreEvent;
     for (const handler of this.eventSubscribers) {
       handler(sequenced);
@@ -205,7 +205,7 @@ export class ShellCore implements ShellModelHost {
       workspace.defaultTitle = input.defaultTitle;
     }
     // restoreWorkspace targets the default slot — it is a bootstrap-time
-    // helper for the owner attachment (desktop session restore).
+    // helper for the owner client (desktop session restore).
     const slot = this.ensureSlot(this.defaultSlotKey);
     const previousActiveWsId = slot.activeWorkspaceId;
     if (input.setActive || !slot.activeWorkspaceId) {
@@ -304,7 +304,7 @@ export class ShellCore implements ShellModelHost {
     fallbackParams: Record<string, unknown> | undefined,
     title: string
   ) {
-    // Restore attributes the pane to the default slot (the owner attachment).
+    // Restore attributes the pane to the default slot (the owner client).
     const slot = this.ensureSlot(this.defaultSlotKey);
     const previousActivePaneId = slot.activePaneIdByWorkspace.get(workspace.id);
     workspace.paneOrder.push(paneId);
@@ -412,7 +412,7 @@ export class ShellCore implements ShellModelHost {
    *
    * Invariant: deleting a workspace fans out `pane.removed` for every
    * pane it owned. Every paneId-keyed index downstream
-   * (renderer `paneIdToKind`, `paneTabMenuRegistry`, attachment registry,
+   * (renderer `paneIdToKind`, `paneTabMenuRegistry`, client registry,
    * …) relies on this hook as its sole cleanup signal.
    */
   async deleteWorkspace(workspaceId: string): Promise<void> {
@@ -425,7 +425,7 @@ export class ShellCore implements ShellModelHost {
     const nextWorkspaceId = this.workspaces.keys().next().value ?? null;
 
     // Every slot pointing at the deleted ws gets bumped to the next remaining
-    // (or null if empty). Each affected slot gets its own attachment-scoped
+    // (or null if empty). Each affected slot gets its own client-scoped
     // workspace.activeChanged so handlers can re-point without re-checking
     // their own slot id.
     const affectedSlots: Array<{ slotKey: string; newId: string | null }> = [];
@@ -449,7 +449,7 @@ export class ShellCore implements ShellModelHost {
     // reads) never observe a no-current-workspace state. initialize() moves
     // the default slot onto the new ws.1; any other slot that was also on the
     // deleted ws sat at null after step 3 — bump those too and emit per-slot
-    // activeChanged so every attachment that lost its workspace ends up on
+    // activeChanged so every client that lost its workspace ends up on
     // the reseed, not stuck at null.
     if (this.workspaces.size === 0) {
       this.initialize();
@@ -708,16 +708,16 @@ export class ShellCore implements ShellModelHost {
   }
 
   /**
-   * Slot-state summary for `/status/attachments/*`. The authority names slots
-   * after attachments, so this is effectively "per-attachment view state"
+   * Slot-state summary for `/status/clients/*`. The authority names slots
+   * after clients, so this is effectively "per-client view state"
    * from the core's perspective. Transport-level metadata (connected,
    * lastSeen) lives outside core and is merged in at a higher layer when
    * needed.
    */
-  async listAttachmentSlots(): Promise<import("./types").AttachmentSlotSummary[]> {
+  async listClientSlots(): Promise<import("./types").ClientSlotSummary[]> {
     const userId = this.options.authorityUserId ?? "local";
-    return Array.from(this.activeSlots.entries()).map(([attachmentId, slot]) => ({
-      attachmentId,
+    return Array.from(this.activeSlots.entries()).map(([clientId, slot]) => ({
+      clientId,
       userId,
       activeWorkspaceId: slot.activeWorkspaceId,
       activePaneIdByWorkspace: Object.fromEntries(slot.activePaneIdByWorkspace)
@@ -770,7 +770,7 @@ export class ShellCore implements ShellModelHost {
     this.paneLastActive.delete(paneId);
 
     // Per-slot active update: only slots that had this pane active in this
-    // workspace need to move. Each gets its own attachment-scoped event.
+    // workspace need to move. Each gets its own client-scoped event.
     const fallbackPaneId = workspace.paneOrder.at(-1) ?? null;
     const affectedSlots: Array<{ slotKey: string; newPaneId: string | null }> = [];
     for (const [slotKey, slot] of this.activeSlots) {
@@ -970,7 +970,7 @@ export class ShellCore implements ShellModelHost {
    * Resolve the slot's active workspace record. Throws `INVALID_VALUE` when
    * the slot has no active ws — transport should surface this to the caller
    * with a pointer at the new explicit paths (`/status/workspaces/{id}`,
-   * `/status/attachments/{aid}/currentWorkspace`).
+   * `/status/clients/{aid}/currentWorkspace`).
    */
   private requireSlotActiveWorkspace(options?: ShellSlotOptions): WorkspaceRecord {
     const slotKey = this.resolveSlotKey(options);

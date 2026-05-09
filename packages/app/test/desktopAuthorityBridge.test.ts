@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { pack } from "msgpackr";
 import type { SequencedShellCoreEvent } from "@flmux/core/shell";
 import { createDesktopShellAuthority } from "../src/main/desktopShellAuthority";
-import { FlmuxClientRegistry } from "../src/main/clientRegistry";
+import { ClientRegistry } from "../src/main/clientRegistry";
 import { createFlmuxHostRequestHandlers } from "../src/main/hostRequests";
 import { createInMemoryTerminalBackend, createTerminalService } from "../src/main/terminal-service";
 import type { FlmuxSessionStore } from "../src/main/sessionStore";
@@ -26,7 +26,7 @@ function createMemorySessionStore(initial: FlmuxSessionSnapshot | null = null): 
 
 async function createTestAuthority(options: { initial?: FlmuxSessionSnapshot | null } = {}) {
   const terminalService = createTerminalService(createInMemoryTerminalBackend());
-  const clientRegistry = new FlmuxClientRegistry();
+  const clientRegistry = new ClientRegistry();
   const sessionStore = createMemorySessionStore(options.initial ?? null);
   const authority = await createDesktopShellAuthority({
     projectDir: "/flmux-test",
@@ -44,7 +44,7 @@ describe("desktop shell authority bridge", () => {
     const { authority } = await createTestAuthority();
     const bootstrap = authority.shellBootstrap("local");
 
-    expect(bootstrap.attachmentId).toBe("local");
+    expect(bootstrap.clientId).toBe("local");
     expect(bootstrap.snapshot.workspaces).toHaveLength(1);
     expect(bootstrap.snapshot.workspaces[0].id).toBe("workspace.1");
     expect(bootstrap.snapshot.panes["workspace.1"]).toBeDefined();
@@ -78,7 +78,7 @@ describe("desktop shell authority bridge", () => {
         "shellCore.event": () => {}
       }
     });
-    const registration = authority.router.registerClient(viewId);
+    const registration = authority.router.registerClient(viewId, "local");
     expect(Object.keys(registration).sort()).toEqual(["clientId"]);
     expect(typeof registration.clientId).toBe("string");
   });
@@ -103,7 +103,7 @@ describe("desktop shell authority bridge", () => {
     });
     clientRegistry.attachRenderer(viewId, bridge);
 
-    const registration = authority.router.registerClient(viewId);
+    const registration = authority.router.registerClient(viewId, "local");
     bridgeProbed = false;
     pack(registration);
     expect(bridgeProbed).toBe(false);
@@ -270,7 +270,7 @@ describe("desktop shell authority bridge", () => {
 
     await preloadHandlers["shellModel.path.call"]({ path: "/workspaces/new" });
     await authority.router.pathCall({
-      clientId: authority.clientId,
+      authorityClientId: authority.clientId,
       path: "/workspaces/new"
     });
 
@@ -305,7 +305,7 @@ describe("desktop shell authority bridge", () => {
       localExtensions: [],
       desktopAuthority: authority,
       onClientRegister: (vId) => {
-        const client = clientRegistry.resolveByViewId(vId);
+        const client = clientRegistry.resolveRendererByViewId(vId);
         if (!client) {
           return;
         }
@@ -335,7 +335,7 @@ describe("desktop shell authority bridge", () => {
     const bootstrap = authority.shellBootstrap("local");
     expect(bootstrap.snapshot.workspaces).toHaveLength(1);
     expect(bootstrap.snapshot.activeWorkspaceId).toBe(bootstrap.snapshot.workspaces[0].id);
-    const status = await authority.shellModel.pathGet("/status/workspace", { attachmentId: "local" });
+    const status = await authority.shellModel.pathGet("/status/workspace", { clientId: "local" });
     expect(status).toMatchObject({ ok: true, found: true });
   });
 

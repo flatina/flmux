@@ -37,26 +37,26 @@ describe("eventToReadPath (B3 broadcast filter)", () => {
     ).toBe("/status/app/title");
   });
 
-  it("maps slot-scoped active changes to /status/attachments/{aid}/currentWorkspace", () => {
+  it("maps slot-scoped active changes to /status/clients/{aid}/currentWorkspace", () => {
     expect(
       eventToReadPath(
         mkEvent({
           topic: "workspace.activeChanged",
           payload: { id: "ws.1" },
-          scope: "attachment",
-          targetAttachmentId: "web_abc"
+          scope: "client",
+          targetClientId: "web_abc"
         } as Partial<SequencedShellCoreEvent>)
       )
-    ).toBe("/status/attachments/web_abc/currentWorkspace");
+    ).toBe("/status/clients/web_abc/currentWorkspace");
   });
 
-  it("returns null for slot-scoped events missing targetAttachmentId (structural)", () => {
+  it("returns null for slot-scoped events missing targetClientId (structural)", () => {
     expect(
       eventToReadPath(
         mkEvent({
           topic: "workspace.activeChanged",
           payload: { id: "ws.1" },
-          scope: "attachment"
+          scope: "client"
         } as Partial<SequencedShellCoreEvent>)
       )
     ).toBeNull();

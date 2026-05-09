@@ -184,9 +184,9 @@ class ShellModel implements ShellModelAPI {
         return throwPathError("NOT_WRITABLE", "Path is not writable");
       }
 
-      // Resolve the current workspace from the caller's attachment before
+      // Resolve the current workspace from the caller's client before
       // dispatching so the write targets the caller's slot (not the default).
-      // External callers without an attachment are refused — the explicit
+      // External callers without an client are refused — the explicit
       // /workspaces/{id}/<property> path is the supported alternative.
       const slotKey = requireSlotKey(caller, `/${segments[0]}`, `/workspaces/{id}/${segments[0]}`);
       const workspace = await this.host.getWorkspaceStatus({ slotKey });
@@ -298,11 +298,11 @@ class ShellModel implements ShellModelAPI {
     }
 
     if (segments[0] === "workspaces") {
-      // `caller.attachmentId` flows through slot-aware mutations so the
-      // attachment-scoped events (workspace.activeChanged) target the right
-      // slot. Mutations without caller.attachmentId land on the authority's
+      // `caller.clientId` flows through slot-aware mutations so the
+      // client-scoped events (workspace.activeChanged) target the right
+      // slot. Mutations without caller.clientId land on the authority's
       // default slot.
-      const slotKey = caller.attachmentId;
+      const slotKey = caller.clientId;
       const slotOptions = slotKey ? { slotKey } : undefined;
 
       if (segments.length === 2 && segments[1] === "new") {
@@ -354,7 +354,7 @@ class ShellModel implements ShellModelAPI {
       // Resolution order: args.workspaceId > caller.workspaceId > slot's active (via host fallback).
       // Host throws INVALID_VALUE when all three are absent.
       const workspaceId = argsWorkspaceId ?? caller.workspaceId;
-      const slotKey = caller.attachmentId;
+      const slotKey = caller.clientId;
       const pane = await this.host.createPane(input, workspaceId || slotKey ? { workspaceId, slotKey } : undefined);
       return {
         ok: true,
@@ -449,7 +449,7 @@ class ShellModel implements ShellModelAPI {
     if (segments.length === 3 && segments[2] === "setActive") {
       const source = args.source === "user" ? "user" : "call";
       await this.host.setActivePane(pane.id, {
-        ...(caller.attachmentId ? { slotKey: caller.attachmentId } : {}),
+        ...(caller.clientId ? { slotKey: caller.clientId } : {}),
         source
       });
       return { ok: true, value: { paneId: pane.id } };
@@ -774,13 +774,13 @@ class ShellModel implements ShellModelAPI {
   private async getStatusPath(segments: string[], caller: PathCallerContext): Promise<PathGetResult> {
     if (segments.length === 0) {
       // `panes` here is slot-scoped (current workspace's panes); external
-      // callers without an attachment get the aggregate subtrees only
-      // (`app`, `attachments`, `workspaces`) and must compose their view
-      // via `/status/workspaces/{id}/panes` for pane details.
-      const slotKey = caller.attachmentId;
-      const [app, attachments, workspaces, panes] = await Promise.all([
+      // callers without a clientId get the aggregate subtrees only
+      // (`app`, `clients`, `workspaces`) and must compose their view via
+      // `/status/workspaces/{id}/panes` for pane details.
+      const slotKey = caller.clientId;
+      const [app, clients, workspaces, panes] = await Promise.all([
         this.host.getAppStatus(),
-        this.host.listAttachmentSlots(),
+        this.host.listClientSlots(),
         this.host.listWorkspaces(),
         slotKey ? this.host.listPanes({ slotKey }) : []
       ]);
@@ -789,7 +789,7 @@ class ShellModel implements ShellModelAPI {
         found: true,
         value: {
           app,
-          attachments: Object.fromEntries(attachments.map((entry) => [entry.attachmentId, entry])),
+          clients: Object.fromEntries(clients.map((entry) => [entry.clientId, entry])),
           workspaces: Object.fromEntries(workspaces.map((workspace) => [workspace.id, workspace])),
           ...(slotKey
             ? {
@@ -804,8 +804,8 @@ class ShellModel implements ShellModelAPI {
       return await this.getStatusApp(segments.slice(1));
     }
 
-    if (segments[0] === "attachments") {
-      return await this.getStatusAttachments(segments.slice(1));
+    if (segments[0] === "clients") {
+      return await this.getStatusClients(segments.slice(1));
     }
 
     if (segments[0] === "workspace") {
@@ -830,7 +830,7 @@ class ShellModel implements ShellModelAPI {
         found: true,
         entries: [
           objectEntry("app", "/status/app"),
-          objectEntry("attachments", "/status/attachments"),
+          objectEntry("clients", "/status/clients"),
           objectEntry("workspace", "/status/workspace"),
           objectEntry("workspaces", "/status/workspaces"),
           objectEntry("panes", "/status/panes")
@@ -842,8 +842,8 @@ class ShellModel implements ShellModelAPI {
       return await this.listStatusApp(segments.slice(1));
     }
 
-    if (segments[0] === "attachments") {
-      return await this.listStatusAttachments(segments.slice(1));
+    if (segments[0] === "clients") {
+      return await this.listStatusClients(segments.slice(1));
     }
 
     if (segments[0] === "workspace") {
@@ -901,7 +901,7 @@ class ShellModel implements ShellModelAPI {
     const slotKey = requireSlotKey(
       caller,
       "/status/workspace",
-      "/status/attachments/{attachmentId}/currentWorkspace or /status/workspaces/{id}"
+      "/status/clients/{clientId}/currentWorkspace or /status/workspaces/{id}"
     );
     const workspaceStatus = await this.host.getWorkspaceStatus({ slotKey });
 
@@ -920,7 +920,7 @@ class ShellModel implements ShellModelAPI {
     requireSlotKey(
       caller,
       "/status/workspace",
-      "/status/attachments/{attachmentId}/currentWorkspace or /status/workspaces/{id}"
+      "/status/clients/{clientId}/currentWorkspace or /status/workspaces/{id}"
     );
     if (segments.length === 0) {
       return {
@@ -941,66 +941,66 @@ class ShellModel implements ShellModelAPI {
     return notFoundList();
   }
 
-  private async getStatusAttachments(segments: string[]): Promise<PathGetResult> {
-    const attachments = await this.host.listAttachmentSlots();
+  private async getStatusClients(segments: string[]): Promise<PathGetResult> {
+    const clients = await this.host.listClientSlots();
     if (segments.length === 0) {
       return {
         ok: true,
         found: true,
-        value: Object.fromEntries(attachments.map((entry) => [entry.attachmentId, entry]))
+        value: Object.fromEntries(clients.map((entry) => [entry.clientId, entry]))
       };
     }
 
-    const attachment = attachments.find((entry) => entry.attachmentId === segments[0]);
-    if (!attachment) {
+    const client = clients.find((entry) => entry.clientId === segments[0]);
+    if (!client) {
       return notFoundGet();
     }
 
     if (segments.length === 1) {
-      return { ok: true, found: true, value: attachment };
+      return { ok: true, found: true, value: client };
     }
 
     if (segments.length === 2) {
-      if (segments[1] === "attachmentId") {
-        return { ok: true, found: true, value: attachment.attachmentId };
+      if (segments[1] === "clientId") {
+        return { ok: true, found: true, value: client.clientId };
       }
       if (segments[1] === "userId") {
-        return { ok: true, found: true, value: attachment.userId };
+        return { ok: true, found: true, value: client.userId };
       }
       if (segments[1] === "activeWorkspaceId") {
-        return { ok: true, found: true, value: attachment.activeWorkspaceId };
+        return { ok: true, found: true, value: client.activeWorkspaceId };
       }
       if (segments[1] === "activePaneIdByWorkspace") {
-        return { ok: true, found: true, value: attachment.activePaneIdByWorkspace };
+        return { ok: true, found: true, value: client.activePaneIdByWorkspace };
       }
     }
 
     if (segments[1] === "currentWorkspace") {
-      if (!attachment.activeWorkspaceId) {
+      if (!client.activeWorkspaceId) {
         return { ok: true, found: false, value: null };
       }
       // Delegate the workspace subtree to getStatusWorkspaces so the aliasing
       // layer (paneCount/title/panes/*) stays in one place.
-      return await this.getStatusWorkspaces([attachment.activeWorkspaceId, ...segments.slice(2)]);
+      return await this.getStatusWorkspaces([client.activeWorkspaceId, ...segments.slice(2)]);
     }
 
     return notFoundGet();
   }
 
-  private async listStatusAttachments(segments: string[]): Promise<PathListResult> {
-    const attachments = await this.host.listAttachmentSlots();
+  private async listStatusClients(segments: string[]): Promise<PathListResult> {
+    const clients = await this.host.listClientSlots();
     if (segments.length === 0) {
       return {
         ok: true,
         found: true,
-        entries: attachments.map((entry) =>
-          objectEntry(entry.attachmentId, `/status/attachments/${entry.attachmentId}`)
+        entries: clients.map((entry) =>
+          objectEntry(entry.clientId, `/status/clients/${entry.clientId}`)
         )
       };
     }
 
-    const attachment = attachments.find((entry) => entry.attachmentId === segments[0]);
-    if (!attachment) {
+    const client = clients.find((entry) => entry.clientId === segments[0]);
+    if (!client) {
       return notFoundList();
     }
 
@@ -1009,35 +1009,35 @@ class ShellModel implements ShellModelAPI {
         ok: true,
         found: true,
         entries: [
-          leafEntry("attachmentId", `/status/attachments/${attachment.attachmentId}/attachmentId`),
-          leafEntry("userId", `/status/attachments/${attachment.attachmentId}/userId`),
-          leafEntry("activeWorkspaceId", `/status/attachments/${attachment.attachmentId}/activeWorkspaceId`),
+          leafEntry("clientId", `/status/clients/${client.clientId}/clientId`),
+          leafEntry("userId", `/status/clients/${client.clientId}/userId`),
+          leafEntry("activeWorkspaceId", `/status/clients/${client.clientId}/activeWorkspaceId`),
           leafEntry(
             "activePaneIdByWorkspace",
-            `/status/attachments/${attachment.attachmentId}/activePaneIdByWorkspace`
+            `/status/clients/${client.clientId}/activePaneIdByWorkspace`
           ),
-          objectEntry("currentWorkspace", `/status/attachments/${attachment.attachmentId}/currentWorkspace`)
+          objectEntry("currentWorkspace", `/status/clients/${client.clientId}/currentWorkspace`)
         ]
       };
     }
 
     if (segments.length === 2) {
       if (
-        segments[1] === "attachmentId" ||
+        segments[1] === "clientId" ||
         segments[1] === "userId" ||
         segments[1] === "activeWorkspaceId" ||
         segments[1] === "activePaneIdByWorkspace"
       ) {
         return throwPathError("INVALID_PATH", "Leaf path cannot be listed");
       }
-      if (segments[1] === "currentWorkspace" && attachment.activeWorkspaceId) {
+      if (segments[1] === "currentWorkspace" && client.activeWorkspaceId) {
         return {
           ok: true,
           found: true,
           entries: [
-            leafEntry("id", `/status/attachments/${attachment.attachmentId}/currentWorkspace/id`),
-            leafEntry("title", `/status/attachments/${attachment.attachmentId}/currentWorkspace/title`),
-            leafEntry("paneCount", `/status/attachments/${attachment.attachmentId}/currentWorkspace/paneCount`)
+            leafEntry("id", `/status/clients/${client.clientId}/currentWorkspace/id`),
+            leafEntry("title", `/status/clients/${client.clientId}/currentWorkspace/title`),
+            leafEntry("paneCount", `/status/clients/${client.clientId}/currentWorkspace/paneCount`)
           ]
         };
       }
@@ -1311,10 +1311,10 @@ class ShellModel implements ShellModelAPI {
 
   private async getWorkspaceRootSnapshot(caller: PathCallerContext) {
     // The root snapshot mixes implicit-current workspace/pane fields with
-    // aggregates. If caller has no attachment, omit those fields — external
+    // aggregates. If caller has no client, omit those fields — external
     // callers compose explicit subtrees (/status/workspaces/{id}, etc.)
     // instead of receiving a half-populated default-slot snapshot.
-    const slotKey = caller.attachmentId;
+    const slotKey = caller.clientId;
     const [workspace, workspaces, panes, app] = await Promise.all([
       slotKey ? this.host.getWorkspaceStatus({ slotKey }) : null,
       this.host.listWorkspaces(),
@@ -1826,13 +1826,13 @@ function throwPathError<T>(code: PathErrorCode, message: string): T {
 
 /**
  * Implicit-current guard: paths like /status/workspace or /title only make
- * sense for a caller with attachment context (preload/WS clients). External
+ * sense for a caller with client context (preload/WS clients). External
  * HTTP/CLI callers get INVALID_VALUE with a pointer at the explicit-target
  * equivalent so they don't depend on transport-dependent semantics.
  */
 function requireSlotKey(caller: PathCallerContext, attemptedPath: string, suggested: string): string {
-  if (!caller.attachmentId) {
-    throw new ModelPathError("INVALID_VALUE", `${attemptedPath} requires attachment context; use ${suggested}`);
+  if (!caller.clientId) {
+    throw new ModelPathError("INVALID_VALUE", `${attemptedPath} requires client context; use ${suggested}`);
   }
-  return caller.attachmentId;
+  return caller.clientId;
 }

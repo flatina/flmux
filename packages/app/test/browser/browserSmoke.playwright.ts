@@ -88,21 +88,21 @@ test("C1 WS reconnect replays buffered events (B1c)", async ({ browser }) => {
     await page.waitForTimeout(500);
 
     // Mutate via HTTP using the same auth token (independent of the page's
-    // WS transport) — the resulting pane.added hits the attachment's ring
+    // WS transport) — the resulting pane.added hits the client's ring
     // buffer while the live forwarder is detached.
     const cookies = await context.cookies(handle.origin);
     const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
     const clientsRes = await fetch(`${handle.origin}/api/clients`, {
       headers: { cookie: cookieHeader }
     });
-    const clients = (await clientsRes.json()) as { clients: Array<{ clientId: string }> };
-    const authorityClientId = clients.clients[0]!.clientId;
+    const clients = (await clientsRes.json()) as { clients: Array<{ authorityClientId: string }> };
+    const authorityClientId = clients.clients[0]!.authorityClientId;
 
     const createRes = await fetch(`${handle.origin}/api/model/path/call`, {
       method: "POST",
       headers: { "content-type": "application/json", cookie: cookieHeader },
       body: JSON.stringify({
-        clientId: authorityClientId,
+        authorityClientId,
         path: "/panes/new",
         args: { kind: "browser", url: "/__flmux/internal/start?workspace=workspace.1", place: "right" }
       })
@@ -118,13 +118,11 @@ test("C1 WS reconnect replays buffered events (B1c)", async ({ browser }) => {
   }
 });
 
-// C2 — Cookie continuity across tab refresh. Proves B2 Phase 3's
-// `flmux-attachment` httpOnly cookie lets /api/shell/bootstrap reuse the
-// attachmentId inside the grace window, preserving slot state (active
-// workspace) across page.reload(). Also confirms cross-user cookie
-// safety: a second user's context presenting the first user's
-// attachment cookie gets a freshly minted id.
-test("C2 tab refresh reuses attachmentId + preserves slot state (B2P3)", async ({ browser }) => {
+// C2 — Cookie continuity across tab refresh. The `flmux-client` cookie
+// lets bootstrap reuse the clientId inside the grace window, preserving
+// slot state (active workspace). Also smokes "unknown id → fresh mint".
+// Cross-user mismatch guard not covered here.
+test("C2 tab refresh reuses clientId + preserves slot state (B2P3)", async ({ browser }) => {
   if (!handle) throw new Error("web app not running");
   const context = await browser.newContext();
   try {
@@ -132,8 +130,8 @@ test("C2 tab refresh reuses attachmentId + preserves slot state (B2P3)", async (
     await page.goto(`${handle.origin}/?token=${encodeURIComponent(handle.token)}`);
     await expect(page.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
 
-    const attachmentIdBefore = (await context.cookies(handle.origin)).find((c) => c.name === "flmux-attachment")?.value;
-    expect(attachmentIdBefore).toMatch(/^web_/);
+    const clientIdBefore = (await context.cookies(handle.origin)).find((c) => c.name === "flmux-client")?.value;
+    expect(clientIdBefore).toMatch(/^web_/);
 
     // Mutate slot state so the reload's preservation is observable:
     // create a second workspace + switch to it. B2 Phase 3 preserves
@@ -145,58 +143,58 @@ test("C2 tab refresh reuses attachmentId + preserves slot state (B2P3)", async (
         await fetch(`${handle.origin}/api/clients`, {
           headers: { cookie: cookieHeader }
         })
-      ).json()) as { clients: Array<{ clientId: string }> }
-    ).clients[0]!.clientId;
+      ).json()) as { clients: Array<{ authorityClientId: string }> }
+    ).clients[0]!.authorityClientId;
 
     const created = (await (
       await fetch(`${handle.origin}/api/model/path/call`, {
         method: "POST",
         headers: { "content-type": "application/json", cookie: cookieHeader },
-        body: JSON.stringify({ clientId, path: "/workspaces/new", args: { title: "Continuity" } })
+        body: JSON.stringify({ authorityClientId: clientId, path: "/workspaces/new", args: { title: "Continuity" } })
       })
     ).json()) as { result: { value: { workspaceId: string } } };
     const ws2 = created.result.value.workspaceId;
 
     await expect(page.locator(`.workspace-panel[data-workspace-id="${ws2}"]`)).toBeVisible({ timeout: 10_000 });
 
+    // setActive via preload dev hook so caller.clientId is injected.
+    // HTTP path lands on the authority default slot — would mask the check.
+    await page.evaluate(
+      (id) =>
+        (
+          window as unknown as {
+            __flmuxTest: { setActiveWorkspace(id: string): void };
+          }
+        ).__flmuxTest.setActiveWorkspace(id),
+      ws2
+    );
+    await expect(page).toHaveTitle(/Continuity/, { timeout: 10_000 });
+
     await page.reload();
     await expect(page.locator(".dockview-shell")).toBeVisible({ timeout: 20_000 });
 
-    const attachmentIdAfter = (await context.cookies(handle.origin)).find((c) => c.name === "flmux-attachment")?.value;
-    expect(attachmentIdAfter).toBe(attachmentIdBefore);
+    const clientIdAfter = (await context.cookies(handle.origin)).find((c) => c.name === "flmux-client")?.value;
+    expect(clientIdAfter).toBe(clientIdBefore);
+    // Slot state survives reload — same clientId re-binds to the existing slot.
+    await expect(page).toHaveTitle(/Continuity/, { timeout: 10_000 });
 
-    // Cross-user: isolated context presenting user A's attachment cookie
-    // should mint fresh (attachmentIdToUserId guard on the bootstrap side).
-    const userBContext = await browser.newContext();
-    try {
-      await userBContext.addCookies([
-        { name: "flmux_web_token", value: handle.token, url: handle.origin },
-        { name: "flmux-attachment", value: attachmentIdBefore!, url: handle.origin }
-      ]);
-      // Re-login as the SAME user here — we just want to prove that when
-      // the server sees a cookie it doesn't own for this context (same user
-      // but the server already evicted it? actually with same user cookie
-      // would be reused). This simplifies to "safe even with forged cookie":
-      // an attachment id the server doesn't know maps to mint-fresh.
-      const bogusRes = await fetch(`${handle.origin}/api/shell/bootstrap`, {
-        method: "POST",
-        headers: {
-          cookie: `flmux_web_token=${handle.token}; flmux-attachment=web_bogus_does_not_exist`
-        }
-      });
-      const bogusBody = (await bogusRes.json()) as { attachmentId: string };
-      expect(bogusBody.attachmentId).not.toBe("web_bogus_does_not_exist");
-    } finally {
-      await userBContext.close();
-    }
+    // Unknown id → fresh mint (bootstrap doesn't blindly trust the cookie).
+    const bogusRes = await fetch(`${handle.origin}/api/shell/bootstrap`, {
+      method: "POST",
+      headers: {
+        cookie: `flmux_web_token=${handle.token}; flmux-client=web_bogus_does_not_exist`
+      }
+    });
+    const bogusBody = (await bogusRes.json()) as { clientId: string };
+    expect(bogusBody.clientId).not.toBe("web_bogus_does_not_exist");
   } finally {
     await context.close();
   }
 });
 
-// C3 — Per-attachment active state divergence. Proves B1b's per-slot
-// active state + scope=attachment event filtering: two browser contexts
-// under the same user get distinct attachmentIds, and each tab's
+// C3 — Per-client active state divergence. Proves B1b's per-slot
+// active state + scope=client event filtering: two browser contexts
+// under the same user get distinct clientIds, and each tab's
 // setActiveWorkspace only moves its own slot.
 //
 // Dockview's synthetic DOM (.click(), PointerEvent dispatch) flips the
@@ -205,7 +203,7 @@ test("C2 tab refresh reuses attachmentId + preserves slot state (B2P3)", async (
 // same `shellModel.pathCall` the click handler would — exposed under
 // FLMUX_DEV_MODE=1 as `window.__flmuxTest.setActiveWorkspace`. The call
 // routes through preload/WS so `hostRequests.ts` injects
-// `caller.attachmentId`, exercising the per-slot RPC path that HTTP
+// `caller.clientId`, exercising the per-slot RPC path that HTTP
 // alone can't reach after the B3 caller-drop.
 //
 // Scope limit: the hook bypasses Dockview's click → `pathCall` chain, so
@@ -223,32 +221,32 @@ test("C3 two tabs of the same user keep independent active workspaces (B1b)", as
     await expect(pageA.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
 
     const cookieHeaderA = (await contextA.cookies(handle.origin)).map((c) => `${c.name}=${c.value}`).join("; ");
-    const attachA = (await contextA.cookies(handle.origin)).find((c) => c.name === "flmux-attachment")!.value;
+    const attachA = (await contextA.cookies(handle.origin)).find((c) => c.name === "flmux-client")!.value;
     const clientId = (
       (await (
         await fetch(`${handle.origin}/api/clients`, {
           headers: { cookie: cookieHeaderA }
         })
-      ).json()) as { clients: Array<{ clientId: string }> }
-    ).clients[0]!.clientId;
+      ).json()) as { clients: Array<{ authorityClientId: string }> }
+    ).clients[0]!.authorityClientId;
 
-    // Create workspace.2 while only tab A exists — both attachments will
+    // Create workspace.2 while only tab A exists — both clients will
     // see it via scope=all workspace.added, but only A's slot is on ws.2.
     const created = (await (
       await fetch(`${handle.origin}/api/model/path/call`, {
         method: "POST",
         headers: { "content-type": "application/json", cookie: cookieHeaderA },
-        body: JSON.stringify({ clientId, path: "/workspaces/new", args: { title: "Divergence" } })
+        body: JSON.stringify({ authorityClientId: clientId, path: "/workspaces/new", args: { title: "Divergence" } })
       })
     ).json()) as { result: { value: { workspaceId: string } } };
     const ws2 = created.result.value.workspaceId;
 
-    // Tab B bootstraps into the same user but a fresh attachment.
+    // Tab B bootstraps into the same user but a fresh client.
     const pageB = await contextB.newPage();
     await pageB.goto(`${handle.origin}/?token=${encodeURIComponent(handle.token)}`);
     await expect(pageB.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
 
-    const attachB = (await contextB.cookies(handle.origin)).find((c) => c.name === "flmux-attachment")!.value;
+    const attachB = (await contextB.cookies(handle.origin)).find((c) => c.name === "flmux-client")!.value;
     expect(attachB).not.toBe(attachA);
 
     // Both tabs start on workspace.1 (seed) — document.title reflects the
@@ -270,10 +268,10 @@ test("C3 two tabs of the same user keep independent active workspaces (B1b)", as
     );
 
     // Tab A's title now reflects ws.2; Tab B stays on ws.1.
-    // This is the observable per-attachment divergence — scope=attachment
+    // This is the observable per-client divergence — scope=client
     // `workspace.activeChanged` reached only pageA.
     await expect(pageA).toHaveTitle(/Divergence/, { timeout: 15_000 });
-    // Observation window: even if the scope=attachment event leaked, it
+    // Observation window: even if the scope=client event leaked, it
     // would reach B within the same network hop as A. Wait past that
     // window before asserting B's title hasn't moved.
     await pageB.waitForTimeout(1000);
@@ -286,7 +284,7 @@ test("C3 two tabs of the same user keep independent active workspaces (B1b)", as
 
 // C6 — `allow_paths.read` ACL gates the live WS event stream (B3).
 // HTTP smoke covers the denial side on `/api/model/path/*`, but the
-// broadcast forwarder (`main.ts:isEventAllowedForAttachment`) is a
+// broadcast forwarder (`main.ts:isEventAllowedForClient`) is a
 // separate gate that only fires over real WS. Single-user scope: each
 // web user has their own `ShellCore`, so the ACL applies to the user's
 // own event stream, not cross-user. We give `restricted` a read scope
@@ -309,7 +307,7 @@ test("C6 allow_paths.read gates broadcast forwarder (B3)", async ({ browser }) =
       `allow_pane_kinds = "*"`,
       ``,
       `[users.allow_paths]`,
-      `read = ["/status/workspaces/workspace.1/**", "/status/attachments/**"]`,
+      `read = ["/status/workspaces/workspace.1/**", "/status/clients/**"]`,
       `write = ["**"]`,
       `call = ["**"]`,
       ``
@@ -336,8 +334,8 @@ test("C6 allow_paths.read gates broadcast forwarder (B3)", async ({ browser }) =
         await fetch(`${handle.origin}/api/clients`, {
           headers: { cookie: cookieHeader }
         })
-      ).json()) as { clients: Array<{ clientId: string }> }
-    ).clients[0]!.clientId;
+      ).json()) as { clients: Array<{ authorityClientId: string }> }
+    ).clients[0]!.authorityClientId;
 
     // Positive control — rename workspace.1 (in read scope). Confirms the
     // forwarder is alive and events reach the DOM. Without this the
@@ -347,7 +345,7 @@ test("C6 allow_paths.read gates broadcast forwarder (B3)", async ({ browser }) =
       method: "POST",
       headers: { "content-type": "application/json", cookie: cookieHeader },
       body: JSON.stringify({
-        clientId,
+        authorityClientId: clientId,
         path: "/workspaces/workspace.1/title",
         value: renamedTitle
       })
@@ -361,7 +359,7 @@ test("C6 allow_paths.read gates broadcast forwarder (B3)", async ({ browser }) =
         method: "POST",
         headers: { "content-type": "application/json", cookie: cookieHeader },
         body: JSON.stringify({
-          clientId,
+          authorityClientId: clientId,
           path: "/workspaces/new",
           args: { title: "ShouldBeHidden-c6" }
         })
@@ -378,9 +376,9 @@ test("C6 allow_paths.read gates broadcast forwarder (B3)", async ({ browser }) =
 });
 
 // C5 — Authority evicts from `userAuthorityRegistry` after the last
-// attachment's grace plus the authority grace on top. Spawn a fresh
+// client's grace plus the authority grace on top. Spawn a fresh
 // flmux --web with short grace env overrides so the eviction chain
-// (attachment-evict → authority-evict) fits within a few seconds.
+// (client-evict → authority-evict) fits within a few seconds.
 //
 // Observable: a second bootstrap under the same token returns a
 // different authority `clientId`, proving the old registry entry was
@@ -389,7 +387,7 @@ test("C6 allow_paths.read gates broadcast forwarder (B3)", async ({ browser }) =
 // eviction + re-create. Resource-cleanup of the dropped authority
 // (ShellCore GC, ptyd lifecycle) is out of scope here and covered by
 // the `onAuthorityEvicted` side-effect wiring in `main.ts`.
-test("C5 authority evicts after attachment+authority grace", async ({ browser }) => {
+test("C5 authority evicts after client+authority grace", async ({ browser }) => {
   const rootDir = mkdtempSync(resolve(tmpdir(), "flmux-c5-"));
   const authDir = join(rootDir, ".flmux", "auth");
   let appProc: ChildProcess | null = null;
@@ -404,7 +402,7 @@ test("C5 authority evicts after attachment+authority grace", async ({ browser })
         ...process.env,
         FLMUX_ROOT_DIR: rootDir,
         FLMUX_DEV_MODE: "1",
-        FLMUX_ATTACHMENT_GRACE_MS: "300",
+        FLMUX_CLIENT_GRACE_MS: "300",
         FLMUX_AUTHORITY_EVICTION_GRACE_MS: "300"
       }
     });
@@ -413,7 +411,7 @@ test("C5 authority evicts after attachment+authority grace", async ({ browser })
     const getAuthorityClientId = async (ctx: import("@playwright/test").BrowserContext) => {
       const cookieHeader = (await ctx.cookies(origin)).map((c) => `${c.name}=${c.value}`).join("; ");
       const res = await fetch(`${origin}/api/clients`, { headers: { cookie: cookieHeader } });
-      return ((await res.json()) as { clients: Array<{ clientId: string }> }).clients[0]!.clientId;
+      return ((await res.json()) as { clients: Array<{ authorityClientId: string }> }).clients[0]!.authorityClientId;
     };
 
     const contextBefore = await browser.newContext();
@@ -427,7 +425,7 @@ test("C5 authority evicts after attachment+authority grace", async ({ browser })
       await contextBefore.close();
     }
 
-    // Wait past attachment grace (300) + authority grace (300) + margin.
+    // Wait past client grace (300) + authority grace (300) + margin.
     // The eviction chain only starts when the server observes the WS
     // disconnect (via `onWebClientDisconnected`), which can lag
     // `context.close()` on slow runners — keep a generous cushion.
@@ -485,15 +483,15 @@ test("C7 terminal runtime survives browser WS drop across page.reload", async ({
         await fetch(`${handle.origin}/api/clients`, {
           headers: { cookie: cookieHeader }
         })
-      ).json()) as { clients: Array<{ clientId: string }> }
-    ).clients[0]!.clientId;
+      ).json()) as { clients: Array<{ authorityClientId: string }> }
+    ).clients[0]!.authorityClientId;
 
     const origin = handle.origin;
     const httpPath = async (method: "get" | "call" | "set", path: string, extra: Record<string, unknown> = {}) => {
       const res = await fetch(`${origin}/api/model/path/${method}`, {
         method: "POST",
         headers: { "content-type": "application/json", cookie: cookieHeader },
-        body: JSON.stringify({ clientId, path, ...extra })
+        body: JSON.stringify({ authorityClientId: clientId, path, ...extra })
       });
       return (await res.json()) as {
         result: { ok: true; value: unknown } | { ok: false; error: string; code: string };
@@ -543,7 +541,7 @@ test("C7 terminal runtime survives browser WS drop across page.reload", async ({
       method: "POST",
       headers: { "content-type": "application/json", cookie: cookieHeaderAfter },
       body: JSON.stringify({
-        clientId,
+        authorityClientId: clientId,
         path: `/panes/${paneId}/terminal/write`,
         args: { data: `echo ${marker2}\r` }
       })
@@ -567,7 +565,7 @@ async function waitForRuntimeId(
     const res = await fetch(`${origin}/api/model/path/get`, {
       method: "POST",
       headers: { "content-type": "application/json", cookie: cookieHeader },
-      body: JSON.stringify({ clientId, path: `/status/panes/${paneId}/terminal/runtimeId` })
+      body: JSON.stringify({ authorityClientId: clientId, path: `/status/panes/${paneId}/terminal/runtimeId` })
     });
     const body = (await res.json()) as { result: { ok: true; value: string | null } };
     if (body.result.ok && typeof body.result.value === "string") {
@@ -582,7 +580,7 @@ async function readHistory(origin: string, cookieHeader: string, clientId: strin
   const res = await fetch(`${origin}/api/model/path/call`, {
     method: "POST",
     headers: { "content-type": "application/json", cookie: cookieHeader },
-    body: JSON.stringify({ clientId, path: `/panes/${paneId}/terminal/history`, args: { maxBytes: 4096 } })
+    body: JSON.stringify({ authorityClientId: clientId, path: `/panes/${paneId}/terminal/history`, args: { maxBytes: 4096 } })
   });
   const body = (await res.json()) as { result: { ok: true; value: { data: string } } };
   return body.result.value.data;

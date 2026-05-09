@@ -12,11 +12,10 @@ import {
 import type { SequencedShellCoreEvent, ShellModelAPI } from "@flmux/core/shell";
 import type { FlmuxRendererBridgeSchema, FlmuxSessionSaveLayouts } from "../shared/rendererBridge";
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
-import { AttachmentRegistry } from "./attachmentRegistry";
-import { FlmuxClientRegistry } from "./clientRegistry";
+import { ClientRegistry } from "./clientRegistry";
 import { createSessionStore } from "./sessionStore";
 import {
-  DESKTOP_ATTACHMENT_ID,
+  DESKTOP_CLIENT_ID,
   createDesktopShellAuthority,
   type DesktopShellAuthority
 } from "./desktopShellAuthority";
@@ -137,7 +136,10 @@ const app =
     : null;
 if (app) await app.ready;
 
-const clientRegistry = new FlmuxClientRegistry();
+const clientGraceEnvMs = Number.parseInt(process.env.FLMUX_CLIENT_GRACE_MS ?? "", 10);
+const clientRegistry = new ClientRegistry(
+  Number.isFinite(clientGraceEnvMs) && clientGraceEnvMs > 0 ? { graceMs: clientGraceEnvMs } : undefined
+);
 const terminalService = createTerminalService();
 const sessionStore = runtimeMode === "desktop" ? createSessionStore({ filePath: flmuxPaths.desktopSessionFile }) : null;
 // paneId → set of subscribed viewIds. Terminal events fan out to every
@@ -184,7 +186,7 @@ if (shimResult.ok && shimResult.entry && shimResult.bunCommand) {
   }
 }
 
-// Extension server entries: imported once, registered per (paneId, attachmentId)
+// Extension server entries: imported once, registered per (paneId, clientId)
 // subscription. Module-level state lives inside the extension's server module
 // (e.g. a cache keyed by paneId) — flmux only wires the transport channel.
 const extensionServers = new Map<string, ExtensionServerDefinition>();
@@ -220,19 +222,19 @@ for (const ext of localExtensions) {
   }
 }
 
-// (paneId × attachmentId) → server instance, plus the pane→kind & attachment→demux
-// indexes used to drive attach/detach in pane and attachment lifecycles.
+// (paneId × clientId) → server instance, plus the pane→kind & client→demux
+// indexes used to drive attach/detach in pane and client lifecycles.
 const paneServerInstances = new Map<string, ExtensionServerPaneInstance>();
 const paneKinds = new Map<string, string>();
-const attachmentIdToDemux = new Map<string, RpcTransportDemuxer>();
+const clientIdToDemux = new Map<string, RpcTransportDemuxer>();
 const webViewIdToDemux = new Map<number, RpcTransportDemuxer>();
 
 function findExtensionIdForPaneKind(kind: string): string | undefined {
   return localExtensions.find((ext) => ext.runtimeManifest.panes?.some((p) => p.kind === kind))?.id;
 }
 
-function paneInstanceKey(extId: string, paneId: string, attachmentId: string) {
-  return `${extId}::${paneId}::${attachmentId}`;
+function paneInstanceKey(extId: string, paneId: string, clientId: string) {
+  return `${extId}::${paneId}::${clientId}`;
 }
 
 /**
@@ -241,20 +243,20 @@ function paneInstanceKey(extId: string, paneId: string, attachmentId: string) {
  * (no authorizer) grants through, same as preload/WS trust.
  *
  * Returns null when the pane→authority mapping isn't established yet
- * (racing `attachmentIdToDemux` writes); caller warns and retries.
+ * (racing `clientIdToDemux` writes); caller warns and retries.
  */
-function createExtensionShellClient(paneId: string, attachmentId: string): ShellClientImport | null {
+function createExtensionShellClient(paneId: string, clientId: string): ShellClientImport | null {
   const authority = paneIdToAuthority.get(paneId);
   if (!authority) return null;
   const shellModel = authority.shellModel;
   const authorizer = webModeAuthorizer;
-  const caller = { attachmentId, sourcePaneId: paneId };
+  const caller = { clientId, sourcePaneId: paneId };
 
   // Per-call resolve: session cleanup / token revocation drops ACL on the
   // next shell call instead of using a stale snapshot.
   function resolveUser(): FlmuxUserImport | null {
     if (!authorizer) return null;
-    const userId = attachmentIdToUserId.get(attachmentId);
+    const userId = clientIdToUserId.get(clientId);
     if (!userId) return null;
     return authorizer.resolveUserByName(userId);
   }
@@ -263,8 +265,8 @@ function createExtensionShellClient(paneId: string, attachmentId: string): Shell
     if (!authorizer) return;
     const user = resolveUser();
     if (!user) {
-      // Fail closed when the attachment's user can't be identified.
-      throw new Error(`No resolvable user for attachment '${attachmentId}' (shell ${method} '${path}')`);
+      // Fail closed when the client's user can't be identified.
+      throw new Error(`No resolvable user for client '${clientId}' (shell ${method} '${path}')`);
     }
     if (!authorizer.isPathAllowed(user, method, path)) {
       throw new Error(`Access denied for user '${user.name}': ${method} '${path}'`);
@@ -303,7 +305,7 @@ function createExtensionShellClient(paneId: string, attachmentId: string): Shell
   };
 }
 
-async function attachExtensionServerChannel(paneId: string, kind: string, attachmentId: string) {
+async function attachExtensionServerChannel(paneId: string, kind: string, clientId: string) {
   const extId = findExtensionIdForPaneKind(kind);
   if (!extId) return;
   // Await before fetching server: init failure deletes the entry.
@@ -311,16 +313,16 @@ async function attachExtensionServerChannel(paneId: string, kind: string, attach
   if (initPromise) await initPromise;
   const server = extensionServers.get(extId);
   if (!server?.onPaneConnected) return;
-  const demux = attachmentIdToDemux.get(attachmentId);
+  const demux = clientIdToDemux.get(clientId);
   if (!demux) return;
-  const shell = createExtensionShellClient(paneId, attachmentId);
+  const shell = createExtensionShellClient(paneId, clientId);
   if (!shell) {
     console.warn(
-      `[flmux] extension '${extId}' skipped onPaneConnected — no authority mapped for pane '${paneId}' (attachment ${attachmentId})`
+      `[flmux] extension '${extId}' skipped onPaneConnected — no authority mapped for pane '${paneId}' (client ${clientId})`
     );
     return;
   }
-  const key = paneInstanceKey(extId, paneId, attachmentId);
+  const key = paneInstanceKey(extId, paneId, clientId);
   if (paneServerInstances.has(key)) return;
   const dataDir = resolveExtensionDataDir(extId);
   if (!dataDir) {
@@ -332,23 +334,23 @@ async function attachExtensionServerChannel(paneId: string, kind: string, attach
   }
   try {
     const rpcChannel = demux.channel(paneId);
-    const inst = await server.onPaneConnected(paneId, attachmentId, { rpcChannel, shell, dataDir });
+    const inst = await server.onPaneConnected(paneId, clientId, { rpcChannel, shell, dataDir });
     if (inst) paneServerInstances.set(key, inst);
   } catch (err) {
-    console.warn(`[flmux] extension '${extId}' onPaneConnected error (pane ${paneId}, att ${attachmentId}):`, err);
+    console.warn(`[flmux] extension '${extId}' onPaneConnected error (pane ${paneId}, client ${clientId}):`, err);
   }
 }
 
-function detachExtensionServerChannel(paneId: string, kind: string, attachmentId: string) {
+function detachExtensionServerChannel(paneId: string, kind: string, clientId: string) {
   const extId = findExtensionIdForPaneKind(kind);
   if (!extId) return;
-  const key = paneInstanceKey(extId, paneId, attachmentId);
+  const key = paneInstanceKey(extId, paneId, clientId);
   const inst = paneServerInstances.get(key);
   if (!inst) return;
   try {
     inst.dispose?.();
   } catch (err) {
-    console.warn(`[flmux] extension '${extId}' dispose error (pane ${paneId}, att ${attachmentId}):`, err);
+    console.warn(`[flmux] extension '${extId}' dispose error (pane ${paneId}, client ${clientId}):`, err);
   }
   paneServerInstances.delete(key);
 }
@@ -423,16 +425,16 @@ const userAuthorityRegistry: WebModeUserAuthorityRegistry | null =
       })
     : null;
 
-/** Authority-eviction grace: after a user's last attachment evicts, wait
+/** Authority-eviction grace: after a user's last client evicts, wait
  * this long before tearing down their authority. Gives legitimate tab
  * refresh + next-login windows time to reconnect without paying the
  * cost of a full ShellCore rebuild. Tunable; 5 min is the default dev
  * value.
  *
  * When token revocation lands: narrowing a user's `allow_paths` should
- * close each of that user's live WS attachments with close-code 4001
+ * close each of that user's live WS clients with close-code 4001
  * (FLMUX_CLOSE_POLICY_CHANGED). The browser's WS close handler then
- * triggers a fresh `/api/shell/bootstrap` → new attachmentId under new
+ * triggers a fresh `/api/shell/bootstrap` → new clientId under new
  * policy, piggybacking on the existing `rebootstrap-required` path.
  * Intentionally NOT implemented as a synthetic shellCore.event — that
  * would muddy the "events describe shell state" contract from B1b. */
@@ -441,9 +443,9 @@ const AUTHORITY_EVICTION_GRACE_MS =
   Number.isFinite(authorityGraceEnvMs) && authorityGraceEnvMs > 0 ? authorityGraceEnvMs : 5 * 60 * 1000;
 const pendingAuthorityEvictionByUser = new Map<string, ReturnType<typeof setTimeout>>();
 
-function countUserAttachments(userId: string): number {
+function countUserClients(userId: string): number {
   let count = 0;
-  for (const owner of attachmentIdToUserId.values()) {
+  for (const owner of clientIdToUserId.values()) {
     if (owner === userId) count += 1;
   }
   return count;
@@ -459,15 +461,15 @@ function cancelPendingAuthorityEviction(userId: string) {
 
 function maybeScheduleAuthorityEviction(userId: string) {
   if (!userAuthorityRegistry) return;
-  if (countUserAttachments(userId) > 0) return;
+  if (countUserClients(userId) > 0) return;
   cancelPendingAuthorityEviction(userId);
   const timer = setTimeout(() => {
     pendingAuthorityEvictionByUser.delete(userId);
-    // Re-check: a new attachment may have been minted during the grace.
-    if (countUserAttachments(userId) > 0) return;
+    // Re-check: a new client may have been minted during the grace.
+    if (countUserClients(userId) > 0) return;
     const evicted = userAuthorityRegistry.evict(userId);
     if (evicted) {
-      console.log(`[flmux] authority for user '${userId}' evicted after attachment grace`);
+      console.log(`[flmux] authority for user '${userId}' evicted after client grace`);
     }
   }, AUTHORITY_EVICTION_GRACE_MS);
   pendingAuthorityEvictionByUser.set(userId, timer);
@@ -483,14 +485,10 @@ if ((desktopAuthority === null) === (userAuthorityRegistry === null)) {
   );
 }
 
-const attachmentGraceEnvMs = Number.parseInt(process.env.FLMUX_ATTACHMENT_GRACE_MS ?? "", 10);
-const attachmentRegistry = new AttachmentRegistry(
-  Number.isFinite(attachmentGraceEnvMs) && attachmentGraceEnvMs > 0 ? { graceMs: attachmentGraceEnvMs } : undefined
-);
-const viewIdToAttachmentId = new Map<number, string>();
-// Web-only: records which user owns each minted attachmentId so WS
+const viewIdToClientId = new Map<number, string>();
+// Web-only: records which user owns each minted clientId so WS
 // register + shellModel.path.* calls route to the right authority.
-const attachmentIdToUserId = new Map<string, string>();
+const clientIdToUserId = new Map<string, string>();
 // Terminal event routing index: paneId → owning authority. Replaces the
 // naive fan-out-to-every-authority pattern so terminal events apply to
 // exactly the authority that owns the pane, not every authority whose
@@ -510,9 +508,9 @@ function trackPaneLifecycle(authority: ShellAuthority): () => void {
       const { paneId, snapshot } = event.payload;
       paneIdToAuthority.set(paneId, authority);
       paneKinds.set(paneId, snapshot.kind);
-      for (const [attachmentId] of attachmentIdToDemux) {
-        if (resolveAuthorityForAttachment(attachmentId) === authority) {
-          attachExtensionServerChannel(paneId, snapshot.kind, attachmentId);
+      for (const [clientId] of clientIdToDemux) {
+        if (resolveAuthorityForClient(clientId) === authority) {
+          attachExtensionServerChannel(paneId, snapshot.kind, clientId);
         }
       }
     } else if (event.topic === "pane.removed") {
@@ -520,8 +518,8 @@ function trackPaneLifecycle(authority: ShellAuthority): () => void {
       paneIdToAuthority.delete(paneId);
       const kind = paneKinds.get(paneId);
       if (kind) {
-        for (const [attachmentId] of attachmentIdToDemux) {
-          detachExtensionServerChannel(paneId, kind, attachmentId);
+        for (const [clientId] of clientIdToDemux) {
+          detachExtensionServerChannel(paneId, kind, clientId);
         }
         paneKinds.delete(paneId);
       }
@@ -531,24 +529,24 @@ function trackPaneLifecycle(authority: ShellAuthority): () => void {
   return unsub;
 }
 
-// After an attachment's demux is installed, retroactively attach every pane
-// already bound to that attachment's authority. Used at:
+// After an client's demux is installed, retroactively attach every pane
+// already bound to that client's authority. Used at:
 //   - desktop boot (demux created after session restore panes land)
-//   - web attachment bind (demux was created at WS open, attachmentId at register)
-function retroattachAllPanesForAttachment(attachmentId: string) {
-  const authority = resolveAuthorityForAttachment(attachmentId);
+//   - web client bind (demux was created at WS open, clientId at register)
+function retroattachAllPanesForClient(clientId: string) {
+  const authority = resolveAuthorityForClient(clientId);
   if (!authority) return;
   for (const [paneId, kind] of paneKinds) {
     if (paneIdToAuthority.get(paneId) === authority) {
-      attachExtensionServerChannel(paneId, kind, attachmentId);
+      attachExtensionServerChannel(paneId, kind, clientId);
     }
   }
 }
 
-function detachAllPanesForAttachment(attachmentId: string) {
+function detachAllPanesForClient(clientId: string) {
   const keyPrefix = `::`;
   for (const key of [...paneServerInstances.keys()]) {
-    if (!key.endsWith(keyPrefix + attachmentId)) continue;
+    if (!key.endsWith(keyPrefix + clientId)) continue;
     const inst = paneServerInstances.get(key);
     try {
       inst?.dispose?.();
@@ -557,27 +555,27 @@ function detachAllPanesForAttachment(attachmentId: string) {
     }
     paneServerInstances.delete(key);
   }
-  attachmentIdToDemux.delete(attachmentId);
+  clientIdToDemux.delete(clientId);
 }
 
-function scopeMatches(event: SequencedShellCoreEvent, attachmentId: string): boolean {
+function scopeMatches(event: SequencedShellCoreEvent, clientId: string): boolean {
   if (event.scope === "all") return true;
-  return event.targetAttachmentId === attachmentId;
+  return event.targetClientId === clientId;
 }
 
 /**
  * Broadcast-forwarder ACL gate (B3): event is only delivered if the
- * attachment's user can read the path the event corresponds to. Desktop
+ * client's user can read the path the event corresponds to. Desktop
  * mode (no authorizer) and users with `allow_paths = "*"` pass through.
  * Unmapped events (structural, no specific path) pass through too.
  */
-function isEventAllowedForAttachment(
+function isEventAllowedForClient(
   authorizer: FlmuxWebModeAuthorizer | null,
-  attachmentId: string,
+  clientId: string,
   event: SequencedShellCoreEvent
 ): boolean {
   if (!authorizer) return true;
-  const userId = attachmentIdToUserId.get(attachmentId);
+  const userId = clientIdToUserId.get(clientId);
   if (!userId) return true;
   const user = authorizer.getUser(userId);
   if (!user) return true;
@@ -587,116 +585,116 @@ function isEventAllowedForAttachment(
 }
 
 /**
- * Resolve the authority an attachment belongs to. Desktop has a single
- * authority and ignores `attachmentId`; web looks up the owning user via
- * the bootstrap-time mapping. Returns null in web mode if the attachment
+ * Resolve the authority an client belongs to. Desktop has a single
+ * authority and ignores `clientId`; web looks up the owning user via
+ * the bootstrap-time mapping. Returns null in web mode if the client
  * is unknown (e.g. stale cookie after server restart).
  */
-function resolveAuthorityForAttachment(attachmentId: string): ShellAuthority | null {
+function resolveAuthorityForClient(clientId: string): ShellAuthority | null {
   if (desktopAuthority) return desktopAuthority;
-  const userId = attachmentIdToUserId.get(attachmentId);
+  const userId = clientIdToUserId.get(clientId);
   if (!userId) return null;
   return userAuthorityRegistry?.get(userId) ?? null;
 }
 
-function resolveAuthorityForViewId(viewId: number, hints?: { attachmentId?: string }): ShellAuthority | null {
+function resolveAuthorityForViewId(viewId: number, hints?: { clientId?: string }): ShellAuthority | null {
   if (desktopAuthority) return desktopAuthority;
-  const attachmentId = hints?.attachmentId ?? viewIdToAttachmentId.get(viewId);
-  if (!attachmentId) return null;
-  return resolveAuthorityForAttachment(attachmentId);
+  const clientId = hints?.clientId ?? viewIdToClientId.get(viewId);
+  if (!clientId) return null;
+  return resolveAuthorityForClient(clientId);
 }
 
 /**
- * Install the always-on ring-buffer subscriber for `attachmentId`. Called
- * at attachment creation time (desktop preload register, web HTTP bootstrap)
- * so the buffer is alive from the moment the attachment exists — including
+ * Install the always-on ring-buffer subscriber for `clientId`. Called
+ * at client creation time (desktop preload register, web HTTP bootstrap)
+ * so the buffer is alive from the moment the client exists — including
  * the window between `/api/shell/bootstrap` response and the browser's WS
  * `flmux.client.register` call. Idempotent.
  */
-function ensureBufferSubscriber(attachmentId: string) {
-  const authority = resolveAuthorityForAttachment(attachmentId);
+function ensureBufferSubscriber(clientId: string) {
+  const authority = resolveAuthorityForClient(clientId);
   if (!authority) return;
-  const state = attachmentRegistry.ensure(attachmentId);
+  const state = clientRegistry.ensure(clientId);
   if (state.unsubscribeBuffer) return;
   const unsub = authority.subscribe((event) => {
-    if (!scopeMatches(event, attachmentId)) return;
-    if (!isEventAllowedForAttachment(webModeAuthorizer, attachmentId, event)) return;
-    attachmentRegistry.pushBuffered(attachmentId, event);
+    if (!scopeMatches(event, clientId)) return;
+    if (!isEventAllowedForClient(webModeAuthorizer, clientId, event)) return;
+    clientRegistry.pushBuffered(clientId, event);
   });
-  attachmentRegistry.setBufferSubscriber(attachmentId, unsub);
+  clientRegistry.setBufferSubscriber(clientId, unsub);
 }
 
 /**
  * Bind a connected transport (desktop preload or web ws client) to an
- * attachment's live event forwarder. The buffer subscriber is installed
- * separately via `ensureBufferSubscriber` at attachment creation. On
+ * client's live event forwarder. The buffer subscriber is installed
+ * separately via `ensureBufferSubscriber` at client creation. On
  * reconnect this is called again — the live forwarder is replaced, the
  * buffer subscriber is untouched.
  */
-function installAttachmentForwarder(attachmentId: string, viewId: number) {
-  const authority = resolveAuthorityForAttachment(attachmentId);
+function installClientForwarder(clientId: string, viewId: number) {
+  const authority = resolveAuthorityForClient(clientId);
   if (!authority) return;
   const client = clientRegistry.resolveByViewId(viewId);
   if (!client) return;
 
-  ensureBufferSubscriber(attachmentId);
+  ensureBufferSubscriber(clientId);
 
   const unsubLive = authority.subscribe((event) => {
-    if (!scopeMatches(event, attachmentId)) return;
-    if (!isEventAllowedForAttachment(webModeAuthorizer, attachmentId, event)) return;
-    client.bridge.sendProxy["shellCore.event"](event);
+    if (!scopeMatches(event, clientId)) return;
+    if (!isEventAllowedForClient(webModeAuthorizer, clientId, event)) return;
+    client.bridge?.sendProxy["shellCore.event"](event);
   });
-  attachmentRegistry.attachLive(attachmentId, viewId, unsubLive);
-  viewIdToAttachmentId.set(viewId, attachmentId);
+  clientRegistry.attachLive(clientId, viewId, unsubLive);
+  viewIdToClientId.set(viewId, clientId);
 }
 
 /**
- * Web-mode attachment binding: replay any buffered events the client missed
+ * Web-mode client binding: replay any buffered events the client missed
  * between bootstrap and register, then install the live forwarder. Returns
  * `"rebootstrap-required"` when the client's `lastAppliedSeq` is older than
  * the ring buffer's oldest seq — the client drops local state and re-POSTs
  * `/api/shell/bootstrap`.
  */
-function bindWebAttachment(
+function bindWebClient(
   viewId: number,
-  binding: { attachmentId: string; lastAppliedSeq: number }
+  binding: { clientId: string; lastAppliedSeq: number }
 ): "rebootstrap-required" | void {
-  const replayed = attachmentRegistry.replayAfter(binding.attachmentId, binding.lastAppliedSeq);
+  const replayed = clientRegistry.replayAfter(binding.clientId, binding.lastAppliedSeq);
   if (replayed === null) {
-    // Buffer rolled past the client's seq — the stale attachment entry is
+    // Buffer rolled past the client's seq — the stale client entry is
     // useless now; the client will mint a fresh id on re-bootstrap. Drop
-    // the attachmentId→user mapping too so the entry doesn't linger.
-    attachmentRegistry.evict(binding.attachmentId);
-    attachmentIdToUserId.delete(binding.attachmentId);
+    // the clientId→user mapping too so the entry doesn't linger.
+    clientRegistry.evict(binding.clientId);
+    clientIdToUserId.delete(binding.clientId);
     return "rebootstrap-required";
   }
-  const client = clientRegistry.resolveByViewId(viewId);
+  const client = clientRegistry.resolveRendererByViewId(viewId);
   if (client) {
     for (const event of replayed) {
       client.bridge.sendProxy["shellCore.event"](event);
     }
   }
-  installAttachmentForwarder(binding.attachmentId, viewId);
+  installClientForwarder(binding.clientId, viewId);
 
   // Tie the WS demux (stored at open-time under viewId) to the now-known
-  // attachmentId, then open channels for every pane the attachment's
-  // authority already owns. If the attachmentId is being rebound to a fresh
+  // clientId, then open channels for every pane the client's
+  // authority already owns. If the clientId is being rebound to a fresh
   // socket (grace-period reconnect, tab reuse), drop every server instance
   // still pinned to the old demux first — otherwise it stays bound to the
   // dead transport and the eventual old-socket `close` would tear down the
-  // new binding via `detachAllPanesForAttachment`.
+  // new binding via `detachAllPanesForClient`.
   const demux = webViewIdToDemux.get(viewId);
   if (demux) {
-    const previousDemux = attachmentIdToDemux.get(binding.attachmentId);
+    const previousDemux = clientIdToDemux.get(binding.clientId);
     if (previousDemux && previousDemux !== demux) {
-      detachAllPanesForAttachment(binding.attachmentId);
+      detachAllPanesForClient(binding.clientId);
     }
-    attachmentIdToDemux.set(binding.attachmentId, demux);
-    retroattachAllPanesForAttachment(binding.attachmentId);
+    clientIdToDemux.set(binding.clientId, demux);
+    retroattachAllPanesForClient(binding.clientId);
   }
 }
 
-function mintWebAttachmentId(): string {
+function mintWebClientId(): string {
   return `web_${crypto.randomUUID()}`;
 }
 
@@ -733,21 +731,33 @@ function pushLayoutForViewId(viewId: number, layouts: FlmuxSessionSaveLayouts) {
 }
 
 function releaseView(viewId: number) {
-  const attachmentId = viewIdToAttachmentId.get(viewId);
+  const clientId = viewIdToClientId.get(viewId);
   webViewIdToDemux.delete(viewId);
-  if (attachmentId) {
-    viewIdToAttachmentId.delete(viewId);
-    // Tear down extension channels for this attachment immediately —
+  if (clientId) {
+    viewIdToClientId.delete(viewId);
+    // Skip teardown if clientId was rebound to a newer viewId
+    // (refresh-before-close lands new register before stale close fires).
+    const current = clientRegistry.get(clientId);
+    if (current && current.viewId !== null && current.viewId !== viewId) {
+      clientRegistry.detachRenderer(viewId);
+      for (const [paneId, subscribers] of paneSubscribers.entries()) {
+        if (subscribers.delete(viewId) && subscribers.size === 0) {
+          paneSubscribers.delete(paneId);
+        }
+      }
+      return;
+    }
+    // Tear down extension channels for this client immediately —
     // connection is gone, server-side rpcs must release their pane state
     // before the registry's grace eviction fires.
-    detachAllPanesForAttachment(attachmentId);
-    attachmentRegistry.markDisconnected(attachmentId, (state) => {
+    detachAllPanesForClient(clientId);
+    clientRegistry.markDisconnected(clientId, (state) => {
       // Order matters: read userId, delete the entry, THEN schedule.
-      // maybeScheduleAuthorityEviction → countUserAttachments reads the
+      // maybeScheduleAuthorityEviction → countUserClients reads the
       // same map and relies on the entry being gone to count zero.
-      const userId = attachmentIdToUserId.get(state.attachmentId);
-      attachmentIdToUserId.delete(state.attachmentId);
-      console.log(`[flmux] attachment ${state.attachmentId} evicted after grace period`);
+      const userId = clientIdToUserId.get(state.clientId);
+      clientIdToUserId.delete(state.clientId);
+      console.log(`[flmux] client ${state.clientId} evicted after grace period`);
       if (userId) maybeScheduleAuthorityEviction(userId);
     });
   }
@@ -786,11 +796,11 @@ function requireDesktopViewId() {
 
 const desktopAuthorityClientId = desktopAuthority?.clientId ?? null;
 
-const resolveShellModel = (viewId: number, hints?: { attachmentId?: string }): ShellModelAPI | null => {
+const resolveShellModel = (viewId: number, hints?: { clientId?: string }): ShellModelAPI | null => {
   return resolveAuthorityForViewId(viewId, hints)?.shellModel ?? null;
 };
 
-const resolveShellModelRouter = (viewId: number, hints?: { attachmentId?: string }): FlmuxShellModelRouter | null => {
+const resolveShellModelRouter = (viewId: number, hints?: { clientId?: string }): FlmuxShellModelRouter | null => {
   return resolveAuthorityForViewId(viewId, hints)?.router ?? null;
 };
 
@@ -802,18 +812,18 @@ const rendererRpc = defineBunRpc<FlmuxRendererBridgeSchema>({
       getProjectDir: () => projectDir,
       getAuthorityClientId: () => desktopAuthorityClientId,
       getCallerViewId: requireDesktopViewId,
-      getCallerAttachmentId: (viewId) => viewIdToAttachmentId.get(viewId) ?? null,
+      getCallerClientId: (viewId) => viewIdToClientId.get(viewId) ?? null,
       paneSubscribers,
       resolveShellModel,
       resolveShellModelRouter,
       localExtensions,
       desktopAuthority,
       onClientRegister: (viewId) => {
-        // Desktop CEF is a single attachment; its viewId binds to the
+        // Desktop CEF is a single client; its viewId binds to the
         // stable "local" identity for the life of the process. Web clients
         // reach the separate handler below with a `binding` arg — the
         // desktop preload never passes one.
-        installAttachmentForwarder(DESKTOP_ATTACHMENT_ID, viewId);
+        installClientForwarder(DESKTOP_CLIENT_ID, viewId);
       },
       pushLayout: pushLayoutForViewId
     })
@@ -858,7 +868,7 @@ const rendererWebHandler = {
   close(ws: WebSocketLike) {
     const entry = webConnections.get(ws);
     if (!entry) return;
-    // onWebClientDisconnected → releaseView → detachAllPanesForAttachment
+    // onWebClientDisconnected → releaseView → detachAllPanesForClient
     // runs extension server instance dispose() calls which may send final
     // messages through per-pane channels. Those must complete before the
     // default-channel rpc + demuxer tear down, so disconnect first, tear
@@ -891,7 +901,7 @@ rendererWebHandler.onWebClientConnected = (client) => {
       // let the browser read it through the auth-scoped /api/clients route.
       getAuthorityClientId: () => null,
       getCallerViewId: () => viewId,
-      getCallerAttachmentId: (id) => viewIdToAttachmentId.get(id) ?? null,
+      getCallerClientId: (id) => viewIdToClientId.get(id) ?? null,
       paneSubscribers,
       resolveShellModel,
       resolveShellModelRouter,
@@ -900,11 +910,11 @@ rendererWebHandler.onWebClientConnected = (client) => {
       onClientRegister: (registeredViewId, binding) => {
         if (!binding) {
           throw new Error(
-            "flmux.client.register: web clients must pass {attachmentId, lastAppliedSeq} " +
+            "flmux.client.register: web clients must pass {clientId, lastAppliedSeq} " +
               "obtained from /api/shell/bootstrap"
           );
         }
-        return bindWebAttachment(registeredViewId, binding);
+        return bindWebClient(registeredViewId, binding);
       },
       // Per-user sessionStore persistence (B2 Phase 2): the user's
       // authority owns its own store at `<authDir>/sessions/<userId>/session.json`
@@ -943,47 +953,49 @@ const server = startFlmuxServer({
         }
       : undefined,
   // Web-mode HTTP bootstrap. Resolves the calling user from auth context,
-  // lazily creates the user's authority, mints a fresh attachmentId,
-  // records the attachmentId→userId mapping so WS register + shellModel
+  // lazily creates the user's authority, mints a fresh clientId,
+  // records the clientId→userId mapping so WS register + shellModel
   // calls route to the right authority, installs the buffer subscriber
   // BEFORE composing the snapshot (so events emitted by shellBootstrap or
   // concurrent callers land in the buffer), and arms the unbound-grace
-  // timer so an attachment whose WS register never arrives doesn't leak
+  // timer so an client whose WS register never arrives doesn't leak
   // a permanent shellCore subscriber.
-  bootstrapAttachment: userAuthorityRegistry
-    ? async (context, existingAttachmentId) => {
+  bootstrapClient: userAuthorityRegistry
+    ? async (context, existingClientId) => {
         if (!context) {
           throw new Error("/api/shell/bootstrap: web mode requires an auth context");
         }
         const userId = context.user.name;
         const authority = await userAuthorityRegistry.getOrCreate(userId);
-        // Cookie continuity (B2 Phase 3): reuse the attachmentId when the
-        // browser's cookie matches a still-alive attachment owned by this
+        // Cookie continuity (B2 Phase 3): reuse the clientId when the
+        // browser's cookie matches a still-unbound client owned by this
         // user. Preserves slot state (active ws/pane) across tab refresh
-        // inside the 30-second grace window. Mismatch or unknown → mint
-        // fresh, install buffer subscriber. Either path re-arms the
-        // grace timer so the HTTP→WS register gap stays covered.
-        const canReuse =
-          existingAttachmentId &&
-          attachmentIdToUserId.get(existingAttachmentId) === userId &&
-          attachmentRegistry.get(existingAttachmentId) !== undefined;
-        const attachmentId = canReuse ? existingAttachmentId! : mintWebAttachmentId();
+        // inside the 30-second grace window. A still-live client (viewId
+        // set — e.g. multi-tab in same browser, or refresh-before-close)
+        // mints fresh: re-arming a live client would either tear the live
+        // WS down or throw; both are wrong here.
+        const existing =
+          existingClientId && clientIdToUserId.get(existingClientId) === userId
+            ? clientRegistry.get(existingClientId)
+            : undefined;
+        const canReuse = existing !== undefined && existing.viewId === null;
+        const clientId = canReuse ? existingClientId! : mintWebClientId();
         if (!canReuse) {
-          attachmentIdToUserId.set(attachmentId, userId);
-          ensureBufferSubscriber(attachmentId);
+          clientIdToUserId.set(clientId, userId);
+          ensureBufferSubscriber(clientId);
         }
-        attachmentRegistry.markDisconnected(attachmentId, (state) => {
+        clientRegistry.armGraceTimer(clientId, (state) => {
           // Same read→delete→schedule ordering as releaseView's onEvict.
-          const ownerId = attachmentIdToUserId.get(state.attachmentId);
-          attachmentIdToUserId.delete(state.attachmentId);
-          console.log(`[flmux] attachment ${state.attachmentId} evicted after grace`);
+          const ownerId = clientIdToUserId.get(state.clientId);
+          clientIdToUserId.delete(state.clientId);
+          console.log(`[flmux] client ${state.clientId} evicted after grace`);
           if (ownerId) maybeScheduleAuthorityEviction(ownerId);
         });
         // User came back (either fresh or via cookie reuse) — cancel any
         // pending authority eviction scheduled by the previous last-
-        // attachment-gone event.
+        // client-gone event.
         cancelPendingAuthorityEviction(userId);
-        return authority.shellBootstrap(attachmentId);
+        return authority.shellBootstrap(clientId);
       }
     : undefined,
   authorizer: webModeAuthorizer ?? undefined,
@@ -1063,9 +1075,9 @@ if (runtimeMode === "desktop" && app) {
   // Fire-and-forget bindTo — the CEF renderer comes up later and its
   // `defineWebviewRpc(...).bindTo(...)` call completes the handshake.
   void desktopDemux.channel("default").bindTo(rendererRpc);
-  attachmentIdToDemux.set(DESKTOP_ATTACHMENT_ID, desktopDemux);
+  clientIdToDemux.set(DESKTOP_CLIENT_ID, desktopDemux);
   // Session-restored panes fire pane.added before this point — pick them up.
-  retroattachAllPanesForAttachment(DESKTOP_ATTACHMENT_ID);
+  retroattachAllPanesForClient(DESKTOP_CLIENT_ID);
 
   desktopViewId = win.webviewId;
   clientRegistry.attachRenderer(win.webviewId, rendererRpc);

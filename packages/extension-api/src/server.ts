@@ -7,17 +7,17 @@ import type { ShellClient } from "./shell";
 export type { RpcChannelHandle };
 
 /**
- * Server-side context per (pane × attachment) subscription. Pair an rpc
+ * Server-side context per (pane × client) subscription. Pair an rpc
  * to `rpcChannel` via `defineBunRpc(...)` + `await ctx.rpcChannel.bindTo(rpc)`.
- * Device handoff (same paneId from another attachment) mints a fresh
+ * Device handoff (same paneId from another client) mints a fresh
  * context — share state via module-level singletons if needed.
  */
 export interface ExtensionServerPaneContext {
   rpcChannel: RpcChannelHandle;
   /**
    * ACL-aware ShellModelAPI client scoped to this subscription's
-   * attachment/user. Calls route through the owning user's `allow_paths`
-   * (same config file as HTTP ACL). Use `/status/attachments/{id}/userId`
+   * client/user. Calls route through the owning user's `allow_paths`
+   * (same config file as HTTP ACL). Use `/status/clients/{id}/userId`
    * for identity lookup when keying user-scoped session state.
    */
   shell: ShellClient;
@@ -26,7 +26,7 @@ export interface ExtensionServerPaneContext {
    * first delivery. "Stay inside" boundary is advisory, not syscall-enforced.
    * Web mode shares one `dataDir` across users — partition under
    * `<dataDir>/users/<userId>/` (resolve via
-   * `ctx.shell.get("/status/attachments/<id>/userId")`) to avoid cross-user
+   * `ctx.shell.get("/status/clients/<id>/userId")`) to avoid cross-user
    * leakage.
    */
   dataDir: string;
@@ -48,7 +48,7 @@ export interface ExtensionServerDefinition {
   onInit?(ctx: ExtensionServerInitContext): void | Promise<void>;
   onPaneConnected?(
     paneId: string,
-    attachmentId: string,
+    clientId: string,
     ctx: ExtensionServerPaneContext
   ): ExtensionServerPaneInstance | void | Promise<ExtensionServerPaneInstance | void>;
 }

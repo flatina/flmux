@@ -3,7 +3,7 @@ import { defineExtensionServer } from "@flmux/extension-api";
 import type { CounterSchema } from "./schema";
 
 // Module-level state — survives the flmux process lifetime and is shared
-// across every (paneId × attachmentId) rpc instance. This is what makes the
+// across every (paneId × clientId) rpc instance. This is what makes the
 // "app-scope" half of the counter pane app-scope.
 let count = 0;
 
@@ -15,7 +15,7 @@ function notifyAll(sourcePaneId: string | null) {
 }
 
 export default defineExtensionServer({
-  async onPaneConnected(paneId, _attachmentId, ctx) {
+  async onPaneConnected(paneId, _clientId, ctx) {
     const rpc = defineBunRpc<CounterSchema>({
       handlers: {
         requests: {

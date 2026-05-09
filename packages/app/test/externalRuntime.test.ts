@@ -50,7 +50,7 @@ describe("external pane runtime", () => {
       }
     };
 
-    const descriptor = createExternalPaneDescriptor({
+    const descriptor = createExternalPaneDescriptor("sample.ext", {
       kind: "sample.external",
       mount(_host, context) {
         capturedContext = context;
@@ -121,7 +121,7 @@ describe("external pane runtime", () => {
   });
 
   it("maps a minimal external getTitle hook onto the internal descriptor lifecycle", () => {
-    const descriptor = createExternalPaneDescriptor({
+    const descriptor = createExternalPaneDescriptor("sample.ext", {
       kind: "sample.titled",
       mount() {},
       getTitle: ({ input, workspaceId }) => `${workspaceId}:${input.title ?? "Untitled"}`
@@ -146,7 +146,7 @@ describe("external pane runtime", () => {
     const pathSetCalls: Array<{ path: string; value: unknown }> = [];
     const pathCallCalls: Array<{ path: string; args: Record<string, unknown> | undefined }> = [];
 
-    const descriptor = createExternalPaneDescriptor({
+    const descriptor = createExternalPaneDescriptor("sample.ext", {
       kind: "sample.stateful",
       mount(_host, context) {
         capturedContext = context;
@@ -285,7 +285,7 @@ describe("external pane runtime", () => {
     let unsubscribeCalls = 0;
     let rendererDisposed = false;
 
-    const descriptor = createExternalPaneDescriptor({
+    const descriptor = createExternalPaneDescriptor("sample.ext", {
       kind: "sample.bus-cleanup",
       mount(_host, context) {
         context.bus.subscribe("sample.*", () => {});
@@ -348,7 +348,7 @@ describe("external pane runtime", () => {
     const sharedStatus = createWorkspaceStatusStore();
     let received = 0;
 
-    const descriptor = createExternalPaneDescriptor({
+    const descriptor = createExternalPaneDescriptor("sample.ext", {
       kind: "sample.status-cleanup",
       mount(_host, context) {
         context.workspaceStatus.subscribe("k", () => {
@@ -403,7 +403,7 @@ describe("external pane runtime", () => {
     const sharedStatus = createWorkspaceStatusStore();
     let captured: unknown;
 
-    const descriptor = createExternalPaneDescriptor({
+    const descriptor = createExternalPaneDescriptor("sample.ext", {
       kind: "sample.status-facade",
       mount(_host, context) {
         captured = context.workspaceStatus;
@@ -448,7 +448,7 @@ describe("external pane runtime", () => {
   });
 
   it("maps external path mounts onto the internal descriptor contract", async () => {
-    const descriptor = createExternalPaneDescriptor({
+    const descriptor = createExternalPaneDescriptor("sample.ext", {
       kind: "sample.mount",
       mount() {},
       pathMount: {
@@ -544,7 +544,7 @@ describe("external pane runtime", () => {
 
   it("rejects reserved path mount keys at registry registration time", () => {
     const registry = new PaneRegistry();
-    const descriptor = createExternalPaneDescriptor({
+    const descriptor = createExternalPaneDescriptor("sample.ext", {
       kind: "sample.invalid-mount",
       mount() {},
       pathMount: {

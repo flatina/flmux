@@ -2,6 +2,7 @@ import type { ExtensionDefinition } from "@flmux/extension-api";
 import type { FlmuxLocalExtensionLoadEntry } from "../../shared/rendererBridge";
 import type { PaneDescriptor } from "../shell/paneRegistry";
 import { createExternalPaneDescriptor } from "./runtime";
+import { channelForExtension } from "./extensionChannelRegistry";
 
 interface LocalExternalPaneRegistrationHost {
   registerExternalPane(descriptor: PaneDescriptor): void;
@@ -28,18 +29,42 @@ export async function registerLocalExternalPaneDescriptors(
   }
 
   for (const extension of discovered) {
+    const extId = extension.loadEntry.id;
     const paneIcons = extension.loadEntry.paneIcons ?? {};
     const paneDefaultTitles = extension.loadEntry.paneDefaultTitles ?? {};
     const paneMinimumWidths = extension.loadEntry.paneMinimumWidths ?? {};
     const paneMaximumWidths = extension.loadEntry.paneMaximumWidths ?? {};
     for (const pane of extension.definition.panes ?? []) {
-      const descriptor = createExternalPaneDescriptor(pane);
+      const descriptor = createExternalPaneDescriptor(extId, pane);
       if (paneIcons[pane.kind]) descriptor.iconUrl = paneIcons[pane.kind];
       if (paneDefaultTitles[pane.kind]) descriptor.defaultTitle = paneDefaultTitles[pane.kind];
       if (paneMinimumWidths[pane.kind] !== undefined) descriptor.minimumWidth = paneMinimumWidths[pane.kind];
       if (paneMaximumWidths[pane.kind] !== undefined) descriptor.maximumWidth = paneMaximumWidths[pane.kind];
       host.registerExternalPane(descriptor);
     }
+  }
+
+  // Eager `onLoad` — fire-and-forget. Cannot await before workbench.start:
+  // onLoad's bindTo waits for the server-side `onClientConnected`, which only
+  // fires inside the WS register handler (= inside workbench.start). Awaiting
+  // here would deadlock. Extensions read the bound rpc lazily from
+  // module-level state set inside onLoad's bindTo continuation; pane mounts
+  // tolerate "rpc not yet ready" until then.
+  for (const extension of discovered) {
+    if (!extension.definition.onLoad) continue;
+    const extId = extension.loadEntry.id;
+    // `Promise.resolve().then(...)` — if `onLoad` throws synchronously
+    // before returning a promise, the rejection still routes to `.catch`
+    // (a bare `Promise.resolve(onLoad())` would propagate the sync throw).
+    void Promise.resolve()
+      .then(() =>
+        extension.definition.onLoad!({
+          channel: (name) => channelForExtension(extId, name)
+        })
+      )
+      .catch((error) => {
+        console.warn(`[flmux] extension '${extId}' onLoad failed`, error);
+      });
   }
 }
 

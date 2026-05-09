@@ -13,18 +13,18 @@ const panelStylesheetUrl = new URL("./panel.css", import.meta.url).href;
 const STYLESHEET_ID = "counter-panel-styles";
 const WORKSPACE_STATUS_KEY = "count";
 
-// Single pane that exercises both scopes:
-//   - app    → server-held count (shared across every workspace in the process)
-//   - workspace → `ctx.workspaceStatus` retained KV (shared across panes in
-//                 this workspace, isolated from other workspaces)
+// Canonical "extension RPC + connected state" pattern. `sharedRpc` is set
+// only AFTER `bindTo` resolves — so `sharedRpc !== null` means truly ready.
+// `ready` exposes the wait-handle for any code that runs before bind
+// completes (e.g. late-mounting panes). `latestCount` caches the most recent
+// server push so panes mounting after `onLoad`'s one-shot push still render.
+type CounterWebviewRpc = ReturnType<typeof defineWebviewRpc<CounterSchema>>;
+let sharedRpc: CounterWebviewRpc | null = null;
+let ready: Promise<void> | null = null;
+let latestCount: number | null = null;
+const paneRenderers = new Map<string, (count: number) => void>();
+
 class CounterPane implements ExtensionPaneInstance {
-  private readonly rpc = defineWebviewRpc<CounterSchema>({
-    handlers: {
-      messages: {
-        "count.changed": ({ count }) => this.renderApp(count)
-      }
-    }
-  });
   private dom: PanelDom | null = null;
   private disposed = false;
   private unsubscribeWorkspace?: () => void;
@@ -35,39 +35,40 @@ class CounterPane implements ExtensionPaneInstance {
   ) {
     this.host.classList.add("counter-panel");
     ensureStylesheet(STYLESHEET_ID, panelStylesheetUrl);
+    paneRenderers.set(ctx.paneId, (count) => this.renderApp(count));
     void this.mount();
   }
 
   dispose() {
     this.disposed = true;
+    paneRenderers.delete(this.ctx.paneId);
     this.unsubscribeWorkspace?.();
-    this.rpc.dispose();
   }
 
   private async mount() {
     this.dom = await mountPanelShell(this.host, panelTemplateUrl, this.ctx);
     if (this.disposed || !this.dom) return;
-    this.wireApp(this.dom.app);
+    // Render cached value immediately so a late mount doesn't sit blank
+    // until the next mutation. `count.changed` was a one-shot push from
+    // `onClientConnected` and may have already arrived.
+    if (latestCount !== null) this.renderApp(latestCount);
     this.wireWorkspace(this.dom.workspace);
+    // Wait for handshake before wiring app-scope click handlers — sends
+    // before HELLO are silently dropped by the demuxer.
+    await ready;
+    if (this.disposed || !this.dom) return;
+    this.wireApp(this.dom.app);
   }
 
-  private async wireApp(dom: ScopeDom) {
-    if (!this.ctx.rpcChannel) {
+  private wireApp(dom: ScopeDom) {
+    if (!sharedRpc) {
       dom.valueEl.textContent = "(server entry not wired)";
       return;
     }
-    // Bind first; the server pushes the current count via `count.changed` on
-    // connect, so the initial render arrives through the message listener.
-    try {
-      await this.ctx.rpcChannel.bindTo(this.rpc);
-      if (this.disposed) return;
-      dom.inc.addEventListener("click", () => this.applyApp(this.rpc.requestProxy.increment({ delta: 1 })));
-      dom.dec.addEventListener("click", () => this.applyApp(this.rpc.requestProxy.increment({ delta: -1 })));
-      dom.reset.addEventListener("click", () => this.applyApp(this.rpc.requestProxy.reset()));
-    } catch (error) {
-      console.warn("[counter] channel handshake failed", error);
-      if (!this.disposed) dom.valueEl.textContent = "(handshake failed)";
-    }
+    const rpc = sharedRpc;
+    dom.inc.addEventListener("click", () => this.applyApp(rpc.requestProxy.increment({ delta: 1 })));
+    dom.dec.addEventListener("click", () => this.applyApp(rpc.requestProxy.increment({ delta: -1 })));
+    dom.reset.addEventListener("click", () => this.applyApp(rpc.requestProxy.reset()));
   }
 
   private wireWorkspace(dom: ScopeDom) {
@@ -114,4 +115,21 @@ const counterPane = definePane({
   getTitle: ({ input }) => input.title?.trim() || "Counter"
 });
 
-export default defineExtension({ panes: [counterPane] });
+export default defineExtension({
+  panes: [counterPane],
+  async onLoad(ctx) {
+    const rpc = defineWebviewRpc<CounterSchema>({
+      handlers: {
+        messages: {
+          "count.changed": ({ count }) => {
+            latestCount = count;
+            for (const render of paneRenderers.values()) render(count);
+          }
+        }
+      }
+    });
+    ready = ctx.channel().bindTo(rpc);
+    await ready;
+    sharedRpc = rpc;
+  }
+});

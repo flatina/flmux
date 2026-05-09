@@ -3,7 +3,7 @@ import type { FlmuxRendererBridgeSchema } from "../shared/rendererBridge";
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
 import type { SequencedShellCoreEvent } from "@flmux/core/shell";
 import { registerLocalExternalPaneDescriptors } from "./external/registerLocalExternalPaneDescriptors";
-import { setExtensionPaneDemuxer } from "./external/paneChannelRegistry";
+import { setExtensionDemuxer } from "./external/extensionChannelRegistry";
 import { FlmuxWorkbench } from "./shell/workbench";
 import { pushShellCoreEvent } from "./shell/shellEventBus";
 import { pushTerminalEvent } from "./terminalHost";
@@ -32,9 +32,9 @@ async function bootstrap() {
   // Await the HELLO handshake before any request is sent — `getConfig()`
   // below races the peer's handler registration without this.
   await demux.channel("default").bindTo(rpc);
-  // Expose to external pane runtime so extension panes can claim their own
-  // channel via `ctx.rpcChannel.bindTo(rpc)` on mount.
-  setExtensionPaneDemuxer(demux);
+  // Expose to external pane runtime so extension `onLoad`/`mount` can reach
+  // their per-extension named channels via `ctx.channel(name).bindTo(rpc)`.
+  setExtensionDemuxer(demux);
 
   const config = await rpc.requestProxy["flmux.getConfig"]();
   const workbench = new FlmuxWorkbench(config, rpc.requestProxy);

@@ -43,6 +43,7 @@ import { callJsonRpcIpc } from "@flmux/core/terminal/ptyd/jsonRpcIpc";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
 import { discoverConfiguredLocalExtensions, resolveConfiguredLocalExtensionsRootDir } from "./localExtensions";
 import type {
+  ExtensionServerClientInstance,
   ExtensionServerDefinition,
   ExtensionServerPaneInstance,
   ShellClient as ShellClientImport
@@ -222,8 +223,14 @@ for (const ext of localExtensions) {
   }
 }
 
-// (paneId × clientId) → server instance, plus the pane→kind & client→demux
-// indexes used to drive attach/detach in pane and client lifecycles.
+// Per-(extension × client) RPC binding instance from `onClientConnected`.
+// `null` means the hook returned void — sentinel keeps idempotency.
+const extensionClientInstances = new Map<string, ExtensionServerClientInstance | null>();
+// Per-(extension × client) bind promise — pane-level dispatch awaits this so
+// `onPaneConnected` never fires before `onClientConnected` resolves.
+const extensionClientBindPromises = new Map<string, Promise<void>>();
+// Per-(paneId × clientId) `onPaneConnected` instance. No RPC concerns —
+// pane-lifecycle bookkeeping only.
 const paneServerInstances = new Map<string, ExtensionServerPaneInstance>();
 const paneKinds = new Map<string, string>();
 const clientIdToDemux = new Map<string, RpcTransportDemuxer>();
@@ -237,6 +244,10 @@ function paneInstanceKey(extId: string, paneId: string, clientId: string) {
   return `${extId}::${paneId}::${clientId}`;
 }
 
+function clientInstanceKey(extId: string, clientId: string) {
+  return `${extId}::${clientId}`;
+}
+
 /**
  * ACL-aware ShellClient for an extension server entry. Calls route through
  * the same `allow_paths` + `allow_pane_kinds` gates as HTTP. Desktop
@@ -245,12 +256,12 @@ function paneInstanceKey(extId: string, paneId: string, clientId: string) {
  * Returns null when the pane→authority mapping isn't established yet
  * (racing `clientIdToDemux` writes); caller warns and retries.
  */
-function createExtensionShellClient(paneId: string, clientId: string): ShellClientImport | null {
-  const authority = paneIdToAuthority.get(paneId);
+function createExtensionShellClient(paneId: string | null, clientId: string): ShellClientImport | null {
+  const authority = paneId ? paneIdToAuthority.get(paneId) : resolveAuthorityForClient(clientId);
   if (!authority) return null;
   const shellModel = authority.shellModel;
   const authorizer = webModeAuthorizer;
-  const caller = { clientId, sourcePaneId: paneId };
+  const caller: { clientId: string; sourcePaneId?: string } = paneId ? { clientId, sourcePaneId: paneId } : { clientId };
 
   // Per-call resolve: session cleanup / token revocation drops ACL on the
   // next shell call instead of using a stale snapshot.
@@ -305,43 +316,134 @@ function createExtensionShellClient(paneId: string, clientId: string): ShellClie
   };
 }
 
-async function attachExtensionServerChannel(paneId: string, kind: string, clientId: string) {
-  const extId = findExtensionIdForPaneKind(kind);
-  if (!extId) return;
-  // Await before fetching server: init failure deletes the entry.
+/**
+ * Attach extension server to a client — fires `onClientConnected` once per
+ * (extension × client). Idempotent: stores a bind promise so concurrent
+ * pane-level dispatch awaits the same handshake. Per-extension `onInit`
+ * promise is awaited first; init failure cascades to skipping this attach.
+ */
+/**
+ * Attach extension server to a client — fires `onClientConnected` once per
+ * (extension × client). The bind promise is cached only when the hook is
+ * actually invoked; early returns (no demux/shell/dataDir) leave the cache
+ * empty so a later retry can succeed.
+ */
+function attachExtensionServer(extId: string, clientId: string): Promise<void> {
+  const key = clientInstanceKey(extId, clientId);
+  const existing = extensionClientBindPromises.get(key);
+  if (existing) return existing;
   const initPromise = extensionServerInits.get(extId);
-  if (initPromise) await initPromise;
   const server = extensionServers.get(extId);
-  if (!server?.onPaneConnected) return;
+  if (!server?.onClientConnected) return Promise.resolve();
   const demux = clientIdToDemux.get(clientId);
-  if (!demux) return;
-  const shell = createExtensionShellClient(paneId, clientId);
+  if (!demux) return Promise.resolve();
+  const shell = createExtensionShellClient(null, clientId);
   if (!shell) {
     console.warn(
-      `[flmux] extension '${extId}' skipped onPaneConnected — no authority mapped for pane '${paneId}' (client ${clientId})`
+      `[flmux] extension '${extId}' skipped onClientConnected — no authority mapped for client ${clientId}`
     );
-    return;
+    return Promise.resolve();
   }
-  const key = paneInstanceKey(extId, paneId, clientId);
-  if (paneServerInstances.has(key)) return;
   const dataDir = resolveExtensionDataDir(extId);
   if (!dataDir) {
-    // extId came from `findExtensionIdForPaneKind` so this is unreachable
-    // today, but fail closed if discovery ever becomes dynamic — extensions
-    // expect dataDir to be a string.
-    console.warn(`[flmux] extension '${extId}' skipped onPaneConnected — data dir not provisioned`);
-    return;
+    console.warn(`[flmux] extension '${extId}' skipped onClientConnected — data dir not provisioned`);
+    return Promise.resolve();
   }
+  let promise!: Promise<void>;
+  promise = (async () => {
+    if (initPromise) await initPromise;
+    // Generation guard: `onInit` may have failed and deleted the entry, or
+    // a detach during init removed the bind slot. Bail before invoking the
+    // hook on stale state.
+    if (
+      extensionServers.get(extId) !== server ||
+      extensionClientBindPromises.get(key) !== promise ||
+      clientIdToDemux.get(clientId) !== demux
+    ) {
+      return;
+    }
+    try {
+      const inst = await server.onClientConnected!(clientId, {
+        dataDir,
+        shell,
+        channel: (name = "default") => demux.channel(`${extId}:${name}`)
+      });
+      // Cancellation guard: if `detachExtensionServer` ran while we were
+      // awaiting (client disconnect mid-bind), bind promise was deleted.
+      // Drop the new instance instead of stranding it.
+      if (extensionClientBindPromises.get(key) !== promise) {
+        try {
+          inst?.dispose?.();
+        } catch (err) {
+          console.warn(`[flmux] extension '${extId}' late dispose error (client ${clientId}):`, err);
+        }
+        return;
+      }
+      extensionClientInstances.set(key, inst ?? null);
+    } catch (err) {
+      console.warn(`[flmux] extension '${extId}' onClientConnected error (client ${clientId}):`, err);
+    }
+  })();
+  extensionClientBindPromises.set(key, promise);
+  return promise;
+}
+
+async function detachExtensionServer(extId: string, clientId: string) {
+  const key = clientInstanceKey(extId, clientId);
+  const pending = extensionClientBindPromises.get(key);
+  // Mark cancelled before awaiting so the bind continuation drops itself.
+  extensionClientBindPromises.delete(key);
+  if (pending) await pending;
+  // After the await, a fresh `attachExtensionServer` may have taken the slot
+  // (cookie continuity rebind in the same sync slice). The new bind owns
+  // the instance now — don't dispose its handle.
+  if (extensionClientBindPromises.has(key)) return;
+  if (!extensionClientInstances.has(key)) return;
+  const inst = extensionClientInstances.get(key);
+  extensionClientInstances.delete(key);
   try {
-    const rpcChannel = demux.channel(paneId);
-    const inst = await server.onPaneConnected(paneId, clientId, { rpcChannel, shell, dataDir });
+    inst?.dispose?.();
+  } catch (err) {
+    console.warn(`[flmux] extension '${extId}' onClientConnected dispose error (client ${clientId}):`, err);
+  }
+}
+
+/**
+ * Per-pane lifecycle notification. Awaits the (ext × client) bind promise
+ * so `onPaneConnected` never sees a half-bound state. Re-checks demux after
+ * the await — client disconnect during the bind gates pane attach.
+ */
+async function attachExtensionServerPane(paneId: string, kind: string, clientId: string) {
+  const extId = findExtensionIdForPaneKind(kind);
+  if (!extId) return;
+  await attachExtensionServer(extId, clientId);
+  if (!clientIdToDemux.has(clientId)) return;
+  const server = extensionServers.get(extId);
+  if (!server?.onPaneConnected) return;
+  const shell = createExtensionShellClient(paneId, clientId);
+  if (!shell) return;
+  const dataDir = resolveExtensionDataDir(extId);
+  if (!dataDir) return;
+  const key = paneInstanceKey(extId, paneId, clientId);
+  if (paneServerInstances.has(key)) return;
+  try {
+    const inst = await server.onPaneConnected(paneId, clientId, { shell, dataDir });
+    if (!clientIdToDemux.has(clientId)) {
+      // Late disconnect during onPaneConnected — drop instead of stranding.
+      try {
+        inst?.dispose?.();
+      } catch (err) {
+        console.warn(`[flmux] extension '${extId}' late pane dispose error (pane ${paneId}, client ${clientId}):`, err);
+      }
+      return;
+    }
     if (inst) paneServerInstances.set(key, inst);
   } catch (err) {
     console.warn(`[flmux] extension '${extId}' onPaneConnected error (pane ${paneId}, client ${clientId}):`, err);
   }
 }
 
-function detachExtensionServerChannel(paneId: string, kind: string, clientId: string) {
+function detachExtensionServerPane(paneId: string, kind: string, clientId: string) {
   const extId = findExtensionIdForPaneKind(kind);
   if (!extId) return;
   const key = paneInstanceKey(extId, paneId, clientId);
@@ -350,7 +452,7 @@ function detachExtensionServerChannel(paneId: string, kind: string, clientId: st
   try {
     inst.dispose?.();
   } catch (err) {
-    console.warn(`[flmux] extension '${extId}' dispose error (pane ${paneId}, client ${clientId}):`, err);
+    console.warn(`[flmux] extension '${extId}' onPaneConnected dispose error (pane ${paneId}, client ${clientId}):`, err);
   }
   paneServerInstances.delete(key);
 }
@@ -510,7 +612,7 @@ function trackPaneLifecycle(authority: ShellAuthority): () => void {
       paneKinds.set(paneId, snapshot.kind);
       for (const [clientId] of clientIdToDemux) {
         if (resolveAuthorityForClient(clientId) === authority) {
-          attachExtensionServerChannel(paneId, snapshot.kind, clientId);
+          void attachExtensionServerPane(paneId, snapshot.kind, clientId);
         }
       }
     } else if (event.topic === "pane.removed") {
@@ -519,7 +621,7 @@ function trackPaneLifecycle(authority: ShellAuthority): () => void {
       const kind = paneKinds.get(paneId);
       if (kind) {
         for (const [clientId] of clientIdToDemux) {
-          detachExtensionServerChannel(paneId, kind, clientId);
+          detachExtensionServerPane(paneId, kind, clientId);
         }
         paneKinds.delete(paneId);
       }
@@ -529,21 +631,27 @@ function trackPaneLifecycle(authority: ShellAuthority): () => void {
   return unsub;
 }
 
-// After an client's demux is installed, retroactively attach every pane
-// already bound to that client's authority. Used at:
+// After a client's demux is installed: attach extension servers (per ext)
+// then attach existing panes (per pane × ext × client). Used at:
 //   - desktop boot (demux created after session restore panes land)
-//   - web client bind (demux was created at WS open, clientId at register)
+//   - web client bind (demux at WS open, clientId at register)
 function retroattachAllPanesForClient(clientId: string) {
   const authority = resolveAuthorityForClient(clientId);
   if (!authority) return;
+  for (const [extId] of extensionServers) {
+    void attachExtensionServer(extId, clientId);
+  }
   for (const [paneId, kind] of paneKinds) {
     if (paneIdToAuthority.get(paneId) === authority) {
-      attachExtensionServerChannel(paneId, kind, clientId);
+      void attachExtensionServerPane(paneId, kind, clientId);
     }
   }
 }
 
 function detachAllPanesForClient(clientId: string) {
+  // LIFO teardown: panes (innermost) first, then per-extension client state.
+  // Mirrors setup order (client → pane) so per-pane handlers can still touch
+  // per-client state during their dispose.
   const keyPrefix = `::`;
   for (const key of [...paneServerInstances.keys()]) {
     if (!key.endsWith(keyPrefix + clientId)) continue;
@@ -554,6 +662,9 @@ function detachAllPanesForClient(clientId: string) {
       console.warn(`[flmux] extension dispose error (key ${key}):`, err);
     }
     paneServerInstances.delete(key);
+  }
+  for (const [extId] of extensionServers) {
+    void detachExtensionServer(extId, clientId);
   }
   clientIdToDemux.delete(clientId);
 }
@@ -574,6 +685,7 @@ function isEventAllowedForClient(
   clientId: string,
   event: SequencedShellCoreEvent
 ): boolean {
+  // Fail-open on user-resolution miss (vs. assertAllowed's fail-closed): avoids teardown-race throws in the broadcast loop.
   if (!authorizer) return true;
   const userId = clientIdToUserId.get(clientId);
   if (!userId) return true;

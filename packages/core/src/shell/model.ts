@@ -1297,6 +1297,7 @@ class ShellModel implements ShellModelAPI {
     }
 
     const resolved = readSnapshotPath(snapshot, relativePath);
+    // Leaf must be primitive and stay primitive for mount lifetime — dynamic object-ization silently flips this gate.
     if (!resolved.found || isPlainObject(resolved.value)) {
       return throwPathError("NOT_WRITABLE", "Path is not writable");
     }

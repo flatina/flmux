@@ -18,15 +18,15 @@ import {
   adaptExtensionPanePathMount,
   adaptExtensionPersistence
 } from "../../shared/extensionPaneAdapter";
-import { channelForPane } from "./paneChannelRegistry";
+import { channelForExtension } from "./extensionChannelRegistry";
 import { setPaneHeaderMenu } from "./paneTabMenuRegistry";
 
-export function createExternalPaneDescriptor(options: ExtensionPaneDefinition): PaneDescriptor {
+export function createExternalPaneDescriptor(extensionId: string, options: ExtensionPaneDefinition): PaneDescriptor {
   return {
     kind: options.kind,
     createRenderer(args) {
       const state = new ExternalPaneStateController(args.options.id, args.runtime.shellModel);
-      return wrapExternalPaneRenderer(options, args, state);
+      return wrapExternalPaneRenderer(extensionId, options, args, state);
     },
     lifecycle: adaptExtensionLifecycle(options),
     persistence: adaptExtensionPersistence(options),
@@ -35,6 +35,7 @@ export function createExternalPaneDescriptor(options: ExtensionPaneDefinition): 
 }
 
 function createExternalPaneContext(
+  extensionId: string,
   args: {
     workspace: PaneWorkspaceContext;
     options: CreateComponentOptions;
@@ -89,12 +90,13 @@ function createExternalPaneContext(
       }
     },
     state,
-    rpcChannel: channelForPane(paneId),
+    channel: (name) => channelForExtension(extensionId, name),
     setHeaderMenu: (menu) => setPaneHeaderMenu(paneId, menu)
   };
 }
 
 function wrapExternalPaneRenderer(
+  extensionId: string,
   definition: ExtensionPaneDefinition,
   args: {
     workspace: PaneWorkspaceContext;
@@ -110,7 +112,7 @@ function wrapExternalPaneRenderer(
     element: host,
     init(params: GroupPanelPartInitParameters) {
       synchronizeExternalPaneState(state, params.api, params.params);
-      instance = definition.mount(host, createExternalPaneContext(args, state));
+      instance = definition.mount(host, createExternalPaneContext(extensionId, args, state));
     },
     update(event: PanelUpdateEvent<Record<string, unknown>>) {
       synchronizeExternalPaneState(state, null, event.params);

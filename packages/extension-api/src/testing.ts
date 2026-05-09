@@ -193,7 +193,18 @@ export function createTestPaneContext(options: TestPaneContextOptions = {}): Ext
   const state = options.state ?? createTestPaneStateStore();
   const bus = resolveBus(options.bus, workspaceId, paneId);
   const workspaceStatus = options.workspaceStatus ?? createTestWorkspaceStatusStore();
-  return { paneId, workspaceId, shell, bus, workspaceStatus, state, setHeaderMenu: () => {} };
+  return {
+    paneId,
+    workspaceId,
+    shell,
+    bus,
+    workspaceStatus,
+    state,
+    setHeaderMenu: () => {},
+    channel: () => {
+      throw new Error("test pane context channel() not wired — provide a custom ctx if your test exercises RPC");
+    }
+  };
 }
 
 /** In-memory `WorkspaceStatusStoreClient` matching flmux's

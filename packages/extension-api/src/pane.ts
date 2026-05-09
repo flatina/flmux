@@ -55,13 +55,12 @@ export interface ExtensionPaneContext {
    *  no-op (or surfaces debug info in dev). */
   setHeaderMenu(menu: PaneHeaderMenu | null): void;
   /**
-   * Isolated bunite RPC channel for private pane↔server-entry calls.
-   * Pair via `defineWebviewRpc<Schema>(...)` + `await ctx.rpcChannel.bindTo(rpc)`
-   * on mount; dispose the rpc in `ExtensionPaneInstance.dispose`. Awaiting
-   * `bindTo` is required — the first packet otherwise races handler
-   * registration. Absent when the extension has no server entry.
+   * Returns a per-extension RPC channel handle (`<extId>:<name>`). Bind once
+   * per channel (e.g. in `defineExtension({ onLoad })` for eager, or
+   * module-level guard for lazy); all panes of this extension share the
+   * binding. `name` defaults to `"default"`.
    */
-  rpcChannel?: RpcChannelHandle;
+  channel(name?: string): RpcChannelHandle;
 }
 
 export interface ExtensionPaneInstance {

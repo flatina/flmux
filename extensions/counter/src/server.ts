@@ -2,55 +2,46 @@ import { defineBunRpc } from "bunite-core";
 import { defineExtensionServer } from "@flmux/extension-api";
 import type { CounterSchema } from "./schema";
 
-// Module-level state — survives the flmux process lifetime and is shared
-// across every (paneId × clientId) rpc instance. This is what makes the
-// "app-scope" half of the counter pane app-scope.
+// Module-level state — survives the flmux process lifetime, shared across
+// every client. RPC binding happens once per client in `onClientConnected`;
+// pane creation is decoupled from RPC handshake.
 let count = 0;
 
-type Peer = { broadcast: (sourcePaneId: string | null) => void };
-const peers = new Set<Peer>();
+type CounterServerRpc = ReturnType<typeof defineBunRpc<CounterSchema>>;
+const clientRpcs = new Map<string, CounterServerRpc>();
 
-function notifyAll(sourcePaneId: string | null) {
-  for (const peer of peers) peer.broadcast(sourcePaneId);
+function broadcast() {
+  for (const rpc of clientRpcs.values()) {
+    rpc.sendProxy["count.changed"]({ count, sourcePaneId: null });
+  }
 }
 
 export default defineExtensionServer({
-  async onPaneConnected(paneId, _clientId, ctx) {
+  async onClientConnected(clientId, ctx) {
     const rpc = defineBunRpc<CounterSchema>({
       handlers: {
         requests: {
           getCount: () => ({ count }),
           increment: ({ delta }) => {
             count += typeof delta === "number" ? Math.trunc(delta) : 1;
-            notifyAll(paneId);
+            broadcast();
             return { count };
           },
           reset: () => {
             count = 0;
-            notifyAll(paneId);
+            broadcast();
             return { count };
           }
         }
       }
     });
-    // Wait for HELLO so the `peer.broadcast(null)` below reaches the pane
-    // instead of racing handler registration on the renderer side.
-    await ctx.rpcChannel.bindTo(rpc);
-
-    const peer: Peer = {
-      broadcast: (sourcePaneId) => {
-        rpc.sendProxy["count.changed"]({ count, sourcePaneId });
-      }
-    };
-    peers.add(peer);
-
-    // Push the current value on connect so the renderer skips the initial
-    // `getCount()` round-trip.
-    peer.broadcast(null);
-
+    await ctx.channel().bindTo(rpc);
+    clientRpcs.set(clientId, rpc);
+    // Push the current value so the renderer skips the initial getCount() round-trip.
+    rpc.sendProxy["count.changed"]({ count, sourcePaneId: null });
     return {
       dispose() {
-        peers.delete(peer);
+        clientRpcs.delete(clientId);
         rpc.dispose();
       }
     };

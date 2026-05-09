@@ -6,46 +6,66 @@ import type { ShellClient } from "./shell";
 // sides register handlers (HELLO); await it before any send.
 export type { RpcChannelHandle };
 
+export interface ExtensionServerInitContext {
+  dataDir: string;
+}
+
 /**
- * Server-side context per (pane × client) subscription. Pair an rpc
- * to `rpcChannel` via `defineBunRpc(...)` + `await ctx.rpcChannel.bindTo(rpc)`.
- * Device handoff (same paneId from another client) mints a fresh
- * context — share state via module-level singletons if needed.
+ * Per-client context for `onClientConnected`. Bind RPC channels here — once
+ * per (extension × client). All panes of this client share these channels.
+ * Channel name `<extId>:<name>` is namespaced by flmux; `name` is the
+ * extension-supplied logical name.
  */
-export interface ExtensionServerPaneContext {
-  rpcChannel: RpcChannelHandle;
+export interface ExtensionServerClientContext {
+  dataDir: string;
   /**
-   * ACL-aware ShellModelAPI client scoped to this subscription's
-   * client/user. Calls route through the owning user's `allow_paths`
-   * (same config file as HTTP ACL). Use `/status/clients/{id}/userId`
+   * ACL-aware ShellModelAPI client scoped to this client/user. Calls route
+   * through the owning user's `allow_paths`. Use `/status/clients/{id}/userId`
    * for identity lookup when keying user-scoped session state.
    */
   shell: ShellClient;
-  /**
-   * Absolute path of `<rootDir>/.flmux/ext/<extensionId>/`, mkdir'd before
-   * first delivery. "Stay inside" boundary is advisory, not syscall-enforced.
-   * Web mode shares one `dataDir` across users — partition under
-   * `<dataDir>/users/<userId>/` (resolve via
-   * `ctx.shell.get("/status/clients/<id>/userId")`) to avoid cross-user
-   * leakage.
-   */
+  /** Returns a channel handle for `<extId>:<name>`. Default name is `"default"`. */
+  channel(name?: string): RpcChannelHandle;
+}
+
+/**
+ * Per-pane lifecycle notification. Fires once per (pane × client). No RPC
+ * channel — extensions wire RPC in `onClientConnected`. This hook is for
+ * pane-level bookkeeping (e.g. tracking which panes are alive on this client).
+ */
+export interface ExtensionServerPaneContext {
   dataDir: string;
+  shell: ShellClient;
+}
+
+export interface ExtensionServerClientInstance {
+  dispose?(): void;
 }
 
 export interface ExtensionServerPaneInstance {
   dispose?(): void;
 }
 
-export interface ExtensionServerInitContext {
-  dataDir: string;
-}
-
 export interface ExtensionServerDefinition {
   /**
-   * Eager once-per-process setup, runs at extension load before any
-   * `onPaneConnected`. Throw → server entry disabled.
+   * Eager once-per-process setup, runs at extension load before any client
+   * binds. Throw → server entry disabled.
    */
   onInit?(ctx: ExtensionServerInitContext): void | Promise<void>;
+  /**
+   * Per-client setup. Bind RPC channels here. Awaited by flmux before any
+   * `onPaneConnected` fires for this client. May fire multiple times for the
+   * same `clientId` across reconnects (cookie continuity) — treat each as
+   * fresh state.
+   */
+  onClientConnected?(
+    clientId: string,
+    ctx: ExtensionServerClientContext
+  ): ExtensionServerClientInstance | void | Promise<ExtensionServerClientInstance | void>;
+  /**
+   * Per-pane lifecycle notification. Fires after `onClientConnected` resolves.
+   * Use for pane-level bookkeeping; RPC binding belongs in `onClientConnected`.
+   */
   onPaneConnected?(
     paneId: string,
     clientId: string,

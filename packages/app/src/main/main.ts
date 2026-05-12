@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { delimiter, dirname, resolve, sep } from "node:path";
 import {
   BrowserWindow,
   AppRuntime,
+  acquireSingleInstanceLock,
   defineBunRpc,
   createRpcTransportDemuxer,
   createWebSocketTransport,
@@ -99,6 +100,20 @@ const flmuxPaths = resolveFlmuxPaths(resolveFlmuxRootDir(installRoot));
 const projectDir = flmuxPaths.rootDir;
 const localExtensionsRootDir = resolveConfiguredLocalExtensionsRootDir(resolve(baseDir, "../../../extensions"));
 
+const instanceLockKey = (() => {
+  try {
+    return realpathSync.native(flmuxPaths.rootDir);
+  } catch {
+    return flmuxPaths.rootDir;
+  }
+})();
+const instanceLock = acquireSingleInstanceLock(`flmux:${instanceLockKey}`);
+if (!instanceLock.acquired) {
+  const holder = instanceLock.holderPid ? ` (pid ${instanceLock.holderPid})` : "";
+  console.error(`flmux is already running for ${flmuxPaths.rootDir}${holder}.`);
+  process.exit(1);
+}
+
 // Only desktop mode needs the CEF runtime. Web mode runs as a headless
 // Bun server and instantiating AppRuntime eagerly would boot CEF for
 // nothing (bunite's `new AppRuntime` triggers `initNativeRuntime`). Pin
@@ -129,11 +144,13 @@ process.env.FLMUX_ROOT = flmuxPaths.rootDir;
 prependFlmuxBinToPath(flmuxPaths.binDir);
 const app =
   runtimeMode === "desktop"
-    ? new AppRuntime({
-        logLevel: "info",
-        userDataDir: flmuxPaths.cefUserDataDir,
-        cefDir: resolve(installRoot, "dist/cef")
-      })
+    ? (() => {
+        process.env.BUNITE_ENGINE_DIR ??= resolve(installRoot, "dist/cef");
+        return new AppRuntime({
+          logLevel: "info",
+          userDataDir: flmuxPaths.cefUserDataDir
+        });
+      })()
     : null;
 if (app) await app.ready;
 
@@ -1172,7 +1189,7 @@ async function stopRuntime() {
 
 if (runtimeMode === "desktop" && app) {
   const win = new BrowserWindow({
-    title: `flmux skeleton v${app.version} - CEF ${app.cefVersion ?? "unknown"}`,
+    title: `flmux skeleton v${app.version} - ${app.engineName ?? "engine"} ${app.engineVersion ?? "unknown"}`,
     frame: { x: 80, y: 80, width: 1280, height: 860 },
     url: server.origin,
     titleBarStyle: "default",

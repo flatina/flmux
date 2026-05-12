@@ -223,9 +223,13 @@ export function startFlmuxServer(options: {
       }
 
       const contentType = MIME_TYPES[extname(resolved)] ?? "application/octet-stream";
-      return new Response(Bun.file(resolved), {
-        headers: { "content-type": contentType }
-      });
+      const headers: Record<string, string> = { "content-type": contentType };
+      if (contentType.startsWith("text/html")) {
+        // Workbench must never be framed by another origin (clickjacking).
+        headers["content-security-policy"] = "frame-ancestors 'none'";
+        headers["x-frame-options"] = "DENY";
+      }
+      return new Response(Bun.file(resolved), { headers });
     });
 
   if (options.rpcWebHandler) {
@@ -522,7 +526,12 @@ function handleInternalStartPageRequest(request: Request): Response {
 </body>
 </html>`,
     {
-      headers: { "content-type": "text/html; charset=utf-8" }
+      // Default browser-pane URL — must allow same-origin iframe (workbench) but not cross-origin.
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "content-security-policy": "frame-ancestors 'self'",
+        "x-frame-options": "SAMEORIGIN"
+      }
     }
   );
 }

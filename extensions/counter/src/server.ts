@@ -2,9 +2,7 @@ import { defineBunRpc } from "bunite-core";
 import { defineExtensionServer } from "@flmux/extension-api";
 import type { CounterSchema } from "./schema";
 
-// Module-level state — survives the flmux process lifetime, shared across
-// every client. RPC binding happens once per client in `onClientConnected`;
-// pane creation is decoupled from RPC handshake.
+// rpc binding is per-client; `count` is shared module state.
 let count = 0;
 
 type CounterServerRpc = ReturnType<typeof defineBunRpc<CounterSchema>>;
@@ -37,8 +35,6 @@ export default defineExtensionServer({
     });
     await ctx.channel().bindTo(rpc);
     clientRpcs.set(clientId, rpc);
-    // Push the current value so the renderer skips the initial getCount() round-trip.
-    rpc.sendProxy["count.changed"]({ count, sourcePaneId: null });
     return {
       dispose() {
         clientRpcs.delete(clientId);

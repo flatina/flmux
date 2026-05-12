@@ -65,36 +65,20 @@ Every pane receives `ExtensionPaneContext` on mount:
 - **`bus: WorkspaceBusClient`** — transient pub/sub scoped to the current workspace + current renderer client. `publish(topic, payload?)` stamps the pane's id as `sourcePaneId`; `subscribe(topic, handler)` receives events. Topic patterns: `*`, `prefix.*`, exact match. **Subscribers see their own events** — filter with `event.sourcePaneId !== myPaneId` if that matters. Cross-renderer forwarding is a deferred feature; publishes from CLI/HTTP do not reach renderer subscribers today.
 - **`workspaceStatus: WorkspaceStatusStoreClient`** — retained KV store shared with every pane in the same workspace. Non-persistent. `subscribe(key, fn)` replays the current value (or `undefined`) immediately, then emits on change; `Object.is`-equal `set` calls suppress emit. Subscriptions auto-unsubscribe when the pane disposes. Use this for transient cross-pane status (selection, cursor, hover) — `bus` is the right tool when you only need the event, `workspaceStatus` is the right tool when late mounts also need the *current value*.
 - **`state: PaneStateStore`** — `getParams/setParams/patchParams/getTitle/setTitle`. Per-pane, persisted as part of the workspace layout. External writes through `pathMount.setState` go here.
-- **`channel(name?)`** — returns a per-extension RPC channel handle (`<extId>:<name>`, default `"default"`). Bind once per channel — typically in `defineExtension({ onLoad })` for eager handshake at extension load. All panes of the extension share the binding; per-pane state is the extension's responsibility (paneId in payload). RPC is decoupled from pane lifecycle — pane creation/destruction never re-runs handshake. See "Connected-state pattern" below for the canonical wiring.
-
-### Connected-state pattern
-
-Web bootstrap order (HTTP → applyBootstrap → register) means the renderer's `onLoad` `bindTo` only resolves after the server's `onClientConnected` runs inside the register handler. So pane mounts may run while the channel handshake is still in flight. Because bunite's demuxer silently drops envelopes whose handler isn't yet registered, sends issued before `bindTo` resolves are lost. The canonical pattern:
+- **`channel(name?)`** — per-extension RPC channel handle (`<extId>:<name>`, default `"default"`). Bind once per channel in `defineExtension({ onLoad })`. All panes of the extension share the binding; per-pane state is the extension's responsibility (paneId in payload). RPC is decoupled from pane lifecycle — pane creation/destruction never re-runs handshake.
 
 ```ts
-// module-level — visible to onLoad and every pane mount
-let sharedRpc: WebviewRpc<Schema> | null = null;
-let ready: Promise<void> | null = null;
-let latestSnapshot: Snapshot | null = null;       // optional: cache one-shot pushes
+const rpc = defineWebviewRpc<Schema>({ handlers: { messages: { "snapshot": ... } } });
 
 defineExtension({
   panes: [...],
   async onLoad(ctx) {
-    const rpc = defineWebviewRpc<Schema>({ handlers: { messages: {
-      "snapshot": (next) => { latestSnapshot = next; for (const r of paneRenderers.values()) r(next); }
-    }}});
-    ready = ctx.channel().bindTo(rpc);
-    await ready;
-    sharedRpc = rpc;          // ← only set after bindTo resolves
+    await ctx.channel().bindTo(rpc);
   }
 });
 ```
 
-Two invariants extensions can rely on:
-1. `sharedRpc !== null` ⇔ rpc is fully bound and safe to use anywhere (click handler, timer, callback).
-2. Awaiting `ready` is the universal "wait until connected" — works inside pane `mount`, async helpers, late-fired callbacks.
-
-Late-mounting panes (`mount` runs after the server's one-shot push from `onClientConnected`) miss the push. Cache the latest snapshot in module scope and replay it on mount.
+bunite demuxer buffers up to 64 pre-handshake packets per channel and drains them on `bindTo`, so panes mounting before the handshake completes don't lose incoming messages. Outgoing sends require `bindTo` to have been *called* (transport attached); keep it the first statement of `onLoad`.
 
 ## Tab-header menu
 

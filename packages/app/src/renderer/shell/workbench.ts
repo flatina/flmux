@@ -24,6 +24,7 @@ import { createTerminalHost } from "../terminalHost";
 import {
   createWorkspaceBus,
   createWorkspaceStatusStore,
+  isSafeBrowserPaneUrl,
   type WorkspaceStatusStore,
   PLACEHOLDER_PANE_KIND,
   type PaneWorkspaceContext,
@@ -799,13 +800,12 @@ export class FlmuxWorkbench {
     if (!trimmed) {
       return null;
     }
-    if (trimmed.includes("://")) {
-      return trimmed;
-    }
-    if (trimmed.startsWith("/")) {
-      return `${this.config.appOrigin}${trimmed}`;
-    }
-    return `${prefersHttpScheme(trimmed) ? "http" : "https"}://${trimmed}`;
+    const resolved = trimmed.includes("://")
+      ? trimmed
+      : trimmed.startsWith("/")
+        ? `${this.config.appOrigin}${trimmed}`
+        : `${prefersHttpScheme(trimmed) ? "http" : "https"}://${trimmed}`;
+    return isSafeBrowserPaneUrl(resolved) ? resolved : null;
   }
 
   private createWorkspaceRecord(workspaceId: string): WorkspaceRecord {

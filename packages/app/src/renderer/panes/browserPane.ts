@@ -70,6 +70,13 @@ export class BrowserPaneRenderer implements IContentRenderer {
 
       this.deps.onUrlChange(this.paneId, this.currentUrl);
     }) as EventListener);
+
+    this.webview.addEventListener("did-fail-load", ((event: CustomEvent<{ url: string; reason?: string }>) => {
+      console.warn(`[browser pane] blocked navigation to '${event.detail.url}' (${event.detail.reason ?? "unknown"})`);
+      if (this.urlInput) {
+        this.urlInput.value = this.currentUrl;
+      }
+    }) as EventListener);
   }
 
   update(event: PanelUpdateEvent<BrowserPaneParams>) {

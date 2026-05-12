@@ -1246,10 +1246,22 @@ export function normalizeBrowserUrl(
   }
 
   if (trimmed.includes("://")) {
-    return trimmed;
+    return isSafeBrowserPaneUrl(trimmed) ? trimmed : `${nextOrigin}${defaultBrowserPath}`;
   }
 
   return `${nextOrigin}${defaultBrowserPath}`;
+}
+
+// Browser panes load arbitrary user-supplied URLs into iframes inside the
+// workbench origin. `javascript:` / `data:` etc. would execute in that origin
+// and reach ShellModelAPI; restrict to http(s).
+export function isSafeBrowserPaneUrl(value: string): boolean {
+  try {
+    const scheme = new URL(value).protocol;
+    return scheme === "http:" || scheme === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function humanizePaneKind(kind: string): string {

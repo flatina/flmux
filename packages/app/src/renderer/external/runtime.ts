@@ -18,7 +18,6 @@ import {
   adaptExtensionPanePathMount,
   adaptExtensionPersistence
 } from "../../shared/extensionPaneAdapter";
-import { channelForExtension } from "./extensionChannelRegistry";
 import { setPaneHeaderMenu } from "./paneTabMenuRegistry";
 
 export function createExternalPaneDescriptor(extensionId: string, options: ExtensionPaneDefinition): PaneDescriptor {
@@ -90,7 +89,6 @@ function createExternalPaneContext(
       }
     },
     state,
-    channel: (name) => channelForExtension(extensionId, name),
     setHeaderMenu: (menu) => setPaneHeaderMenu(paneId, menu)
   };
 }

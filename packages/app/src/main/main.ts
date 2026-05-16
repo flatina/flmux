@@ -3,15 +3,12 @@ import { delimiter, dirname, resolve, sep } from "node:path";
 import {
   BrowserWindow,
   AppRuntime,
-  acquireSingleInstanceLock,
-  defineBunRpc,
-  createRpcTransportDemuxer,
-  createWebSocketTransport,
-  type RpcTransportDemuxer,
-  type WebSocketLike
+  acquireSingleInstanceLock
 } from "bunite-core";
+import type { Connection } from "bunite-core/rpc";
 import type { SequencedShellCoreEvent, ShellModelAPI } from "@flmux/core/shell";
-import type { FlmuxRendererBridgeSchema, FlmuxSessionSaveLayouts } from "../shared/rendererBridge";
+import { shellCap, type FlmuxSessionSaveLayouts } from "../shared/rendererBridge";
+import { createShellImpl } from "./shellImpl";
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
 import { ClientRegistry } from "./clientRegistry";
 import { createSessionStore } from "./sessionStore";
@@ -25,7 +22,6 @@ import { createWebModeUserAuthorityRegistry, type WebModeUserAuthorityRegistry }
 import { startFlmuxServer } from "./server";
 import { forwardTerminalEventToSubscribers } from "./terminalEventForwarding";
 import { createTerminalService } from "./terminal-service";
-import { createFlmuxHostRequestHandlers } from "./hostRequests";
 import {
   createFlmuxWebModeAuthorizer,
   type FlmuxAuthorizationContext,
@@ -42,7 +38,11 @@ import { FLMUX_APP_VERSION } from "../version";
 import { PtydLockFile } from "@flmux/core/terminal/ptyd/lockFile";
 import { callJsonRpcIpc } from "@flmux/core/terminal/ptyd/jsonRpcIpc";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
-import { discoverConfiguredLocalExtensions, resolveConfiguredLocalExtensionsRootDir } from "./localExtensions";
+import {
+  discoverConfiguredLocalExtensions,
+  resolveConfiguredLocalExtensionsRootDir,
+  createLocalExtensionLoadEntries
+} from "./localExtensions";
 import type {
   ExtensionServerClientInstance,
   ExtensionServerDefinition,
@@ -145,7 +145,7 @@ prependFlmuxBinToPath(flmuxPaths.binDir);
 const app =
   runtimeMode === "desktop"
     ? (() => {
-        process.env.BUNITE_ENGINE_DIR ??= resolve(installRoot, "dist/cef");
+        process.env.BUNITE_CEF_DIR ??= resolve(installRoot, "dist/cef");
         return new AppRuntime({
           logLevel: "info",
           userDataDir: flmuxPaths.cefUserDataDir
@@ -160,12 +160,11 @@ const clientRegistry = new ClientRegistry(
 );
 const terminalService = createTerminalService();
 const sessionStore = runtimeMode === "desktop" ? createSessionStore({ filePath: flmuxPaths.desktopSessionFile }) : null;
-// paneId → set of subscribed viewIds. Terminal events fan out to every
-// live subscriber so multiple tabs of the same user can share a pane
-// (device handoff: desktop tab stays open while mobile attaches).
-// Disconnected viewIds are swept by `releaseView`; stale entries that
-// slip through are lazily skipped by the forwarder.
-const paneSubscribers = new Map<string, Set<number>>();
+// paneId → set of stream emit callbacks (one per `shell.terminalEvents`
+// stream consumer). Terminal events fan out to every emitter so multiple
+// tabs of the same user can share a pane. Stream abort removes the emitter
+// from the Set; `pane.removed` clears the whole entry.
+const paneEmitters = new Map<string, Set<(event: TerminalRuntimeEvent) => void>>();
 const localExtensions = await discoverConfiguredLocalExtensions(localExtensionsRootDir);
 
 const knownExtensionIds = new Set(localExtensions.map((ext) => ext.id));
@@ -250,8 +249,15 @@ const extensionClientBindPromises = new Map<string, Promise<void>>();
 // pane-lifecycle bookkeeping only.
 const paneServerInstances = new Map<string, ExtensionServerPaneInstance>();
 const paneKinds = new Map<string, string>();
-const clientIdToDemux = new Map<string, RpcTransportDemuxer>();
-const webViewIdToDemux = new Map<number, RpcTransportDemuxer>();
+// clientId → live bunite Connection for that client. Extensions serve their
+// caps on this Connection in `onClientConnected`; flmux owns the
+// `flmux.shell` registration. Set at register-time, deleted on disconnect.
+const clientIdToConnection = new Map<string, Connection>();
+// Pre-register viewId → Connection map. Populated when a WS opens (web) or
+// the desktop view is constructed; consumed by `registerClient` to bind
+// `clientIdToConnection`. Desktop's viewId is `win.webviewId`; web mints
+// sequentially.
+const viewIdToConnection = new Map<number, Connection>();
 
 function findExtensionIdForPaneKind(kind: string): string | undefined {
   return localExtensions.find((ext) => ext.runtimeManifest.panes?.some((p) => p.kind === kind))?.id;
@@ -271,7 +277,7 @@ function clientInstanceKey(extId: string, clientId: string) {
  * (no authorizer) grants through, same as preload/WS trust.
  *
  * Returns null when the pane→authority mapping isn't established yet
- * (racing `clientIdToDemux` writes); caller warns and retries.
+ * (racing `clientIdToConnection` writes); caller warns and retries.
  */
 function createExtensionShellClient(paneId: string | null, clientId: string): ShellClientImport | null {
   const authority = paneId ? paneIdToAuthority.get(paneId) : resolveAuthorityForClient(clientId);
@@ -338,12 +344,10 @@ function createExtensionShellClient(paneId: string | null, clientId: string): Sh
  * (extension × client). Idempotent: stores a bind promise so concurrent
  * pane-level dispatch awaits the same handshake. Per-extension `onInit`
  * promise is awaited first; init failure cascades to skipping this attach.
- */
-/**
- * Attach extension server to a client — fires `onClientConnected` once per
- * (extension × client). The bind promise is cached only when the hook is
- * actually invoked; early returns (no demux/shell/dataDir) leave the cache
- * empty so a later retry can succeed.
+ *
+ * Extensions wire RPC via `ctx.connection.serve(extCap, impl)` inside
+ * `onClientConnected`. flmux owns the Connection lifecycle; extensions own
+ * their cap registration via the returned instance's `dispose`.
  */
 function attachExtensionServer(extId: string, clientId: string): Promise<void> {
   const key = clientInstanceKey(extId, clientId);
@@ -352,8 +356,8 @@ function attachExtensionServer(extId: string, clientId: string): Promise<void> {
   const initPromise = extensionServerInits.get(extId);
   const server = extensionServers.get(extId);
   if (!server?.onClientConnected) return Promise.resolve();
-  const demux = clientIdToDemux.get(clientId);
-  if (!demux) return Promise.resolve();
+  const connection = clientIdToConnection.get(clientId);
+  if (!connection) return Promise.resolve();
   const shell = createExtensionShellClient(null, clientId);
   if (!shell) {
     console.warn(
@@ -369,25 +373,15 @@ function attachExtensionServer(extId: string, clientId: string): Promise<void> {
   let promise!: Promise<void>;
   promise = (async () => {
     if (initPromise) await initPromise;
-    // Generation guard: `onInit` may have failed and deleted the entry, or
-    // a detach during init removed the bind slot. Bail before invoking the
-    // hook on stale state.
     if (
       extensionServers.get(extId) !== server ||
       extensionClientBindPromises.get(key) !== promise ||
-      clientIdToDemux.get(clientId) !== demux
+      clientIdToConnection.get(clientId) !== connection
     ) {
       return;
     }
     try {
-      const inst = await server.onClientConnected!(clientId, {
-        dataDir,
-        shell,
-        channel: (name = "default") => demux.channel(`${extId}:${name}`)
-      });
-      // Cancellation guard: if `detachExtensionServer` ran while we were
-      // awaiting (client disconnect mid-bind), bind promise was deleted.
-      // Drop the new instance instead of stranding it.
+      const inst = await server.onClientConnected!(clientId, { dataDir, shell, connection });
       if (extensionClientBindPromises.get(key) !== promise) {
         try {
           inst?.dispose?.();
@@ -434,7 +428,7 @@ async function attachExtensionServerPane(paneId: string, kind: string, clientId:
   const extId = findExtensionIdForPaneKind(kind);
   if (!extId) return;
   await attachExtensionServer(extId, clientId);
-  if (!clientIdToDemux.has(clientId)) return;
+  if (!clientIdToConnection.has(clientId)) return;
   const server = extensionServers.get(extId);
   if (!server?.onPaneConnected) return;
   const shell = createExtensionShellClient(paneId, clientId);
@@ -445,7 +439,7 @@ async function attachExtensionServerPane(paneId: string, kind: string, clientId:
   if (paneServerInstances.has(key)) return;
   try {
     const inst = await server.onPaneConnected(paneId, clientId, { shell, dataDir });
-    if (!clientIdToDemux.has(clientId)) {
+    if (!clientIdToConnection.has(clientId)) {
       // Late disconnect during onPaneConnected — drop instead of stranding.
       try {
         inst?.dispose?.();
@@ -627,7 +621,7 @@ function trackPaneLifecycle(authority: ShellAuthority): () => void {
       const { paneId, snapshot } = event.payload;
       paneIdToAuthority.set(paneId, authority);
       paneKinds.set(paneId, snapshot.kind);
-      for (const [clientId] of clientIdToDemux) {
+      for (const [clientId] of clientIdToConnection) {
         if (resolveAuthorityForClient(clientId) === authority) {
           void attachExtensionServerPane(paneId, snapshot.kind, clientId);
         }
@@ -637,7 +631,7 @@ function trackPaneLifecycle(authority: ShellAuthority): () => void {
       paneIdToAuthority.delete(paneId);
       const kind = paneKinds.get(paneId);
       if (kind) {
-        for (const [clientId] of clientIdToDemux) {
+        for (const [clientId] of clientIdToConnection) {
           detachExtensionServerPane(paneId, kind, clientId);
         }
         paneKinds.delete(paneId);
@@ -683,7 +677,7 @@ function detachAllPanesForClient(clientId: string) {
   for (const [extId] of extensionServers) {
     void detachExtensionServer(extId, clientId);
   }
-  clientIdToDemux.delete(clientId);
+  clientIdToConnection.delete(clientId);
 }
 
 function scopeMatches(event: SequencedShellCoreEvent, clientId: string): boolean {
@@ -740,87 +734,64 @@ function resolveAuthorityForViewId(viewId: number, hints?: { clientId?: string }
  * the window between `/api/shell/bootstrap` response and the browser's WS
  * `flmux.client.register` call. Idempotent.
  */
-function ensureBufferSubscriber(clientId: string) {
+/**
+ * Subscribe to the client's authority once, fan events into the ring buffer
+ * + every live `shell.events()` stream emitter for this client. Installed
+ * at clientId creation (HTTP bootstrap for web, desktop authority creation
+ * for desktop) and lives until the client is evicted.
+ */
+function installAuthoritySubscriber(clientId: string) {
   const authority = resolveAuthorityForClient(clientId);
   if (!authority) return;
   const state = clientRegistry.ensure(clientId);
-  if (state.unsubscribeBuffer) return;
+  if (state.unsubscribeAuthoritySub) return;
   const unsub = authority.subscribe((event) => {
     if (!scopeMatches(event, clientId)) return;
     if (!isEventAllowedForClient(webModeAuthorizer, clientId, event)) return;
-    clientRegistry.pushBuffered(clientId, event);
+    clientRegistry.recordEvent(clientId, event);
   });
-  clientRegistry.setBufferSubscriber(clientId, unsub);
+  clientRegistry.setAuthoritySubscriber(clientId, unsub);
 }
 
 /**
- * Bind a connected transport (desktop preload or web ws client) to an
- * client's live event forwarder. The buffer subscriber is installed
- * separately via `ensureBufferSubscriber` at client creation. On
- * reconnect this is called again — the live forwarder is replaced, the
- * buffer subscriber is untouched.
+ * Bind a connected transport (desktop preload or web ws client) to its
+ * client. Cancels any pending grace timer. The authority subscriber stays
+ * installed across disconnects so the buffer keeps filling for replay.
  */
-function installClientForwarder(clientId: string, viewId: number) {
-  const authority = resolveAuthorityForClient(clientId);
-  if (!authority) return;
-  const client = clientRegistry.resolveByViewId(viewId);
-  if (!client) return;
-
-  ensureBufferSubscriber(clientId);
-
-  const unsubLive = authority.subscribe((event) => {
-    if (!scopeMatches(event, clientId)) return;
-    if (!isEventAllowedForClient(webModeAuthorizer, clientId, event)) return;
-    client.bridge?.sendProxy["shellCore.event"](event);
-  });
-  clientRegistry.attachLive(clientId, viewId, unsubLive);
+function bindClientTransport(clientId: string, viewId: number, connection: Connection) {
+  installAuthoritySubscriber(clientId);
+  clientRegistry.attachLive(clientId, viewId);
   viewIdToClientId.set(viewId, clientId);
+
+  const previousConnection = clientIdToConnection.get(clientId);
+  if (previousConnection && previousConnection !== connection) {
+    // Reconnect (cookie continuity, tab reuse): drop extension server
+    // instances pinned to the old connection before wiring the new one.
+    detachAllPanesForClient(clientId);
+  }
+  clientIdToConnection.set(clientId, connection);
+  retroattachAllPanesForClient(clientId);
 }
 
 /**
- * Web-mode client binding: replay any buffered events the client missed
- * between bootstrap and register, then install the live forwarder. Returns
- * `"rebootstrap-required"` when the client's `lastAppliedSeq` is older than
- * the ring buffer's oldest seq — the client drops local state and re-POSTs
- * `/api/shell/bootstrap`.
+ * Web-mode client binding: validate the client's `lastAppliedSeq` against
+ * the ring buffer. Returns `"rebootstrap-required"` if the buffer rolled
+ * past — the client drops local state and re-POSTs `/api/shell/bootstrap`.
+ * Renderer replays missed events via the `shell.events()` stream (drains
+ * buffer on open) rather than through a separate replay channel.
  */
 function bindWebClient(
   viewId: number,
-  binding: { clientId: string; lastAppliedSeq: number }
+  binding: { clientId: string; lastAppliedSeq: number },
+  connection: Connection
 ): "rebootstrap-required" | void {
-  const replayed = clientRegistry.replayAfter(binding.clientId, binding.lastAppliedSeq);
-  if (replayed === null) {
-    // Buffer rolled past the client's seq — the stale client entry is
-    // useless now; the client will mint a fresh id on re-bootstrap. Drop
-    // the clientId→user mapping too so the entry doesn't linger.
+  const replay = clientRegistry.replayAfter(binding.clientId, binding.lastAppliedSeq);
+  if (replay === null) {
     clientRegistry.evict(binding.clientId);
     clientIdToUserId.delete(binding.clientId);
     return "rebootstrap-required";
   }
-  const client = clientRegistry.resolveRendererByViewId(viewId);
-  if (client) {
-    for (const event of replayed) {
-      client.bridge.sendProxy["shellCore.event"](event);
-    }
-  }
-  installClientForwarder(binding.clientId, viewId);
-
-  // Tie the WS demux (stored at open-time under viewId) to the now-known
-  // clientId, then open channels for every pane the client's
-  // authority already owns. If the clientId is being rebound to a fresh
-  // socket (grace-period reconnect, tab reuse), drop every server instance
-  // still pinned to the old demux first — otherwise it stays bound to the
-  // dead transport and the eventual old-socket `close` would tear down the
-  // new binding via `detachAllPanesForClient`.
-  const demux = webViewIdToDemux.get(viewId);
-  if (demux) {
-    const previousDemux = clientIdToDemux.get(binding.clientId);
-    if (previousDemux && previousDemux !== demux) {
-      detachAllPanesForClient(binding.clientId);
-    }
-    clientIdToDemux.set(binding.clientId, demux);
-    retroattachAllPanesForClient(binding.clientId);
-  }
+  bindClientTransport(binding.clientId, viewId, connection);
 }
 
 function mintWebClientId(): string {
@@ -861,7 +832,7 @@ function pushLayoutForViewId(viewId: number, layouts: FlmuxSessionSaveLayouts) {
 
 function releaseView(viewId: number) {
   const clientId = viewIdToClientId.get(viewId);
-  webViewIdToDemux.delete(viewId);
+  viewIdToConnection.delete(viewId);
   if (clientId) {
     viewIdToClientId.delete(viewId);
     // Skip teardown if clientId was rebound to a newer viewId
@@ -869,16 +840,11 @@ function releaseView(viewId: number) {
     const current = clientRegistry.get(clientId);
     if (current && current.viewId !== null && current.viewId !== viewId) {
       clientRegistry.detachRenderer(viewId);
-      for (const [paneId, subscribers] of paneSubscribers.entries()) {
-        if (subscribers.delete(viewId) && subscribers.size === 0) {
-          paneSubscribers.delete(paneId);
-        }
-      }
       return;
     }
-    // Tear down extension channels for this client immediately —
-    // connection is gone, server-side rpcs must release their pane state
-    // before the registry's grace eviction fires.
+    // Tear down extension server instances for this client immediately —
+    // connection is gone, server-side state must release before the
+    // registry's grace eviction fires.
     detachAllPanesForClient(clientId);
     clientRegistry.markDisconnected(clientId, (state) => {
       // Order matters: read userId, delete the entry, THEN schedule.
@@ -890,11 +856,8 @@ function releaseView(viewId: number) {
       if (userId) maybeScheduleAuthorityEviction(userId);
     });
   }
-  for (const [paneId, subscribers] of paneSubscribers.entries()) {
-    if (subscribers.delete(viewId) && subscribers.size === 0) {
-      paneSubscribers.delete(paneId);
-    }
-  }
+  // paneEmitters self-clean via stream abort when the underlying
+  // connection closes; nothing else to wipe here.
   clientRegistry.detachRenderer(viewId);
 }
 
@@ -933,132 +896,64 @@ const resolveShellModelRouter = (viewId: number, hints?: { clientId?: string }):
   return resolveAuthorityForViewId(viewId, hints)?.router ?? null;
 };
 
-const rendererRpc = defineBunRpc<FlmuxRendererBridgeSchema>({
-  handlers: {
-    requests: createFlmuxHostRequestHandlers({
-      mode: runtimeMode,
-      getAppOrigin: () => serverOrigin,
-      getProjectDir: () => projectDir,
-      getAuthorityClientId: () => desktopAuthorityClientId,
-      getCallerViewId: requireDesktopViewId,
-      getCallerClientId: (viewId) => viewIdToClientId.get(viewId) ?? null,
-      paneSubscribers,
-      resolveShellModel,
-      resolveShellModelRouter,
-      localExtensions,
-      desktopAuthority,
-      onClientRegister: (viewId) => {
-        // Desktop CEF is a single client; its viewId binds to the
-        // stable "local" identity for the life of the process. Web clients
-        // reach the separate handler below with a `binding` arg — the
-        // desktop preload never passes one.
-        installClientForwarder(DESKTOP_CLIENT_ID, viewId);
+function buildShellConfig() {
+  return {
+    mode: runtimeMode,
+    appOrigin: serverOrigin,
+    projectDir,
+    authorityClientId: desktopAuthorityClientId,
+    localExtensions: createLocalExtensionLoadEntries(localExtensions, serverOrigin),
+    devMode: process.env.FLMUX_DEV_MODE === "1"
+  };
+}
+
+function setupConnection(conn: Connection, viewId: number, mode: "desktop" | "web") {
+  viewIdToConnection.set(viewId, conn);
+  conn.serve(
+    shellCap,
+    createShellImpl({
+      viewId,
+      getClientId: () => viewIdToClientId.get(viewId) ?? null,
+      paneEmitters,
+      resolveShellModel: (hints) => resolveAuthorityForViewId(viewId, hints)?.shellModel ?? null,
+      resolveShellModelRouter: (hints) => resolveAuthorityForViewId(viewId, hints)?.router ?? null,
+      canSubscribeTerminalForPane: (paneId) => {
+        const callerAuthority = resolveAuthorityForViewId(viewId);
+        if (!callerAuthority) return false;
+        const paneAuthority = paneIdToAuthority.get(paneId);
+        return paneAuthority === callerAuthority;
       },
-      pushLayout: pushLayoutForViewId
-    })
-  }
-});
-
-// Web RPC handler — per-connection assembles (ws pipe → demuxer → rpc on
-// "default" channel). demux is retained on each client so extension panes
-// can later mint their own channels off the same connection.
-type WebClient = {
-  ws: WebSocketLike;
-  rpc: ReturnType<typeof defineBunRpc<FlmuxRendererBridgeSchema>>;
-  demux: RpcTransportDemuxer;
-};
-
-const webConnections = new Map<
-  WebSocketLike,
-  { client: WebClient; receive: (raw: ArrayBuffer | Uint8Array) => void }
->();
-
-const rendererWebHandler = {
-  open(ws: WebSocketLike) {
-    const pipe = createWebSocketTransport(ws);
-    const demux = createRpcTransportDemuxer(pipe.transport);
-    const rpc = defineBunRpc<FlmuxRendererBridgeSchema>({ handlers: {} });
-    // Fire-and-forget: the WS pipe is already up; the HELLO handshake
-    // resolves once the renderer binds its own side of the channel.
-    // Nothing on the server path needs to wait for that resolution —
-    // per-connection rpc is receive-side and main doesn't kick off
-    // requests before the browser registers its handler.
-    void demux.channel("default").bindTo(rpc);
-    const client: WebClient = { ws, rpc, demux };
-    webConnections.set(ws, { client, receive: pipe.receive });
-    rendererWebHandler.onWebClientConnected?.(client);
-  },
-  message(ws: WebSocketLike, raw: string | Buffer | ArrayBuffer | Uint8Array) {
-    if (typeof raw === "string") return;
-    const entry = webConnections.get(ws);
-    if (!entry) return;
-    entry.receive(raw instanceof Buffer ? new Uint8Array(raw) : raw);
-  },
-  close(ws: WebSocketLike) {
-    const entry = webConnections.get(ws);
-    if (!entry) return;
-    // onWebClientDisconnected → releaseView → detachAllPanesForClient
-    // runs extension server instance dispose() calls which may send final
-    // messages through per-pane channels. Those must complete before the
-    // default-channel rpc + demuxer tear down, so disconnect first, tear
-    // down transports after.
-    webConnections.delete(ws);
-    rendererWebHandler.onWebClientDisconnected?.(entry.client);
-    entry.client.rpc.dispose();
-    entry.client.demux.dispose();
-  },
-  onWebClientConnected: undefined as ((client: WebClient) => void) | undefined,
-  onWebClientDisconnected: undefined as ((client: WebClient) => void) | undefined
-};
-
-let nextWebViewId = 1_000_000;
-const webViewIds = new WeakMap<WebClient, number>();
-
-rendererWebHandler.onWebClientConnected = (client) => {
-  const viewId = nextWebViewId++;
-  webViewIds.set(client, viewId);
-  webViewIdToDemux.set(viewId, client.demux);
-  client.rpc.setRequestHandler(
-    createFlmuxHostRequestHandlers({
-      mode: runtimeMode,
-      getAppOrigin: () => serverOrigin,
-      getProjectDir: () => projectDir,
-      // Web clients discover their *own* authority's clientId via
-      // /api/clients — this field is historically the "well-known authority
-      // clientId" for the preload-RPC transport. In web mode the value is
-      // user-specific and not known at WS-open time, so we expose null and
-      // let the browser read it through the auth-scoped /api/clients route.
-      getAuthorityClientId: () => null,
-      getCallerViewId: () => viewId,
-      getCallerClientId: (id) => viewIdToClientId.get(id) ?? null,
-      paneSubscribers,
-      resolveShellModel,
-      resolveShellModelRouter,
-      localExtensions,
+      buildConfig: buildShellConfig,
       desktopAuthority,
-      onClientRegister: (registeredViewId, binding) => {
+      onClientRegister: (binding) => {
+        if (mode === "desktop") {
+          // Desktop CEF is a single client; viewId binds to the stable
+          // "local" identity. Web clients always pass a binding.
+          bindClientTransport(DESKTOP_CLIENT_ID, viewId, conn);
+          return;
+        }
         if (!binding) {
           throw new Error(
-            "flmux.client.register: web clients must pass {clientId, lastAppliedSeq} " +
+            "shell.registerClient: web clients must pass {clientId, lastAppliedSeq} " +
               "obtained from /api/shell/bootstrap"
           );
         }
-        return bindWebClient(registeredViewId, binding);
+        return bindWebClient(viewId, binding, conn);
       },
-      // Per-user sessionStore persistence (B2 Phase 2): the user's
-      // authority owns its own store at `<authDir>/sessions/<userId>/session.json`
-      // — main resolves the right one from the caller's viewId.
-      pushLayout: pushLayoutForViewId
+      subscribeShellEvents: (clientId, sinceSeq, emit) => {
+        // Atomic drain + subscribe: bunite stream emit is sync, and
+        // recordEvent fans buffer→emitters within the same JS tick, so
+        // there's no race window between snapshot and live registration.
+        const replay = clientRegistry.replayAfter(clientId, sinceSeq);
+        if (replay !== null) for (const event of replay) emit(event);
+        return clientRegistry.subscribeLive(clientId, emit);
+      },
+      pushLayout: (layouts) => pushLayoutForViewId(viewId, layouts)
     })
   );
-  clientRegistry.attachRenderer(viewId, client.rpc);
-};
+}
 
-rendererWebHandler.onWebClientDisconnected = (client) => {
-  const viewId = webViewIds.get(client);
-  if (viewId == null) return;
-  releaseView(viewId);
-};
+let nextWebViewId = 1_000_000;
 
 const portResolution = resolveFlmuxServerPort({
   configFile: flmuxPaths.appConfigFile
@@ -1111,7 +1006,7 @@ const server = startFlmuxServer({
         const clientId = canReuse ? existingClientId! : mintWebClientId();
         if (!canReuse) {
           clientIdToUserId.set(clientId, userId);
-          ensureBufferSubscriber(clientId);
+          installAuthoritySubscriber(clientId);
         }
         clientRegistry.armGraceTimer(clientId, (state) => {
           // Same read→delete→schedule ordering as releaseView's onEvict.
@@ -1128,7 +1023,14 @@ const server = startFlmuxServer({
       }
     : undefined,
   authorizer: webModeAuthorizer ?? undefined,
-  rpcWebHandler: rendererWebHandler
+  onRpcConnection:
+    runtimeMode === "web"
+      ? (conn) => {
+          const viewId = nextWebViewId++;
+          conn.onClose(() => releaseView(viewId));
+          setupConnection(conn, viewId, "web");
+        }
+      : undefined
 });
 serverOrigin = server.origin;
 // FLMUX_ORIGIN parity: only known after server.listen, so set on env now —
@@ -1163,11 +1065,7 @@ terminalService.subscribe((event: TerminalRuntimeEvent) => {
   if (event.paneId) {
     paneIdToAuthority.get(event.paneId)?.applyTerminalEvent(event);
   }
-  forwardTerminalEventToSubscribers({
-    event,
-    paneSubscribers,
-    clientRegistry
-  });
+  forwardTerminalEventToSubscribers({ event, paneEmitters });
 });
 
 async function stopRuntime() {
@@ -1194,27 +1092,22 @@ if (runtimeMode === "desktop" && app) {
     url: server.origin,
     titleBarStyle: "default",
     hidden: hiddenWindow,
-    preloadOrigins: [server.origin]
+    preloadOrigins: [server.origin],
+    serve: (conn) => {
+      // `serve` may run synchronously inside BrowserWindow's constructor —
+      // `win.webviewId` isn't assigned yet at that point. Defer to the next
+      // microtask so the post-constructor assignment lands first.
+      queueMicrotask(() => {
+        const viewId = win.webviewId;
+        desktopViewId = viewId;
+        conn.onClose(() => releaseView(viewId));
+        setupConnection(conn, viewId, "desktop");
+      });
+    }
   });
-
-  // Wrap the preload pipe in a demuxer so the "default" channel carries
-  // ShellModelAPI and extension channels can mount alongside (one channel
-  // per extension pane, keyed by paneId).
-  const desktopDemux = createRpcTransportDemuxer(win.view.transport);
-  // Fire-and-forget bindTo — the CEF renderer comes up later and its
-  // `defineWebviewRpc(...).bindTo(...)` call completes the handshake.
-  void desktopDemux.channel("default").bindTo(rendererRpc);
-  clientIdToDemux.set(DESKTOP_CLIENT_ID, desktopDemux);
-  // Session-restored panes fire pane.added before this point — pick them up.
-  retroattachAllPanesForClient(DESKTOP_CLIENT_ID);
-
-  desktopViewId = win.webviewId;
-  clientRegistry.attachRenderer(win.webviewId, rendererRpc);
 
   win.on("close", () => {
     releaseView(win.webviewId);
-    // Fire-and-forget: CEF native teardown keeps the process alive long
-    // enough for the daemon-stop IPC (typically <100ms) to complete.
     void stopRuntime();
   });
   app.run();

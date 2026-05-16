@@ -1,13 +1,14 @@
 import type { FitAddon } from "@xterm/addon-fit";
 import type { Terminal as XtermTerminal } from "@xterm/xterm";
 import type { DockviewPanelApi, GroupPanelPartInitParameters, IContentRenderer } from "dockview-core";
-import type { TerminalHostAPI } from "../terminalHost";
 import type { ShellModelAPI } from "@flmux/core/shell/types";
 import type { TerminalCreateResult, TerminalRuntimeEvent, TerminalWriteResult } from "@flmux/core/terminal/types";
 
 interface TerminalPaneRendererDependencies {
   shellModel: ShellModelAPI;
-  terminalEvents: Pick<TerminalHostAPI, "subscribe">;
+  /** Opens a server-side `shell.terminalEvents({paneId})` stream for the
+   * given pane and routes events to `handler`. Returns unsubscribe. */
+  subscribeTerminalEvents(paneId: string, handler: (event: TerminalRuntimeEvent) => void): () => void;
 }
 
 type TerminalPaneParams = {
@@ -114,7 +115,7 @@ export class TerminalPaneRenderer implements IContentRenderer {
     this.element.innerHTML = `<div class="terminal-panel__viewport" data-role="viewport"></div>`;
     this.viewportEl = this.element.querySelector<HTMLElement>('[data-role="viewport"]')!;
 
-    this.unsubscribeEvent = this.deps.terminalEvents.subscribe((event) => {
+    this.unsubscribeEvent = this.deps.subscribeTerminalEvents(this.paneId, (event) => {
       this.handleTerminalEvent(event);
     });
 

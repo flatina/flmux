@@ -32,7 +32,7 @@ function createBuiltinPaneDescriptors(deps: BuiltinPaneDescriptorDependencies): 
       createRenderer: ({ runtime }) =>
         new TerminalPaneRenderer({
           shellModel: runtime.shellModel,
-          terminalEvents: runtime.terminalHost
+          subscribeTerminalEvents: runtime.subscribeTerminalEvents
         }),
       lifecycle: {
         createParams: ({ input }) => ({

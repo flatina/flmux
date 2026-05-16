@@ -200,10 +200,7 @@ export function createTestPaneContext(options: TestPaneContextOptions = {}): Ext
     bus,
     workspaceStatus,
     state,
-    setHeaderMenu: () => {},
-    channel: () => {
-      throw new Error("test pane context channel() not wired — provide a custom ctx if your test exercises RPC");
-    }
+    setHeaderMenu: () => {}
   };
 }
 

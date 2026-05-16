@@ -67,7 +67,7 @@ describe("external pane runtime", () => {
       runtime: {
         shellModel,
         browserPanelTemplate: null as never,
-        terminalHost: null as never,
+        subscribeTerminalEvents: () => () => {},
         workspaceStatus: createWorkspaceStatusStore(),
         normalizeBrowserUrl: () => null,
         onBrowserUrlChange() {}
@@ -183,7 +183,7 @@ describe("external pane runtime", () => {
           }
         },
         browserPanelTemplate: null as never,
-        terminalHost: null as never,
+        subscribeTerminalEvents: () => () => {},
         workspaceStatus: createWorkspaceStatusStore(),
         normalizeBrowserUrl: () => null,
         onBrowserUrlChange() {}
@@ -321,7 +321,7 @@ describe("external pane runtime", () => {
           pathCall: async () => ({ ok: true, value: null })
         },
         browserPanelTemplate: null as never,
-        terminalHost: null as never,
+        subscribeTerminalEvents: () => () => {},
         workspaceStatus: createWorkspaceStatusStore(),
         normalizeBrowserUrl: () => null,
         onBrowserUrlChange() {}
@@ -368,7 +368,7 @@ describe("external pane runtime", () => {
           pathCall: async () => ({ ok: true, value: null })
         },
         browserPanelTemplate: null as never,
-        terminalHost: null as never,
+        subscribeTerminalEvents: () => () => {},
         workspaceStatus: sharedStatus,
         normalizeBrowserUrl: () => null,
         onBrowserUrlChange() {}
@@ -421,7 +421,7 @@ describe("external pane runtime", () => {
           pathCall: async () => ({ ok: true, value: null })
         },
         browserPanelTemplate: null as never,
-        terminalHost: null as never,
+        subscribeTerminalEvents: () => () => {},
         workspaceStatus: sharedStatus,
         normalizeBrowserUrl: () => null,
         onBrowserUrlChange() {}

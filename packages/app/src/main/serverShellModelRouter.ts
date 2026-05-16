@@ -19,16 +19,11 @@ export function createServerShellModelRouter(options: {
 
   return {
     registerClient(viewId: number, clientId: string): ClientRegistration {
-      // The clientId is supplied by the caller — web from `/api/shell/bootstrap`
-      // (cookie continuity), desktop pinned to `DESKTOP_CLIENT_ID`. We bind
-      // the viewId↔clientId pair (pulling the renderer bridge from
-      // `attachRenderer`'s pending queue) and return the same id for echo.
-      // The full record carries `bridge`, a Proxy whose get resolves every
-      // key to a function; if it crosses the preload wire msgpackr's
-      // `value.toJSON` probe succeeds, invokes toJSON as a nested RPC, and
-      // the resulting unhandled rejection crashes Bun — return only
-      // {clientId} here.
-      options.clientRegistry.bindClient(viewId, clientId);
+      // clientId is caller-supplied — web from `/api/shell/bootstrap` (cookie
+      // continuity), desktop pinned to `DESKTOP_CLIENT_ID`. This router only
+      // owns the clientId↔viewId binding; `bindClientTransport` (main.ts)
+      // wires the connection / extension serves.
+      options.clientRegistry.attachLive(clientId, viewId);
       return { clientId };
     },
 

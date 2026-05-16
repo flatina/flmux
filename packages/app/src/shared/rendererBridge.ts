@@ -1,4 +1,5 @@
-import type { RpcSchema } from "bunite-core";
+import { call, defineCap, stream } from "bunite-core/rpc";
+import type { ClientOf, ImplOf } from "bunite-core/rpc";
 import type {
   AppStatusSnapshot,
   PathCallerContext,
@@ -38,13 +39,6 @@ export interface FlmuxSessionSaveLayouts {
   innerLayouts: Record<string, unknown | null>;
 }
 
-// ── Host requests (renderer calls main) ──
-//
-// See internal docs — only `shellModel.path.*` mirrors to HTTP.
-// Other members (`flmux.*`) are preload-only; adding new RPCs defaults to
-// preload-only unless they slot into the ShellModelAPI path surface.
-//
-
 export interface FlmuxLocalExtensionLoadEntry {
   id: string;
   name: string;
@@ -70,86 +64,35 @@ export interface FlmuxRendererBootstrapConfig {
   devMode: boolean;
 }
 
-export type FlmuxHostRequests = {
-  "flmux.getConfig": {
-    params: undefined;
-    response: FlmuxRendererBootstrapConfig;
-  };
-  "flmux.client.register": {
-    params: { clientId?: string; lastAppliedSeq?: number };
-    response: ClientRegistrationResult;
-  };
-  "flmux.layout.push": {
-    params: FlmuxSessionSaveLayouts;
-    response: { ok: true };
-  };
-  "flmux.shellBootstrap": {
-    params: undefined;
-    response: FlmuxShellBootstrapResponse;
-  };
-  "shellModel.path.get": {
-    params: { path: string; caller?: PathCallerContext };
-    response: PathGetResult;
-  };
-  "shellModel.path.list": {
-    params: { path: string; caller?: PathCallerContext };
-    response: PathListResult;
-  };
-  "shellModel.path.set": {
-    params: { path: string; value: unknown; caller?: PathCallerContext };
-    response: PathSetResult;
-  };
-  "shellModel.path.call": {
-    params: { path: string; args?: Record<string, unknown>; caller?: PathCallerContext };
-    response: PathCallResult;
-  };
-};
-
-// ── Host messages (main pushes to renderer) ──
-
-export type FlmuxHostMessages = {
-  "terminal.event": TerminalRuntimeEvent;
-  "shellCore.event": SequencedShellCoreEvent;
-};
-
-// ── RPC schema ──
-
-export type FlmuxRendererBridgeSchema = {
-  bun: RpcSchema<{
-    requests: FlmuxHostRequests;
-    messages: FlmuxHostMessages;
-  }>;
-  webview: RpcSchema<Record<string, never>>;
-};
-
-// ── Host request proxy (used by renderer to call main) ──
-
-export type FlmuxHostRequestProxy = {
-  [K in keyof FlmuxHostRequests]: (
-    ...args: undefined extends FlmuxHostRequests[K]["params"]
-      ? [params?: FlmuxHostRequests[K]["params"]]
-      : [params: FlmuxHostRequests[K]["params"]]
-  ) => Promise<FlmuxHostRequests[K]["response"]>;
-};
-
-// ── Bridge interface (used by main to push messages to renderer) ──
-
-export interface FlmuxRendererBridge {
-  sendProxy: {
-    "terminal.event": (payload: TerminalRuntimeEvent) => void;
-    "shellCore.event": (payload: SequencedShellCoreEvent) => void;
-  };
-}
-
-// ── Shared types ──
-
 export type ClientRegistrationResult = { status: "ok"; clientId: string } | { status: "rebootstrap-required" };
 
+// Renderer's view of flmux. Same connection carries extension caps as siblings.
+// `caller` is injected by trusted transports (preload + authenticated WS); HTTP
+// callers cannot forge it — implicit-current narrowing handles them at the
+// model layer.
+export const shellCap = defineCap("flmux.shell", {
+  get: call<{ path: string; caller?: PathCallerContext }, PathGetResult>(),
+  list: call<{ path: string; caller?: PathCallerContext }, PathListResult>(),
+  set: call<{ path: string; value: unknown; caller?: PathCallerContext }, PathSetResult>(),
+  call: call<{ path: string; args?: Record<string, unknown>; caller?: PathCallerContext }, PathCallResult>(),
+
+  events: stream<void, SequencedShellCoreEvent>(),
+  terminalEvents: stream<{ paneId: string }, TerminalRuntimeEvent>(),
+
+  bootstrap: call<void, FlmuxShellBootstrapResponse>(),
+  registerClient: call<{ clientId?: string; lastAppliedSeq?: number }, ClientRegistrationResult>(),
+  pushLayout: call<FlmuxSessionSaveLayouts, { ok: true }>(),
+  getConfig: call<void, FlmuxRendererBootstrapConfig>()
+});
+
+export type ShellCapClient = ClientOf<typeof shellCap>;
+export type ShellCapImpl = ImplOf<typeof shellCap>;
+
 // HTTP envelopes deliberately omit `caller` — only preload + post-auth WS
-// (which route through `hostRequests.ts`) are trusted to inject caller
-// context. External HTTP clients that try to forge clientId /
-// sourcePaneId via the request body would otherwise bypass the
-// implicit-current narrowing at the model layer.
+// (which route through the connection setup) are trusted to inject caller
+// context. External HTTP clients that try to forge clientId / sourcePaneId
+// via the request body would otherwise bypass the implicit-current
+// narrowing at the model layer.
 
 export interface ClientScopedPathGetInput {
   authorityClientId: string;

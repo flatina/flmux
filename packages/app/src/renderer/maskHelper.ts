@@ -1,18 +1,31 @@
+import { getConnection } from "bunite-core/rpc/renderer";
+
 type WebviewElement = HTMLElement & { _surfaceId?: number | null };
 
-declare const window: Window &
-  typeof globalThis & {
-    bunite?: { invoke: (method: string, params?: unknown) => Promise<unknown> };
-  };
-
 export function setupDropIndicatorMasks() {
-  if (!window.bunite?.invoke) return;
-  const invoke = window.bunite.invoke;
-
+  let surfaceCapPromise: ReturnType<typeof loadSurfaceCap> | null = null;
   let scheduled = false;
   let dragging = false;
 
-  function syncMasks() {
+  async function loadSurfaceCap() {
+    try {
+      const conn = await getConnection();
+      const runtime = conn.runtime();
+      return await runtime.surface();
+    } catch (error) {
+      console.warn("[flmux] surface cap unavailable; drop-indicator masks disabled", error);
+      return null;
+    }
+  }
+
+  function ensureSurface() {
+    if (!surfaceCapPromise) surfaceCapPromise = loadSurfaceCap();
+    return surfaceCapPromise;
+  }
+
+  async function syncMasks() {
+    const surface = await ensureSurface();
+    if (!surface) return;
     const dpr = window.devicePixelRatio || 1;
     const indicators = document.querySelectorAll<HTMLElement>(".dv-drop-target-anchor, .dv-drop-target-selection");
 
@@ -42,28 +55,30 @@ export function setupDropIndicatorMasks() {
         });
       }
 
-      void invoke("__bunite:surface.setMasks", { surfaceId, masks }).catch(() => {});
+      void surface.setMasks({ surfaceId, masks }).catch(() => {});
     }
   }
 
-  function clearMasks() {
+  async function clearMasks() {
+    const surface = await ensureSurface();
+    if (!surface) return;
     for (const webview of document.querySelectorAll<HTMLElement>("bunite-webview")) {
       const surfaceId = (webview as WebviewElement)._surfaceId;
       if (surfaceId == null) continue;
-      void invoke("__bunite:surface.setMasks", { surfaceId, masks: [] }).catch(() => {});
+      void surface.setMasks({ surfaceId, masks: [] }).catch(() => {});
     }
   }
 
   function endDrag() {
     dragging = false;
-    clearMasks();
+    void clearMasks();
   }
 
   document.addEventListener(
     "dragstart",
     () => {
       dragging = true;
-      syncMasks();
+      void syncMasks();
     },
     true
   );
@@ -75,7 +90,7 @@ export function setupDropIndicatorMasks() {
       scheduled = true;
       requestAnimationFrame(() => {
         scheduled = false;
-        if (dragging) syncMasks();
+        if (dragging) void syncMasks();
       });
     },
     true

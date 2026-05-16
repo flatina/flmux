@@ -2,7 +2,6 @@ import type { ExtensionDefinition } from "@flmux/extension-api";
 import type { FlmuxLocalExtensionLoadEntry } from "../../shared/rendererBridge";
 import type { PaneDescriptor } from "../shell/paneRegistry";
 import { createExternalPaneDescriptor } from "./runtime";
-import { channelForExtension } from "./extensionChannelRegistry";
 
 interface LocalExternalPaneRegistrationHost {
   registerExternalPane(descriptor: PaneDescriptor): void;
@@ -18,7 +17,7 @@ export async function registerLocalExternalPaneDescriptors(
   host: LocalExternalPaneRegistrationHost,
   enabledExtensions: FlmuxLocalExtensionLoadEntry[],
   importer: ExtensionModuleImporter = importExtensionModule
-) {
+): Promise<() => void> {
   const discovered = await loadLocalExtensionDefinitions(enabledExtensions, importer);
   const discoveredIds = new Set(discovered.map((extension) => extension.loadEntry.id));
 
@@ -44,28 +43,20 @@ export async function registerLocalExternalPaneDescriptors(
     }
   }
 
-  // Eager `onLoad` — fire-and-forget. Cannot await before workbench.start:
-  // onLoad's bindTo waits for the server-side `onClientConnected`, which only
-  // fires inside the WS register handler (= inside workbench.start). Awaiting
-  // here would deadlock. Extensions read the bound rpc lazily from
-  // module-level state set inside onLoad's bindTo continuation; pane mounts
-  // tolerate "rpc not yet ready" until then.
-  for (const extension of discovered) {
-    if (!extension.definition.onLoad) continue;
-    const extId = extension.loadEntry.id;
-    // `Promise.resolve().then(...)` — if `onLoad` throws synchronously
-    // before returning a promise, the rejection still routes to `.catch`
-    // (a bare `Promise.resolve(onLoad())` would propagate the sync throw).
-    void Promise.resolve()
-      .then(() =>
-        extension.definition.onLoad!({
-          channel: (name) => channelForExtension(extId, name)
-        })
-      )
-      .catch((error) => {
-        console.warn(`[flmux] extension '${extId}' onLoad failed`, error);
-      });
-  }
+  // Caller fires `onLoad` AFTER `registerClient` resolves — extension
+  // `bootstrap(myCap)` requires the server-side `conn.serve(myCap, impl)`
+  // (in `onClientConnected`) to have completed first.
+  return () => {
+    for (const extension of discovered) {
+      if (!extension.definition.onLoad) continue;
+      const extId = extension.loadEntry.id;
+      void Promise.resolve()
+        .then(() => extension.definition.onLoad!())
+        .catch((error) => {
+          console.warn(`[flmux] extension '${extId}' onLoad failed`, error);
+        });
+    }
+  };
 }
 
 export async function loadLocalExtensionDefinitions(

@@ -20,7 +20,6 @@ function currentDockviewTheme(): DockviewTheme {
 }
 import "../styles.css";
 import { setupDropIndicatorMasks } from "../maskHelper";
-import { createTerminalHost } from "../terminalHost";
 import {
   createWorkspaceBus,
   createWorkspaceStatusStore,
@@ -44,15 +43,16 @@ import {
   humanizePaneKind
 } from "./headerActions";
 import type {
-  FlmuxHostRequestProxy,
+  ShellCapClient,
   FlmuxRendererBootstrapConfig,
   FlmuxSessionSaveLayouts,
   FlmuxShellBootstrapResponse
 } from "../../shared/rendererBridge";
 import { getFlmuxRendererLifecyclePolicy } from "../../shared/runtimeMode";
 import { resolveTerminalCwdFromRoot } from "@flmux/core/terminal/path";
+import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
 import { createShellModelClientOverPreload } from "./shellModelClient";
-import { subscribeShellCoreEvents } from "./shellEventBus";
+import { subscribeShellCoreEvents, pushShellCoreEvent } from "./shellEventBus";
 import { buildPaneWorkspaceContext } from "./workspaceContext";
 
 type PendingPane = {
@@ -82,7 +82,6 @@ export class FlmuxWorkbench {
 
   private readonly shellEl = document.querySelector<HTMLElement>(".dockview-shell")!;
   private readonly browserPanelTemplate = document.getElementById("browser-panel-tpl") as HTMLTemplateElement;
-  private readonly terminalHost: ReturnType<typeof createTerminalHost>;
   private readonly paneRegistry = new PaneRegistry();
 
   private readonly workspaces = new Map<string, WorkspaceRecord>();
@@ -114,15 +113,14 @@ export class FlmuxWorkbench {
 
   constructor(
     private readonly config: FlmuxRendererBootstrapConfig,
-    private readonly hostProxy: FlmuxHostRequestProxy
+    private readonly shell: ShellCapClient
   ) {
     this.lifecyclePolicy = getFlmuxRendererLifecyclePolicy(config.mode);
-    this.terminalHost = createTerminalHost();
     registerBuiltinPaneDescriptors(this.paneRegistry, {
       installRoot: config.projectDir,
       resolveTerminalCwd: resolveTerminalCwdFromRoot
     });
-    this.shellModel = createShellModelClientOverPreload(hostProxy);
+    this.shellModel = createShellModelClientOverPreload(shell);
     subscribeShellCoreEvents((event) => this.handleCoreEvent(event));
     document.addEventListener("flmux-theme-change", () => this.applyDockviewTheme());
   }
@@ -168,7 +166,7 @@ export class FlmuxWorkbench {
       // future refactor routes register through a separate transport
       // this ordering assumption dies and events can arrive before the
       // gate is armed.
-      const registration = await this.hostProxy["flmux.client.register"]({
+      const registration = await this.shell.registerClient({
         clientId: bootstrap.clientId,
         lastAppliedSeq: bootstrap.seqStart
       });
@@ -186,18 +184,18 @@ export class FlmuxWorkbench {
       // bootstrap reach the renderer and are buffered by the seq gate.
       // Desktop register never carries a binding arg → server-side
       // `onClientRegister` returns void → response is always `"ok"`. The
-      // `"rebootstrap-required"` branch only arises for web. A pinned test
-      // in `hostRequests.test.ts` guards the invariant.
-      const registration = await this.hostProxy["flmux.client.register"]({});
+      // `"rebootstrap-required"` branch only arises for web.
+      const registration = await this.shell.registerClient({});
       if (registration.status !== "ok") {
-        throw new Error(`flmux.client.register: desktop preload returned unexpected status '${registration.status}'`);
+        throw new Error(`shell.registerClient: desktop preload returned unexpected status '${registration.status}'`);
       }
-      const bootstrap = await this.hostProxy["flmux.shellBootstrap"]();
+      const bootstrap = await this.shell.bootstrap();
       this.applyBootstrap(bootstrap);
       this.lastAppliedSeq = bootstrap.seqStart;
       this.bootstrapped = true;
     }
     this.drainBufferedEvents();
+    this.openShellEventsStream();
 
     this.updateDocumentTitle();
     setupDropIndicatorMasks();
@@ -739,6 +737,43 @@ export class FlmuxWorkbench {
     return new WorkspaceOuterPanelRenderer(options.id, this);
   }
 
+  /** Open `shell.events()` AFTER registerClient — server-side stream impl
+   * needs clientId bound before it can subscribe to the right authority's
+   * buffer. */
+  private openShellEventsStream() {
+    void (async () => {
+      try {
+        for await (const event of this.shell.events()) {
+          pushShellCoreEvent(event);
+        }
+      } catch (error) {
+        console.warn("[flmux] shell.events stream ended", error);
+      }
+    })();
+  }
+
+  private subscribeTerminalEvents(
+    paneId: string,
+    handler: (event: TerminalRuntimeEvent) => void
+  ): () => void {
+    const stream = this.shell.terminalEvents({ paneId });
+    let aborted = false;
+    void (async () => {
+      try {
+        for await (const event of stream) {
+          if (aborted) break;
+          handler(event);
+        }
+      } catch (error) {
+        if (!aborted) console.warn(`[flmux] terminal stream for ${paneId} ended:`, error);
+      }
+    })();
+    return () => {
+      aborted = true;
+      stream.cancel();
+    };
+  }
+
   private createInnerPanelRenderer(record: WorkspaceRecord, options: CreateComponentOptions): IContentRenderer {
     const descriptor = this.requirePaneDescriptor(String(options.name));
     return descriptor.createRenderer({
@@ -747,7 +782,7 @@ export class FlmuxWorkbench {
       runtime: {
         shellModel: this.shellModel,
         browserPanelTemplate: this.browserPanelTemplate,
-        terminalHost: this.terminalHost,
+        subscribeTerminalEvents: (paneId, handler) => this.subscribeTerminalEvents(paneId, handler),
         workspaceStatus: record.statusStore,
         normalizeBrowserUrl: (value) => this.normalizeBrowserUrlFromInput(value),
         onBrowserUrlChange: (paneId, url) => {
@@ -849,7 +884,7 @@ export class FlmuxWorkbench {
       return;
     }
     const layouts = this.serializeSessionLayouts();
-    void this.hostProxy["flmux.layout.push"](layouts).catch((error: unknown) => {
+    void this.shell.pushLayout(layouts).catch((error: unknown) => {
       console.warn("failed to push flmux layout delta", error);
     });
   }

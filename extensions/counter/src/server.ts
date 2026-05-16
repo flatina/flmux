@@ -1,44 +1,39 @@
-import { defineBunRpc } from "bunite-core";
+import { Stream, type ImplOf } from "bunite-core/rpc";
 import { defineExtensionServer } from "@flmux/extension-api";
-import type { CounterSchema } from "./schema";
+import { counterCap, type CountChangedEvent } from "./schema";
 
-// rpc binding is per-client; `count` is shared module state.
+// rpc impl is per-client (built fresh in `onClientConnected`); `count` is
+// shared module state across the whole flmux process.
 let count = 0;
-
-type CounterServerRpc = ReturnType<typeof defineBunRpc<CounterSchema>>;
-const clientRpcs = new Map<string, CounterServerRpc>();
+const subscribers = new Set<(event: CountChangedEvent) => void>();
 
 function broadcast() {
-  for (const rpc of clientRpcs.values()) {
-    rpc.sendProxy["count.changed"]({ count, sourcePaneId: null });
-  }
+  for (const emit of subscribers) emit({ count, sourcePaneId: null });
 }
 
 export default defineExtensionServer({
-  async onClientConnected(clientId, ctx) {
-    const rpc = defineBunRpc<CounterSchema>({
-      handlers: {
-        requests: {
-          getCount: () => ({ count }),
-          increment: ({ delta }) => {
-            count += typeof delta === "number" ? Math.trunc(delta) : 1;
-            broadcast();
-            return { count };
-          },
-          reset: () => {
-            count = 0;
-            broadcast();
-            return { count };
-          }
-        }
-      }
-    });
-    await ctx.channel().bindTo(rpc);
-    clientRpcs.set(clientId, rpc);
+  onClientConnected(_clientId, ctx) {
+    const impl: ImplOf<typeof counterCap> = {
+      getCount: () => ({ count }),
+      increment: ({ delta }) => {
+        count += typeof delta === "number" ? Math.trunc(delta) : 1;
+        broadcast();
+        return { count };
+      },
+      reset: () => {
+        count = 0;
+        broadcast();
+        return { count };
+      },
+      changed: () => Stream.from<CountChangedEvent>((emit, signal) => {
+        subscribers.add(emit);
+        signal.addEventListener("abort", () => subscribers.delete(emit));
+      })
+    };
+    const handle = ctx.connection.serve(counterCap, impl);
     return {
       dispose() {
-        clientRpcs.delete(clientId);
-        rpc.dispose();
+        ctx.connection.unserve(handle);
       }
     };
   }

@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { Elysia } from "elysia";
+import { createConnection, createFrameTransport, type Connection } from "bunite-core/rpc";
 import type {
   ClientScopedPathCallInput,
   ClientScopedPathGetInput,
@@ -55,14 +56,8 @@ export function startFlmuxServer(options: {
   authorizer?: FlmuxWebModeAuthorizer;
   /** Explicit listen port. Undefined → OS-assigned (current default). */
   port?: number;
-  rpcWebHandler?: {
-    open(ws: { send(data: Uint8Array | ArrayBuffer): void | number }): void;
-    message(
-      ws: { send(data: Uint8Array | ArrayBuffer): void | number },
-      raw: string | Buffer | ArrayBuffer | Uint8Array
-    ): void;
-    close(ws: { send(data: Uint8Array | ArrayBuffer): void | number }): void;
-  };
+  /** Called on every accepted WS upgrade with a fresh bunite Connection. */
+  onRpcConnection?(conn: Connection): void;
 }): FlmuxServerHandle {
   const hostname = "127.0.0.1";
   const app = new Elysia()
@@ -232,8 +227,10 @@ export function startFlmuxServer(options: {
       return new Response(Bun.file(resolved), { headers });
     });
 
-  if (options.rpcWebHandler) {
-    const rpcHandler = options.rpcWebHandler;
+  if (options.onRpcConnection) {
+    const onConn = options.onRpcConnection;
+    const wsToReceive = new WeakMap<object, (bytes: Uint8Array) => void>();
+    const wsToConn = new WeakMap<object, Connection>();
     app.ws("/rpc", {
       beforeHandle({ request, set }) {
         const auth = authorizeRequest(request, set, options.authorizer);
@@ -242,13 +239,52 @@ export function startFlmuxServer(options: {
         }
       },
       open(ws) {
-        rpcHandler.open(ws.raw);
+        const raw = ws.raw as object;
+        const pipe = {
+          send: (bytes: Uint8Array) => {
+            (raw as { send(data: Uint8Array | ArrayBuffer): unknown }).send(bytes);
+          },
+          setReceive: (h: (bytes: Uint8Array) => void) => {
+            wsToReceive.set(raw, h);
+          },
+          close: () => {
+            (raw as { close?(): void }).close?.();
+          }
+        };
+        const conn = createConnection({
+          transport: createFrameTransport(pipe),
+          mode: "web",
+          origin: new URL((ws as { url?: string }).url ?? "http://localhost").origin
+        });
+        wsToConn.set(raw, conn);
+        onConn(conn);
       },
       message(ws, message) {
-        rpcHandler.message(ws.raw, message as string | Buffer);
+        const recv = wsToReceive.get(ws.raw as object);
+        if (!recv) return;
+        if (typeof message === "string") {
+          recv(new TextEncoder().encode(message));
+        } else if (message instanceof Buffer) {
+          recv(new Uint8Array(message));
+        } else if (message instanceof ArrayBuffer) {
+          recv(new Uint8Array(message));
+        } else {
+          recv(message as Uint8Array);
+        }
       },
       close(ws) {
-        rpcHandler.close(ws.raw);
+        const raw = ws.raw as object;
+        const conn = wsToConn.get(raw);
+        wsToConn.delete(raw);
+        wsToReceive.delete(raw);
+        if (conn) {
+          // `Connection` interface doesn't expose a public close; the impl's
+          // `shutdown(reason)` fires onClose handlers and rejects pending
+          // calls. Without it, `conn.onClose` registrations leak.
+          try {
+            (conn as unknown as { shutdown(reason: string): void }).shutdown("ws_close");
+          } catch { /* swallow */ }
+        }
       }
     });
   }

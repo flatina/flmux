@@ -1,5 +1,4 @@
 import type { WorkspaceBusClient } from "./bus";
-import type { RpcChannelHandle } from "./server";
 import type { ShellClient } from "./shell";
 import type { PaneStateStore } from "./state";
 import type { WorkspaceStatusStoreClient } from "./status";
@@ -54,13 +53,6 @@ export interface ExtensionPaneContext {
    *  hamburger button is always rendered; with no menu set the click is a
    *  no-op (or surfaces debug info in dev). */
   setHeaderMenu(menu: PaneHeaderMenu | null): void;
-  /**
-   * Returns a per-extension RPC channel handle (`<extId>:<name>`). Bind once
-   * per channel (e.g. in `defineExtension({ onLoad })` for eager, or
-   * module-level guard for lazy); all panes of this extension share the
-   * binding. `name` defaults to `"default"`.
-   */
-  channel(name?: string): RpcChannelHandle;
 }
 
 export interface ExtensionPaneInstance {

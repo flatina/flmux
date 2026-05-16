@@ -1,4 +1,5 @@
-import { defineWebviewRpc } from "bunite-core/view";
+import { bootstrap } from "bunite-core/rpc/renderer";
+import type { ClientOf } from "bunite-core/rpc";
 import {
   defineExtension,
   definePane,
@@ -6,24 +7,20 @@ import {
   type ExtensionPaneInstance
 } from "@flmux/extension-api";
 import { type PanelDom, type ScopeDom, ensureStylesheet, mountPanelShell } from "./helpers";
-import type { CounterSchema } from "./schema";
+import { counterCap } from "./schema";
 
 const panelTemplateUrl = new URL("./panel.html", import.meta.url).href;
 const panelStylesheetUrl = new URL("./panel.css", import.meta.url).href;
 const STYLESHEET_ID = "counter-panel-styles";
 const WORKSPACE_STATUS_KEY = "count";
 
-const paneRenderers = new Map<string, (count: number) => void>();
+type CounterClient = ClientOf<typeof counterCap>;
 
-const rpc = defineWebviewRpc<CounterSchema>({
-  handlers: {
-    messages: {
-      "count.changed": ({ count }) => {
-        for (const render of paneRenderers.values()) render(count);
-      }
-    }
-  }
-});
+// `bootstrap` calls `location`, which is undefined when flmux's main loads
+// the renderer module to harvest pathMount/lifecycle metadata. Defer to
+// `onLoad`, which only fires in the renderer context.
+let counterReady: Promise<CounterClient> | null = null;
+const paneRenderers = new Map<string, (count: number) => void>();
 
 class CounterPane implements ExtensionPaneInstance {
   private dom: PanelDom | null = null;
@@ -50,9 +47,12 @@ class CounterPane implements ExtensionPaneInstance {
     this.dom = await mountPanelShell(this.host, panelTemplateUrl, this.ctx);
     if (this.disposed || !this.dom) return;
     this.wireWorkspace(this.dom.workspace);
-    this.wireApp(this.dom.app);
+    if (!counterReady) return;
+    const counter = await counterReady;
+    if (this.disposed || !this.dom) return;
+    this.wireApp(this.dom.app, counter);
     try {
-      const { count } = await rpc.requestProxy.getCount();
+      const { count } = await counter.getCount();
       if (this.disposed) return;
       this.renderApp(count);
     } catch (error) {
@@ -60,10 +60,10 @@ class CounterPane implements ExtensionPaneInstance {
     }
   }
 
-  private wireApp(dom: ScopeDom) {
-    dom.inc.addEventListener("click", () => this.applyApp(rpc.requestProxy.increment({ delta: 1 })));
-    dom.dec.addEventListener("click", () => this.applyApp(rpc.requestProxy.increment({ delta: -1 })));
-    dom.reset.addEventListener("click", () => this.applyApp(rpc.requestProxy.reset()));
+  private wireApp(dom: ScopeDom, counter: CounterClient) {
+    dom.inc.addEventListener("click", () => this.applyApp(counter.increment({ delta: 1 })));
+    dom.dec.addEventListener("click", () => this.applyApp(counter.increment({ delta: -1 })));
+    dom.reset.addEventListener("click", () => this.applyApp(counter.reset()));
   }
 
   private wireWorkspace(dom: ScopeDom) {
@@ -112,7 +112,17 @@ const counterPane = definePane({
 
 export default defineExtension({
   panes: [counterPane],
-  async onLoad(ctx) {
-    await ctx.channel().bindTo(rpc);
+  onLoad() {
+    counterReady = bootstrap(counterCap);
+    void (async () => {
+      const counter = await counterReady;
+      try {
+        for await (const event of counter.changed()) {
+          for (const render of paneRenderers.values()) render(event.count);
+        }
+      } catch (error) {
+        console.warn("[counter] changed stream ended", error);
+      }
+    })();
   }
 });

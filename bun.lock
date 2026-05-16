@@ -5,7 +5,7 @@
     "": {
       "name": "flmux",
       "dependencies": {
-        "bunite-core": "^0.8.0",
+        "bunite-core": "^0.10.0",
       },
       "devDependencies": {
         "@biomejs/biome": "2.4.12",
@@ -51,7 +51,7 @@
         "@flmux/extension-api": "workspace:*",
         "@xterm/addon-fit": "^0.10.0",
         "@xterm/xterm": "^5.5.0",
-        "bunite-core": "^0.8.0",
+        "bunite-core": "^0.10.0",
         "bunite-native-win-x64": "^0.0.4",
         "citty": "^0.2.2",
         "dockview-core": "^5.1.0",
@@ -78,7 +78,7 @@
       "name": "@flmux/extension-api",
       "version": "0.0.0",
       "dependencies": {
-        "bunite-core": "^0.8.0",
+        "bunite-core": "^0.10.0",
         "citty": "^0.2.2",
       },
     },
@@ -365,9 +365,13 @@
 
     "bun-types": ["bun-types@1.3.12", "", { "dependencies": { "@types/node": "*" } }, "sha512-HqOLj5PoFajAQciOMRiIZGNoKxDJSr6qigAttOX40vJuSp6DN/CxWp9s3C1Xwm4oH7ybueITwiaOcWXoYVoRkA=="],
 
-    "bunite-core": ["bunite-core@0.8.0", "", { "dependencies": { "msgpackr": "^1.11.9" }, "optionalDependencies": { "bunite-native-mac-arm64": "0.0.1", "bunite-native-win-x64": "0.0.4" } }, "sha512-9+awPSe4rGa6Epg7vePYtagCTXr9B9NyfrJ6/RjBtubqhUwp1FsXkpuyhZnP1/zKJwRYLY8fY225TIMby+klCw=="],
+    "bunite-core": ["bunite-core@0.10.0", "", { "dependencies": { "msgpackr": "^1.11.9" }, "optionalDependencies": { "bunite-native-linux-x64": "0.0.1", "bunite-native-mac-arm64": "0.0.1", "bunite-native-win-x64": "0.0.4" } }, "sha512-d/wqBu1sTHVnfMqfyU5SjtZjVdpD6oZHah/s3dCPBZNswy8YTWjiDSVk2wGzQbsGUxedJq1JCGcVvwPpaLPyhg=="],
 
     "bunite-dev": ["bunite-dev@0.0.6", "", { "peerDependencies": { "bunite-core": "*" }, "bin": { "bunite-build": "scripts/build.ts", "bunite-setup-cef": "scripts/setup-cef.ts" } }, "sha512-n1IY861UXO5zGR8jWHuNUr3If/TN3+kQCZCdW3IAUOR5nK7qwuwGujZNTyvuqlt9AKuiTOTVnyy2DeaS2s9Kog=="],
+
+    "bunite-native-linux-x64": ["bunite-native-linux-x64@0.0.1", "", { "os": "linux", "cpu": "x64" }, "sha512-YFIWEISNZY98cAOpUl7URWGj2MR2I1IMkCUJQ2w0TB9zatiMoViOJ7F7ls/XXc1DC4FlukNVoiGuAuzBxqYUhQ=="],
+
+    "bunite-native-mac-arm64": ["bunite-native-mac-arm64@0.0.1", "", { "os": "darwin", "cpu": "arm64" }, "sha512-VL+Q7b31ugZ3OwU6Jf/+JjrredJR8Pr4N+1eGWNk/B/RblDwb+HAxb/Q3X+lbFf9IHM47Fv8WTMVQFIoY9WFJQ=="],
 
     "bunite-native-win-x64": ["bunite-native-win-x64@0.0.4", "", { "os": "win32", "cpu": "x64" }, "sha512-CGr3tbRKZxsPfTVZudWYcAirvq/UQv3z30DMEghVMTtr3AMFSGRmAS7AX/ZxAmiNBSCJ/RmluvAe5VmHHhciyg=="],
 

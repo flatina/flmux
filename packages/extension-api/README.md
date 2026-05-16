@@ -65,20 +65,61 @@ Every pane receives `ExtensionPaneContext` on mount:
 - **`bus: WorkspaceBusClient`** — transient pub/sub scoped to the current workspace + current renderer client. `publish(topic, payload?)` stamps the pane's id as `sourcePaneId`; `subscribe(topic, handler)` receives events. Topic patterns: `*`, `prefix.*`, exact match. **Subscribers see their own events** — filter with `event.sourcePaneId !== myPaneId` if that matters. Cross-renderer forwarding is a deferred feature; publishes from CLI/HTTP do not reach renderer subscribers today.
 - **`workspaceStatus: WorkspaceStatusStoreClient`** — retained KV store shared with every pane in the same workspace. Non-persistent. `subscribe(key, fn)` replays the current value (or `undefined`) immediately, then emits on change; `Object.is`-equal `set` calls suppress emit. Subscriptions auto-unsubscribe when the pane disposes. Use this for transient cross-pane status (selection, cursor, hover) — `bus` is the right tool when you only need the event, `workspaceStatus` is the right tool when late mounts also need the *current value*.
 - **`state: PaneStateStore`** — `getParams/setParams/patchParams/getTitle/setTitle`. Per-pane, persisted as part of the workspace layout. External writes through `pathMount.setState` go here.
-- **`channel(name?)`** — per-extension RPC channel handle (`<extId>:<name>`, default `"default"`). Bind once per channel in `defineExtension({ onLoad })`. All panes of the extension share the binding; per-pane state is the extension's responsibility (paneId in payload). RPC is decoupled from pane lifecycle — pane creation/destruction never re-runs handshake.
+- **RPC** — extensions define their own bunite cap and call `bootstrap()` from `bunite-core/rpc/renderer`. There's no `channel()` on the pane context; instead the extension owns its proxy at module scope and every pane awaits the shared promise.
 
+**schema.ts** (host + renderer both import):
 ```ts
-const rpc = defineWebviewRpc<Schema>({ handlers: { messages: { "snapshot": ... } } });
+import { call, defineCap, stream } from "bunite-core/rpc";
 
-defineExtension({
-  panes: [...],
-  async onLoad(ctx) {
-    await ctx.channel().bindTo(rpc);
+export const myCap = defineCap("my.ext", {
+  ping: call<{value: string}, {pong: string}>(),
+  events: stream<void, MyEvent>()
+});
+```
+
+**server.ts**:
+```ts
+import { Stream } from "bunite-core/rpc";
+import { defineExtensionServer } from "@flmux/extension-api";
+import { myCap } from "./schema";
+
+export default defineExtensionServer({
+  onClientConnected(_clientId, ctx) {
+    const handle = ctx.connection.serve(myCap, {
+      ping: ({value}) => ({pong: `pong:${value}`}),
+      events: () => Stream.from((emit, signal) => {
+        const t = setInterval(() => emit({...}), 1000);
+        signal.addEventListener("abort", () => clearInterval(t));
+      })
+    });
+    return { dispose() { ctx.connection.unserve(handle); } };
   }
 });
 ```
 
-bunite demuxer buffers up to 64 pre-handshake packets per channel and drains them on `bindTo`, so panes mounting before the handshake completes don't lose incoming messages. Outgoing sends require `bindTo` to have been *called* (transport attached); keep it the first statement of `onLoad`.
+**renderer index.ts**:
+```ts
+import { bootstrap } from "bunite-core/rpc/renderer";
+import { defineExtension, definePane } from "@flmux/extension-api";
+import { myCap } from "./schema";
+
+const ready = bootstrap(myCap);  // module-level, shared across panes
+
+export default defineExtension({
+  panes: [definePane({
+    kind: "my.ext",
+    mount: (host, ctx) => {
+      void (async () => {
+        const rpc = await ready;
+        const { pong } = await rpc.ping({ value: "hi" });
+        // ...
+      })();
+    }
+  })]
+});
+```
+
+Cap names use reverse-domain (`<orgDomain>.<extId>`); `bunite.*` is reserved for the framework. RPC is decoupled from pane lifecycle — `conn.serve` runs once per (extension × client) inside `onClientConnected`, pane creation/destruction never re-runs handshake.
 
 ## Tab-header menu
 
@@ -201,8 +242,8 @@ flmux carves a per-extension data directory at `<rootDir>/.flmux/ext/<extensionI
 - **Renderer** — no direct fs access (browser context). Forward writes through the channel to the server entry.
 
 ```ts
-import { defineBunRpc } from "bunite-core";
 import { defineExtensionServer } from "@flmux/extension-api";
+import { myCap } from "./schema";
 
 export default defineExtensionServer({
   async onInit(ctx) {
@@ -210,12 +251,10 @@ export default defineExtensionServer({
     await openDb(`${ctx.dataDir}/store.db`);
   },
   async onClientConnected(clientId, ctx) {
-    // 1× per client. Bind RPC channels here — pane lifecycle never re-runs
-    // handshake. `ctx.channel(name = "default")` returns the per-extension
-    // channel; multi-channel is just multiple bindTo calls.
-    const rpc = defineBunRpc<MySchema>({ handlers: { /* ... */ } });
-    await ctx.channel().bindTo(rpc);
-    return { dispose: () => rpc.dispose() };
+    // 1× per client. Serve your cap on the shared bunite Connection —
+    // pane lifecycle never re-runs handshake. Multi-cap = multiple serves.
+    const handle = ctx.connection.serve(myCap, makeImpl(ctx));
+    return { dispose: () => ctx.connection.unserve(handle); };
   },
   async onPaneConnected(paneId, clientId, ctx) {
     // Pure pane-lifecycle notification. No RPC concerns.

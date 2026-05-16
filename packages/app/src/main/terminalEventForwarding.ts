@@ -1,41 +1,35 @@
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
-import type { ClientRegistry } from "./clientRegistry";
 
 /**
- * Fan out a terminal event to every live subscriber of the pane. Stale
- * viewIds (client disconnected without `releaseView` sweeping) are
- * lazy-cleaned from the Set. On `type: "removed"` the entire Set is
- * dropped — the pane no longer has a runtime to subscribe to.
+ * Fan out a terminal event to every live emitter for the pane. Each emitter
+ * is a `shell.terminalEvents({paneId})` stream consumer. On `type: "removed"`
+ * the pane's emitter set is dropped — the pane no longer has a runtime.
+ *
+ * Stream consumers register themselves via `shellImpl.terminalEvents` setup;
+ * stream abort removes the emitter from the Set, no separate teardown path
+ * needed.
  */
 export function forwardTerminalEventToSubscribers(options: {
   event: TerminalRuntimeEvent;
-  paneSubscribers: Map<string, Set<number>>;
-  clientRegistry: ClientRegistry;
+  paneEmitters: Map<string, Set<(event: TerminalRuntimeEvent) => void>>;
 }): boolean {
-  const { event, paneSubscribers, clientRegistry } = options;
+  const { event, paneEmitters } = options;
   const paneId = event.paneId ?? null;
   if (!paneId) return false;
 
-  const subscribers = paneSubscribers.get(paneId);
-  if (!subscribers || subscribers.size === 0) return false;
+  const emitters = paneEmitters.get(paneId);
+  if (!emitters || emitters.size === 0) return false;
 
-  if (event.type === "removed") {
-    paneSubscribers.delete(paneId);
-  }
+  if (event.type === "removed") paneEmitters.delete(paneId);
 
   let delivered = false;
-  for (const viewId of [...subscribers]) {
-    const client = clientRegistry.resolveRendererByViewId(viewId);
-    if (!client) {
-      subscribers.delete(viewId);
-      continue;
+  for (const emit of [...emitters]) {
+    try {
+      emit(event);
+      delivered = true;
+    } catch {
+      /* stream consumer threw — drop, bunite stream layer handles cleanup on next abort */
     }
-    client.bridge.sendProxy["terminal.event"](event);
-    delivered = true;
-  }
-
-  if (subscribers.size === 0 && event.type !== "removed") {
-    paneSubscribers.delete(paneId);
   }
 
   return delivered;

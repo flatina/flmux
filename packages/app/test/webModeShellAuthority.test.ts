@@ -4,7 +4,6 @@ import { ClientRegistry } from "../src/main/clientRegistry";
 import { createInMemoryTerminalBackend, createTerminalService } from "../src/main/terminal-service";
 import type { DiscoveredLocalExtension } from "../src/main/localExtensions";
 import { createWebModeShellAuthority } from "../src/main/webModeShellAuthority";
-import type { FlmuxRendererBridge } from "../src/shared/rendererBridge";
 import type { FlmuxSessionSnapshot } from "../src/shared/session";
 
 describe("web mode shell authority", () => {
@@ -20,13 +19,7 @@ describe("web mode shell authority", () => {
 
     await authority.start("http://127.0.0.1:4321");
 
-    const rendererBridge: FlmuxRendererBridge = {
-      sendProxy: {
-        "terminal.event": () => {},
-        "shellCore.event": () => {}
-      }
-    };
-    clientRegistry.attachRenderer(101, rendererBridge);
+    clientRegistry.attachLive("web_test", 101);
     const rendererClient = authority.router.registerClient(101, "web_test");
     expect(rendererClient.clientId).toBe("web_test");
 

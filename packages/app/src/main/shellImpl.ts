@@ -32,8 +32,14 @@ export interface ShellImplDeps {
   buildConfig(): FlmuxRendererBootstrapConfig;
   /** Desktop-only — null in web mode. */
   desktopAuthority: DesktopShellAuthority | null;
-  /** Wire viewId → clientId after registerClient, install live event forwarder. */
-  onClientRegister?(binding?: { clientId: string; lastAppliedSeq: number }): "rebootstrap-required" | void;
+  /** Wire viewId → clientId after registerClient, install live event
+   *  forwarder, and serve every extension's cap. Must finish before
+   *  `registerClient` returns so the renderer's `bootstrap(extCap)` from
+   *  `onLoad` can't race the server's `conn.serve(extCap)`. */
+  onClientRegister?(binding?: { clientId: string; lastAppliedSeq: number }):
+    | "rebootstrap-required"
+    | void
+    | Promise<"rebootstrap-required" | void>;
   /** Subscribe to shellCore events for this client (buffered + live, with ACL gating). */
   subscribeShellEvents(clientId: string, sinceSeq: number, emit: (event: SequencedShellCoreEvent) => void): () => void;
   /** Layout save callback for `pushLayout` — debounced by authority. */
@@ -110,7 +116,7 @@ export function createShellImpl(deps: ShellImplDeps): ImplOf<typeof shellCap> {
       return deps.desktopAuthority.shellBootstrap(DESKTOP_CLIENT_ID);
     },
 
-    registerClient: ({ clientId, lastAppliedSeq }) => {
+    registerClient: async ({ clientId, lastAppliedSeq }) => {
       const binding = clientId ? { clientId, lastAppliedSeq: lastAppliedSeq ?? 0 } : undefined;
       const router = deps.resolveShellModelRouter(binding);
       if (!router) {
@@ -119,7 +125,7 @@ export function createShellImpl(deps: ShellImplDeps): ImplOf<typeof shellCap> {
       }
       const resolvedClientId = binding?.clientId ?? DESKTOP_CLIENT_ID;
       const registration = router.registerClient(deps.viewId, resolvedClientId);
-      const outcome = deps.onClientRegister?.(binding);
+      const outcome = await deps.onClientRegister?.(binding);
       if (outcome === "rebootstrap-required") return { status: "rebootstrap-required" as const };
       return { status: "ok" as const, clientId: registration.clientId };
     },

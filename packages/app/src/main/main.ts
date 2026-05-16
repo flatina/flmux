@@ -642,16 +642,16 @@ function trackPaneLifecycle(authority: ShellAuthority): () => void {
   return unsub;
 }
 
-// After a client's demux is installed: attach extension servers (per ext)
-// then attach existing panes (per pane × ext × client). Used at:
-//   - desktop boot (demux created after session restore panes land)
-//   - web client bind (demux at WS open, clientId at register)
-function retroattachAllPanesForClient(clientId: string) {
+// After a client's connection is installed: serve every extension's cap
+// (await), then attach existing panes (fire-and-forget — pane attach is
+// bookkeeping only, doesn't gate the renderer's `bootstrap(extCap)`).
+async function retroattachAllPanesForClient(clientId: string): Promise<void> {
   const authority = resolveAuthorityForClient(clientId);
   if (!authority) return;
-  for (const [extId] of extensionServers) {
-    void attachExtensionServer(extId, clientId);
-  }
+  // Serve all caps before returning so the renderer's `bootstrap(extCap)`
+  // (fires after `registerClient` resolves) can't race the server's
+  // `conn.serve(extCap)`.
+  await Promise.all([...extensionServers.keys()].map((extId) => attachExtensionServer(extId, clientId)));
   for (const [paneId, kind] of paneKinds) {
     if (paneIdToAuthority.get(paneId) === authority) {
       void attachExtensionServerPane(paneId, kind, clientId);
@@ -758,7 +758,7 @@ function installAuthoritySubscriber(clientId: string) {
  * client. Cancels any pending grace timer. The authority subscriber stays
  * installed across disconnects so the buffer keeps filling for replay.
  */
-function bindClientTransport(clientId: string, viewId: number, connection: Connection) {
+async function bindClientTransport(clientId: string, viewId: number, connection: Connection): Promise<void> {
   installAuthoritySubscriber(clientId);
   clientRegistry.attachLive(clientId, viewId);
   viewIdToClientId.set(viewId, clientId);
@@ -770,7 +770,10 @@ function bindClientTransport(clientId: string, viewId: number, connection: Conne
     detachAllPanesForClient(clientId);
   }
   clientIdToConnection.set(clientId, connection);
-  retroattachAllPanesForClient(clientId);
+  // Awaited — registerClient's response only goes back to the renderer
+  // after every extension cap is served. Otherwise `bootstrap(extCap)`
+  // fired from `onLoad` races the server's `conn.serve(extCap)`.
+  await retroattachAllPanesForClient(clientId);
 }
 
 /**
@@ -780,18 +783,18 @@ function bindClientTransport(clientId: string, viewId: number, connection: Conne
  * Renderer replays missed events via the `shell.events()` stream (drains
  * buffer on open) rather than through a separate replay channel.
  */
-function bindWebClient(
+async function bindWebClient(
   viewId: number,
   binding: { clientId: string; lastAppliedSeq: number },
   connection: Connection
-): "rebootstrap-required" | void {
+): Promise<"rebootstrap-required" | void> {
   const replay = clientRegistry.replayAfter(binding.clientId, binding.lastAppliedSeq);
   if (replay === null) {
     clientRegistry.evict(binding.clientId);
     clientIdToUserId.delete(binding.clientId);
     return "rebootstrap-required";
   }
-  bindClientTransport(binding.clientId, viewId, connection);
+  await bindClientTransport(binding.clientId, viewId, connection);
 }
 
 function mintWebClientId(): string {
@@ -925,11 +928,11 @@ function setupConnection(conn: Connection, viewId: number, mode: "desktop" | "we
       },
       buildConfig: buildShellConfig,
       desktopAuthority,
-      onClientRegister: (binding) => {
+      onClientRegister: async (binding) => {
         if (mode === "desktop") {
           // Desktop CEF is a single client; viewId binds to the stable
           // "local" identity. Web clients always pass a binding.
-          bindClientTransport(DESKTOP_CLIENT_ID, viewId, conn);
+          await bindClientTransport(DESKTOP_CLIENT_ID, viewId, conn);
           return;
         }
         if (!binding) {
@@ -938,7 +941,7 @@ function setupConnection(conn: Connection, viewId: number, mode: "desktop" | "we
               "obtained from /api/shell/bootstrap"
           );
         }
-        return bindWebClient(viewId, binding, conn);
+        return await bindWebClient(viewId, binding, conn);
       },
       subscribeShellEvents: (clientId, sinceSeq, emit) => {
         // Atomic drain + subscribe: bunite stream emit is sync, and

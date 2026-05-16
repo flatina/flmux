@@ -16,9 +16,11 @@ const WORKSPACE_STATUS_KEY = "count";
 
 type CounterClient = ClientOf<typeof counterCap>;
 
-// `bootstrap` calls `location`, which is undefined when flmux's main loads
-// the renderer module to harvest pathMount/lifecycle metadata. Defer to
-// `onLoad`, which only fires in the renderer context.
+// Bootstrap is deferred to `onLoad` (which fires after `shell.registerClient`
+// resolves) so the server-side `conn.serve(counterCap)` from
+// `onClientConnected` has already landed. A module-top `bootstrap(counterCap)`
+// would fire at renderer load — before register — and hit the cap registry
+// while empty (peer.ts: `not_found` is returned immediately, no retry).
 let counterReady: Promise<CounterClient> | null = null;
 const paneRenderers = new Map<string, (count: number) => void>();
 

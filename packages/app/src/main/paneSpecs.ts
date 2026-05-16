@@ -1,5 +1,9 @@
 import { createBrowserPaneSpec, isTerminalPaneStateRecord, type NewPaneInput, type PaneSpec } from "@flmux/core/shell";
-import type { ExtensionDefinition, ExtensionManifestPane, ExtensionPaneDefinition } from "@flmux/extension-api";
+import type {
+  ExtensionManifestPane,
+  ExtensionPaneSpec,
+  ExtensionServerDefinition
+} from "@flmux/extension-api";
 import { resolveTerminalCwdFromRoot } from "@flmux/core/terminal/path";
 import {
   adaptExtensionLifecycle,
@@ -8,8 +12,8 @@ import {
 } from "../shared/extensionPaneAdapter";
 import type { DiscoveredLocalExtension } from "./localExtensions";
 
-type ExtensionModule = { default?: ExtensionDefinition };
-export type ExtensionModuleImporter = (entryUrl: string) => Promise<ExtensionModule>;
+type ServerModule = { default?: ExtensionServerDefinition };
+export type ExtensionModuleImporter = (entryUrl: string) => Promise<ServerModule>;
 
 export function createBuiltinPaneSpecs(projectDir: string): PaneSpec[] {
   return [
@@ -74,44 +78,45 @@ export function createBuiltinPaneSpecs(projectDir: string): PaneSpec[] {
   ];
 }
 
+// Host pane specs come from each extension's server entry, never the
+// renderer. This keeps renderer code from evaluating in the Bun process
+// (would crash on DOM globals).
 export async function createExtensionPaneSpecs(
   extensions: readonly DiscoveredLocalExtension[],
-  importer: ExtensionModuleImporter = defaultImportExtensionModule
+  importer: ExtensionModuleImporter = defaultImportServerModule
 ): Promise<PaneSpec[]> {
   const specs: PaneSpec[] = [];
   for (const extension of extensions) {
-    const definitionByKind = await loadExtensionPaneDefinitions(extension, importer);
+    const specByKind = await loadExtensionPaneSpecs(extension, importer);
     for (const manifestPane of extension.runtimeManifest.panes ?? []) {
-      specs.push(createExtensionPaneSpec(manifestPane, definitionByKind.get(manifestPane.kind)));
+      specs.push(createExtensionPaneSpec(manifestPane, specByKind.get(manifestPane.kind)));
     }
   }
   return specs;
 }
 
-async function loadExtensionPaneDefinitions(
+async function loadExtensionPaneSpecs(
   extension: DiscoveredLocalExtension,
   importer: ExtensionModuleImporter
-): Promise<Map<string, ExtensionPaneDefinition>> {
-  const byKind = new Map<string, ExtensionPaneDefinition>();
-  const rendererRel = extension.rendererEntryRelativePath;
-  if (!rendererRel) {
-    return byKind;
-  }
-  const entryUrl = await extension.resolveEntryImportUrl(rendererRel);
+): Promise<Map<string, ExtensionPaneSpec>> {
+  const byKind = new Map<string, ExtensionPaneSpec>();
+  const serverRel = extension.serverEntryRelativePath;
+  if (!serverRel) return byKind;
+  const entryUrl = await extension.resolveEntryImportUrl(serverRel);
   if (!entryUrl) {
     console.warn(
-      `[flmux] could not resolve renderer entry URL for extension '${extension.id}' (${extension.originPath})`
+      `[flmux] could not resolve server entry URL for extension '${extension.id}' (${extension.originPath})`
     );
     return byKind;
   }
   try {
     const module = await importer(entryUrl);
-    for (const pane of module.default?.panes ?? []) {
-      byKind.set(pane.kind, pane);
+    for (const spec of module.default?.panes ?? []) {
+      byKind.set(spec.kind, spec);
     }
   } catch (error) {
     console.warn(
-      `[flmux] failed to load extension '${extension.id}' for server authority — pathMount / lifecycle hooks unavailable`,
+      `[flmux] failed to load server entry for extension '${extension.id}' — pane specs unavailable`,
       error
     );
   }
@@ -120,12 +125,12 @@ async function loadExtensionPaneDefinitions(
 
 function createExtensionPaneSpec(
   manifestPane: ExtensionManifestPane,
-  definition: ExtensionPaneDefinition | undefined
+  spec: ExtensionPaneSpec | undefined
 ): PaneSpec {
   const defaultTitle = manifestPane.defaultTitle;
   const singletonScope = manifestPane.singletonScope;
 
-  if (!definition) {
+  if (!spec) {
     if (!defaultTitle) {
       return { kind: manifestPane.kind, singletonScope };
     }
@@ -138,7 +143,7 @@ function createExtensionPaneSpec(
     };
   }
 
-  const lifecycle = adaptExtensionLifecycle(definition);
+  const lifecycle = adaptExtensionLifecycle(spec);
   const hasFallbackTitle = Boolean(defaultTitle);
   const mergedLifecycle =
     hasFallbackTitle && !lifecycle?.getTitle
@@ -152,12 +157,12 @@ function createExtensionPaneSpec(
     kind: manifestPane.kind,
     singletonScope,
     lifecycle: mergedLifecycle,
-    persistence: adaptExtensionPersistence(definition),
-    pathMount: definition.pathMount ? adaptExtensionPanePathMount(definition.pathMount) : undefined
+    persistence: adaptExtensionPersistence(spec),
+    pathMount: spec.pathMount ? adaptExtensionPanePathMount(spec.pathMount) : undefined
   };
 }
 
-async function defaultImportExtensionModule(entryUrl: string): Promise<ExtensionModule> {
+async function defaultImportServerModule(entryUrl: string): Promise<ServerModule> {
   return await import(/* @vite-ignore */ entryUrl);
 }
 

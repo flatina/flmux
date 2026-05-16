@@ -23,39 +23,50 @@ extensions/myext/
 }
 ```
 
-**index.ts**
-```ts
-import { defineExtension, definePane, type ExtensionPaneContext, type ExtensionPaneInstance } from "@flmux/extension-api";
+flmux loads `server.ts` in the Bun process and `index.ts` in the browser. The two entries never share evaluation contexts, so renderer code (DOM globals, top-level `bootstrap`) is safe.
 
-const myPane = definePane({
-  kind: "myext",
-  mount: (host, ctx) => new MyPaneRenderer(host, ctx),
-  createParams: ({ input }) => ({ note: (input.params as { note?: string } | undefined)?.note ?? "" }),
-  getTitle: ({ input }) => input.title?.trim() || "My Pane",
-  // Optional: expose pane state under /panes/{id}/myext/...
-  pathMount: {
-    mountKey: "myext",
-    getStateSnapshot: ({ currentParams }) => ({ note: String(currentParams?.note ?? "") }),
-    canSetStatePath: ({ relativePath }) => relativePath.length === 1 && relativePath[0] === "note",
-    setState: async ({ relativePath, value, setParams, currentParams }) => {
-      if (relativePath[0] !== "note") throw new Error(`unsupported path ${relativePath.join("/")}`);
-      const note = String(value);
-      await setParams({ ...currentParams, note });
-      return { value: note };
-    }
-  }
+**server.ts** — host-side pane spec (`lifecycle` / `pathMount` / `persistence`):
+```ts
+import { defineExtensionServer, definePaneSpec } from "@flmux/extension-api";
+
+export default defineExtensionServer({
+  panes: [
+    definePaneSpec({
+      kind: "myext",
+      createParams: ({ input }) => ({ note: String((input.params as any)?.note ?? "") }),
+      pathMount: {
+        mountKey: "myext",
+        getStateSnapshot: ({ currentParams }) => ({ note: String(currentParams?.note ?? "") }),
+        canSetStatePath: ({ relativePath }) => relativePath.length === 1 && relativePath[0] === "note",
+        setState: async ({ value, setParams, currentParams }) => {
+          const note = String(value);
+          await setParams({ ...currentParams, note });
+          return { value: note };
+        }
+      }
+    })
+  ]
 });
+```
+
+**index.ts** — renderer-side mount only:
+```ts
+import { defineExtension, definePaneRenderer, type ExtensionPaneContext, type ExtensionPaneInstance } from "@flmux/extension-api";
 
 class MyPaneRenderer implements ExtensionPaneInstance {
   constructor(host: HTMLElement, ctx: ExtensionPaneContext) {
     host.textContent = `pane ${ctx.paneId} in workspace ${ctx.workspaceId}`;
   }
-  update(params?: Record<string, unknown>) { /* re-render on external state change */ }
-  dispose() { /* cleanup subscriptions */ }
+  update(params?: Record<string, unknown>) { /* re-render */ }
+  dispose() { /* cleanup */ }
 }
 
-export default defineExtension({ panes: [myPane] });
+export default defineExtension({
+  panes: [definePaneRenderer({ kind: "myext", mount: (host, ctx) => new MyPaneRenderer(host, ctx) })]
+});
 ```
+
+Renderer-only extensions (no `pathMount`, only manifest-level `defaultTitle`) can skip `server.ts` entirely.
 
 ## Pane context
 
@@ -100,13 +111,13 @@ export default defineExtensionServer({
 **renderer index.ts**:
 ```ts
 import { bootstrap } from "bunite-core/rpc/renderer";
-import { defineExtension, definePane } from "@flmux/extension-api";
+import { defineExtension, definePaneRenderer } from "@flmux/extension-api";
 import { myCap } from "./schema";
 
-const ready = bootstrap(myCap);  // module-level, shared across panes
+const ready = bootstrap(myCap);  // module-level, browser-only — safe top-level
 
 export default defineExtension({
-  panes: [definePane({
+  panes: [definePaneRenderer({
     kind: "my.ext",
     mount: (host, ctx) => {
       void (async () => {

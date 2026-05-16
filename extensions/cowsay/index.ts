@@ -1,5 +1,5 @@
 import type { ExtensionPaneContext, ExtensionPaneInstance } from "@flmux/extension-api";
-import { defineExtension, definePane } from "@flmux/extension-api";
+import { defineExtension, definePaneRenderer } from "@flmux/extension-api";
 import {
   type OutputMode,
   ensureStylesheet,
@@ -214,12 +214,11 @@ class CowsayPaneRenderer implements ExtensionPaneInstance {
   }
 }
 
-const cowsayPane = definePane({
-  kind: "cowsay",
-  mount: (host, context) => new CowsayPaneRenderer(host, context),
-  getTitle: ({ input }) => input.title?.trim() || "Cowsay"
-});
-
 export default defineExtension({
-  panes: [cowsayPane]
+  panes: [
+    definePaneRenderer({
+      kind: "cowsay",
+      mount: (host, context) => new CowsayPaneRenderer(host, context)
+    })
+  ]
 });

@@ -2,7 +2,7 @@ import { bootstrap } from "bunite-core/rpc/renderer";
 import type { ClientOf } from "bunite-core/rpc";
 import {
   defineExtension,
-  definePane,
+  definePaneRenderer,
   type ExtensionPaneContext,
   type ExtensionPaneInstance
 } from "@flmux/extension-api";
@@ -104,10 +104,9 @@ class CounterPane implements ExtensionPaneInstance {
   }
 }
 
-const counterPane = definePane({
+const counterPane = definePaneRenderer({
   kind: "counter",
-  mount: (host, ctx) => new CounterPane(host, ctx),
-  getTitle: ({ input }) => input.title?.trim() || "Counter"
+  mount: (host, ctx) => new CounterPane(host, ctx)
 });
 
 export default defineExtension({

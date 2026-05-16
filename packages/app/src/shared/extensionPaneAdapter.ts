@@ -1,22 +1,22 @@
-import type { ExtensionPaneDefinition, ExtensionPanePathMount } from "@flmux/extension-api";
+import type { ExtensionPaneSpec, ExtensionPanePathMount } from "@flmux/extension-api";
 import type { PaneLifecycleHooks, PanePathMount, PanePersistenceHooks } from "@flmux/core/shell";
 
-export function adaptExtensionLifecycle(definition: ExtensionPaneDefinition): PaneLifecycleHooks | undefined {
-  if (!definition.createParams && !definition.getTitle) {
+export function adaptExtensionLifecycle(spec: ExtensionPaneSpec): PaneLifecycleHooks | undefined {
+  if (!spec.createParams && !spec.getTitle) {
     return undefined;
   }
   return {
-    createParams: definition.createParams
+    createParams: spec.createParams
       ? ({ workspace, input }) =>
-          definition.createParams!({
+          spec.createParams!({
             workspaceId: workspace.id,
             defaultBrowserPath: workspace.defaultBrowserPath,
             input
           })
       : undefined,
-    getTitle: definition.getTitle
+    getTitle: spec.getTitle
       ? ({ workspace, input, params }) =>
-          definition.getTitle!({
+          spec.getTitle!({
             workspaceId: workspace.id,
             defaultBrowserPath: workspace.defaultBrowserPath,
             input,
@@ -26,22 +26,22 @@ export function adaptExtensionLifecycle(definition: ExtensionPaneDefinition): Pa
   };
 }
 
-export function adaptExtensionPersistence(definition: ExtensionPaneDefinition): PanePersistenceHooks | undefined {
-  if (!definition.normalizeRestoredParams && !definition.serializeParams) {
+export function adaptExtensionPersistence(spec: ExtensionPaneSpec): PanePersistenceHooks | undefined {
+  if (!spec.normalizeRestoredParams && !spec.serializeParams) {
     return undefined;
   }
   return {
-    normalizeRestoredParams: definition.normalizeRestoredParams
+    normalizeRestoredParams: spec.normalizeRestoredParams
       ? ({ workspace, params }) =>
-          definition.normalizeRestoredParams!({
+          spec.normalizeRestoredParams!({
             workspaceId: workspace.id,
             defaultBrowserPath: workspace.defaultBrowserPath,
             params
           })
       : undefined,
-    serializeParams: definition.serializeParams
+    serializeParams: spec.serializeParams
       ? ({ workspace, currentParams }) =>
-          definition.serializeParams!({
+          spec.serializeParams!({
             workspaceId: workspace.id,
             defaultBrowserPath: workspace.defaultBrowserPath,
             currentParams

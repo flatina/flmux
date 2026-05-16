@@ -1,7 +1,7 @@
 import type {
   ExtensionPaneContext,
-  ExtensionPaneDefinition,
   ExtensionPaneInstance,
+  ExtensionPaneRenderer,
   PaneStateStore,
   WorkspaceBusEvent
 } from "@flmux/extension-api";
@@ -13,23 +13,18 @@ import type {
 } from "dockview-core";
 import type { PaneDescriptor, PaneRendererRuntimeContext, PaneWorkspaceContext } from "../shell/paneRegistry";
 import type { ShellModelAPI } from "@flmux/core/shell/types";
-import {
-  adaptExtensionLifecycle,
-  adaptExtensionPanePathMount,
-  adaptExtensionPersistence
-} from "../../shared/extensionPaneAdapter";
 import { setPaneHeaderMenu } from "./paneTabMenuRegistry";
 
-export function createExternalPaneDescriptor(extensionId: string, options: ExtensionPaneDefinition): PaneDescriptor {
+// Renderer-side pane descriptor — only `kind` + `createRenderer`. The
+// host owns lifecycle / pathMount / persistence via the server entry's
+// `ExtensionPaneSpec`; renderer never sees them.
+export function createExternalPaneDescriptor(extensionId: string, renderer: ExtensionPaneRenderer): PaneDescriptor {
   return {
-    kind: options.kind,
+    kind: renderer.kind,
     createRenderer(args) {
       const state = new ExternalPaneStateController(args.options.id, args.runtime.shellModel);
-      return wrapExternalPaneRenderer(extensionId, options, args, state);
-    },
-    lifecycle: adaptExtensionLifecycle(options),
-    persistence: adaptExtensionPersistence(options),
-    pathMount: options.pathMount ? adaptExtensionPanePathMount(options.pathMount) : undefined
+      return wrapExternalPaneRenderer(extensionId, renderer, args, state);
+    }
   };
 }
 
@@ -95,7 +90,7 @@ function createExternalPaneContext(
 
 function wrapExternalPaneRenderer(
   extensionId: string,
-  definition: ExtensionPaneDefinition,
+  renderer: ExtensionPaneRenderer,
   args: {
     workspace: PaneWorkspaceContext;
     options: CreateComponentOptions;
@@ -110,7 +105,7 @@ function wrapExternalPaneRenderer(
     element: host,
     init(params: GroupPanelPartInitParameters) {
       synchronizeExternalPaneState(state, params.api, params.params);
-      instance = definition.mount(host, createExternalPaneContext(extensionId, args, state));
+      instance = renderer.mount(host, createExternalPaneContext(extensionId, args, state));
     },
     update(event: PanelUpdateEvent<Record<string, unknown>>) {
       synchronizeExternalPaneState(state, null, event.params);

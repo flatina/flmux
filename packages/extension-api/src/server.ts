@@ -1,5 +1,6 @@
 import type { Connection } from "bunite-core/rpc";
 import type { ShellClient } from "./shell";
+import type { ExtensionPaneSpec } from "./pane";
 
 export interface ExtensionServerInitContext {
   dataDir: string;
@@ -42,6 +43,13 @@ export interface ExtensionServerPaneInstance {
 }
 
 export interface ExtensionServerDefinition {
+  /**
+   * Host-side pane specs (kind → lifecycle / pathMount / persistence).
+   * flmux reads this on the host without ever evaluating renderer code, so
+   * pane specs never see DOM globals. Renderer-only extensions omit this
+   * and fall back to manifest-level defaults.
+   */
+  panes?: ExtensionPaneSpec[];
   /**
    * Eager once-per-process setup, runs at extension load before any client
    * binds. Throw → server entry disabled.

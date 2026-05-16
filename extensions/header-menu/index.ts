@@ -1,5 +1,5 @@
 import type { ExtensionPaneContext, PaneHeaderMenu } from "@flmux/extension-api";
-import { defineExtension, definePane } from "@flmux/extension-api";
+import { defineExtension, definePaneRenderer } from "@flmux/extension-api";
 
 const stylesheetUrl = new URL("./panel.css", import.meta.url).href;
 const STYLESHEET_ID = "header-menu-panel-styles";
@@ -118,18 +118,9 @@ function mountBuildPane(host: HTMLElement, context: ExtensionPaneContext) {
   context.setHeaderMenu(menu);
 }
 
-const itemsPane = definePane({
-  kind: "header-menu.items",
-  mount: mountItemsPane,
-  getTitle: ({ input }) => input.title?.trim() || "Header Menu — items"
-});
-
-const buildPane = definePane({
-  kind: "header-menu.build",
-  mount: mountBuildPane,
-  getTitle: ({ input }) => input.title?.trim() || "Header Menu — build"
-});
-
 export default defineExtension({
-  panes: [itemsPane, buildPane]
+  panes: [
+    definePaneRenderer({ kind: "header-menu.items", mount: mountItemsPane }),
+    definePaneRenderer({ kind: "header-menu.build", mount: mountBuildPane })
+  ]
 });

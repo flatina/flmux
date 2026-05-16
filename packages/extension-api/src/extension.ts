@@ -1,11 +1,10 @@
-import type { ExtensionPaneDefinition } from "./pane";
+import type { ExtensionPaneRenderer } from "./pane";
 
 export interface ExtensionDefinition {
-  panes?: ExtensionPaneDefinition[];
-  /** Eager per-renderer setup. Awaited by flmux before pane.added events
-   *  flow to this extension's panes. Use `bootstrap(myCap)` from
-   *  `bunite-core/rpc/renderer` to get a typed proxy for your extension's
-   *  cap; cache the result at module scope and share across panes. */
+  panes?: ExtensionPaneRenderer[];
+  /** Eager per-renderer setup. Runs after `shell.registerClient` so any
+   *  extension `bootstrap(myCap)` finds its cap already served on the host
+   *  side. Cache the proxy at module scope and share across panes. */
   onLoad?(): void | Promise<void>;
 }
 

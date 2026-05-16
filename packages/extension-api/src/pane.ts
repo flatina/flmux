@@ -3,11 +3,9 @@ import type { ShellClient } from "./shell";
 import type { PaneStateStore } from "./state";
 import type { WorkspaceStatusStoreClient } from "./status";
 
-// Structurally compatible with `@flmux/core/shell/types` — the host creates
-// panes with exactly these shapes.
 // Re-exported from `./placement` so the same type is reachable from
 // `@flmux/extension-api/cli` without dragging this file's DOM-typed
-// `mount(host: HTMLElement, …)` into CLI typechecks.
+// renderer surface into CLI typechecks.
 import type { PanePlacement } from "./placement";
 export type { PanePlacement };
 export type PaneKind = "browser" | "terminal" | (string & {});
@@ -49,9 +47,7 @@ export interface ExtensionPaneContext {
    *  late mounts don't miss it. */
   workspaceStatus: WorkspaceStatusStoreClient;
   state: PaneStateStore;
-  /** Set/clear the pane's tab-header menu. Pass `null` to remove. The
-   *  hamburger button is always rendered; with no menu set the click is a
-   *  no-op (or surfaces debug info in dev). */
+  /** Set/clear the pane's tab-header menu. Pass `null` to remove. */
   setHeaderMenu(menu: PaneHeaderMenu | null): void;
 }
 
@@ -62,6 +58,8 @@ export interface ExtensionPaneInstance {
   toJSON?(): Record<string, unknown>;
   dispose?(): void;
 }
+
+// ── pathMount / lifecycle (host-side) ──
 
 export interface ExtensionPanePathMountSnapshotArgs {
   paneId: string;
@@ -93,17 +91,19 @@ export interface ExtensionPanePathMount {
   getStateSnapshot?(args: ExtensionPanePathMountSnapshotArgs): Record<string, unknown> | undefined;
   canSetStatePath?(args: ExtensionPanePathMountWritableArgs): boolean;
   setState?(args: ExtensionPanePathMountSetArgs): Promise<{ value: unknown }> | { value: unknown };
-  // RPC-style action: computed return, snapshot leaf is not required.
-  // Gated by `allow_paths.call` on the shared ShellModelAPI ACL, same as
-  // any other `shell.call` path.
+  // RPC-style action: computed return, snapshot leaf is not required. Gated
+  // by `allow_paths.call` on the shared ShellModelAPI ACL.
   canCallStatePath?(args: ExtensionPanePathMountWritableArgs): boolean;
   callState?(args: ExtensionPanePathMountCallableArgs): Promise<{ value: unknown }> | { value: unknown };
   getStatusSnapshot?(args: ExtensionPanePathMountSnapshotArgs): Record<string, unknown> | undefined;
 }
 
-export interface ExtensionPaneDefinition {
+/** Host-side pane spec. Lives on the server entry — runs in the flmux main
+ *  process, never in the renderer. Provides everything flmux needs to route
+ *  ShellModelAPI calls and create/restore panes without ever evaluating
+ *  renderer code. */
+export interface ExtensionPaneSpec {
   kind: string;
-  mount(host: HTMLElement, context: ExtensionPaneContext): void | ExtensionPaneInstance;
   createParams?(args: {
     workspaceId: string;
     defaultBrowserPath: string;
@@ -128,6 +128,18 @@ export interface ExtensionPaneDefinition {
   pathMount?: ExtensionPanePathMount;
 }
 
-export function definePane<T extends ExtensionPaneDefinition>(definition: T): T {
-  return definition;
+/** Renderer-side pane renderer. Lives on the renderer entry — runs in the
+ *  browser only, never on the host. Pure DOM mount; lifecycle and pathMount
+ *  belong on `ExtensionPaneSpec` (server entry). */
+export interface ExtensionPaneRenderer {
+  kind: string;
+  mount(host: HTMLElement, context: ExtensionPaneContext): void | ExtensionPaneInstance;
+}
+
+export function definePaneSpec<T extends ExtensionPaneSpec>(spec: T): T {
+  return spec;
+}
+
+export function definePaneRenderer<T extends ExtensionPaneRenderer>(renderer: T): T {
+  return renderer;
 }

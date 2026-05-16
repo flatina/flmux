@@ -381,7 +381,7 @@ function attachExtensionServer(extId: string, clientId: string): Promise<void> {
       return;
     }
     try {
-      const inst = await server.onClientConnected!(clientId, { dataDir, shell, connection });
+      const inst = await server.onClientConnected!(clientId, { dataDir, shell });
       if (extensionClientBindPromises.get(key) !== promise) {
         try {
           inst?.dispose?.();
@@ -642,16 +642,16 @@ function trackPaneLifecycle(authority: ShellAuthority): () => void {
   return unsub;
 }
 
-// After a client's connection is installed: serve every extension's cap
-// (await), then attach existing panes (fire-and-forget — pane attach is
-// bookkeeping only, doesn't gate the renderer's `bootstrap(extCap)`).
-async function retroattachAllPanesForClient(clientId: string): Promise<void> {
+// After a client's connection is bound (post-register): fire each
+// extension's `onClientConnected` (per-client notification, fire-and-forget).
+// Cap registration already happened synchronously at connection setup, so
+// the renderer's `bootstrap(extCap)` doesn't depend on this chain.
+function retroattachAllPanesForClient(clientId: string): void {
   const authority = resolveAuthorityForClient(clientId);
   if (!authority) return;
-  // Serve all caps before returning so the renderer's `bootstrap(extCap)`
-  // (fires after `registerClient` resolves) can't race the server's
-  // `conn.serve(extCap)`.
-  await Promise.all([...extensionServers.keys()].map((extId) => attachExtensionServer(extId, clientId)));
+  for (const [extId] of extensionServers) {
+    void attachExtensionServer(extId, clientId);
+  }
   for (const [paneId, kind] of paneKinds) {
     if (paneIdToAuthority.get(paneId) === authority) {
       void attachExtensionServerPane(paneId, kind, clientId);
@@ -758,7 +758,7 @@ function installAuthoritySubscriber(clientId: string) {
  * client. Cancels any pending grace timer. The authority subscriber stays
  * installed across disconnects so the buffer keeps filling for replay.
  */
-async function bindClientTransport(clientId: string, viewId: number, connection: Connection): Promise<void> {
+function bindClientTransport(clientId: string, viewId: number, connection: Connection): void {
   installAuthoritySubscriber(clientId);
   clientRegistry.attachLive(clientId, viewId);
   viewIdToClientId.set(viewId, clientId);
@@ -770,10 +770,7 @@ async function bindClientTransport(clientId: string, viewId: number, connection:
     detachAllPanesForClient(clientId);
   }
   clientIdToConnection.set(clientId, connection);
-  // Awaited — registerClient's response only goes back to the renderer
-  // after every extension cap is served. Otherwise `bootstrap(extCap)`
-  // fired from `onLoad` races the server's `conn.serve(extCap)`.
-  await retroattachAllPanesForClient(clientId);
+  retroattachAllPanesForClient(clientId);
 }
 
 /**
@@ -783,18 +780,18 @@ async function bindClientTransport(clientId: string, viewId: number, connection:
  * Renderer replays missed events via the `shell.events()` stream (drains
  * buffer on open) rather than through a separate replay channel.
  */
-async function bindWebClient(
+function bindWebClient(
   viewId: number,
   binding: { clientId: string; lastAppliedSeq: number },
   connection: Connection
-): Promise<"rebootstrap-required" | void> {
+): "rebootstrap-required" | void {
   const replay = clientRegistry.replayAfter(binding.clientId, binding.lastAppliedSeq);
   if (replay === null) {
     clientRegistry.evict(binding.clientId);
     clientIdToUserId.delete(binding.clientId);
     return "rebootstrap-required";
   }
-  await bindClientTransport(binding.clientId, viewId, connection);
+  bindClientTransport(binding.clientId, viewId, connection);
 }
 
 function mintWebClientId(): string {
@@ -836,6 +833,11 @@ function pushLayoutForViewId(viewId: number, layouts: FlmuxSessionSaveLayouts) {
 function releaseView(viewId: number) {
   const clientId = viewIdToClientId.get(viewId);
   viewIdToConnection.delete(viewId);
+  const serveDisposes = extensionServeDisposes.get(viewId);
+  if (serveDisposes) {
+    for (const dispose of serveDisposes.values()) dispose();
+    extensionServeDisposes.delete(viewId);
+  }
   if (clientId) {
     viewIdToClientId.delete(viewId);
     // Skip teardown if clientId was rebound to a newer viewId
@@ -910,8 +912,38 @@ function buildShellConfig() {
   };
 }
 
+// Per-(viewId × extId) ServeHandle dispose, populated by `setupConnection`'s
+// sync extension-serve loop and run on connection close.
+const extensionServeDisposes = new Map<number, Map<string, () => void>>();
+
 function setupConnection(conn: Connection, viewId: number, mode: "desktop" | "web") {
   viewIdToConnection.set(viewId, conn);
+  // Serve every extension's cap synchronously BEFORE returning — bunite
+  // processes incoming frames only after the `serve` callback completes,
+  // so registry is fully populated before any renderer bootstrap arrives.
+  // Module-top `bootstrap(extCap)` from renderer is safe as a result.
+  const disposes = new Map<string, () => void>();
+  for (const [extId, def] of extensionServers) {
+    if (!def.serve) continue;
+    const dataDir = resolveExtensionDataDir(extId);
+    if (!dataDir) {
+      console.warn(`[flmux] extension '${extId}' skipped serve — data dir not provisioned`);
+      continue;
+    }
+    try {
+      const instance = def.serve({ dataDir, connection: conn });
+      if (instance?.dispose) {
+        disposes.set(extId, () => {
+          try { instance.dispose!(); } catch (err) {
+            console.warn(`[flmux] extension '${extId}' serve dispose error:`, err);
+          }
+        });
+      }
+    } catch (err) {
+      console.warn(`[flmux] extension '${extId}' serve threw:`, err);
+    }
+  }
+  if (disposes.size > 0) extensionServeDisposes.set(viewId, disposes);
   conn.serve(
     shellCap,
     createShellImpl({
@@ -928,11 +960,11 @@ function setupConnection(conn: Connection, viewId: number, mode: "desktop" | "we
       },
       buildConfig: buildShellConfig,
       desktopAuthority,
-      onClientRegister: async (binding) => {
+      onClientRegister: (binding) => {
         if (mode === "desktop") {
           // Desktop CEF is a single client; viewId binds to the stable
           // "local" identity. Web clients always pass a binding.
-          await bindClientTransport(DESKTOP_CLIENT_ID, viewId, conn);
+          bindClientTransport(DESKTOP_CLIENT_ID, viewId, conn);
           return;
         }
         if (!binding) {
@@ -941,7 +973,7 @@ function setupConnection(conn: Connection, viewId: number, mode: "desktop" | "we
               "obtained from /api/shell/bootstrap"
           );
         }
-        return await bindWebClient(viewId, binding, conn);
+        return bindWebClient(viewId, binding, conn);
       },
       subscribeShellEvents: (clientId, sinceSeq, emit) => {
         // Atomic drain + subscribe: bunite stream emit is sync, and

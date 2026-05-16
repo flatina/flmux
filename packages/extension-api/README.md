@@ -95,7 +95,7 @@ import { defineExtensionServer } from "@flmux/extension-api";
 import { myCap } from "./schema";
 
 export default defineExtensionServer({
-  onClientConnected(_clientId, ctx) {
+  serve(ctx) {
     const handle = ctx.connection.serve(myCap, {
       ping: ({value}) => ({pong: `pong:${value}`}),
       events: () => Stream.from((emit, signal) => {
@@ -107,6 +107,8 @@ export default defineExtensionServer({
   }
 });
 ```
+
+`serve` runs **synchronously** inside the bunite connection-setup callback — flmux iterates every extension's `serve` before bunite processes any incoming frame, so the cap registry is populated before the renderer can bootstrap. Module-top `bootstrap(myCap)` is safe.
 
 **renderer index.ts**:
 ```ts
@@ -130,7 +132,7 @@ export default defineExtension({
 });
 ```
 
-Cap names use reverse-domain (`<orgDomain>.<extId>`); `bunite.*` is reserved for the framework. RPC is decoupled from pane lifecycle — `conn.serve` runs once per (extension × client) inside `onClientConnected`, pane creation/destruction never re-runs handshake.
+Cap names use reverse-domain (`<orgDomain>.<extId>`); `bunite.*` is reserved for the framework. RPC is decoupled from pane lifecycle — `conn.serve` runs once per connection inside `serve`, pane creation/destruction never re-runs handshake.
 
 ## Tab-header menu
 
@@ -248,9 +250,9 @@ The heuristic uses creation order as a proxy for spatial layout — not a guaran
 
 flmux carves a per-extension data directory at `<rootDir>/.flmux/ext/<extensionId>/` and hands it to the extension as a readonly `ctx.dataDir` field. flmux is the one running the extension, so the extension never claims its own id — it just reads `ctx.dataDir`. The directory is the extension's writable space; flmux makes no assumptions about its layout (sessions, configs, caches, etc. all welcome) and mkdirs lazily on first need.
 
-- **Server entry** — `ctx.dataDir` is supplied to `onInit(ctx)` (1× process), `onClientConnected(clientId, ctx)` (1× client, where RPC is bound), and `onPaneConnected(paneId, clientId, ctx)` (notification only).
+- **Server entry** — `ctx.dataDir` is supplied to `onInit(ctx)` (1× process), `serve(ctx)` (1× connection, sync — RPC is bound here), `onClientConnected(clientId, ctx)` (1× client, post-register notification), and `onPaneConnected(paneId, clientId, ctx)` (pane lifecycle notification).
 - **CLI entry** — `ctx.dataDir` is supplied to `run(parsedArgs, ctx, rawArgs)` (see "CLI extension" above). Use `defineExtensionCommand` from `@flmux/extension-api/cli` so flmux can inject it.
-- **Renderer** — no direct fs access (browser context). Forward writes through the channel to the server entry.
+- **Renderer** — no direct fs access (browser context). Forward writes through a cap method to the server entry.
 
 ```ts
 import { defineExtensionServer } from "@flmux/extension-api";
@@ -261,15 +263,19 @@ export default defineExtensionServer({
     // 1× per process. db open, schema migration, shared workers, etc.
     await openDb(`${ctx.dataDir}/store.db`);
   },
+  serve(ctx) {
+    // 1× per connection, synchronous. No `await` before `conn.serve` —
+    // flmux relies on the registry being populated before bunite processes
+    // the first incoming frame.
+    const handle = ctx.connection.serve(myCap, makeImpl());
+    return { dispose: () => ctx.connection.unserve(handle) };
+  },
   async onClientConnected(clientId, ctx) {
-    // 1× per client. Serve your cap on the shared bunite Connection —
-    // pane lifecycle never re-runs handshake. Multi-cap = multiple serves.
-    const handle = ctx.connection.serve(myCap, makeImpl(ctx));
-    return { dispose: () => ctx.connection.unserve(handle); };
+    // 1× per client (post-register). Async per-user init goes here — no
+    // cap binding (that's `serve`'s job).
+    return { dispose: () => { /* per-client cleanup */ } };
   },
   async onPaneConnected(paneId, clientId, ctx) {
-    // Pure pane-lifecycle notification. No RPC concerns.
-    const sessionsDir = `${ctx.dataDir}/sessions`;
     return { dispose: () => { /* per-pane bookkeeping cleanup */ } };
   }
 });

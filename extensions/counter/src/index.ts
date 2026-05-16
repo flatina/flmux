@@ -16,13 +16,22 @@ const WORKSPACE_STATUS_KEY = "count";
 
 type CounterClient = ClientOf<typeof counterCap>;
 
-// Bootstrap is deferred to `onLoad` (which fires after `shell.registerClient`
-// resolves) so the server-side `conn.serve(counterCap)` from
-// `onClientConnected` has already landed. A module-top `bootstrap(counterCap)`
-// would fire at renderer load — before register — and hit the cap registry
-// while empty (peer.ts: `not_found` is returned immediately, no retry).
-let counterReady: Promise<CounterClient> | null = null;
+// Module-top bootstrap is safe: flmux serves every extension's cap
+// synchronously inside the bunite `serve` callback, so the registry is
+// populated before any frame from this connection can be processed.
+const counterReady: Promise<CounterClient> = bootstrap(counterCap);
 const paneRenderers = new Map<string, (count: number) => void>();
+
+void (async () => {
+  try {
+    const counter = await counterReady;
+    for await (const event of counter.changed()) {
+      for (const render of paneRenderers.values()) render(event.count);
+    }
+  } catch (error) {
+    console.warn("[counter] changed stream ended", error);
+  }
+})();
 
 class CounterPane implements ExtensionPaneInstance {
   private dom: PanelDom | null = null;
@@ -49,7 +58,6 @@ class CounterPane implements ExtensionPaneInstance {
     this.dom = await mountPanelShell(this.host, panelTemplateUrl, this.ctx);
     if (this.disposed || !this.dom) return;
     this.wireWorkspace(this.dom.workspace);
-    if (!counterReady) return;
     const counter = await counterReady;
     if (this.disposed || !this.dom) return;
     this.wireApp(this.dom.app, counter);
@@ -106,24 +114,6 @@ class CounterPane implements ExtensionPaneInstance {
   }
 }
 
-const counterPane = definePaneRenderer({
-  kind: "counter",
-  mount: (host, ctx) => new CounterPane(host, ctx)
-});
-
 export default defineExtension({
-  panes: [counterPane],
-  onLoad() {
-    counterReady = bootstrap(counterCap);
-    void (async () => {
-      const counter = await counterReady;
-      try {
-        for await (const event of counter.changed()) {
-          for (const render of paneRenderers.values()) render(event.count);
-        }
-      } catch (error) {
-        console.warn("[counter] changed stream ended", error);
-      }
-    })();
-  }
+  panes: [definePaneRenderer({ kind: "counter", mount: (host, ctx) => new CounterPane(host, ctx) })]
 });

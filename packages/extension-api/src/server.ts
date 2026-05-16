@@ -7,21 +7,28 @@ export interface ExtensionServerInitContext {
 }
 
 /**
- * Per-client context for `onClientConnected`. Wire your cap via
- * `ctx.connection.serve(myCap, myImpl)` and return `{dispose}` that calls
- * `ctx.connection.unserve(myCap)` (or use `using h = ctx.connection.serve(...)`
- * with `Disposable` ServeHandle for auto-cleanup).
+ * Per-connection context for `serve`. Runs synchronously inside the bunite
+ * connection setup so cap registration lands before any bootstrap frame can
+ * arrive — module-top `bootstrap(extCap)` in renderer code is safe.
+ */
+export interface ExtensionServerServeContext {
+  dataDir: string;
+  /** Bunite Connection shared with every cap on this connection (flmux's
+   * `flmux.shell` + sibling extension caps). Serve here, return a dispose
+   * that unserves on connection close. */
+  connection: Connection;
+}
+
+/**
+ * Per-client context for `onClientConnected`. Notification-only — for
+ * async per-client init (db connect, per-user session prep). **Do not**
+ * register caps here; that happens in `serve` (synchronous, pre-bootstrap).
  */
 export interface ExtensionServerClientContext {
   dataDir: string;
   /** ACL-aware ShellModelAPI client scoped to this client/user. Calls route
-   * through the owning user's `allow_paths`. Use `/status/clients/{id}/userId`
-   * for identity lookup when keying user-scoped session state. */
+   * through the owning user's `allow_paths`. */
   shell: ShellClient;
-  /** Bunite Connection shared with every cap on this client (flmux's
-   * `flmux.shell` + sibling extension caps). Serve here; do not retain
-   * across `dispose`. */
-  connection: Connection;
 }
 
 /**
@@ -56,10 +63,22 @@ export interface ExtensionServerDefinition {
    */
   onInit?(ctx: ExtensionServerInitContext): void | Promise<void>;
   /**
-   * Per-client setup. Wire RPC caps here. Awaited by flmux before any
-   * `onPaneConnected` fires for this client. May fire multiple times for the
-   * same `clientId` across reconnects (cookie continuity) — treat each as
-   * fresh state.
+   * Connection-setup cap registration. Runs synchronously inside bunite's
+   * `serve` callback — every `conn.serve(cap, impl)` call here lands in
+   * the registry before any renderer-side bootstrap frame can arrive.
+   * Return `{dispose}` (or use the `Disposable` ServeHandle directly) so
+   * the cap is unserved when the connection closes.
+   *
+   * Must be synchronous: no `await` before `conn.serve`. Async work
+   * (db open, fetch) belongs in `onInit` (process-wide) or
+   * `onClientConnected` (per-client, post-register).
+   */
+  serve?(ctx: ExtensionServerServeContext): { dispose?(): void } | void;
+  /**
+   * Per-client async init notification. Fires after `serve` and after
+   * `shell.registerClient` binds the connection's clientId. No cap
+   * registration here — that's `serve`'s job. May fire multiple times
+   * for the same `clientId` across reconnects (cookie continuity).
    */
   onClientConnected?(
     clientId: string,

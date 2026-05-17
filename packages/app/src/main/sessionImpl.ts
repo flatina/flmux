@@ -1,4 +1,4 @@
-import { Stream } from "bunite-core/rpc";
+import { IpcError, Stream } from "bunite-core/rpc";
 import type {
   FlmuxRendererBootstrapConfig,
   FlmuxSessionBootstrapResponse,
@@ -77,7 +77,11 @@ export function createSessionImpl(deps: SessionImplDeps): SessionCapImpl {
     events: ({ sinceSeq }) => Stream.from<SequencedShellCoreEvent>((emit, signal) => {
       const unsub = deps.subscribeShellEvents(sinceSeq ?? 0, emit);
       if (!unsub) {
-        throw new Error("session.events: replay buffer overflow — renderer must re-bootstrap");
+        throw new IpcError({
+          code: "failed_precondition",
+          message: "replay buffer overflow",
+          retry: { kind: "after-resync" }
+        });
       }
       signal.addEventListener("abort", unsub);
     }),

@@ -76,6 +76,12 @@ type WorkspaceRecord = {
 
 const OUTER_WORKSPACE_COMPONENT = "workspace";
 
+function isReplayOverflow(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const e = error as { code?: string; retry?: { kind?: string } };
+  return e.code === "failed_precondition" && e.retry?.kind === "after-resync";
+}
+
 export class FlmuxWorkbench {
   readonly shellModel: ShellModelAPI;
   private readonly lifecyclePolicy: ReturnType<typeof getFlmuxRendererLifecyclePolicy>;
@@ -699,6 +705,13 @@ export class FlmuxWorkbench {
           pushShellCoreEvent(event);
         }
       } catch (error) {
+        // Replay buffer rolled past lastAppliedSeq while disconnected — renderer
+        // can't reconcile; full reload restarts bridge → fresh session.
+        if (isReplayOverflow(error)) {
+          console.warn("[flmux] replay overflow — reloading to resync");
+          window.location.reload();
+          return;
+        }
         console.warn("[flmux] session.events stream ended", error);
       }
     })();

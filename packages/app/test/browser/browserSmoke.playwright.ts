@@ -366,6 +366,65 @@ test("C6 allow_paths.read gates broadcast forwarder (B3)", async ({ browser }) =
   }
 });
 
+// C8 — Cross-user resumeSession spoof. Presenting user A's flmux-session
+// cookie while authenticating as user B must not give B access to A's
+// session slot. Server checks `clientIdToUserId.get(token) === userId`
+// inside resumeSession; mismatch → null → bridge throws → renderer falls
+// through to createSession with B's identity.
+test("C8 cross-user resumeSession spoof falls through to fresh mint", async ({ browser }) => {
+  if (!handle) throw new Error("web app not running");
+
+  writeFileSync(
+    resolve(handle.authDir, "users.toml"),
+    [
+      `[[users]]`,
+      `name = "admin"`,
+      `allow_pane_kinds = "*"`,
+      `allow_paths = "*"`,
+      ``,
+      `[[users]]`,
+      `name = "alice"`,
+      `allow_pane_kinds = "*"`,
+      `allow_paths = "*"`,
+      ``
+    ].join("\n"),
+    "utf8"
+  );
+
+  const issueProc = spawn(
+    "bun",
+    ["src/cli.ts", "tokens", "issue", "--user", "alice", "--auth-dir", handle.authDir],
+    { cwd: APP_DIR }
+  );
+  const { token: aliceToken } = JSON.parse(await collectOutput(issueProc)) as { token: string };
+
+  const adminContext = await browser.newContext();
+  const aliceContext = await browser.newContext();
+  try {
+    const adminPage = await adminContext.newPage();
+    await adminPage.goto(`${handle.origin}/?token=${encodeURIComponent(handle.token)}`);
+    await expect(adminPage.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
+    const adminSession = (await adminContext.cookies(handle.origin)).find((c) => c.name === "flmux-session")!.value;
+    expect(adminSession).toMatch(/^web_/);
+
+    // Pre-set alice's context cookie to admin's session token — simulate spoof.
+    await aliceContext.addCookies([
+      { name: "flmux-session", value: adminSession, domain: "127.0.0.1", path: "/", sameSite: "Strict" }
+    ]);
+
+    const alicePage = await aliceContext.newPage();
+    await alicePage.goto(`${handle.origin}/?token=${encodeURIComponent(aliceToken)}`);
+    await expect(alicePage.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
+
+    const aliceSession = (await aliceContext.cookies(handle.origin)).find((c) => c.name === "flmux-session")!.value;
+    expect(aliceSession).toMatch(/^web_/);
+    expect(aliceSession).not.toBe(adminSession);
+  } finally {
+    await adminContext.close();
+    await aliceContext.close();
+  }
+});
+
 // C5 — Authority evicts from `userAuthorityRegistry` after the last
 // client's grace plus the authority grace on top. Spawn a fresh
 // flmux --web with short grace env overrides so the eviction chain

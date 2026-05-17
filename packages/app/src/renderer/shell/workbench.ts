@@ -46,7 +46,7 @@ import type {
   ShellCapClient,
   FlmuxRendererBootstrapConfig,
   FlmuxSessionSaveLayouts,
-  FlmuxShellBootstrapResponse
+  FlmuxSessionBootstrapResponse
 } from "../../shared/rendererBridge";
 import { getFlmuxRendererLifecyclePolicy } from "../../shared/runtimeMode";
 import { resolveTerminalCwdFromRoot } from "@flmux/core/terminal/path";
@@ -212,7 +212,7 @@ export class FlmuxWorkbench {
     }
   }
 
-  private async fetchWebBootstrap(): Promise<FlmuxShellBootstrapResponse> {
+  private async fetchWebBootstrap(): Promise<FlmuxSessionBootstrapResponse> {
     const response = await fetch(`${this.config.appOrigin}/api/shell/bootstrap`, {
       method: "POST",
       credentials: "same-origin"
@@ -220,12 +220,12 @@ export class FlmuxWorkbench {
     if (!response.ok) {
       throw new Error(`/api/shell/bootstrap failed: ${response.status} ${response.statusText}`);
     }
-    return (await response.json()) as FlmuxShellBootstrapResponse;
+    return (await response.json()) as FlmuxSessionBootstrapResponse;
   }
 
   // ── Bootstrap ──
 
-  private applyBootstrap(bootstrap: FlmuxShellBootstrapResponse) {
+  private applyBootstrap(bootstrap: FlmuxSessionBootstrapResponse) {
     const priorApplying = this.applyingCoreState;
     this.applyingCoreState = true;
     this.sessionPersistenceSuppressed = true;
@@ -268,7 +268,7 @@ export class FlmuxWorkbench {
     }
   }
 
-  private rebuildOuterFromSnapshot(bootstrap: FlmuxShellBootstrapResponse) {
+  private rebuildOuterFromSnapshot(bootstrap: FlmuxSessionBootstrapResponse) {
     this.outerApi!.clear();
     for (const workspace of bootstrap.snapshot.workspaces) {
       this.outerApi!.addPanel({

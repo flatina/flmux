@@ -27,7 +27,7 @@ describe("shell model direct", () => {
     });
     const model = host.createModel();
 
-    const workspaceStatus = await model.pathGet("/status/workspace", { clientId: "test" });
+    const workspaceStatus = await model.pathGet("/status/workspace", { slotKey: "test" });
     expect(workspaceStatus).toEqual({
       ok: true,
       found: true,
@@ -39,7 +39,7 @@ describe("shell model direct", () => {
       }
     });
 
-    const paneList = await model.pathList("/panes", { clientId: "test" });
+    const paneList = await model.pathList("/panes", { slotKey: "test" });
     expect(paneList).toMatchObject({ ok: true, found: true });
     if (paneList.ok && paneList.found) {
       expect(paneList.entries.map((entry) => entry.name)).toEqual(["pane.browser", "pane.term"]);
@@ -191,7 +191,7 @@ describe("shell model direct", () => {
       found: true,
       value: createdValue.workspace
     });
-    expect(await model.pathGet("/status/workspace", { clientId: "test" })).toEqual({
+    expect(await model.pathGet("/status/workspace", { slotKey: "test" })).toEqual({
       ok: true,
       found: true,
       value: createdValue.workspace
@@ -239,7 +239,7 @@ describe("shell model direct", () => {
       }
     });
 
-    const status = await model.pathGet("/status/workspace", { clientId: "test" });
+    const status = await model.pathGet("/status/workspace", { slotKey: "test" });
     expect(status).toMatchObject({ ok: true, found: true, value: { id: "workspace.test", paneCount: 2 } });
   });
 
@@ -266,7 +266,7 @@ describe("shell model direct", () => {
       ok: true,
       value: "Flmux Test"
     });
-    expect(await model.pathSet("/title", "Workspace Renamed", { clientId: "test" })).toEqual({
+    expect(await model.pathSet("/title", "Workspace Renamed", { slotKey: "test" })).toEqual({
       ok: true,
       value: "Workspace Renamed"
     });

@@ -40,7 +40,7 @@ describe("web mode shell authority", () => {
     // HTTP envelope (router) deliberately drops caller — external HTTP
     // can't reach implicit-current paths. Go through shellModel directly
     // to exercise the narrowing with a preload-equivalent caller.
-    const workspace = await authority.shellModel.pathGet("/status/workspace", { clientId: "server" });
+    const workspace = await authority.shellModel.pathGet("/status/workspace", { slotKey: "server" });
     expect(workspace).toEqual({
       ok: true,
       found: true,
@@ -203,7 +203,7 @@ describe("web mode shell authority", () => {
       }
     });
 
-    const panes = (await authority.shellModel.pathGet("/status/panes", { clientId: "server" })) as {
+    const panes = (await authority.shellModel.pathGet("/status/panes", { slotKey: "server" })) as {
       ok: true;
       found: true;
       value: Record<string, { kind: string }>;

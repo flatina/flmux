@@ -1,8 +1,7 @@
-import { call, defineCap, stream } from "bunite-core/rpc";
+import { call, cap, defineCap, stream } from "bunite-core/rpc";
 import type { ClientOf, ImplOf } from "bunite-core/rpc";
 import type {
   AppStatusSnapshot,
-  PathCallerContext,
   PathCallResult,
   PathGetResult,
   PathListResult,
@@ -22,12 +21,12 @@ export interface FlmuxShellSnapshot {
   activeWorkspaceId: string | null;
 }
 
-export interface FlmuxShellBootstrapResponse {
-  /** Opaque client identity. The renderer echoes this back in subsequent
-   * pathCalls as `caller.clientId` so the core routes client-scoped
-   * events + mutations to the right slot. Desktop CEF always receives
-   * `"local"`; web clients get a server-minted id. */
-  clientId: string;
+export interface FlmuxSessionBootstrapResponse {
+  /** Opaque resume token. Renderer stores in cookie/localStorage for the
+   * next connection to call `resumeSession({resumeToken})` and recover the
+   * same slot state (active workspace/pane). Equals the server-minted
+   * sessionId; clients treat as opaque. */
+  resumeToken: string;
   snapshot: FlmuxShellSnapshot;
   outerLayout: unknown | null;
   innerLayouts: Record<string, unknown | null>;
@@ -45,13 +44,9 @@ export interface FlmuxLocalExtensionLoadEntry {
   version: string;
   manifestUrl: string;
   rendererEntryUrl: string;
-  // kind → fully-qualified icon URL (manifest `panes[].icon`). Empty when the extension declares no per-pane icons.
   paneIcons: Record<string, string>;
-  // kind → manifest `panes[].defaultTitle`. Used for popup labels.
   paneDefaultTitles: Record<string, string>;
-  // kind → manifest `panes[].minimumWidth`. Forwarded to dockview's panel constraint after `addPanel`.
   paneMinimumWidths: Record<string, number>;
-  // kind → manifest `panes[].maximumWidth`. Forwarded to dockview's panel constraint after `addPanel`.
   paneMaximumWidths: Record<string, number>;
 }
 
@@ -59,41 +54,46 @@ export interface FlmuxRendererBootstrapConfig {
   mode: FlmuxRuntimeMode;
   appOrigin: string;
   projectDir: string;
-  authorityClientId: string | null;
   localExtensions: FlmuxLocalExtensionLoadEntry[];
   devMode: boolean;
 }
 
-export type ClientRegistrationResult = { status: "ok"; clientId: string } | { status: "rebootstrap-required" };
+// SessionCap — identity (sessionId/userId) is server-side in the impl factory's
+// closure, not on the wire. Per-call args carry only data (sourcePaneId,
+// workspaceId hints).
+export const sessionCap = defineCap("flmux.session", {
+  bootstrap: call<void, FlmuxSessionBootstrapResponse>(),
 
-// Renderer's view of flmux. Same connection carries extension caps as siblings.
-// `caller` is injected by trusted transports (preload + authenticated WS); HTTP
-// callers cannot forge it — implicit-current narrowing handles them at the
-// model layer.
-export const shellCap = defineCap("flmux.shell", {
-  get: call<{ path: string; caller?: PathCallerContext }, PathGetResult>(),
-  list: call<{ path: string; caller?: PathCallerContext }, PathListResult>(),
-  set: call<{ path: string; value: unknown; caller?: PathCallerContext }, PathSetResult>(),
-  call: call<{ path: string; args?: Record<string, unknown>; caller?: PathCallerContext }, PathCallResult>(),
+  get: call<{ path: string; sourcePaneId?: string; workspaceId?: string }, PathGetResult>(),
+  list: call<{ path: string; sourcePaneId?: string; workspaceId?: string }, PathListResult>(),
+  set: call<{ path: string; value: unknown; sourcePaneId?: string; workspaceId?: string }, PathSetResult>(),
+  call: call<{ path: string; args?: Record<string, unknown>; sourcePaneId?: string; workspaceId?: string }, PathCallResult>(),
 
-  events: stream<void, SequencedShellCoreEvent>(),
+  events: stream<{ sinceSeq?: number }, SequencedShellCoreEvent>(),
   terminalEvents: stream<{ paneId: string }, TerminalRuntimeEvent>(),
 
-  bootstrap: call<void, FlmuxShellBootstrapResponse>(),
-  registerClient: call<{ clientId?: string; lastAppliedSeq?: number }, ClientRegistrationResult>(),
   pushLayout: call<FlmuxSessionSaveLayouts, { ok: true }>(),
   getConfig: call<void, FlmuxRendererBootstrapConfig>()
 });
 
-export type ShellCapClient = ClientOf<typeof shellCap>;
-export type ShellCapImpl = ImplOf<typeof shellCap>;
+export type SessionCap = ClientOf<typeof sessionCap>;
+export type SessionCapImpl = ImplOf<typeof sessionCap>;
 
-// HTTP envelopes deliberately omit `caller` — only preload + post-auth WS
-// (which route through the connection setup) are trusted to inject caller
-// context. External HTTP clients that try to forge clientId / sourcePaneId
-// via the request body would otherwise bypass the implicit-current
-// narrowing at the model layer.
+// flmuxBridgeCap — anonymous entry. Auth happens at WS upgrade; bridge
+// methods mint sessionCap bound to the upgrade-time user. Per method:
+// - createSession:        web, fresh slot.
+// - resumeSession:        web, replays grace-window slot via cookie token.
+// - createDesktopSession: preload only (attestation.level === "app-internal").
+export const flmuxBridgeCap = defineCap("flmux.bridge", {
+  createSession: call<void, typeof sessionCap>({ returns: cap(sessionCap) }),
+  resumeSession: call<{ resumeToken: string }, typeof sessionCap>({ returns: cap(sessionCap) }),
+  createDesktopSession: call<void, typeof sessionCap>({ returns: cap(sessionCap) })
+});
 
+export type FlmuxBridgeCap = ClientOf<typeof flmuxBridgeCap>;
+export type FlmuxBridgeCapImpl = ImplOf<typeof flmuxBridgeCap>;
+
+// HTTP envelopes — separate surface from cap RPC. Cookie identity, not cap.
 export interface ClientScopedPathGetInput {
   authorityClientId: string;
   path: string;

@@ -207,7 +207,7 @@ class ShellModel implements ShellModelAPI {
         return throwPathError("NOT_WRITABLE", "Pane collection is not writable");
       }
 
-      const pane = await this.resolvePane(paneSegment);
+      const pane = await this.resolvePane(paneSegment, caller);
       if (!pane) {
         return throwPathError("NOT_FOUND", `Pane '${paneSegment}' not found`);
       }
@@ -298,11 +298,9 @@ class ShellModel implements ShellModelAPI {
     }
 
     if (segments[0] === "workspaces") {
-      // `caller.clientId` flows through slot-aware mutations so the
-      // client-scoped events (workspace.activeChanged) target the right
-      // slot. Mutations without caller.clientId land on the authority's
-      // default slot.
-      const slotKey = caller.clientId;
+      // Slot-aware mutations route client-scoped events (workspace.activeChanged)
+      // to the right slot. Without slotKey they land on the authority default slot.
+      const slotKey = caller.slotKey;
       const slotOptions = slotKey ? { slotKey } : undefined;
 
       if (segments.length === 2 && segments[1] === "new") {
@@ -354,7 +352,7 @@ class ShellModel implements ShellModelAPI {
       // Resolution order: args.workspaceId > caller.workspaceId > slot's active (via host fallback).
       // Host throws INVALID_VALUE when all three are absent.
       const workspaceId = argsWorkspaceId ?? caller.workspaceId;
-      const slotKey = caller.clientId;
+      const slotKey = caller.slotKey;
       const pane = await this.host.createPane(input, workspaceId || slotKey ? { workspaceId, slotKey } : undefined);
       return {
         ok: true,
@@ -371,7 +369,7 @@ class ShellModel implements ShellModelAPI {
       return throwPathError("NOT_CALLABLE", "Pane collection is not callable");
     }
 
-    const pane = await this.resolvePane(paneSegment);
+    const pane = await this.resolvePane(paneSegment, caller);
     if (!pane) {
       return throwPathError("NOT_FOUND", `Pane '${paneSegment}' not found`);
     }
@@ -449,7 +447,7 @@ class ShellModel implements ShellModelAPI {
     if (segments.length === 3 && segments[2] === "setActive") {
       const source = args.source === "user" ? "user" : "call";
       await this.host.setActivePane(pane.id, {
-        ...(caller.clientId ? { slotKey: caller.clientId } : {}),
+        ...(caller.slotKey ? { slotKey: caller.slotKey } : {}),
         source
       });
       return { ok: true, value: { paneId: pane.id } };
@@ -642,7 +640,7 @@ class ShellModel implements ShellModelAPI {
       };
     }
 
-    const pane = await this.resolvePane(segments[0]);
+    const pane = await this.resolvePane(segments[0], caller);
     if (!pane) {
       return notFoundGet();
     }
@@ -701,7 +699,7 @@ class ShellModel implements ShellModelAPI {
       };
     }
 
-    const pane = await this.resolvePane(segments[0]);
+    const pane = await this.resolvePane(segments[0], caller);
     if (!pane) {
       return notFoundList();
     }
@@ -777,7 +775,7 @@ class ShellModel implements ShellModelAPI {
       // callers without a clientId get the aggregate subtrees only
       // (`app`, `clients`, `workspaces`) and must compose their view via
       // `/status/workspaces/{id}/panes` for pane details.
-      const slotKey = caller.clientId;
+      const slotKey = caller.slotKey;
       const [app, clients, workspaces, panes] = await Promise.all([
         this.host.getAppStatus(),
         this.host.listClientSlots(),
@@ -1141,7 +1139,7 @@ class ShellModel implements ShellModelAPI {
       };
     }
 
-    const pane = await this.resolvePane(segments[0]);
+    const pane = await this.resolvePane(segments[0], caller);
     if (!pane) {
       return notFoundGet();
     }
@@ -1181,7 +1179,7 @@ class ShellModel implements ShellModelAPI {
       };
     }
 
-    const pane = await this.resolvePane(segments[0]);
+    const pane = await this.resolvePane(segments[0], caller);
     if (!pane) {
       return notFoundList();
     }
@@ -1315,7 +1313,7 @@ class ShellModel implements ShellModelAPI {
     // aggregates. If caller has no client, omit those fields — external
     // callers compose explicit subtrees (/status/workspaces/{id}, etc.)
     // instead of receiving a half-populated default-slot snapshot.
-    const slotKey = caller.clientId;
+    const slotKey = caller.slotKey;
     const [workspace, workspaces, panes, app] = await Promise.all([
       slotKey ? this.host.getWorkspaceStatus({ slotKey }) : null,
       this.host.listWorkspaces(),
@@ -1335,13 +1333,17 @@ class ShellModel implements ShellModelAPI {
     };
   }
 
-  private async resolvePane(paneSegment: string): Promise<ShellPaneRecordSnapshot | undefined> {
+  private async resolvePane(
+    paneSegment: string,
+    caller: PathCallerContext
+  ): Promise<ShellPaneRecordSnapshot | undefined> {
     if (paneSegment === "current") {
-      const activePaneId = await this.host.getCurrentPaneId();
+      const activePaneId = await this.host.getCurrentPaneId(
+        caller.slotKey ? { slotKey: caller.slotKey } : undefined
+      );
       if (!activePaneId) {
         throw new ModelPathError("NO_CURRENT_PANE", "No active pane is available");
       }
-
       return this.host.getPane(activePaneId);
     }
 
@@ -1832,8 +1834,8 @@ function throwPathError<T>(code: PathErrorCode, message: string): T {
  * equivalent so they don't depend on transport-dependent semantics.
  */
 function requireSlotKey(caller: PathCallerContext, attemptedPath: string, suggested: string): string {
-  if (!caller.clientId) {
+  if (!caller.slotKey) {
     throw new ModelPathError("INVALID_VALUE", `${attemptedPath} requires client context; use ${suggested}`);
   }
-  return caller.clientId;
+  return caller.slotKey;
 }

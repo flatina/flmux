@@ -8,7 +8,7 @@ import type {
   ClientScopedPathListInput,
   ClientScopedPathSetInput,
   FlmuxSessionSaveLayouts,
-  FlmuxShellBootstrapResponse
+  FlmuxSessionBootstrapResponse
 } from "../shared/rendererBridge";
 import paneSvg from "./assets/pane.svg" with { type: "text" };
 import type { DiscoveredLocalExtension } from "./localExtensions";
@@ -52,7 +52,7 @@ export function startFlmuxServer(options: {
   bootstrapClient?(
     context: FlmuxAuthorizationContext | null,
     existingClientId: string | null
-  ): Promise<FlmuxShellBootstrapResponse>;
+  ): Promise<FlmuxSessionBootstrapResponse>;
   authorizer?: FlmuxWebModeAuthorizer;
   /** Explicit listen port. Undefined → OS-assigned (current default). */
   port?: number;
@@ -278,12 +278,7 @@ export function startFlmuxServer(options: {
         wsToConn.delete(raw);
         wsToReceive.delete(raw);
         if (conn) {
-          // `Connection` interface doesn't expose a public close; the impl's
-          // `shutdown(reason)` fires onClose handlers and rejects pending
-          // calls. Without it, `conn.onClose` registrations leak.
-          try {
-            (conn as unknown as { shutdown(reason: string): void }).shutdown("ws_close");
-          } catch { /* swallow */ }
+          try { conn.shutdown("ws_close"); } catch { /* swallow */ }
         }
       }
     });

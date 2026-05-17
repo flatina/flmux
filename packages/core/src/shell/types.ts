@@ -25,18 +25,12 @@ export interface ShellPathEntry {
 }
 
 export interface PathCallerContext {
+  // Per-call data — callers may supply these.
   sourcePaneId?: string;
-  // Phase B: routing/context hints. `clientId` names the client
-  // whose view-state a mutation/read targets — the slot key for
-  // implicit-current paths like /status/workspace/*, /panes list, /title
-  // set, and client-scoped mutations like /workspaces/{id}/setActive.
-  // `workspaceId` is a per-call hint for /panes/new's resolution chain
-  // (args > caller.workspaceId > slot active). Both populated by preload
-  // (via hostRequests.ts, view→clientId) or post-auth WS; external
-  // HTTP/CLI leave them unset and hit INVALID_VALUE on paths that need
-  // the resolution.
-  clientId?: string;
   workspaceId?: string;
+  // Server-injected identity slot key. sessionImpl closure sets this; external
+  // HTTP/CLI leave it unset and hit INVALID_VALUE on implicit-current paths.
+  slotKey?: string;
 }
 
 export type Awaitable<T> = T | Promise<T>;

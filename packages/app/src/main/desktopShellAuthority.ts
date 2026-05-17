@@ -10,7 +10,7 @@ import {
 } from "@flmux/core/shell";
 import type {
   FlmuxSessionSaveLayouts,
-  FlmuxShellBootstrapResponse,
+  FlmuxSessionBootstrapResponse,
   FlmuxShellSnapshot
 } from "../shared/rendererBridge";
 import type { FlmuxSessionSnapshot, FlmuxWorkspaceSessionSnapshot } from "../shared/session";
@@ -37,7 +37,7 @@ export interface DesktopShellAuthority {
   /** Build the bootstrap snapshot for `clientId`. Desktop callers pass
    * `DESKTOP_CLIENT_ID` ("local") via the preload RPC; web browsers
    * pass the server-minted clientId via the HTTP bootstrap route. */
-  shellBootstrap(clientId: string): FlmuxShellBootstrapResponse;
+  shellBootstrap(clientId: string): FlmuxSessionBootstrapResponse;
   persistSession(layouts: FlmuxSessionSaveLayouts): Promise<void>;
 }
 
@@ -227,7 +227,7 @@ export function buildBootstrapResponse(options: {
   shellCore: ShellCore;
   outerLayout: unknown | null;
   innerLayouts: Record<string, unknown | null>;
-}): FlmuxShellBootstrapResponse {
+}): FlmuxSessionBootstrapResponse {
   const { shellCore } = options;
   // Preflight #1 §S3: capture seqStart BEFORE composing the snapshot so the
   // invariant "every event with seq <= seqStart is already folded into the

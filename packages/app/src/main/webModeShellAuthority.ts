@@ -7,7 +7,7 @@ import {
   type SequencedShellCoreEvent,
   type ShellModelAPI
 } from "@flmux/core/shell";
-import type { FlmuxSessionSaveLayouts, FlmuxShellBootstrapResponse } from "../shared/rendererBridge";
+import type { FlmuxSessionSaveLayouts, FlmuxSessionBootstrapResponse } from "../shared/rendererBridge";
 import { buildBootstrapResponse, composeSessionSnapshot, restoreFromSession } from "./desktopShellAuthority";
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
 import type { TerminalService } from "./terminal-service";
@@ -30,7 +30,7 @@ export interface WebModeShellAuthority {
   /** Build the snapshot for a browser client. Includes `outerLayout` /
    * `innerLayouts` when a session store is wired and the last save was
    * restored at startup; empty otherwise. */
-  shellBootstrap(clientId: string): FlmuxShellBootstrapResponse;
+  shellBootstrap(clientId: string): FlmuxSessionBootstrapResponse;
   /** Persist the caller's layout delta to this authority's session store.
    * `undefined` when no store is wired (single-user dev mode / tests) —
    * callers should tolerate absence the same way desktop does. */
@@ -101,7 +101,7 @@ export async function createWebModeShellAuthority(options: {
     shellCore.setActiveWorkspace(firstWs, { slotKey: clientId });
   }
 
-  function shellBootstrap(clientId: string): FlmuxShellBootstrapResponse {
+  function shellBootstrap(clientId: string): FlmuxSessionBootstrapResponse {
     // Mirror of the desktop path: mutate (bootstrap helper) BEFORE capturing
     // seqStart (inside buildBootstrapResponse) so the emitted
     // `workspace.activeChanged` is already folded into the snapshot boundary

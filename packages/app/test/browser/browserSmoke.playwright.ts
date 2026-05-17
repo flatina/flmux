@@ -130,7 +130,7 @@ test("C2 tab refresh reuses clientId + preserves slot state (B2P3)", async ({ br
     await page.goto(`${handle.origin}/?token=${encodeURIComponent(handle.token)}`);
     await expect(page.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
 
-    const clientIdBefore = (await context.cookies(handle.origin)).find((c) => c.name === "flmux-client")?.value;
+    const clientIdBefore = (await context.cookies(handle.origin)).find((c) => c.name === "flmux-session")?.value;
     expect(clientIdBefore).toMatch(/^web_/);
 
     // Mutate slot state so the reload's preservation is observable:
@@ -173,20 +173,11 @@ test("C2 tab refresh reuses clientId + preserves slot state (B2P3)", async ({ br
     await page.reload();
     await expect(page.locator(".dockview-shell")).toBeVisible({ timeout: 20_000 });
 
-    const clientIdAfter = (await context.cookies(handle.origin)).find((c) => c.name === "flmux-client")?.value;
+    const clientIdAfter = (await context.cookies(handle.origin)).find((c) => c.name === "flmux-session")?.value;
     expect(clientIdAfter).toBe(clientIdBefore);
     // Slot state survives reload — same clientId re-binds to the existing slot.
     await expect(page).toHaveTitle(/Continuity/, { timeout: 10_000 });
 
-    // Unknown id → fresh mint (bootstrap doesn't blindly trust the cookie).
-    const bogusRes = await fetch(`${handle.origin}/api/shell/bootstrap`, {
-      method: "POST",
-      headers: {
-        cookie: `flmux_web_token=${handle.token}; flmux-client=web_bogus_does_not_exist`
-      }
-    });
-    const bogusBody = (await bogusRes.json()) as { clientId: string };
-    expect(bogusBody.clientId).not.toBe("web_bogus_does_not_exist");
   } finally {
     await context.close();
   }
@@ -221,7 +212,7 @@ test("C3 two tabs of the same user keep independent active workspaces (B1b)", as
     await expect(pageA.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
 
     const cookieHeaderA = (await contextA.cookies(handle.origin)).map((c) => `${c.name}=${c.value}`).join("; ");
-    const attachA = (await contextA.cookies(handle.origin)).find((c) => c.name === "flmux-client")!.value;
+    const attachA = (await contextA.cookies(handle.origin)).find((c) => c.name === "flmux-session")!.value;
     const clientId = (
       (await (
         await fetch(`${handle.origin}/api/clients`, {
@@ -246,7 +237,7 @@ test("C3 two tabs of the same user keep independent active workspaces (B1b)", as
     await pageB.goto(`${handle.origin}/?token=${encodeURIComponent(handle.token)}`);
     await expect(pageB.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
 
-    const attachB = (await contextB.cookies(handle.origin)).find((c) => c.name === "flmux-client")!.value;
+    const attachB = (await contextB.cookies(handle.origin)).find((c) => c.name === "flmux-session")!.value;
     expect(attachB).not.toBe(attachA);
 
     // Both tabs start on workspace.1 (seed) — document.title reflects the

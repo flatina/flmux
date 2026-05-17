@@ -16,22 +16,11 @@ const WORKSPACE_STATUS_KEY = "count";
 
 type CounterClient = ClientOf<typeof counterCap>;
 
-// Module-top bootstrap is safe: flmux serves every extension's cap
-// synchronously inside the bunite `serve` callback, so the registry is
-// populated before any frame from this connection can be processed.
-const counterReady: Promise<CounterClient> = bootstrap(counterCap);
+// SessionCap-pure: ext cap is served per session by the host's onSession.
+// The renderer bootstraps it inside `onLoad` (post-createSession on this
+// connection), then stores the client for every pane mount.
+let counterReady: Promise<CounterClient> | null = null;
 const paneRenderers = new Map<string, (count: number) => void>();
-
-void (async () => {
-  try {
-    const counter = await counterReady;
-    for await (const event of counter.changed()) {
-      for (const render of paneRenderers.values()) render(event.count);
-    }
-  } catch (error) {
-    console.warn("[counter] changed stream ended", error);
-  }
-})();
 
 class CounterPane implements ExtensionPaneInstance {
   private dom: PanelDom | null = null;
@@ -56,7 +45,7 @@ class CounterPane implements ExtensionPaneInstance {
 
   private async mount() {
     this.dom = await mountPanelShell(this.host, panelTemplateUrl, this.ctx);
-    if (this.disposed || !this.dom) return;
+    if (this.disposed || !this.dom || !counterReady) return;
     this.wireWorkspace(this.dom.workspace);
     const counter = await counterReady;
     if (this.disposed || !this.dom) return;
@@ -115,5 +104,18 @@ class CounterPane implements ExtensionPaneInstance {
 }
 
 export default defineExtension({
-  panes: [definePaneRenderer({ kind: "counter", mount: (host, ctx) => new CounterPane(host, ctx) })]
+  panes: [definePaneRenderer({ kind: "counter", mount: (host, ctx) => new CounterPane(host, ctx) })],
+  onLoad() {
+    counterReady = bootstrap(counterCap);
+    void (async () => {
+      try {
+        const counter = await counterReady!;
+        for await (const event of counter.changed()) {
+          for (const render of paneRenderers.values()) render(event.count);
+        }
+      } catch (error) {
+        console.warn("[counter] changed stream ended", error);
+      }
+    })();
+  }
 });

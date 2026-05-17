@@ -95,20 +95,21 @@ import { defineExtensionServer } from "@flmux/extension-api";
 import { myCap } from "./schema";
 
 export default defineExtensionServer({
-  serve(ctx) {
-    const handle = ctx.connection.serve(myCap, {
+  onSession(ctx) {
+    // sessionId/userId 는 closure 가 capture — wire 위로 carry 0.
+    ctx.serve(myCap, {
       ping: ({value}) => ({pong: `pong:${value}`}),
       events: () => Stream.from((emit, signal) => {
-        const t = setInterval(() => emit({...}), 1000);
+        const t = setInterval(() => emit({/* ... */}), 1000);
         signal.addEventListener("abort", () => clearInterval(t));
       })
     });
-    return { dispose() { ctx.connection.unserve(handle); } };
+    ctx.onDispose(() => { /* per-session teardown — fires on connection close */ });
   }
 });
 ```
 
-`serve` runs **synchronously** inside the bunite connection-setup callback — flmux iterates every extension's `serve` before bunite processes any incoming frame, so the cap registry is populated before the renderer can bootstrap. Module-top `bootstrap(myCap)` is safe.
+`onSession` 은 매 session (post-auth) 마다 1회 실행. impl closure 가 `ctx.sessionId`/`ctx.userId` 를 자유로이 사용 — 매 cap call 마다 caller-declared identity 없이 server-known.
 
 **renderer index.ts**:
 ```ts
@@ -116,23 +117,27 @@ import { bootstrap } from "bunite-core/rpc/renderer";
 import { defineExtension, definePaneRenderer } from "@flmux/extension-api";
 import { myCap } from "./schema";
 
-const ready = bootstrap(myCap);  // module-level, browser-only — safe top-level
+let rpcReady: Promise<Awaited<ReturnType<typeof bootstrap<typeof myCap>>>> | null = null;
 
 export default defineExtension({
   panes: [definePaneRenderer({
     kind: "my.ext",
     mount: (host, ctx) => {
       void (async () => {
-        const rpc = await ready;
+        const rpc = await rpcReady!;
         const { pong } = await rpc.ping({ value: "hi" });
         // ...
       })();
     }
-  })]
+  })],
+  onLoad() {
+    // host onSession 이 connection 에 cap 을 serve 한 직후 호출됨 — bootstrap 안전.
+    rpcReady = bootstrap(myCap);
+  }
 });
 ```
 
-Cap names use reverse-domain (`<orgDomain>.<extId>`); `bunite.*` is reserved for the framework. RPC is decoupled from pane lifecycle — `conn.serve` runs once per connection inside `serve`, pane creation/destruction never re-runs handshake.
+Cap names use reverse-domain (`<orgDomain>.<extId>`); `bunite.*` / `flmux.*` reserved for the framework. RPC is decoupled from pane lifecycle — `onSession` runs once per session, pane creation/destruction never re-runs handshake.
 
 ## Tab-header menu
 

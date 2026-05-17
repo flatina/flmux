@@ -7,8 +7,7 @@ import type {
   ClientScopedPathGetInput,
   ClientScopedPathListInput,
   ClientScopedPathSetInput,
-  FlmuxSessionSaveLayouts,
-  FlmuxSessionBootstrapResponse
+  FlmuxSessionSaveLayouts
 } from "../shared/rendererBridge";
 import paneSvg from "./assets/pane.svg" with { type: "text" };
 import type { DiscoveredLocalExtension } from "./localExtensions";
@@ -39,25 +38,16 @@ export function startFlmuxServer(options: {
    * context because auth would have already rejected the request). */
   resolveShellModelRouter(context: FlmuxAuthorizationContext | null): Promise<FlmuxShellModelRouter>;
   localExtensions?: DiscoveredLocalExtension[];
-  /** Called from `/api/session/save` beacon. Receives the authenticated
-   * user's context so web mode can route to the right per-user
-   * authority; desktop ignores it and routes to its single authority.
-   * Undefined when the calling authority has no sessionStore wired. */
+  /** Called from `/api/session/save` beacon — last-chance flush of layout
+   *  state on page unload. cap RPC's pushLayout is the primary path. */
   saveSession?(context: FlmuxAuthorizationContext | null, layouts: FlmuxSessionSaveLayouts): Promise<void>;
-  /** Build the bootstrap snapshot for the authenticated user. When
-   * `existingClientId` is the cookie value from a prior bootstrap
-   * and the server still owns that client for this user, the
-   * callback may reuse it (B2 Phase 3 cookie continuity) — otherwise
-   * it mints fresh. Only wired in web mode. */
-  bootstrapClient?(
-    context: FlmuxAuthorizationContext | null,
-    existingClientId: string | null
-  ): Promise<FlmuxSessionBootstrapResponse>;
   authorizer?: FlmuxWebModeAuthorizer;
   /** Explicit listen port. Undefined → OS-assigned (current default). */
   port?: number;
-  /** Called on every accepted WS upgrade with a fresh bunite Connection. */
-  onRpcConnection?(conn: Connection): void;
+  /** Called on every accepted WS upgrade with a fresh bunite Connection and
+   *  the auth context resolved at upgrade time. Web mode: context.user is
+   *  set (auth gate already passed). Desktop mode: WS isn't used (preload). */
+  onRpcConnection?(conn: Connection, authContext: FlmuxAuthorizationContext | null): void;
 }): FlmuxServerHandle {
   const hostname = "127.0.0.1";
   const app = new Elysia()
@@ -145,30 +135,6 @@ export function startFlmuxServer(options: {
         return await router.pathCall(input);
       });
     })
-    .post("/api/shell/bootstrap", async ({ request, set }) => {
-      const auth = authorizeRequest(request, set, options.authorizer);
-      if (!auth.ok) {
-        return "Unauthorized";
-      }
-
-      if (!options.bootstrapClient) {
-        set.status = 404;
-        return "Not Found";
-      }
-
-      // Per-user authority lazy-instantiation is an async step (B2 Phase 1)
-      // — `getOrCreate(userId)` may spin up a fresh ShellCore + initialize
-      // it. The seqStart/snapshot compose inside `authority.shellBootstrap`
-      // is still sync (preflight #1 §S3) so the snapshot boundary invariant
-      // holds. What's async is the user's authority creation, not the
-      // bootstrap body.
-      const existingClientId = readCookie(request.headers.get("cookie"), "flmux-client");
-      const response = await options.bootstrapClient(auth.context, existingClientId);
-      const cookie = `flmux-client=${response.clientId}; HttpOnly; Path=/; SameSite=Strict`;
-      setHeader(set, "set-cookie", cookie);
-      setHeader(set, "content-type", "application/json; charset=utf-8");
-      return response;
-    })
     .post("/api/session/save", async ({ request, set }) => {
       const auth = authorizeRequest(request, set, options.authorizer);
       if (!auth.ok) {
@@ -240,6 +206,18 @@ export function startFlmuxServer(options: {
       },
       open(ws) {
         const raw = ws.raw as object;
+        // Re-authorize at open time to capture the auth context — beforeHandle's
+        // result isn't threaded to open in Elysia, but ws.data.request carries
+        // the upgrade Request. Cheap (same parse path) and the only point
+        // before onConn fires.
+        const upgradeRequest = (ws.data as { request?: Request }).request;
+        const auth = upgradeRequest
+          ? authorizeRequest(upgradeRequest, { status: 0 }, options.authorizer)
+          : { ok: true as const, context: null };
+        if (!auth.ok) {
+          (raw as { close?(): void }).close?.();
+          return;
+        }
         const pipe = {
           send: (bytes: Uint8Array) => {
             (raw as { send(data: Uint8Array | ArrayBuffer): unknown }).send(bytes);
@@ -257,7 +235,7 @@ export function startFlmuxServer(options: {
           origin: new URL((ws as { url?: string }).url ?? "http://localhost").origin
         });
         wsToConn.set(raw, conn);
-        onConn(conn);
+        onConn(conn, auth.context);
       },
       message(ws, message) {
         const recv = wsToReceive.get(ws.raw as object);

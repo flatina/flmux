@@ -254,7 +254,7 @@ export function buildBootstrapResponse(options: {
     activeWorkspaceId: shellCore.getSlotActiveWorkspaceId(options.clientId)
   };
   return {
-    clientId: options.clientId,
+    resumeToken: options.clientId,
     snapshot,
     outerLayout: options.outerLayout,
     innerLayouts: options.innerLayouts,

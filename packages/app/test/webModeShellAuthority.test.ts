@@ -103,7 +103,7 @@ describe("web mode shell authority", () => {
     });
 
     const fresh = authority.shellBootstrap("web_alpha");
-    expect(fresh.clientId).toBe("web_alpha");
+    expect(fresh.resumeToken).toBe("web_alpha");
     expect(fresh.snapshot.activeWorkspaceId).toBe("workspace.1");
     expect(fresh.outerLayout).toBeNull();
     expect(fresh.innerLayouts).toEqual({});

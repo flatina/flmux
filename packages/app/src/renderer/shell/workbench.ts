@@ -43,7 +43,7 @@ import {
   humanizePaneKind
 } from "./headerActions";
 import type {
-  ShellCapClient,
+  SessionCap,
   FlmuxRendererBootstrapConfig,
   FlmuxSessionSaveLayouts,
   FlmuxSessionBootstrapResponse
@@ -51,7 +51,7 @@ import type {
 import { getFlmuxRendererLifecyclePolicy } from "../../shared/runtimeMode";
 import { resolveTerminalCwdFromRoot } from "@flmux/core/terminal/path";
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
-import { createShellModelClientOverPreload } from "./shellModelClient";
+import { createShellModelClientOverSession } from "./shellModelClient";
 import { subscribeShellCoreEvents, pushShellCoreEvent } from "./shellEventBus";
 import { buildPaneWorkspaceContext } from "./workspaceContext";
 
@@ -113,14 +113,14 @@ export class FlmuxWorkbench {
 
   constructor(
     private readonly config: FlmuxRendererBootstrapConfig,
-    private readonly shell: ShellCapClient
+    private readonly session: SessionCap
   ) {
     this.lifecyclePolicy = getFlmuxRendererLifecyclePolicy(config.mode);
     registerBuiltinPaneDescriptors(this.paneRegistry, {
       installRoot: config.projectDir,
       resolveTerminalCwd: resolveTerminalCwdFromRoot
     });
-    this.shellModel = createShellModelClientOverPreload(shell);
+    this.shellModel = createShellModelClientOverSession(session);
     subscribeShellCoreEvents((event) => this.handleCoreEvent(event));
     document.addEventListener("flmux-theme-change", () => this.applyDockviewTheme());
   }
@@ -149,51 +149,17 @@ export class FlmuxWorkbench {
   async start() {
     this.initializeOuterShell();
 
-    if (this.config.mode === "web") {
-      // Web: HTTP POST bootstrap mints the clientId server-side and
-      // installs the ring-buffer subscriber; apply snapshot; THEN register
-      // with the clientId so the server flushes any replay + installs
-      // the live forwarder. Order matters — forwarder can't exist before
-      // clientId does.
-      const bootstrap = await this.fetchWebBootstrap();
-      this.applyBootstrap(bootstrap);
-      this.lastAppliedSeq = bootstrap.seqStart;
-      this.bootstrapped = true;
-      // `register` RPC and `shellCore.event` messages share one ordered WS
-      // stream — server-side replay events sent inside the register
-      // handler arrive on the same socket before the register response,
-      // so bootstrapped=true + lastAppliedSeq must be set above. If a
-      // future refactor routes register through a separate transport
-      // this ordering assumption dies and events can arrive before the
-      // gate is armed.
-      const registration = await this.shell.registerClient({
-        clientId: bootstrap.clientId,
-        lastAppliedSeq: bootstrap.seqStart
-      });
-      if (registration.status === "rebootstrap-required") {
-        // Ring buffer overflowed between bootstrap and register (rare in
-        // B1d single-client; possible under server-side event storms).
-        // Simplest recovery: reload the page to restart the cycle.
-        console.warn("[flmux] rebootstrap-required on first register — reloading");
-        window.location.reload();
-        return;
-      }
-    } else {
-      // Desktop: register first (installs forwarder on the pinned "local"
-      // client), then preload-RPC bootstrap. Live events emitted during
-      // bootstrap reach the renderer and are buffered by the seq gate.
-      // Desktop register never carries a binding arg → server-side
-      // `onClientRegister` returns void → response is always `"ok"`. The
-      // `"rebootstrap-required"` branch only arises for web.
-      const registration = await this.shell.registerClient({});
-      if (registration.status !== "ok") {
-        throw new Error(`shell.registerClient: desktop preload returned unexpected status '${registration.status}'`);
-      }
-      const bootstrap = await this.shell.bootstrap();
-      this.applyBootstrap(bootstrap);
-      this.lastAppliedSeq = bootstrap.seqStart;
-      this.bootstrapped = true;
-    }
+    // SessionCap is established before workbench start (see renderer/main.ts).
+    // Fetch initial snapshot via the single bootstrap method on the cap —
+    // works identically in desktop/web; identity is server-side closure.
+    const bootstrap = await this.session.bootstrap();
+    this.applyBootstrap(bootstrap);
+    this.lastAppliedSeq = bootstrap.seqStart;
+    this.bootstrapped = true;
+    // Persist resumeToken for tab refresh — next connection's resumeSession
+    // reuses the same slot (active workspace/pane preserved across grace).
+    document.cookie = `flmux-session=${encodeURIComponent(bootstrap.resumeToken)}; Path=/; SameSite=Strict`;
+
     this.drainBufferedEvents();
     this.openShellEventsStream();
 
@@ -210,17 +176,6 @@ export class FlmuxWorkbench {
         this.saveLayoutsViaBeacon(this.serializeSessionLayouts());
       });
     }
-  }
-
-  private async fetchWebBootstrap(): Promise<FlmuxSessionBootstrapResponse> {
-    const response = await fetch(`${this.config.appOrigin}/api/shell/bootstrap`, {
-      method: "POST",
-      credentials: "same-origin"
-    });
-    if (!response.ok) {
-      throw new Error(`/api/shell/bootstrap failed: ${response.status} ${response.statusText}`);
-    }
-    return (await response.json()) as FlmuxSessionBootstrapResponse;
   }
 
   // ── Bootstrap ──
@@ -737,17 +692,14 @@ export class FlmuxWorkbench {
     return new WorkspaceOuterPanelRenderer(options.id, this);
   }
 
-  /** Open `shell.events()` AFTER registerClient — server-side stream impl
-   * needs clientId bound before it can subscribe to the right authority's
-   * buffer. */
   private openShellEventsStream() {
     void (async () => {
       try {
-        for await (const event of this.shell.events()) {
+        for await (const event of this.session.events({ sinceSeq: this.lastAppliedSeq })) {
           pushShellCoreEvent(event);
         }
       } catch (error) {
-        console.warn("[flmux] shell.events stream ended", error);
+        console.warn("[flmux] session.events stream ended", error);
       }
     })();
   }
@@ -756,7 +708,7 @@ export class FlmuxWorkbench {
     paneId: string,
     handler: (event: TerminalRuntimeEvent) => void
   ): () => void {
-    const stream = this.shell.terminalEvents({ paneId });
+    const stream = this.session.terminalEvents({ paneId });
     let aborted = false;
     void (async () => {
       try {
@@ -884,7 +836,7 @@ export class FlmuxWorkbench {
       return;
     }
     const layouts = this.serializeSessionLayouts();
-    void this.shell.pushLayout(layouts).catch((error: unknown) => {
+    void this.session.pushLayout(layouts).catch((error: unknown) => {
       console.warn("failed to push flmux layout delta", error);
     });
   }

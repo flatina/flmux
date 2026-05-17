@@ -6,9 +6,10 @@ import {
   acquireSingleInstanceLock
 } from "bunite-core";
 import type { Connection } from "bunite-core/rpc";
-import type { SequencedShellCoreEvent, ShellModelAPI } from "@flmux/core/shell";
-import { shellCap, type FlmuxSessionSaveLayouts } from "../shared/rendererBridge";
-import { createShellImpl } from "./shellImpl";
+import type { PathCallerContext, SequencedShellCoreEvent, ShellModelAPI } from "@flmux/core/shell";
+import { flmuxBridgeCap, type FlmuxSessionSaveLayouts } from "../shared/rendererBridge";
+import { createSessionImpl } from "./sessionImpl";
+import { createBridgeImpl, type MintedSession } from "./bridgeImpl";
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
 import { ClientRegistry } from "./clientRegistry";
 import { createSessionStore } from "./sessionStore";
@@ -44,13 +45,16 @@ import {
   createLocalExtensionLoadEntries
 } from "./localExtensions";
 import type {
-  ExtensionServerClientInstance,
   ExtensionServerDefinition,
   ExtensionServerPaneInstance,
   ShellClient as ShellClientImport
 } from "@flmux/extension-api";
+import type { CapDef, ImplOf, ServeHandle } from "bunite-core/rpc";
 
-type ShellAuthority = Pick<DesktopShellAuthority | WebModeShellAuthority, "subscribe" | "applyTerminalEvent"> & {
+type ShellAuthority = Pick<
+  DesktopShellAuthority | WebModeShellAuthority,
+  "subscribe" | "applyTerminalEvent" | "shellBootstrap"
+> & {
   readonly shellModel: ShellModelAPI;
   readonly router: FlmuxShellModelRouter;
   readonly clientId: string;
@@ -239,24 +243,16 @@ for (const ext of localExtensions) {
   }
 }
 
-// Per-(extension × client) RPC binding instance from `onClientConnected`.
-// `null` means the hook returned void — sentinel keeps idempotency.
-const extensionClientInstances = new Map<string, ExtensionServerClientInstance | null>();
-// Per-(extension × client) bind promise — pane-level dispatch awaits this so
-// `onPaneConnected` never fires before `onClientConnected` resolves.
-const extensionClientBindPromises = new Map<string, Promise<void>>();
-// Per-(paneId × clientId) `onPaneConnected` instance. No RPC concerns —
-// pane-lifecycle bookkeeping only.
+// Per-session ext serve handles + dispose hooks — collected in bindMintedSession,
+// torn down by MintedSession.dispose on conn.onClose.
+interface SessionExtensionsState {
+  serveHandles: ServeHandle[];
+  sessionDisposes: Array<() => void>;
+}
+const sessionExtensionsBySessionId = new Map<string, SessionExtensionsState>();
 const paneServerInstances = new Map<string, ExtensionServerPaneInstance>();
 const paneKinds = new Map<string, string>();
-// clientId → live bunite Connection for that client. Extensions serve their
-// caps on this Connection in `onClientConnected`; flmux owns the
-// `flmux.shell` registration. Set at register-time, deleted on disconnect.
 const clientIdToConnection = new Map<string, Connection>();
-// Pre-register viewId → Connection map. Populated when a WS opens (web) or
-// the desktop view is constructed; consumed by `registerClient` to bind
-// `clientIdToConnection`. Desktop's viewId is `win.webviewId`; web mints
-// sequentially.
 const viewIdToConnection = new Map<number, Connection>();
 
 function findExtensionIdForPaneKind(kind: string): string | undefined {
@@ -279,18 +275,20 @@ function clientInstanceKey(extId: string, clientId: string) {
  * Returns null when the pane→authority mapping isn't established yet
  * (racing `clientIdToConnection` writes); caller warns and retries.
  */
-function createExtensionShellClient(paneId: string | null, clientId: string): ShellClientImport | null {
-  const authority = paneId ? paneIdToAuthority.get(paneId) : resolveAuthorityForClient(clientId);
+function createExtensionShellClient(paneId: string | null, sessionId: string): ShellClientImport | null {
+  const authority = paneId ? paneIdToAuthority.get(paneId) : resolveAuthorityForClient(sessionId);
   if (!authority) return null;
   const shellModel = authority.shellModel;
   const authorizer = webModeAuthorizer;
-  const caller: { clientId: string; sourcePaneId?: string } = paneId ? { clientId, sourcePaneId: paneId } : { clientId };
+  const caller: PathCallerContext = paneId
+    ? { slotKey: sessionId, sourcePaneId: paneId }
+    : { slotKey: sessionId };
 
   // Per-call resolve: session cleanup / token revocation drops ACL on the
   // next shell call instead of using a stale snapshot.
   function resolveUser(): FlmuxUserImport | null {
     if (!authorizer) return null;
-    const userId = clientIdToUserId.get(clientId);
+    const userId = clientIdToUserId.get(sessionId);
     if (!userId) return null;
     return authorizer.resolveUserByName(userId);
   }
@@ -299,8 +297,7 @@ function createExtensionShellClient(paneId: string | null, clientId: string): Sh
     if (!authorizer) return;
     const user = resolveUser();
     if (!user) {
-      // Fail closed when the client's user can't be identified.
-      throw new Error(`No resolvable user for client '${clientId}' (shell ${method} '${path}')`);
+      throw new Error(`No resolvable user for session '${sessionId}' (shell ${method} '${path}')`);
     }
     if (!authorizer.isPathAllowed(user, method, path)) {
       throw new Error(`Access denied for user '${user.name}': ${method} '${path}'`);
@@ -339,83 +336,70 @@ function createExtensionShellClient(paneId: string | null, clientId: string): Sh
   };
 }
 
-/**
- * Attach extension server to a client — fires `onClientConnected` once per
- * (extension × client). Idempotent: stores a bind promise so concurrent
- * pane-level dispatch awaits the same handshake. Per-extension `onInit`
- * promise is awaited first; init failure cascades to skipping this attach.
- *
- * Extensions wire RPC via `ctx.connection.serve(extCap, impl)` inside
- * `onClientConnected`. flmux owns the Connection lifecycle; extensions own
- * their cap registration via the returned instance's `dispose`.
- */
-function attachExtensionServer(extId: string, clientId: string): Promise<void> {
-  const key = clientInstanceKey(extId, clientId);
-  const existing = extensionClientBindPromises.get(key);
-  if (existing) return existing;
-  const initPromise = extensionServerInits.get(extId);
-  const server = extensionServers.get(extId);
-  if (!server?.onClientConnected) return Promise.resolve();
-  const connection = clientIdToConnection.get(clientId);
-  if (!connection) return Promise.resolve();
-  const shell = createExtensionShellClient(null, clientId);
-  if (!shell) {
-    console.warn(
-      `[flmux] extension '${extId}' skipped onClientConnected — no authority mapped for client ${clientId}`
-    );
-    return Promise.resolve();
-  }
-  const dataDir = resolveExtensionDataDir(extId);
-  if (!dataDir) {
-    console.warn(`[flmux] extension '${extId}' skipped onClientConnected — data dir not provisioned`);
-    return Promise.resolve();
-  }
-  let promise!: Promise<void>;
-  promise = (async () => {
-    if (initPromise) await initPromise;
-    if (
-      extensionServers.get(extId) !== server ||
-      extensionClientBindPromises.get(key) !== promise ||
-      clientIdToConnection.get(clientId) !== connection
-    ) {
-      return;
-    }
-    try {
-      const inst = await server.onClientConnected!(clientId, { dataDir, shell });
-      if (extensionClientBindPromises.get(key) !== promise) {
-        try {
-          inst?.dispose?.();
-        } catch (err) {
-          console.warn(`[flmux] extension '${extId}' late dispose error (client ${clientId}):`, err);
-        }
-        return;
+/** Fire each extension's `onSession` and serve its returned cap on the
+ *  connection. Each impl closure captures sessionId/userId, so per-call
+ *  identity needs no wire-side caller args. Returns the handles for the
+ *  session's dispose to unserve on connection close. */
+async function attachExtensionsForSession(opts: {
+  conn: Connection;
+  sessionId: string;
+  userId: string;
+  authority: ShellAuthority;
+}): Promise<SessionExtensionsState> {
+  // Resume-on-new-conn before old close: detach old state synchronously so
+  // its disposes fire on the previous Connection, not the new one.
+  const previous = sessionExtensionsBySessionId.get(opts.sessionId);
+  if (previous) {
+    sessionExtensionsBySessionId.delete(opts.sessionId);
+    for (const dispose of previous.sessionDisposes) {
+      try { dispose(); } catch (err) {
+        console.warn(`[flmux] previous-session dispose error:`, err);
       }
-      extensionClientInstances.set(key, inst ?? null);
-    } catch (err) {
-      console.warn(`[flmux] extension '${extId}' onClientConnected error (client ${clientId}):`, err);
     }
-  })();
-  extensionClientBindPromises.set(key, promise);
-  return promise;
+    // serveHandles on the OLD connection — bunite will unserve them when that
+    // conn closes; not our job here.
+  }
+  const state: SessionExtensionsState = { serveHandles: [], sessionDisposes: [] };
+  for (const [extId, def] of extensionServers) {
+    if (!def.onSession) continue;
+    const initPromise = extensionServerInits.get(extId);
+    if (initPromise) await initPromise;
+    const dataDir = resolveExtensionDataDir(extId);
+    if (!dataDir) continue;
+    const shell = createExtensionShellClient(null, opts.sessionId);
+    if (!shell) continue;
+    try {
+      await def.onSession({
+        dataDir,
+        sessionId: opts.sessionId,
+        userId: opts.userId,
+        shell,
+        serve: <C extends CapDef<any, any>>(cap: C, impl: ImplOf<C>) => {
+          state.serveHandles.push(opts.conn.serve(cap, impl));
+        },
+        onDispose: (fn) => {
+          state.sessionDisposes.push(fn);
+        }
+      });
+    } catch (err) {
+      console.warn(`[flmux] extension '${extId}' onSession error (session ${opts.sessionId}):`, err);
+    }
+  }
+  sessionExtensionsBySessionId.set(opts.sessionId, state);
+  return state;
 }
 
-async function detachExtensionServer(extId: string, clientId: string) {
-  const key = clientInstanceKey(extId, clientId);
-  const pending = extensionClientBindPromises.get(key);
-  // Mark cancelled before awaiting so the bind continuation drops itself.
-  extensionClientBindPromises.delete(key);
-  if (pending) await pending;
-  // After the await, a fresh `attachExtensionServer` may have taken the slot
-  // (cookie continuity rebind in the same sync slice). The new bind owns
-  // the instance now — don't dispose its handle.
-  if (extensionClientBindPromises.has(key)) return;
-  if (!extensionClientInstances.has(key)) return;
-  const inst = extensionClientInstances.get(key);
-  extensionClientInstances.delete(key);
-  try {
-    inst?.dispose?.();
-  } catch (err) {
-    console.warn(`[flmux] extension '${extId}' onClientConnected dispose error (client ${clientId}):`, err);
+function detachExtensionsForSession(sessionId: string, conn: Connection) {
+  const state = sessionExtensionsBySessionId.get(sessionId);
+  if (!state) return;
+  sessionExtensionsBySessionId.delete(sessionId);
+  for (const handle of state.serveHandles) {
+    try { conn.unserve(handle); } catch { /* swallow */ }
+  }
+  for (const dispose of state.sessionDisposes) {
+    try { dispose(); } catch (err) {
+      console.warn(`[flmux] extension session dispose error:`, err);
+    }
   }
 }
 
@@ -424,46 +408,39 @@ async function detachExtensionServer(extId: string, clientId: string) {
  * so `onPaneConnected` never sees a half-bound state. Re-checks demux after
  * the await — client disconnect during the bind gates pane attach.
  */
-async function attachExtensionServerPane(paneId: string, kind: string, clientId: string) {
+async function attachExtensionServerPane(paneId: string, kind: string, sessionId: string) {
   const extId = findExtensionIdForPaneKind(kind);
   if (!extId) return;
-  await attachExtensionServer(extId, clientId);
-  if (!clientIdToConnection.has(clientId)) return;
   const server = extensionServers.get(extId);
   if (!server?.onPaneConnected) return;
-  const shell = createExtensionShellClient(paneId, clientId);
+  const shell = createExtensionShellClient(paneId, sessionId);
   if (!shell) return;
   const dataDir = resolveExtensionDataDir(extId);
   if (!dataDir) return;
-  const key = paneInstanceKey(extId, paneId, clientId);
+  const key = paneInstanceKey(extId, paneId, sessionId);
   if (paneServerInstances.has(key)) return;
   try {
-    const inst = await server.onPaneConnected(paneId, clientId, { shell, dataDir });
-    if (!clientIdToConnection.has(clientId)) {
-      // Late disconnect during onPaneConnected — drop instead of stranding.
-      try {
-        inst?.dispose?.();
-      } catch (err) {
-        console.warn(`[flmux] extension '${extId}' late pane dispose error (pane ${paneId}, client ${clientId}):`, err);
+    const inst = await server.onPaneConnected(paneId, sessionId, { shell, dataDir });
+    if (!clientIdToConnection.has(sessionId)) {
+      try { inst?.dispose?.(); } catch (err) {
+        console.warn(`[flmux] ext '${extId}' late pane dispose (pane ${paneId}, session ${sessionId}):`, err);
       }
       return;
     }
     if (inst) paneServerInstances.set(key, inst);
   } catch (err) {
-    console.warn(`[flmux] extension '${extId}' onPaneConnected error (pane ${paneId}, client ${clientId}):`, err);
+    console.warn(`[flmux] ext '${extId}' onPaneConnected error (pane ${paneId}, session ${sessionId}):`, err);
   }
 }
 
-function detachExtensionServerPane(paneId: string, kind: string, clientId: string) {
+function detachExtensionServerPane(paneId: string, kind: string, sessionId: string) {
   const extId = findExtensionIdForPaneKind(kind);
   if (!extId) return;
-  const key = paneInstanceKey(extId, paneId, clientId);
+  const key = paneInstanceKey(extId, paneId, sessionId);
   const inst = paneServerInstances.get(key);
   if (!inst) return;
-  try {
-    inst.dispose?.();
-  } catch (err) {
-    console.warn(`[flmux] extension '${extId}' onPaneConnected dispose error (pane ${paneId}, client ${clientId}):`, err);
+  try { inst.dispose?.(); } catch (err) {
+    console.warn(`[flmux] ext '${extId}' pane dispose error (pane ${paneId}, session ${sessionId}):`, err);
   }
   paneServerInstances.delete(key);
 }
@@ -513,8 +490,12 @@ const userAuthorityRegistry: WebModeUserAuthorityRegistry | null =
         clientRegistry,
         localExtensions,
         getOrigin: () => serverOrigin,
-        onAuthorityCreated: (_userId, authority) => {
+        onAuthorityCreated: (userId, authority) => {
           trackPaneLifecycle(authority);
+          // HTTP probes (/api/clients, /api/model/path/*) lazy-mint an authority
+          // without binding a session. Arm grace immediately — bridge.createSession
+          // / resumeSession cancel via `cancelPendingAuthorityEviction(userId)`.
+          maybeScheduleAuthorityEviction(userId);
         },
         onAuthorityEvicted: (_userId, authority) => {
           paneLifecycleUnsubs.get(authority)?.();
@@ -646,38 +627,27 @@ function trackPaneLifecycle(authority: ShellAuthority): () => void {
 // extension's `onClientConnected` (per-client notification, fire-and-forget).
 // Cap registration already happened synchronously at connection setup, so
 // the renderer's `bootstrap(extCap)` doesn't depend on this chain.
-function retroattachAllPanesForClient(clientId: string): void {
-  const authority = resolveAuthorityForClient(clientId);
+function retroattachPanesForSession(sessionId: string): void {
+  const authority = resolveAuthorityForClient(sessionId);
   if (!authority) return;
-  for (const [extId] of extensionServers) {
-    void attachExtensionServer(extId, clientId);
-  }
   for (const [paneId, kind] of paneKinds) {
     if (paneIdToAuthority.get(paneId) === authority) {
-      void attachExtensionServerPane(paneId, kind, clientId);
+      void attachExtensionServerPane(paneId, kind, sessionId);
     }
   }
 }
 
-function detachAllPanesForClient(clientId: string) {
-  // LIFO teardown: panes (innermost) first, then per-extension client state.
-  // Mirrors setup order (client → pane) so per-pane handlers can still touch
-  // per-client state during their dispose.
+function detachAllPanesForSession(sessionId: string) {
   const keyPrefix = `::`;
   for (const key of [...paneServerInstances.keys()]) {
-    if (!key.endsWith(keyPrefix + clientId)) continue;
+    if (!key.endsWith(keyPrefix + sessionId)) continue;
     const inst = paneServerInstances.get(key);
-    try {
-      inst?.dispose?.();
-    } catch (err) {
-      console.warn(`[flmux] extension dispose error (key ${key}):`, err);
+    try { inst?.dispose?.(); } catch (err) {
+      console.warn(`[flmux] ext pane dispose error (key ${key}):`, err);
     }
     paneServerInstances.delete(key);
   }
-  for (const [extId] of extensionServers) {
-    void detachExtensionServer(extId, clientId);
-  }
-  clientIdToConnection.delete(clientId);
+  clientIdToConnection.delete(sessionId);
 }
 
 function scopeMatches(event: SequencedShellCoreEvent, clientId: string): boolean {
@@ -765,37 +735,10 @@ function bindClientTransport(clientId: string, viewId: number, connection: Conne
 
   const previousConnection = clientIdToConnection.get(clientId);
   if (previousConnection && previousConnection !== connection) {
-    // Reconnect (cookie continuity, tab reuse): drop extension server
-    // instances pinned to the old connection before wiring the new one.
-    detachAllPanesForClient(clientId);
+    detachAllPanesForSession(clientId);
   }
   clientIdToConnection.set(clientId, connection);
-  retroattachAllPanesForClient(clientId);
-}
-
-/**
- * Web-mode client binding: validate the client's `lastAppliedSeq` against
- * the ring buffer. Returns `"rebootstrap-required"` if the buffer rolled
- * past — the client drops local state and re-POSTs `/api/shell/bootstrap`.
- * Renderer replays missed events via the `shell.events()` stream (drains
- * buffer on open) rather than through a separate replay channel.
- */
-function bindWebClient(
-  viewId: number,
-  binding: { clientId: string; lastAppliedSeq: number },
-  connection: Connection
-): "rebootstrap-required" | void {
-  const replay = clientRegistry.replayAfter(binding.clientId, binding.lastAppliedSeq);
-  if (replay === null) {
-    clientRegistry.evict(binding.clientId);
-    clientIdToUserId.delete(binding.clientId);
-    return "rebootstrap-required";
-  }
-  bindClientTransport(binding.clientId, viewId, connection);
-}
-
-function mintWebClientId(): string {
-  return `web_${crypto.randomUUID()}`;
+  retroattachPanesForSession(clientId);
 }
 
 /** Main-side session-save debounce. Per-authority — each user in web
@@ -832,25 +775,19 @@ function pushLayoutForViewId(viewId: number, layouts: FlmuxSessionSaveLayouts) {
 
 function releaseView(viewId: number) {
   const clientId = viewIdToClientId.get(viewId);
+  const conn = viewIdToConnection.get(viewId);
   viewIdToConnection.delete(viewId);
-  const serveDisposes = extensionServeDisposes.get(viewId);
-  if (serveDisposes) {
-    for (const dispose of serveDisposes.values()) dispose();
-    extensionServeDisposes.delete(viewId);
-  }
   if (clientId) {
     viewIdToClientId.delete(viewId);
-    // Skip teardown if clientId was rebound to a newer viewId
+    // Skip teardown if sessionId was rebound to a newer viewId
     // (refresh-before-close lands new register before stale close fires).
     const current = clientRegistry.get(clientId);
     if (current && current.viewId !== null && current.viewId !== viewId) {
       clientRegistry.detachRenderer(viewId);
       return;
     }
-    // Tear down extension server instances for this client immediately —
-    // connection is gone, server-side state must release before the
-    // registry's grace eviction fires.
-    detachAllPanesForClient(clientId);
+    if (conn) detachExtensionsForSession(clientId, conn);
+    detachAllPanesForSession(clientId);
     clientRegistry.markDisconnected(clientId, (state) => {
       // Order matters: read userId, delete the entry, THEN schedule.
       // maybeScheduleAuthorityEviction → countUserClients reads the
@@ -882,110 +819,108 @@ async function resolveShellModelRouterForRequest(
   return authority.router;
 }
 
-let desktopViewId: number | null = null;
-
-function requireDesktopViewId() {
-  if (desktopViewId == null) {
-    throw new Error("Desktop renderer is not attached");
-  }
-  return desktopViewId;
-}
-
-const desktopAuthorityClientId = desktopAuthority?.clientId ?? null;
-
-const resolveShellModel = (viewId: number, hints?: { clientId?: string }): ShellModelAPI | null => {
-  return resolveAuthorityForViewId(viewId, hints)?.shellModel ?? null;
-};
-
-const resolveShellModelRouter = (viewId: number, hints?: { clientId?: string }): FlmuxShellModelRouter | null => {
-  return resolveAuthorityForViewId(viewId, hints)?.router ?? null;
-};
-
 function buildShellConfig() {
   return {
     mode: runtimeMode,
     appOrigin: serverOrigin,
     projectDir,
-    authorityClientId: desktopAuthorityClientId,
     localExtensions: createLocalExtensionLoadEntries(localExtensions, serverOrigin),
     devMode: process.env.FLMUX_DEV_MODE === "1"
   };
 }
 
-// Per-(viewId × extId) ServeHandle dispose, populated by `setupConnection`'s
-// sync extension-serve loop and run on connection close.
-const extensionServeDisposes = new Map<number, Map<string, () => void>>();
-
-function setupConnection(conn: Connection, viewId: number, mode: "desktop" | "web") {
+function setupConnection(
+  conn: Connection,
+  viewId: number,
+  mode: "desktop" | "web",
+  authContext: FlmuxAuthorizationContext | null
+) {
   viewIdToConnection.set(viewId, conn);
-  // Serve every extension's cap synchronously BEFORE returning — bunite
-  // processes incoming frames only after the `serve` callback completes,
-  // so registry is fully populated before any renderer bootstrap arrives.
-  // Module-top `bootstrap(extCap)` from renderer is safe as a result.
-  const disposes = new Map<string, () => void>();
-  for (const [extId, def] of extensionServers) {
-    if (!def.serve) continue;
-    const dataDir = resolveExtensionDataDir(extId);
-    if (!dataDir) {
-      console.warn(`[flmux] extension '${extId}' skipped serve — data dir not provisioned`);
-      continue;
+
+  const mintFresh = async (): Promise<MintedSession> => {
+    const userId = mode === "desktop" ? "local" : authContext?.user.name;
+    if (!userId) throw new Error("bridge.mintSession: no user resolved");
+    const authority: ShellAuthority = mode === "desktop"
+      ? desktopAuthority!
+      : await userAuthorityRegistry!.getOrCreate(userId);
+    const sessionId = mode === "desktop" ? DESKTOP_CLIENT_ID : `web_${crypto.randomUUID()}`;
+    if (mode === "web") {
+      clientIdToUserId.set(sessionId, userId);
+      cancelPendingAuthorityEviction(userId);
     }
-    try {
-      const instance = def.serve({ dataDir, connection: conn });
-      if (instance?.dispose) {
-        disposes.set(extId, () => {
-          try { instance.dispose!(); } catch (err) {
-            console.warn(`[flmux] extension '${extId}' serve dispose error:`, err);
-          }
-        });
+    return bindMintedSession({ conn, viewId, authority, sessionId, userId });
+  };
+
+  const resumeExisting = async (resumeToken: string): Promise<MintedSession | null> => {
+    if (mode === "desktop") return null;
+    const userId = authContext?.user.name;
+    if (!userId) return null;
+    if (clientIdToUserId.get(resumeToken) !== userId) return null;
+    const state = clientRegistry.get(resumeToken);
+    if (!state || state.viewId !== null) return null;
+    const authority = userAuthorityRegistry?.get(userId);
+    if (!authority) return null;
+    cancelPendingAuthorityEviction(userId);
+    return bindMintedSession({ conn, viewId, authority, sessionId: resumeToken, userId });
+  };
+
+  conn.serve(flmuxBridgeCap, createBridgeImpl({
+    connection: conn,
+    mintSession: mintFresh,
+    resumeSession: resumeExisting
+  }));
+}
+
+async function bindMintedSession(opts: {
+  conn: Connection;
+  viewId: number;
+  authority: ShellAuthority;
+  sessionId: string;
+  userId: string;
+}): Promise<MintedSession> {
+  const { conn, viewId, authority, sessionId, userId } = opts;
+  bindClientTransport(sessionId, viewId, conn);
+  await attachExtensionsForSession({ conn, sessionId, userId, authority });
+
+  const sessionImpl = createSessionImpl({
+    sessionId,
+    shellModel: authority.shellModel,
+    assertAllowed: (method, path) => {
+      if (!webModeAuthorizer) return;
+      const user = webModeAuthorizer.resolveUserByName(userId);
+      if (!user) throw new Error(`session.${method} '${path}': user '${userId}' not resolvable`);
+      if (!webModeAuthorizer.isPathAllowed(user, method, path)) {
+        throw new Error(`Access denied for user '${user.name}': ${method} '${path}'`);
       }
-    } catch (err) {
-      console.warn(`[flmux] extension '${extId}' serve threw:`, err);
-    }
-  }
-  if (disposes.size > 0) extensionServeDisposes.set(viewId, disposes);
-  conn.serve(
-    shellCap,
-    createShellImpl({
-      viewId,
-      getClientId: () => viewIdToClientId.get(viewId) ?? null,
-      paneEmitters,
-      resolveShellModel: (hints) => resolveAuthorityForViewId(viewId, hints)?.shellModel ?? null,
-      resolveShellModelRouter: (hints) => resolveAuthorityForViewId(viewId, hints)?.router ?? null,
-      canSubscribeTerminalForPane: (paneId) => {
-        const callerAuthority = resolveAuthorityForViewId(viewId);
-        if (!callerAuthority) return false;
-        const paneAuthority = paneIdToAuthority.get(paneId);
-        return paneAuthority === callerAuthority;
-      },
-      buildConfig: buildShellConfig,
-      desktopAuthority,
-      onClientRegister: (binding) => {
-        if (mode === "desktop") {
-          // Desktop CEF is a single client; viewId binds to the stable
-          // "local" identity. Web clients always pass a binding.
-          bindClientTransport(DESKTOP_CLIENT_ID, viewId, conn);
-          return;
-        }
-        if (!binding) {
-          throw new Error(
-            "shell.registerClient: web clients must pass {clientId, lastAppliedSeq} " +
-              "obtained from /api/shell/bootstrap"
-          );
-        }
-        return bindWebClient(viewId, binding, conn);
-      },
-      subscribeShellEvents: (clientId, sinceSeq, emit) => {
-        // Atomic drain + subscribe: bunite stream emit is sync, and
-        // recordEvent fans buffer→emitters within the same JS tick, so
-        // there's no race window between snapshot and live registration.
-        const replay = clientRegistry.replayAfter(clientId, sinceSeq);
-        if (replay !== null) for (const event of replay) emit(event);
-        return clientRegistry.subscribeLive(clientId, emit);
-      },
-      pushLayout: (layouts) => pushLayoutForViewId(viewId, layouts)
-    })
-  );
+    },
+    assertPaneKindAllowed: (path, args) => {
+      if (!webModeAuthorizer || path !== "/panes/new") return;
+      const kind = typeof args?.kind === "string" ? args.kind : null;
+      if (!kind) return;
+      const user = webModeAuthorizer.resolveUserByName(userId);
+      if (!user) return;
+      if (!webModeAuthorizer.isPaneKindAllowed(user, kind)) {
+        throw new Error(`User '${user.name}' is not allowed to create pane kind '${kind}'`);
+      }
+    },
+    bootstrap: () => authority.shellBootstrap(sessionId),
+    buildConfig: buildShellConfig,
+    subscribeShellEvents: (sinceSeq, emit) => {
+      const replay = clientRegistry.replayAfter(sessionId, sinceSeq);
+      if (replay === null) return null;
+      for (const event of replay) emit(event);
+      return clientRegistry.subscribeLive(sessionId, emit);
+    },
+    paneEmitters,
+    canSubscribeTerminalForPane: (paneId) => paneIdToAuthority.get(paneId) === authority,
+    pushLayout: (layouts) => pushLayoutForViewId(viewId, layouts)
+  });
+
+  return {
+    sessionId,
+    sessionImpl,
+    dispose: () => releaseView(viewId)
+  };
 }
 
 let nextWebViewId = 1_000_000;
@@ -1011,59 +946,13 @@ const server = startFlmuxServer({
           await authority.persistSession(layouts);
         }
       : undefined,
-  // Web-mode HTTP bootstrap. Resolves the calling user from auth context,
-  // lazily creates the user's authority, mints a fresh clientId,
-  // records the clientId→userId mapping so WS register + shellModel
-  // calls route to the right authority, installs the buffer subscriber
-  // BEFORE composing the snapshot (so events emitted by shellBootstrap or
-  // concurrent callers land in the buffer), and arms the unbound-grace
-  // timer so an client whose WS register never arrives doesn't leak
-  // a permanent shellCore subscriber.
-  bootstrapClient: userAuthorityRegistry
-    ? async (context, existingClientId) => {
-        if (!context) {
-          throw new Error("/api/shell/bootstrap: web mode requires an auth context");
-        }
-        const userId = context.user.name;
-        const authority = await userAuthorityRegistry.getOrCreate(userId);
-        // Cookie continuity (B2 Phase 3): reuse the clientId when the
-        // browser's cookie matches a still-unbound client owned by this
-        // user. Preserves slot state (active ws/pane) across tab refresh
-        // inside the 30-second grace window. A still-live client (viewId
-        // set — e.g. multi-tab in same browser, or refresh-before-close)
-        // mints fresh: re-arming a live client would either tear the live
-        // WS down or throw; both are wrong here.
-        const existing =
-          existingClientId && clientIdToUserId.get(existingClientId) === userId
-            ? clientRegistry.get(existingClientId)
-            : undefined;
-        const canReuse = existing !== undefined && existing.viewId === null;
-        const clientId = canReuse ? existingClientId! : mintWebClientId();
-        if (!canReuse) {
-          clientIdToUserId.set(clientId, userId);
-          installAuthoritySubscriber(clientId);
-        }
-        clientRegistry.armGraceTimer(clientId, (state) => {
-          // Same read→delete→schedule ordering as releaseView's onEvict.
-          const ownerId = clientIdToUserId.get(state.clientId);
-          clientIdToUserId.delete(state.clientId);
-          console.log(`[flmux] client ${state.clientId} evicted after grace`);
-          if (ownerId) maybeScheduleAuthorityEviction(ownerId);
-        });
-        // User came back (either fresh or via cookie reuse) — cancel any
-        // pending authority eviction scheduled by the previous last-
-        // client-gone event.
-        cancelPendingAuthorityEviction(userId);
-        return authority.shellBootstrap(clientId);
-      }
-    : undefined,
   authorizer: webModeAuthorizer ?? undefined,
   onRpcConnection:
     runtimeMode === "web"
-      ? (conn) => {
+      ? (conn, authContext) => {
           const viewId = nextWebViewId++;
           conn.onClose(() => releaseView(viewId));
-          setupConnection(conn, viewId, "web");
+          setupConnection(conn, viewId, "web", authContext);
         }
       : undefined
 });
@@ -1134,9 +1023,8 @@ if (runtimeMode === "desktop" && app) {
       // microtask so the post-constructor assignment lands first.
       queueMicrotask(() => {
         const viewId = win.webviewId;
-        desktopViewId = viewId;
         conn.onClose(() => releaseView(viewId));
-        setupConnection(conn, viewId, "desktop");
+        setupConnection(conn, viewId, "desktop", null);
       });
     }
   });

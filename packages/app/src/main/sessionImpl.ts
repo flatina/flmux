@@ -17,8 +17,13 @@ export interface SessionImplDeps {
    *  into every method via closure. Doubles as the slot key for implicit-
    *  current narrowing in the shell model. */
   sessionId: string;
-  /** ShellModel scoped to this session's user. ACL-aware. */
+  /** ShellModel for the session's user. Raw — ACL is enforced in sessionImpl
+   *  via `assertAllowed`. */
   shellModel: ShellModelAPI;
+  /** allow_paths gate. Throw on denial; receives the cap method's path. */
+  assertAllowed(method: "read" | "write" | "call", path: string): void;
+  /** allow_pane_kinds gate for /panes/new args. */
+  assertPaneKindAllowed(path: string, args: Record<string, unknown> | undefined): void;
   /** Build the initial bootstrap snapshot (resumeToken / snapshot / layouts /
    *  seqStart). Called once per session by the renderer. */
   bootstrap(): FlmuxSessionBootstrapResponse;
@@ -48,17 +53,26 @@ export function createSessionImpl(deps: SessionImplDeps): SessionCapImpl {
   return {
     bootstrap: () => deps.bootstrap(),
 
-    get: ({ path, sourcePaneId, workspaceId }) =>
-      deps.shellModel.pathGet(path, callerCtx({ sourcePaneId, workspaceId })),
+    get: ({ path, sourcePaneId, workspaceId }) => {
+      deps.assertAllowed("read", path);
+      return deps.shellModel.pathGet(path, callerCtx({ sourcePaneId, workspaceId }));
+    },
 
-    list: ({ path, sourcePaneId, workspaceId }) =>
-      deps.shellModel.pathList(path, callerCtx({ sourcePaneId, workspaceId })),
+    list: ({ path, sourcePaneId, workspaceId }) => {
+      deps.assertAllowed("read", path);
+      return deps.shellModel.pathList(path, callerCtx({ sourcePaneId, workspaceId }));
+    },
 
-    set: ({ path, value, sourcePaneId, workspaceId }) =>
-      deps.shellModel.pathSet(path, value, callerCtx({ sourcePaneId, workspaceId })),
+    set: ({ path, value, sourcePaneId, workspaceId }) => {
+      deps.assertAllowed("write", path);
+      return deps.shellModel.pathSet(path, value, callerCtx({ sourcePaneId, workspaceId }));
+    },
 
-    call: ({ path, args, sourcePaneId, workspaceId }) =>
-      deps.shellModel.pathCall(path, args, callerCtx({ sourcePaneId, workspaceId })),
+    call: ({ path, args, sourcePaneId, workspaceId }) => {
+      deps.assertAllowed("call", path);
+      deps.assertPaneKindAllowed(path, args);
+      return deps.shellModel.pathCall(path, args, callerCtx({ sourcePaneId, workspaceId }));
+    },
 
     events: ({ sinceSeq }) => Stream.from<SequencedShellCoreEvent>((emit, signal) => {
       const unsub = deps.subscribeShellEvents(sinceSeq ?? 0, emit);

@@ -1,8 +1,10 @@
-import { bootstrap as bootstrapCap } from "bunite-core/rpc/renderer";
+import { bootstrap as bootstrapCap, getConnection, type BuniteWebGlobal } from "bunite-core/rpc/renderer";
 import { flmuxBridgeCap, type FlmuxBridgeCap, type SessionCap } from "../shared/rendererBridge";
 import { registerLocalExternalPaneDescriptors } from "./external/registerLocalExternalPaneDescriptors";
 import { FlmuxWorkbench } from "./shell/workbench";
 import { setupTheme } from "./theme";
+
+declare global { interface Window { __bunite?: BuniteWebGlobal } }
 
 const SESSION_COOKIE = "flmux-session";
 
@@ -12,6 +14,9 @@ void bootstrap().catch((error) => {
 
 async function bootstrap() {
   setupTheme();
+  // Cross-bundle conn share — 0-externals extension bundles each inline bunite-core.
+  const conn = await getConnection();
+  window.__bunite = { ...(window.__bunite ?? {}), webConnection: conn };
   const bridge = await bootstrapCap(flmuxBridgeCap);
 
   // Resume continuity: cookie holds previous session's resumeToken. Try first;

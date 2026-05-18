@@ -5,7 +5,7 @@
     "": {
       "name": "flmux",
       "dependencies": {
-        "bunite-core": "^0.11.0",
+        "bunite-core": "^0.11.1",
       },
       "devDependencies": {
         "@biomejs/biome": "2.4.12",
@@ -365,7 +365,7 @@
 
     "bun-types": ["bun-types@1.3.12", "", { "dependencies": { "@types/node": "*" } }, "sha512-HqOLj5PoFajAQciOMRiIZGNoKxDJSr6qigAttOX40vJuSp6DN/CxWp9s3C1Xwm4oH7ybueITwiaOcWXoYVoRkA=="],
 
-    "bunite-core": ["bunite-core@0.11.0", "", { "dependencies": { "msgpackr": "^1.11.9" }, "optionalDependencies": { "bunite-native-linux-x64": "0.0.1", "bunite-native-mac-arm64": "0.0.1", "bunite-native-win-x64": "0.0.4" } }, "sha512-ajtLylYjthn4mtUvWa0f0r9wWWR/1TspUUe2eDUtF2jAr2j7HFZK87SIeC2R2IfitKh2calxhv/IWuIklwLMYw=="],
+    "bunite-core": ["bunite-core@0.11.1", "", { "dependencies": { "msgpackr": "^1.11.9" }, "optionalDependencies": { "bunite-native-linux-x64": "0.0.1", "bunite-native-mac-arm64": "0.0.1", "bunite-native-win-x64": "0.0.5" } }, "sha512-o+pg0MtxXJlz9rxt6cwgJOxinYIxBNeisZZVfelbF6irsxEckq/8dVzUaTHdQzceOhIuHzpBjsXO2VJHsL33zA=="],
 
     "bunite-dev": ["bunite-dev@0.0.6", "", { "peerDependencies": { "bunite-core": "*" }, "bin": { "bunite-build": "scripts/build.ts", "bunite-setup-cef": "scripts/setup-cef.ts" } }, "sha512-n1IY861UXO5zGR8jWHuNUr3If/TN3+kQCZCdW3IAUOR5nK7qwuwGujZNTyvuqlt9AKuiTOTVnyy2DeaS2s9Kog=="],
 
@@ -482,6 +482,8 @@
     "yaml": ["yaml@2.8.3", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-AvbaCLOO2Otw/lW5bmh9d/WEdcDFdQp2Z2ZUH3pX9U2ihyUY0nvLv7J6TrWowklRGPYbB/IuIMfYgxaCPg5Bpg=="],
 
     "zod": ["zod@4.3.6", "", {}, "sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg=="],
+
+    "bunite-core/bunite-native-win-x64": ["bunite-native-win-x64@0.0.5", "", { "os": "win32", "cpu": "x64" }, "sha512-KdHr2SPDBwqHKobVATO2QraIQ2O5Ol8RvhMYmczdZ6lSG901Z2X+z1j9NE5b/YrNgEKegIiU+GrU3P9aJmzFFg=="],
 
     "playwright/fsevents": ["fsevents@2.3.2", "", { "os": "darwin" }, "sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA=="],
   }

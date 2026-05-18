@@ -1,4 +1,4 @@
-import type { CapDef, ImplOf } from "bunite-core/rpc";
+import type { CapDef, ClientOf, ImplOf } from "bunite-core/rpc";
 import type { ShellClient } from "./shell";
 import type { ExtensionPaneSpec } from "./pane";
 
@@ -8,13 +8,16 @@ export interface ExtensionServerInitContext {
 
 /** Per-session context. Identity lives in closure (sessionId/userId free
  *  variables inside the impl), never on the wire. `serve` registers a cap
- *  on the connection scoped to this session; `onDispose` runs on conn close. */
+ *  on the connection scoped to this session; `bootstrap` reaches the same
+ *  connection's renderer-served caps (lazy — renderer's `onLoad` registers
+ *  after server's `onSession`); `onDispose` runs on conn close. */
 export interface ExtensionServerSessionContext {
   dataDir: string;
   sessionId: string;
   userId: string;
   shell: ShellClient;
   serve<C extends CapDef<any, any>>(cap: C, impl: ImplOf<C>): void;
+  bootstrap<C extends CapDef<any, any>>(cap: C): Promise<ClientOf<C>>;
   onDispose(fn: () => void): void;
 }
 

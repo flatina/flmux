@@ -377,6 +377,7 @@ async function attachExtensionsForSession(opts: {
         serve: <C extends CapDef<any, any>>(cap: C, impl: ImplOf<C>) => {
           state.serveHandles.push(opts.conn.serve(cap, impl));
         },
+        bootstrap: <C extends CapDef<any, any>>(cap: C) => opts.conn.bootstrap(cap),
         onDispose: (fn) => {
           state.sessionDisposes.push(fn);
         }

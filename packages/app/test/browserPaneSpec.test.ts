@@ -60,11 +60,11 @@ describe("createBrowserPaneSpec", () => {
     const { controller } = makeController();
     const spec = createBrowserPaneSpec({ controller });
     const { subtree, ctx } = makeContext(spec);
+    // Default callableOps = PRIMITIVE_OPS (no `click` — agent layer owns it).
     const ops: BrowserPaneCallable[] = [
       "goBack",
       "reload",
       "evaluate",
-      "click",
       "type",
       "press",
       "scroll",
@@ -74,6 +74,8 @@ describe("createBrowserPaneSpec", () => {
     for (const op of ops) {
       expect(await subtree.canCallStatePath?.(ctx, [op])).toBe(true);
     }
+    // `click` is rejected unless app passes a callableOps set including it.
+    expect(await subtree.canCallStatePath?.(ctx, ["click"])).toBe(false);
     expect(await subtree.canCallStatePath?.(ctx, ["bogus"])).toBe(false);
     expect(await subtree.canCallStatePath?.(ctx, ["evaluate", "extra"])).toBe(false);
   });

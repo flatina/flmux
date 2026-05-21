@@ -66,23 +66,34 @@ export function findElementScript(t: Exclude<Target, { type: "ref" } | { type: "
   const payload = JSON.stringify(t);
   return `(() => {
     const t = ${payload};
+    const norm = s => (s || "").replace(/\\s+/g, " ").trim();
+    const eq = (a, b) => norm(a) === norm(b);
+    const contains = (haystack, needle) => norm(haystack).includes(norm(needle));
+    const accessibleName = (n) => norm(n.getAttribute("aria-label") || n.getAttribute("title") || n.textContent || "");
     let el = null;
     if (t.type === "testid") {
       el = document.querySelector('[data-testid=' + JSON.stringify(t.testid) + ']');
     } else if (t.type === "text") {
-      el = [...document.querySelectorAll("button, a, [role='button'], [role='link']")]
-        .find(n => n.textContent && n.textContent.trim() === t.text) || null;
+      const candidates = document.querySelectorAll("button, a, [role='button'], [role='link'], summary, [role='menuitem']");
+      el = [...candidates].find(n => eq(n.textContent, t.text))
+        || [...candidates].find(n => contains(n.textContent, t.text))
+        || null;
     } else if (t.type === "label") {
-      const lbl = [...document.querySelectorAll("label")].find(l => l.textContent && l.textContent.trim() === t.label);
+      const lbl = [...document.querySelectorAll("label")].find(l => eq(l.textContent, t.label))
+        || [...document.querySelectorAll("label")].find(l => contains(l.textContent, t.label));
       const forId = lbl?.getAttribute("for");
       el = forId ? document.getElementById(forId) : (lbl?.querySelector("input, textarea, select") || null);
     } else if (t.type === "role") {
-      el = [...document.querySelectorAll('[role=' + JSON.stringify(t.role) + ']')]
-        .find(n => !t.name || (n.getAttribute("aria-label") || n.textContent || "").trim() === t.name) || null;
-      if (!el && t.role === "button") {
-        el = [...document.querySelectorAll("button")]
-          .find(n => !t.name || (n.textContent || "").trim() === t.name) || null;
-      }
+      const explicit = [...document.querySelectorAll('[role=' + JSON.stringify(t.role) + ']')];
+      const implicit = t.role === "button" ? [...document.querySelectorAll("button")]
+        : t.role === "link" ? [...document.querySelectorAll("a[href]")]
+        : t.role === "textbox" ? [...document.querySelectorAll("input:not([type=button]):not([type=submit]), textarea")]
+        : [];
+      const all = [...explicit, ...implicit];
+      el = !t.name ? (all[0] || null)
+        : all.find(n => eq(accessibleName(n), t.name))
+          || all.find(n => contains(accessibleName(n), t.name))
+          || null;
     }
     if (!el) return null;
     const parts = [];

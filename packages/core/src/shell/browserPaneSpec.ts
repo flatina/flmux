@@ -8,12 +8,13 @@ import { normalizeBrowserUrl } from "./shellCore";
 
 /** Primitive ops directly forwarded to bunite SurfaceCap.
  * App-owned superset (extended by Stage E+F + agent layer in `paneSpecs.ts`)
- * is passed via `callableOps`; core stays unaware of the full op universe. */
+ * is passed via `callableOps`; core stays unaware of the full op universe.
+ * `click` intentionally omitted — agent layer owns it (supports both target
+ * resolution and `{x,y}` coord), routes to cap.click internally. */
 export const PRIMITIVE_OPS = [
   "goBack",
   "reload",
   "evaluate",
-  "click",
   "type",
   "press",
   "scroll",

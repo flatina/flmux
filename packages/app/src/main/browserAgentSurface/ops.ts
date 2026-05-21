@@ -216,11 +216,52 @@ export async function click(
   state: PaneState,
   args: Record<string, unknown>
 ): Promise<{ value: unknown }> {
+  // BC: `{x, y}` without `target` routes straight to primitive — preserves the
+  // pre-agent v1 contract for HTTP callers passing raw coords.
+  if (typeof args.target !== "string" && typeof args.x === "number" && typeof args.y === "number") {
+    await cap.click({
+      paneId,
+      x: args.x,
+      y: args.y,
+      button: optionalButton(args.button),
+      clickCount: optionalNumber(args, "clickCount"),
+      modifiers: optionalModifierArr(args.modifiers)
+    });
+    return { value: null };
+  }
   const target = targetOf(args);
   const resolved = await resolveCoord(cap, paneId, state, target);
   rejectFrameInput(resolved);
-  await cap.click({ paneId, x: resolved.x, y: resolved.y });
+  await cap.click({
+    paneId,
+    x: resolved.x,
+    y: resolved.y,
+    button: optionalButton(args.button),
+    clickCount: optionalNumber(args, "clickCount"),
+    modifiers: optionalModifierArr(args.modifiers)
+  });
   return { value: null };
+}
+
+function optionalButton(v: unknown): "left" | "middle" | "right" | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (v === "left" || v === "middle" || v === "right") return v;
+  throw new ModelPathError("INVALID_VALUE", `button must be left|middle|right`);
+}
+
+const MODIFIER_NAMES = new Set(["alt", "ctrl", "meta", "shift"]);
+
+function optionalModifierArr(v: unknown): Array<"alt" | "ctrl" | "meta" | "shift"> | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (!Array.isArray(v)) throw new ModelPathError("INVALID_VALUE", `modifiers must be array`);
+  const out: Array<"alt" | "ctrl" | "meta" | "shift"> = [];
+  for (const m of v) {
+    if (typeof m !== "string" || !MODIFIER_NAMES.has(m)) {
+      throw new ModelPathError("INVALID_VALUE", `modifier must be one of alt|ctrl|meta|shift`);
+    }
+    out.push(m as "alt" | "ctrl" | "meta" | "shift");
+  }
+  return out;
 }
 
 export async function dblclick(
@@ -257,12 +298,13 @@ export async function focus(
 ): Promise<{ value: unknown }> {
   const target = targetOf(args);
   const resolved = await resolveCoord(cap, paneId, state, target);
-  // Coordinate-only targets fall back to a synthetic focus via evaluate when
-  // a selector isn't available; otherwise route via DOM `.focus()`.
+  // DOM `.focus()` is frame-safe via `evaluate({frameId})`; coord fallback for
+  // bare coord targets calls native click which doesn't support frameId.
   if (resolved.selector) {
     const script = `(() => { const el = document.querySelector(${JSON.stringify(resolved.selector)}); if (el && typeof el.focus === "function") { el.focus(); return true; } return false; })()`;
-    await evalOk(cap, paneId, script);
+    await evalOk(cap, paneId, script, resolved.frameId);
   } else {
+    rejectFrameInput(resolved);
     await cap.click({ paneId, x: resolved.x, y: resolved.y });
   }
   return { value: null };
@@ -462,6 +504,13 @@ export async function wait(
     const nav = await cap.getNavigationState({ paneId });
     const beforeEpoch = nav.lastLoadEpoch;
     const urlGlob = variant === "url" ? arg ?? null : null;
+    // Pre-check: if `wait url` is called with the page already on the target
+    // URL and not currently loading, satisfy immediately. Equivalent guard
+    // for `wait load` would block forever otherwise — caller usually pairs it
+    // with a click trigger, so we don't pre-resolve there.
+    if (variant === "url" && urlGlob && !nav.isLoading && globMatch(nav.currentUrl, urlGlob)) {
+      return { value: { matched: true, url: nav.currentUrl } };
+    }
     const wanted: BrowserPaneSurfaceEvent["type"][] =
       variant === "navigate" ? ["navigate"] : variant === "load" ? ["load-finish"] : ["navigate", "load-finish"];
     return await new Promise((resolve, reject) => {

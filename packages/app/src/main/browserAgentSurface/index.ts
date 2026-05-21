@@ -65,8 +65,25 @@ export class BrowserAgentSurface {
 
   async call(paneId: string, op: string, args: Record<string, unknown>): Promise<{ value: unknown }> {
     const state = this.requirePane(paneId);
+    // Idempotent — start race: pane.added fires async start; user may invoke
+    // an op before bus listens. Await ensures bus + dialog tracking ready.
+    await state.start();
     const cap = await this.controller.primCap();
-    return await dispatchAgentOp(op, cap, paneId, state, args);
+    const result = await dispatchAgentOp(op, cap, paneId, state, args);
+    // Surface newly-adopted popups triggered during this op (best-effort
+    // window — see PaneState.drainRecentAdoptions).
+    if (op === "click" || op === "dblclick" || op === "press" || op === "type") {
+      const adoptions = state.drainRecentAdoptions();
+      if (adoptions.length > 0) {
+        const v = result.value;
+        return {
+          value: typeof v === "object" && v !== null
+            ? { ...(v as Record<string, unknown>), newPanes: adoptions }
+            : { result: v, newPanes: adoptions }
+        };
+      }
+    }
+    return result;
   }
 
   dispose(): void {

@@ -96,12 +96,13 @@ export class PaneState {
   }
 
   async start(): Promise<void> {
-    if (this.startStarted || this.disposed) return;
-    this.startStarted = true;
+    if (this.disposed) return;
+    if (this.startStarted) return;
     try {
       const cap = await this.controller.primCap();
       await this.surfaceEventBus.start(cap, this.paneId);
       this.startDialogTracking(cap);
+      this.startStarted = true; // only after success — first-failure retries on rebind
     } catch {
       // surface not ready yet — onConnectionChanged will retry on rebind.
     }
@@ -134,16 +135,24 @@ export class PaneState {
     if (this.disposed) return;
     if (!conn) {
       this.surfaceEventBus.pause();
+      this.dialogStreamAbort?.abort();
+      this.dialogStreamAbort = null;
       this.capabilities = null;
       this.capabilitiesFetchedAt = 0;
+      // Cancel in-flight waiters — events won't arrive on this conn.
+      for (const w of this.pendingWaiters.values()) w.cancel("connection lost");
+      this.pendingWaiters.clear();
+      this.startStarted = false; // allow start() retry on next bind
       return;
     }
     try {
       const cap = await this.controller.primCap();
       await this.surfaceEventBus.restart(cap, this.paneId);
+      this.startDialogTracking(cap);
       // Engine may have changed (WV2↔CEF) — invalidate cached caps.
       this.capabilities = null;
       this.capabilitiesFetchedAt = 0;
+      this.startStarted = true;
     } catch {
       /* not ready */
     }

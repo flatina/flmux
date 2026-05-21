@@ -1,0 +1,198 @@
+import { ModelPathError } from "@flmux/core/shell";
+import type { PaneBrowserCap } from "../../shared/rendererBridge";
+import { signatureScore, SIGNATURE_MATCH_THRESHOLD, type RefRegistry } from "./refRegistry";
+
+export type Target =
+  | { type: "ref"; ref: string }
+  | { type: "css"; selector: string }
+  | { type: "text"; text: string }
+  | { type: "label"; label: string }
+  | { type: "role"; role: string; name?: string }
+  | { type: "testid"; testid: string }
+  | { type: "coord"; x: number; y: number };
+
+/** Parse user-facing target string. Forms:
+ * - `@e1` — ref
+ * - `text=Submit` / `label=Email` / `testid=foo`
+ * - `role=button[name='Save']`
+ * - CSS otherwise. */
+export function parseTarget(input: string): Target {
+  const s = input.trim();
+  if (s.startsWith("@")) return { type: "ref", ref: s };
+  if (s.startsWith("text=")) return { type: "text", text: s.slice(5) };
+  if (s.startsWith("label=")) return { type: "label", label: s.slice(6) };
+  if (s.startsWith("testid=")) return { type: "testid", testid: s.slice(7) };
+  if (s.startsWith("role=")) {
+    const body = s.slice(5);
+    const m = body.match(/^([\w-]+)(?:\[name=['"](.+)['"]\])?$/);
+    if (!m) throw new ModelPathError("INVALID_VALUE", `bad role= target: ${input}`);
+    return { type: "role", role: m[1], name: m[2] };
+  }
+  return { type: "css", selector: s };
+}
+
+export interface ResolvedTarget {
+  selector: string;
+  frameId?: string;
+  rect: { x: number; y: number; width: number; height: number };
+  visible: boolean;
+}
+
+/** Compose a selector from a parsed Target. ref targets bypass this and go
+ * through the RefRegistry lookup path. Coords also bypass. */
+export function selectorForTarget(t: Exclude<Target, { type: "ref" } | { type: "coord" }>): string {
+  // Literal embedding via JSON.stringify when composing; here we just pick a
+  // raw CSS selector or describe a JS-side lookup. CSS-resolvable forms get
+  // a CSS selector; text/label/role need page-side JS via evaluate.
+  switch (t.type) {
+    case "css":
+      return t.selector;
+    case "testid":
+      return `[data-testid=${JSON.stringify(t.testid)}]`;
+    case "text":
+    case "label":
+    case "role":
+      // Page-side JS — resolver caller passes through `findElementSelector` JS,
+      // which returns a unique selector for the element.
+      return "";
+  }
+}
+
+/** Page-side JS resolving non-CSS targets to a unique selector path. Embeds
+ * target params as JSON literals to close injection. */
+export function findElementScript(t: Exclude<Target, { type: "ref" } | { type: "coord" } | { type: "css" }>): string {
+  const payload = JSON.stringify(t);
+  return `(() => {
+    const t = ${payload};
+    let el = null;
+    if (t.type === "testid") {
+      el = document.querySelector('[data-testid=' + JSON.stringify(t.testid) + ']');
+    } else if (t.type === "text") {
+      el = [...document.querySelectorAll("button, a, [role='button'], [role='link']")]
+        .find(n => n.textContent && n.textContent.trim() === t.text) || null;
+    } else if (t.type === "label") {
+      const lbl = [...document.querySelectorAll("label")].find(l => l.textContent && l.textContent.trim() === t.label);
+      const forId = lbl?.getAttribute("for");
+      el = forId ? document.getElementById(forId) : (lbl?.querySelector("input, textarea, select") || null);
+    } else if (t.type === "role") {
+      el = [...document.querySelectorAll('[role=' + JSON.stringify(t.role) + ']')]
+        .find(n => !t.name || (n.getAttribute("aria-label") || n.textContent || "").trim() === t.name) || null;
+      if (!el && t.role === "button") {
+        el = [...document.querySelectorAll("button")]
+          .find(n => !t.name || (n.textContent || "").trim() === t.name) || null;
+      }
+    }
+    if (!el) return null;
+    const parts = [];
+    let cur = el;
+    while (cur && cur.nodeType === 1 && cur !== document.body) {
+      const tag = cur.tagName.toLowerCase();
+      const idx = Array.from(cur.parentElement?.children ?? []).indexOf(cur) + 1;
+      parts.unshift(tag + ':nth-child(' + idx + ')');
+      cur = cur.parentElement;
+    }
+    return 'body > ' + parts.join(' > ');
+  })()`;
+}
+
+/** Resolve a single target to a selector + viewport rect. Caller uses the
+ * rect for coord-based native input dispatch. */
+export async function resolveTarget(
+  cap: PaneBrowserCap,
+  paneId: string,
+  registry: RefRegistry,
+  navigationEpoch: number,
+  target: Target
+): Promise<ResolvedTarget | { type: "coord"; x: number; y: number }> {
+  if (target.type === "coord") return { type: "coord", x: target.x, y: target.y };
+
+  if (target.type === "ref") {
+    const entry = registry.get(target.ref);
+    if (!entry) throw new ModelPathError("INVALID_VALUE", `unknown ref ${target.ref}`);
+    if (entry.generation !== registry.currentGeneration) {
+      throw new ModelPathError("INVALID_VALUE", `stale_ref: ${target.ref} (regeneration; re-snapshot)`);
+    }
+    if (navigationEpoch > entry.snapshotEpoch) {
+      throw new ModelPathError("INVALID_VALUE", `stale_ref: ${target.ref} (navigation; re-snapshot)`);
+    }
+    const rect = await cap.getBoundingRect({ paneId, selector: entry.selector, frameId: entry.frameId });
+    if (!rect.ok) {
+      throw new ModelPathError("INVALID_VALUE", `stale_ref: ${target.ref} (${rect.code}: ${rect.message})`);
+    }
+    // Signature revalidation via page-side JS — score-based match.
+    const liveSig = await readSignature(cap, paneId, entry.selector, entry.frameId);
+    if (!liveSig) {
+      throw new ModelPathError("INVALID_VALUE", `stale_ref: ${target.ref} (signature unreadable)`);
+    }
+    if (signatureScore(entry.signature, liveSig) < SIGNATURE_MATCH_THRESHOLD) {
+      throw new ModelPathError("INVALID_VALUE", `stale_ref: ${target.ref} (signature mismatch)`);
+    }
+    return { selector: entry.selector, frameId: entry.frameId, rect: rect.rect, visible: rect.visible };
+  }
+
+  let selector: string;
+  if (target.type === "css") {
+    selector = target.selector;
+  } else {
+    const script = findElementScript(target);
+    const result = await cap.evaluate({ paneId, script });
+    if (!result.ok) {
+      throw new ModelPathError("INVALID_VALUE", `target resolve failed: ${result.code}: ${result.message}`);
+    }
+    if (typeof result.value !== "string" || result.value.length === 0) {
+      throw new ModelPathError("INVALID_VALUE", `target not found: ${JSON.stringify(target)}`);
+    }
+    selector = result.value;
+  }
+
+  const rect = await cap.getBoundingRect({ paneId, selector });
+  if (!rect.ok) {
+    throw new ModelPathError("INVALID_VALUE", `target not found: ${rect.code}: ${rect.message}`);
+  }
+  return { selector, rect: rect.rect, visible: rect.visible };
+}
+
+/** Read element signature for ref revalidation. Single evaluate per call. */
+async function readSignature(
+  cap: PaneBrowserCap,
+  paneId: string,
+  selector: string,
+  frameId?: string
+): Promise<import("./refRegistry").RefSignature | null> {
+  const payload = JSON.stringify(selector);
+  const script = `(() => {
+    const el = document.querySelector(${payload});
+    if (!el) return null;
+    const txt = (el.textContent || '').slice(0, 200);
+    let h = 0;
+    for (let i = 0; i < txt.length; i++) { h = ((h << 5) - h + txt.charCodeAt(i)) | 0; }
+    const textHash = (h >>> 0).toString(16).slice(0, 8);
+    const parts = [];
+    let cur = el, depth = 0;
+    while (cur && cur.parentElement && depth < 6) {
+      const idx = Array.from(cur.parentElement.children).indexOf(cur);
+      parts.unshift(idx);
+      cur = cur.parentElement; depth++;
+    }
+    let ancestorIdHint;
+    cur = el;
+    while (cur && cur !== document.body) {
+      const id = cur.getAttribute('data-testid') || cur.getAttribute('data-id') ||
+                 cur.getAttribute('aria-rowindex') || cur.getAttribute('data-key') || cur.id;
+      if (id) { ancestorIdHint = id; break; }
+      cur = cur.parentElement;
+    }
+    return {
+      role: el.getAttribute('role') || el.tagName.toLowerCase(),
+      name: (el.getAttribute('aria-label') || (el.textContent || '').trim().slice(0, 100)) || '',
+      type: el.getAttribute('type') || undefined,
+      id: el.id || undefined,
+      textHash,
+      domOrderKey: parts.join('.'),
+      ancestorIdHint
+    };
+  })()`;
+  const result = await cap.evaluate({ paneId, script, frameId });
+  if (!result.ok || typeof result.value !== "object" || result.value == null) return null;
+  return result.value as import("./refRegistry").RefSignature;
+}

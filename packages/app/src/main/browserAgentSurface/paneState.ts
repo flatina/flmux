@@ -29,6 +29,9 @@ export type CreatePopupPaneFn = (args: {
 
 const CAPS_TTL_MS = 30_000;
 const POPUP_ADOPT_TIMEOUT_MS = 5_000;
+/** flmux's cold-renderer + workbench mount worst-case. bunite caps total
+ * grace at 60s from arm emit; this stays well under. */
+const POPUP_EXTEND_MS = 15_000;
 
 export class PaneState {
   readonly refRegistry = new RefRegistry();
@@ -62,6 +65,18 @@ export class PaneState {
       // Hard invalidate: page fully reloaded — all refs gone.
       this.refRegistry.clear();
     } else if (e.type === "popup") {
+      // Extend bunite's 5s adoption deadline BEFORE any await — pane create
+      // + renderer mount + IPC can blow the default on cold paths.
+      void this.controller
+        .primCap()
+        .then((cap) =>
+          cap.extendPopupTimeout({
+            paneId: this.paneId,
+            newSurfaceId: e.newSurfaceId,
+            gracePeriodMs: POPUP_EXTEND_MS
+          })
+        )
+        .catch(() => {});
       void this.handlePopupArm(e.newSurfaceId, e.url);
     }
   };

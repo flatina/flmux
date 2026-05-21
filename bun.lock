@@ -483,6 +483,16 @@
 
     "@flmux/extension-api/bunite-core": ["bunite-core@file:../bunite/package", { "dependencies": { "msgpackr": "^1.11.9" }, "optionalDependencies": { "bunite-native-linux-x64": "0.0.4", "bunite-native-mac-arm64": "0.0.4", "bunite-native-win-x64": "0.0.13" } }],
 
+    "bunite-core/bunite-native-win-x64": ["bunite-native-win-x64@file:../bunite/tools/bunite-native-win-x64", {}],
+
+    "bunite-dev/bunite-core": ["bunite-core@file:../bunite/package", { "dependencies": { "msgpackr": "^1.11.9" }, "optionalDependencies": { "bunite-native-linux-x64": "0.0.4", "bunite-native-mac-arm64": "0.0.4", "bunite-native-win-x64": "0.0.13" } }],
+
     "playwright/fsevents": ["fsevents@2.3.2", "", { "os": "darwin" }, "sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA=="],
+
+    "@flmux/app/bunite-core/bunite-native-win-x64": ["bunite-native-win-x64@file:../bunite/tools/bunite-native-win-x64", {}],
+
+    "@flmux/extension-api/bunite-core/bunite-native-win-x64": ["bunite-native-win-x64@file:../bunite/tools/bunite-native-win-x64", {}],
+
+    "bunite-dev/bunite-core/bunite-native-win-x64": ["bunite-native-win-x64@file:../bunite/tools/bunite-native-win-x64", {}],
   }
 }

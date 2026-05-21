@@ -320,7 +320,12 @@ export const paneBrowserCap = defineCap("flmux.paneBrowser", {
     newSurfaceId: number;
     bounds: { x: number; y: number; width: number; height: number };
   }, { ok: true } | { ok: false; code: string; message: string }>(),
-  dismissPopup: call<{ paneId: string; newSurfaceId: number }, void>()
+  dismissPopup: call<{ paneId: string; newSurfaceId: number }, void>(),
+  extendPopupTimeout: call<
+    { paneId: string; newSurfaceId: number; gracePeriodMs: number },
+    | { ok: true; deadlineMs: number }
+    | { ok: false; code: string; message: string }
+  >()
 });
 
 export type PaneBrowserCap = ClientOf<typeof paneBrowserCap>;

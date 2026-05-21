@@ -78,6 +78,10 @@ export interface BuniteWebviewAutomationElement extends HTMLElement {
   setDownloadPolicy(policy: BrowserPaneDownloadPolicy, downloadDir?: string): Promise<void>;
   waitForDownload(opts?: { timeoutMs?: number }): Promise<BrowserPaneWaitForDownloadResult>;
   dismissPopup(newSurfaceId: number): Promise<void>;
+  extendAdoptionTimeout(
+    newSurfaceId: number,
+    gracePeriodMs: number
+  ): Promise<{ ok: true; deadlineMs: number } | { ok: false; code: string; message: string }>;
 }
 
 const elements = new Map<string, BuniteWebviewAutomationElement>();
@@ -235,6 +239,8 @@ export function createPaneBrowserCapImpl(): PaneBrowserCapImpl {
       return surface.acceptPopup({ newSurfaceId, hostViewId, bounds });
     },
     dismissPopup: ({ paneId, newSurfaceId }) => requireElement(paneId).dismissPopup(newSurfaceId),
+    extendPopupTimeout: ({ paneId, newSurfaceId, gracePeriodMs }) =>
+      requireElement(paneId).extendAdoptionTimeout(newSurfaceId, gracePeriodMs),
 
     // Stage F — streams (DOM event re-dispatched by element)
     surfaceEvents: ({ paneId }) =>

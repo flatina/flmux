@@ -28,6 +28,8 @@ export function parseTarget(input: string): Target {
     if (!m) throw new ModelPathError("INVALID_VALUE", `bad role= target: ${input}`);
     return { type: "role", role: m[1], name: m[2] };
   }
+  const coord = s.match(/^(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)$/);
+  if (coord) return { type: "coord", x: Number(coord[1]), y: Number(coord[2]) };
   return { type: "css", selector: s };
 }
 

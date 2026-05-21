@@ -1,6 +1,6 @@
 import { ModelPathError, type SequencedShellCoreEvent, type ShellCore } from "@flmux/core/shell";
 import type { AuthorityBrowserPaneController } from "../browserPaneController";
-import { PaneState } from "./paneState";
+import { PaneState, type CreatePopupPaneFn } from "./paneState";
 import { AGENT_OPS, dispatchAgentOp } from "./ops";
 
 export { PaneState } from "./paneState";
@@ -18,16 +18,36 @@ export { AGENT_OPS } from "./ops";
  * shell pane.added/removed, holds a `PaneState` per browser pane. */
 export class BrowserAgentSurface {
   private panes = new Map<string, PaneState>();
+  private paneWorkspace = new Map<string, string>();
   private shellUnsub: (() => void) | null = null;
   private connUnsub: (() => void) | null = null;
   private disposed = false;
 
-  constructor(shellCore: ShellCore, private readonly controller: AuthorityBrowserPaneController) {
+  constructor(
+    private readonly shellCore: ShellCore,
+    private readonly controller: AuthorityBrowserPaneController
+  ) {
     this.shellUnsub = shellCore.subscribe((event) => this.onShellEvent(event));
     this.connUnsub = controller.onConnectionChanged((conn) => {
       for (const ps of this.panes.values()) void ps.onConnectionChanged(conn);
     });
   }
+
+  private createPopupPane: CreatePopupPaneFn = async ({ openerPaneId, newSurfaceId, url }) => {
+    const workspaceId = this.paneWorkspace.get(openerPaneId);
+    if (!workspaceId) return null;
+    const created = await this.shellCore.createPane(
+      {
+        kind: "browser",
+        url,
+        params: { url, adoptPopupId: newSurfaceId },
+        place: "right",
+        referencePaneId: openerPaneId
+      },
+      { workspaceId }
+    );
+    return { paneId: created.id };
+  };
 
   paneState(paneId: string): PaneState | undefined {
     return this.panes.get(paneId);
@@ -60,14 +80,20 @@ export class BrowserAgentSurface {
 
   private onShellEvent(event: SequencedShellCoreEvent): void {
     if (event.topic === "pane.added") {
-      const { paneId, snapshot } = event.payload as { paneId: string; snapshot: { kind: string } };
+      const { paneId, workspaceId, snapshot } = event.payload as {
+        paneId: string;
+        workspaceId: string;
+        snapshot: { kind: string };
+      };
+      this.paneWorkspace.set(paneId, workspaceId);
       if (snapshot.kind !== "browser") return;
       if (this.panes.has(paneId)) return;
-      const state = new PaneState(paneId, this.controller);
+      const state = new PaneState(paneId, this.controller, this.createPopupPane);
       this.panes.set(paneId, state);
       void state.start();
     } else if (event.topic === "pane.removed") {
       const { paneId } = event.payload as { paneId: string };
+      this.paneWorkspace.delete(paneId);
       const state = this.panes.get(paneId);
       if (state) {
         state.dispose();

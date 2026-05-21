@@ -14,6 +14,7 @@ interface BrowserPaneRendererDependencies {
 
 type BrowserPaneParams = {
   url?: string;
+  adoptPopupId?: number;
 };
 
 // `<bunite-webview>` element surface — `BuniteWebviewAutomationElement`
@@ -43,9 +44,14 @@ export class BrowserPaneRenderer implements IContentRenderer {
     this.webview = this.element.querySelector("bunite-webview")! as BrowserViewElement;
     registerBrowserPaneElement(this.paneId, this.webview);
 
-    this.currentUrl = (params.params as BrowserPaneParams).url ?? "";
+    const paneParams = params.params as BrowserPaneParams;
+    this.currentUrl = paneParams.url ?? "";
     this.urlInput.value = this.currentUrl;
-    if (this.currentUrl) {
+    // Popup adoption — bunite element auto-acceptPopup via attribute. `src`
+    // is set by the popup's own navigation, not by us.
+    if (typeof paneParams.adoptPopupId === "number") {
+      this.webview.setAttribute("adopt-popup-id", String(paneParams.adoptPopupId));
+    } else if (this.currentUrl) {
       this.webview.setAttribute("src", this.currentUrl);
     }
 

@@ -56,9 +56,14 @@ export function createBrowserPaneSpec(options: BrowserPaneSpecOptions = {}): Pan
   return {
     kind: "browser",
     lifecycle: {
-      createParams: ({ workspace, input }) => ({
-        url: resolveBrowserUrl(workspace, input.url ?? workspace.defaultBrowserPath)
-      }),
+      createParams: ({ workspace, input }) => {
+        const params: Record<string, unknown> = {
+          url: resolveBrowserUrl(workspace, input.url ?? workspace.defaultBrowserPath)
+        };
+        const adopt = input.params && (input.params as Record<string, unknown>).adoptPopupId;
+        if (typeof adopt === "number") params.adoptPopupId = adopt;
+        return params;
+      },
       getTitle: ({ input, params }) =>
         input.title?.trim() || inferBrowserTitle(optionalStringParam(params?.url) ?? "Browser"),
       createRecord: ({ workspace, params }) => ({

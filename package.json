@@ -34,6 +34,6 @@
     "ts-morph": "^28.0.0"
   },
   "dependencies": {
-    "bunite-core": "^0.11.2"
+    "bunite-core": "file:../bunite/package"
   }
 }

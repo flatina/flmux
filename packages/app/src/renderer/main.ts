@@ -1,6 +1,7 @@
 import { bootstrap as bootstrapCap, getConnection, type BuniteWebGlobal } from "bunite-core/rpc/renderer";
-import { flmuxBridgeCap, type FlmuxBridgeCap, type SessionCap } from "../shared/rendererBridge";
+import { flmuxBridgeCap, paneBrowserCap, type FlmuxBridgeCap, type SessionCap } from "../shared/rendererBridge";
 import { registerLocalExternalPaneDescriptors } from "./external/registerLocalExternalPaneDescriptors";
+import { createPaneBrowserCapImpl } from "./panes/browserPaneRegistry";
 import { FlmuxWorkbench } from "./shell/workbench";
 import { setupTheme } from "./theme";
 
@@ -17,6 +18,9 @@ async function bootstrap() {
   // Cross-bundle conn share — 0-externals extension bundles each inline bunite-core.
   const conn = await getConnection();
   window.__bunite = { ...(window.__bunite ?? {}), webConnection: conn };
+  // Serve paneBrowserCap before bridge so main's automation calls during
+  // session bind cannot race ahead of cap registration.
+  conn.serve(paneBrowserCap, createPaneBrowserCapImpl());
   const bridge = await bootstrapCap(flmuxBridgeCap);
 
   // Resume continuity: cookie holds previous session's resumeToken. Try first;

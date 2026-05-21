@@ -15,12 +15,14 @@ import { createServerShellModelRouter } from "./serverShellModelRouter";
 import type { ClientRegistry } from "./clientRegistry";
 import type { DiscoveredLocalExtension } from "./localExtensions";
 import { createBuiltinPaneSpecs, createExtensionPaneSpecs, type ExtensionModuleImporter } from "./paneSpecs";
+import { createBrowserPaneController, type AuthorityBrowserPaneController } from "./browserPaneController";
 import type { FlmuxSessionStore } from "./sessionStore";
 
 export interface WebModeShellAuthority {
   readonly clientId: string;
   readonly shellModel: ShellModelAPI;
   readonly router: ReturnType<typeof createServerShellModelRouter>;
+  readonly browserController: AuthorityBrowserPaneController;
   subscribe(handler: (event: SequencedShellCoreEvent) => void): () => void;
   start(origin: string): Promise<void>;
   applyTerminalEvent(event: TerminalRuntimeEvent): void;
@@ -55,9 +57,10 @@ export async function createWebModeShellAuthority(options: {
    * per user. `undefined` (legacy single-tenant tests) maps to `"local"`. */
   userId?: string;
 }): Promise<WebModeShellAuthority> {
+  const browserController = createBrowserPaneController();
   const paneRegistry = new PaneRegistry<PaneSpec>();
   paneRegistry.register(createPlaceholderPaneSpec());
-  for (const spec of createBuiltinPaneSpecs(options.projectDir)) {
+  for (const spec of createBuiltinPaneSpecs(options.projectDir, { browserController })) {
     paneRegistry.register(spec);
   }
   for (const spec of await createExtensionPaneSpecs(options.localExtensions ?? [], options.extensionModuleImporter)) {
@@ -118,6 +121,7 @@ export async function createWebModeShellAuthority(options: {
   return {
     clientId,
     shellModel,
+    browserController,
     router: createServerShellModelRouter({
       authorityClientId: clientId,
       shellModel,

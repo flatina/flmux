@@ -1,4 +1,10 @@
-import { createBrowserPaneSpec, isTerminalPaneStateRecord, type NewPaneInput, type PaneSpec } from "@flmux/core/shell";
+import {
+  createBrowserPaneSpec,
+  isTerminalPaneStateRecord,
+  type BrowserPaneController,
+  type NewPaneInput,
+  type PaneSpec
+} from "@flmux/core/shell";
 import type {
   ExtensionManifestPane,
   ExtensionPaneSpec,
@@ -15,9 +21,12 @@ import type { DiscoveredLocalExtension } from "./localExtensions";
 type ServerModule = { default?: ExtensionServerDefinition };
 export type ExtensionModuleImporter = (entryUrl: string) => Promise<ServerModule>;
 
-export function createBuiltinPaneSpecs(projectDir: string): PaneSpec[] {
+export function createBuiltinPaneSpecs(
+  projectDir: string,
+  options: { browserController?: BrowserPaneController } = {}
+): PaneSpec[] {
   return [
-    createBrowserPaneSpec(),
+    createBrowserPaneSpec({ controller: options.browserController }),
     {
       kind: "terminal",
       lifecycle: {

@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve as pathResolve, sep } from "node:path";
 import { defineCommand, runMain, type CommandDef } from "citty";
+import { browserCmd } from "./cliBrowser";
 import { discoverLocalCliCommands, defaultExtensionsRootDir, loadLocalCliCommandDef } from "./cliExtensions";
 import { runTokensCli } from "./cliTokens";
 import { resolveFlmuxPaths, resolveFlmuxRootDir } from "./main/flmuxPaths";
@@ -191,7 +192,8 @@ async function buildSubCommands(): Promise<Record<string, CommandDef>> {
     "ls-each-get": lsEachGetCmd as CommandDef,
     set: setCmd as CommandDef,
     call: callCmd as CommandDef,
-    tokens: tokensCmd as CommandDef
+    tokens: tokensCmd as CommandDef,
+    browser: browserCmd
   };
 
   // Lazy extension registration: avoid importing every extension's CLI

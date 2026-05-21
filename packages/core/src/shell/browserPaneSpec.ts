@@ -6,12 +6,53 @@ import {
 } from "./panes";
 import { normalizeBrowserUrl } from "./shellCore";
 
+/** Primitive ops directly forwarded to bunite SurfaceCap.
+ * App-owned superset (extended by Stage E+F + agent layer in `paneSpecs.ts`)
+ * is passed via `callableOps`; core stays unaware of the full op universe. */
+export const PRIMITIVE_OPS = [
+  "goBack",
+  "reload",
+  "evaluate",
+  "click",
+  "type",
+  "press",
+  "scroll",
+  "screenshot",
+  "capabilities"
+] as const;
+
+/** Widened to `string` — actual whitelisting lives in app-owned
+ * `callableOps` Set. Keeps core free of drift when new ops land. */
+export type BrowserPaneCallable = string;
+
+/**
+ * App-injected gateway from `path.call`/`path.get(/status)` to the live
+ * bunite surface. Spec stays unaware of bunite RPC; controller resolves
+ * paneId → surfaceId and dispatches.
+ */
+export interface BrowserPaneController {
+  call(paneId: string, op: BrowserPaneCallable, args: Record<string, unknown>): Promise<{ value: unknown }>;
+  getStatus(paneId: string): Record<string, unknown> | undefined;
+}
+
+export interface BrowserPaneSpecOptions {
+  controller?: BrowserPaneController;
+  /** Allowed op names for `/panes/{id}/browser/{op}` path calls. Default =
+   * `PRIMITIVE_OPS`. App-side composition (agent surface) extends this with
+   * its own ops without touching core. */
+  callableOps?: ReadonlySet<string>;
+}
+
 /**
  * Shared browser-kind pane spec — lifecycle, subtree, and persistence.
  * Composes browser URLs from `workspace.appOrigin` rather than closing over
- * any caller state, so web and desktop can share the same factory.
+ * any caller state, so web and desktop can share the same factory. Pass
+ * `controller` to expose automation calls (`/panes/{id}/browser/{op}`) and
+ * runtime-derived status. Omit for read-only restoration use (tests).
  */
-export function createBrowserPaneSpec(): PaneSpec<BrowserPaneStateRecord> {
+export function createBrowserPaneSpec(options: BrowserPaneSpecOptions = {}): PaneSpec<BrowserPaneStateRecord> {
+  const { controller } = options;
+  const callableOps = options.callableOps ?? new Set<string>(PRIMITIVE_OPS);
   return {
     kind: "browser",
     lifecycle: {
@@ -49,7 +90,22 @@ export function createBrowserPaneSpec(): PaneSpec<BrowserPaneStateRecord> {
           await setParams({ ...(currentParams ?? {}), url: nextUrl });
           return { value: nextUrl };
         },
-        getStatusSnapshot: ({ record }) => (isBrowserPaneStateRecord(record) ? { url: record.url } : undefined)
+        canCallStatePath: ({ record }, relativePath) =>
+          isBrowserPaneStateRecord(record) && relativePath.length === 1 && callableOps.has(relativePath[0]),
+        callState: async ({ paneId, record }, relativePath, args) => {
+          if (!isBrowserPaneStateRecord(record)) {
+            throw new Error("browser subtree only applies to browser panes");
+          }
+          if (!controller) {
+            throw new Error("browser pane controller not wired — automation calls unavailable");
+          }
+          return controller.call(paneId, relativePath[0], args);
+        },
+        getStatusSnapshot: ({ paneId, record }) => {
+          if (!isBrowserPaneStateRecord(record)) return undefined;
+          const live = controller?.getStatus(paneId);
+          return { url: record.url, ...(live ?? {}) };
+        }
       }
     ],
     persistence: {

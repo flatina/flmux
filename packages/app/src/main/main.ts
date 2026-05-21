@@ -53,7 +53,7 @@ import type { CapDef, ImplOf, ServeHandle } from "bunite-core/rpc";
 
 type ShellAuthority = Pick<
   DesktopShellAuthority | WebModeShellAuthority,
-  "subscribe" | "applyTerminalEvent" | "shellBootstrap"
+  "subscribe" | "applyTerminalEvent" | "shellBootstrap" | "browserController"
 > & {
   readonly shellModel: ShellModelAPI;
   readonly router: FlmuxShellModelRouter;
@@ -882,6 +882,10 @@ async function bindMintedSession(opts: {
   const { conn, viewId, authority, sessionId, userId } = opts;
   bindClientTransport(sessionId, viewId, conn);
   await attachExtensionsForSession({ conn, sessionId, userId, authority });
+  // Latest-wins routing for browser pane automation. Newer binds overwrite;
+  // onClose only nulls out when the closing conn is still the active one.
+  authority.browserController.setConnection(conn);
+  conn.onClose(() => authority.browserController.clearConnectionIf(conn));
 
   const sessionImpl = createSessionImpl({
     sessionId,

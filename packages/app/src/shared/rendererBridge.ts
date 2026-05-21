@@ -93,6 +93,239 @@ export const flmuxBridgeCap = defineCap("flmux.bridge", {
 export type FlmuxBridgeCap = ClientOf<typeof flmuxBridgeCap>;
 export type FlmuxBridgeCapImpl = ImplOf<typeof flmuxBridgeCap>;
 
+// Renderer-served — per-renderer registry of `<bunite-webview>` elements
+// keyed by paneId. Main bootstraps once per session; methods take paneId in
+// args and delegate to the live element.
+//
+// Schema mirrors bunite SurfaceCap (Stage A-F). Types not re-exported from
+// `bunite-core/rpc` are defined below structurally — keep in sync with
+// `bunite-core/rpc/framework`.
+export type BrowserPaneModifier = "alt" | "ctrl" | "meta" | "shift";
+
+export type BrowserPaneEvaluateResult =
+  | { ok: true; value: unknown }
+  | { ok: false; code: string; message: string };
+
+export type BrowserPaneScreenshotResult =
+  | { ok: true; data: Uint8Array; mime: string; format: "png" | "jpeg" }
+  | { ok: false; code: string; message: string };
+
+export interface BrowserPaneCapabilities {
+  evaluate: boolean;
+  crossOriginEval: boolean;
+  surfaceEvents: boolean;
+  nativeInputTrusted: boolean;
+  click: boolean;
+  type: boolean;
+  press: boolean;
+  scroll: boolean;
+  screenshot: boolean;
+  // Stage F caps (appended)
+  accessibilitySnapshot?: boolean;
+  getBoundingRect?: boolean;
+  frames?: boolean;
+  downloads?: boolean;
+  popups?: boolean;
+  formats?: ("png" | "jpeg")[];
+}
+
+// Stage F result envelopes — mirror bunite framework
+export interface BrowserPaneAxNode {
+  nodeId: string;
+  role: string;
+  name: string;
+  value?: string;
+  description?: string;
+  level?: number;
+  checked?: boolean | "mixed";
+  pressed?: boolean | "mixed";
+  expanded?: boolean;
+  disabled?: boolean;
+  focused?: boolean;
+  invalid?: boolean;
+  required?: boolean;
+  selected?: boolean;
+  rect?: { x: number; y: number; width: number; height: number };
+  children?: BrowserPaneAxNode[];
+}
+
+export type BrowserPaneAccessibilitySnapshotResult =
+  | { ok: true; tree: BrowserPaneAxNode }
+  | { ok: false; code: string; message: string };
+
+export type BrowserPaneBoundingRectResult =
+  | { ok: true; rect: { x: number; y: number; width: number; height: number }; visible: boolean }
+  | { ok: false; code: string; message: string };
+
+export interface BrowserPaneFrame {
+  frameId: string;
+  parentFrameId: string | null;
+  origin: string;
+  url: string;
+  name?: string;
+}
+
+export type BrowserPaneListFramesResult =
+  | { ok: true; frames: BrowserPaneFrame[] }
+  | { ok: false; code: string; message: string };
+
+export type BrowserPaneNavigationState = {
+  lastLoadEpoch: number;
+  isLoading: boolean;
+  currentUrl: string;
+};
+
+// Stage E/F supporting types
+export type BrowserPaneDownloadPolicy = "auto" | "ask" | "block";
+
+export type BrowserPaneDownloadEvent =
+  | { kind: "started"; id: string; url: string; suggestedFilename: string; mimeType?: string; sizeBytes?: number }
+  | { kind: "progress"; id: string; receivedBytes: number; totalBytes?: number }
+  | { kind: "completed"; id: string; localPath: string }
+  | { kind: "failed"; id: string; reason: string }
+  | { kind: "blocked"; id: string; url: string; reason: string };
+
+export type BrowserPaneWaitForDownloadResult =
+  | {
+      ok: true;
+      id: string;
+      suggestedFilename: string;
+      url: string;
+      mimeType?: string;
+      sizeBytes?: number;
+      localPath: string;
+    }
+  | { ok: false; code: string; message: string };
+
+export type BrowserPaneDialogEvent =
+  | {
+      kind: "alert" | "confirm" | "prompt" | "beforeunload";
+      requestId: number;
+      message: string;
+      defaultPrompt?: string;
+    }
+  | { kind: "auto-dismissed"; originalKind: string; message: string };
+
+export type BrowserPaneWaitResult =
+  | { ok: true }
+  | { ok: false; code: string; message: string };
+
+export type BrowserPaneConsoleLevel = "log" | "warn" | "error" | "info" | "debug";
+export interface BrowserPaneConsoleEntry {
+  level: BrowserPaneConsoleLevel;
+  args: string[];
+  ts: number;
+}
+
+// Stage F surface event — mirror bunite's `SurfaceEvent` (epoch + popup arm).
+// Imported `SurfaceEvent` from bunite is preferred; this shape kept for ref.
+export type BrowserPaneSurfaceEvent =
+  | { type: "navigate"; epoch: number; url: string }
+  | { type: "load-start"; epoch: number; url: string }
+  | { type: "load-finish"; epoch: number; url: string }
+  | { type: "load-fail"; epoch: number; url: string; reason?: string }
+  | { type: "title-change"; epoch: number; title: string }
+  | {
+      type: "popup";
+      epoch: number;
+      url: string;
+      disposition: "tab" | "window" | "popup";
+      openerSurfaceId: number;
+      newSurfaceId: number;
+    };
+
+export const paneBrowserCap = defineCap("flmux.paneBrowser", {
+  // Stage A-D — existing
+  evaluate: call<{ paneId: string; script: string; frameId?: string }, BrowserPaneEvaluateResult>(),
+  click: call<{
+    paneId: string;
+    x: number;
+    y: number;
+    button?: "left" | "middle" | "right";
+    clickCount?: number;
+    modifiers?: BrowserPaneModifier[];
+  }, void>(),
+  type: call<{ paneId: string; text: string }, void>(),
+  press: call<{ paneId: string; key: string; modifiers?: BrowserPaneModifier[] }, void>(),
+  scroll: call<{
+    paneId: string;
+    dx: number;
+    dy: number;
+    x?: number;
+    y?: number;
+    modifiers?: BrowserPaneModifier[];
+  }, void>(),
+  screenshot: call<{ paneId: string; format?: "png" | "jpeg"; quality?: number }, BrowserPaneScreenshotResult>(),
+  capabilities: call<{ paneId: string }, BrowserPaneCapabilities>(),
+  goBack: call<{ paneId: string }, void>(),
+  reload: call<{ paneId: string }, void>(),
+
+  // Stage E — mouse + dialog + waitFor + console + pressAction
+  mouse: call<{
+    paneId: string;
+    action: "move" | "down" | "up";
+    x: number;
+    y: number;
+    button?: "left" | "middle" | "right";
+    modifiers?: BrowserPaneModifier[];
+  }, void>(),
+  dialogs: stream<{ paneId: string }, BrowserPaneDialogEvent>(),
+  respondToDialog: call<{ paneId: string; requestId: number; accept: boolean; promptText?: string }, void>(),
+  setDialogTimeout: call<{ paneId: string; ms: number | null }, void>(),
+  waitForSelector: call<{
+    paneId: string;
+    selector: string;
+    frameId?: string;
+    timeoutMs?: number;
+  }, BrowserPaneWaitResult>(),
+  waitForFunction: call<{
+    paneId: string;
+    expression: string;
+    frameId?: string;
+    timeoutMs?: number;
+    pollIntervalMs?: number;
+  }, BrowserPaneWaitResult>(),
+  consoleEvents: stream<{ paneId: string }, BrowserPaneConsoleEntry>(),
+  getConsoleBuffer: call<{ paneId: string; clear?: boolean }, BrowserPaneConsoleEntry[]>(),
+  pressAction: call<{
+    paneId: string;
+    key: string;
+    action: "down" | "up" | "both";
+    modifiers?: BrowserPaneModifier[];
+  }, void>(),
+
+  // Stage F — navigation state + surfaceEvents + accessibility + frames + downloads + popup
+  getNavigationState: call<{ paneId: string }, BrowserPaneNavigationState>(),
+  surfaceEvents: stream<{ paneId: string }, BrowserPaneSurfaceEvent>(),
+  accessibilitySnapshot: call<{
+    paneId: string;
+    frameId?: string;
+    interestingOnly?: boolean;
+  }, BrowserPaneAccessibilitySnapshotResult>(),
+  getBoundingRect: call<{
+    paneId: string;
+    selector: string;
+    frameId?: string;
+  }, BrowserPaneBoundingRectResult>(),
+  listFrames: call<{ paneId: string }, BrowserPaneListFramesResult>(),
+  setDownloadPolicy: call<{
+    paneId: string;
+    policy: BrowserPaneDownloadPolicy;
+    downloadDir?: string;
+  }, void>(),
+  waitForDownload: call<{ paneId: string; timeoutMs?: number }, BrowserPaneWaitForDownloadResult>(),
+  downloadEvents: stream<{ paneId: string }, BrowserPaneDownloadEvent>(),
+  acceptPopup: call<{
+    paneId: string;
+    newSurfaceId: number;
+    bounds: { x: number; y: number; width: number; height: number };
+  }, { ok: true } | { ok: false; code: string; message: string }>(),
+  dismissPopup: call<{ paneId: string; newSurfaceId: number }, void>()
+});
+
+export type PaneBrowserCap = ClientOf<typeof paneBrowserCap>;
+export type PaneBrowserCapImpl = ImplOf<typeof paneBrowserCap>;
+
 // HTTP envelopes — separate surface from cap RPC. Cookie identity, not cap.
 export interface ClientScopedPathGetInput {
   authorityClientId: string;

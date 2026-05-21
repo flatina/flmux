@@ -1,4 +1,10 @@
 import type { GroupPanelPartInitParameters, IContentRenderer, PanelUpdateEvent } from "dockview-core";
+import type { SurfaceEvent } from "bunite-core/rpc";
+import {
+  type BuniteWebviewAutomationElement,
+  registerBrowserPaneElement,
+  unregisterBrowserPaneElement
+} from "./browserPaneRegistry";
 
 interface BrowserPaneRendererDependencies {
   panelTemplate: HTMLTemplateElement;
@@ -10,9 +16,10 @@ type BrowserPaneParams = {
   url?: string;
 };
 
-type BrowserViewElement = HTMLElement & {
-  goBack(): void;
-  reload(): void;
+// `<bunite-webview>` element surface — `BuniteWebviewAutomationElement`
+// owns the full automation type, plus the few DOM-side helpers this pane
+// renderer calls directly (navigate via attribute, history nav).
+type BrowserViewElement = BuniteWebviewAutomationElement & {
   navigate(url: string): void;
 };
 
@@ -34,6 +41,7 @@ export class BrowserPaneRenderer implements IContentRenderer {
 
     this.urlInput = this.element.querySelector<HTMLInputElement>(".browser-nav__url")!;
     this.webview = this.element.querySelector("bunite-webview")! as BrowserViewElement;
+    registerBrowserPaneElement(this.paneId, this.webview);
 
     this.currentUrl = (params.params as BrowserPaneParams).url ?? "";
     this.urlInput.value = this.currentUrl;
@@ -62,19 +70,15 @@ export class BrowserPaneRenderer implements IContentRenderer {
       this.navigateTo(nextUrl);
     });
 
-    this.webview.addEventListener("did-navigate", ((event: CustomEvent<{ url: string }>) => {
-      this.currentUrl = event.detail.url;
-      if (this.urlInput) {
-        this.urlInput.value = this.currentUrl;
-      }
-
-      this.deps.onUrlChange(this.paneId, this.currentUrl);
-    }) as EventListener);
-
-    this.webview.addEventListener("did-fail-load", ((event: CustomEvent<{ url: string; reason?: string }>) => {
-      console.warn(`[browser pane] blocked navigation to '${event.detail.url}' (${event.detail.reason ?? "unknown"})`);
-      if (this.urlInput) {
-        this.urlInput.value = this.currentUrl;
+    this.webview.addEventListener("surface-event", ((event: CustomEvent<SurfaceEvent>) => {
+      const detail = event.detail;
+      if (detail.type === "navigate") {
+        this.currentUrl = detail.url;
+        if (this.urlInput) this.urlInput.value = this.currentUrl;
+        this.deps.onUrlChange(this.paneId, this.currentUrl);
+      } else if (detail.type === "load-fail") {
+        console.warn(`[browser pane] blocked navigation to '${detail.url}' (${detail.reason ?? "unknown"})`);
+        if (this.urlInput) this.urlInput.value = this.currentUrl;
       }
     }) as EventListener);
   }
@@ -86,6 +90,10 @@ export class BrowserPaneRenderer implements IContentRenderer {
     }
 
     this.navigateTo(nextUrl);
+  }
+
+  dispose() {
+    if (this.paneId && this.webview) unregisterBrowserPaneElement(this.paneId, this.webview);
   }
 
   private navigateTo(url: string) {

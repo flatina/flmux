@@ -227,22 +227,37 @@ export async function click(
     return { value: null };
   }
   const target = targetOf(args);
-  // ref/text/role need signature gate via resolveCoord; CSS goes atomic.
-  if (target.type === "css") {
-    const caps = await state.getCapabilities();
-    if (caps.resolveAndClick) {
-      const result = await cap.resolveAndClick({
-        paneId,
-        selector: target.selector,
-        button: optionalButton(args.button),
-        clickCount: optionalNumber(args, "clickCount"),
-        modifiers: optionalModifierArr(args.modifiers)
-      });
-      if (!result.ok) {
-        throw new ModelPathError("INVALID_VALUE", `click: ${result.code}: ${result.message}`);
+  // CSS/ref → atomic resolveAndClick (race-free + OOPIF cover for refs in
+  // cross-origin iframes, bunite 0.16.0+). Ref signature gate skipped — the
+  // atomic call's selector miss returns `not_found`, surfacing clearly.
+  // text=/role=/label= still need page-side composition → fallback path.
+  const caps = await state.getCapabilities();
+  if (caps.resolveAndClick && (target.type === "css" || target.type === "ref")) {
+    let selector: string;
+    let frameId: string | undefined;
+    if (target.type === "css") {
+      selector = target.selector;
+    } else {
+      const entry = state.refRegistry.get(target.ref);
+      if (!entry) throw new ModelPathError("INVALID_VALUE", `unknown ref ${target.ref}`);
+      if (entry.generation !== state.refRegistry.currentGeneration) {
+        throw new ModelPathError("INVALID_VALUE", `stale_ref: ${target.ref} (re-snapshot)`);
       }
-      return { value: { rect: result.rect, isTrustedEvent: result.isTrustedEvent } };
+      selector = entry.selector;
+      frameId = entry.frameId;
     }
+    const result = await cap.resolveAndClick({
+      paneId,
+      selector,
+      frameId,
+      button: optionalButton(args.button),
+      clickCount: optionalNumber(args, "clickCount"),
+      modifiers: optionalModifierArr(args.modifiers)
+    });
+    if (!result.ok) {
+      throw new ModelPathError("INVALID_VALUE", `click: ${result.code}: ${result.message}`);
+    }
+    return { value: { rect: result.rect, isTrustedEvent: result.isTrustedEvent } };
   }
   const resolved = await resolveCoord(cap, paneId, state, target);
   rejectFrameInput(resolved);

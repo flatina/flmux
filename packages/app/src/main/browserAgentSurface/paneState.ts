@@ -1,6 +1,10 @@
 import type { Connection } from "bunite-core/rpc";
 import type { AuthorityBrowserPaneController } from "../browserPaneController";
-import type { BrowserPaneCapabilities, BrowserPaneSurfaceEvent } from "../../shared/rendererBridge";
+import type {
+  BrowserPaneCapabilities,
+  BrowserPaneDialogEvent,
+  BrowserPaneSurfaceEvent
+} from "../../shared/rendererBridge";
 import { RefRegistry } from "./refRegistry";
 import { SurfaceEventBus } from "./surfaceEventBus";
 
@@ -22,6 +26,10 @@ export class PaneState {
   readonly surfaceEventBus = new SurfaceEventBus();
   readonly pendingWaiters = new Map<string, Waiter>();
   readonly pendingPopupAdoptions = new Map<number, AdoptionState>();
+  /** Latest pending dialog (alert/confirm/prompt) — agent's `dialog accept`
+   * / `dialog dismiss` responds to this. Cleared on response or auto-dismiss. */
+  pendingDialog: { requestId: number; kind: string; message: string } | null = null;
+  private dialogStreamAbort: AbortController | null = null;
 
   private capabilities: BrowserPaneCapabilities | null = null;
   private capabilitiesFetchedAt = 0;
@@ -49,9 +57,33 @@ export class PaneState {
     try {
       const cap = await this.controller.primCap();
       await this.surfaceEventBus.start(cap, this.paneId);
+      this.startDialogTracking(cap);
     } catch {
       // surface not ready yet — onConnectionChanged will retry on rebind.
     }
+  }
+
+  private startDialogTracking(cap: Awaited<ReturnType<AuthorityBrowserPaneController["primCap"]>>) {
+    this.dialogStreamAbort?.abort();
+    const abort = new AbortController();
+    this.dialogStreamAbort = abort;
+    void (async () => {
+      try {
+        const stream = cap.dialogs({ paneId: this.paneId });
+        for await (const event of stream as AsyncIterable<BrowserPaneDialogEvent>) {
+          if (abort.signal.aborted) break;
+          if (event.kind === "auto-dismissed") {
+            this.pendingDialog = null;
+          } else {
+            this.pendingDialog = {
+              requestId: event.requestId,
+              kind: event.kind,
+              message: event.message
+            };
+          }
+        }
+      } catch {}
+    })();
   }
 
   async onConnectionChanged(conn: Connection | null): Promise<void> {
@@ -94,10 +126,12 @@ export class PaneState {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.dialogStreamAbort?.abort();
     this.surfaceEventBus.dispose();
     for (const w of this.pendingWaiters.values()) w.cancel("pane removed");
     this.pendingWaiters.clear();
     this.pendingPopupAdoptions.clear();
     this.refRegistry.clear();
+    this.pendingDialog = null;
   }
 }

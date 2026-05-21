@@ -544,6 +544,148 @@ function globMatch(s: string, glob: string): boolean {
   return re.test(s);
 }
 
+// ---------- check / uncheck / select ----------
+
+async function getCheckedState(cap: PaneBrowserCap, paneId: string, selector: string): Promise<boolean> {
+  const script = `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; if ('checked' in el) return !!el.checked; return el.getAttribute('aria-checked') === 'true'; })()`;
+  return Boolean(await evalOk<boolean | null>(cap, paneId, script));
+}
+
+export async function check(
+  cap: PaneBrowserCap,
+  paneId: string,
+  state: PaneState,
+  args: Record<string, unknown>
+): Promise<{ value: unknown }> {
+  const target = targetOf(args);
+  const resolved = await resolveCoord(cap, paneId, state, target);
+  rejectFrameInput(resolved);
+  if (!resolved.selector) {
+    throw new ModelPathError("INVALID_VALUE", "check requires resolvable selector");
+  }
+  if (!(await getCheckedState(cap, paneId, resolved.selector))) {
+    await cap.click({ paneId, x: resolved.x, y: resolved.y });
+  }
+  return { value: null };
+}
+
+export async function uncheck(
+  cap: PaneBrowserCap,
+  paneId: string,
+  state: PaneState,
+  args: Record<string, unknown>
+): Promise<{ value: unknown }> {
+  const target = targetOf(args);
+  const resolved = await resolveCoord(cap, paneId, state, target);
+  rejectFrameInput(resolved);
+  if (!resolved.selector) {
+    throw new ModelPathError("INVALID_VALUE", "uncheck requires resolvable selector");
+  }
+  if (await getCheckedState(cap, paneId, resolved.selector)) {
+    await cap.click({ paneId, x: resolved.x, y: resolved.y });
+  }
+  return { value: null };
+}
+
+export async function select(
+  cap: PaneBrowserCap,
+  paneId: string,
+  state: PaneState,
+  args: Record<string, unknown>
+): Promise<{ value: unknown }> {
+  const target = targetOf(args);
+  const value = expectString(args, "value");
+  const selector = await selectorOfTarget(cap, paneId, state, target);
+  const script = `(() => {
+    const el = document.querySelector(${JSON.stringify(selector)});
+    if (!el || el.tagName !== "SELECT") return false;
+    el.value = ${JSON.stringify(value)};
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  })()`;
+  const ok = await evalOk<boolean>(cap, paneId, script);
+  if (!ok) throw new ModelPathError("INVALID_VALUE", "select: element not found or not a <select>");
+  return { value: null };
+}
+
+// ---------- highlight ----------
+
+export async function highlight(
+  cap: PaneBrowserCap,
+  paneId: string,
+  state: PaneState,
+  args: Record<string, unknown>
+): Promise<{ value: unknown }> {
+  const target = targetOf(args);
+  const durationMs = optionalNumber(args, "durationMs") ?? 1500;
+  const selector = await selectorOfTarget(cap, paneId, state, target);
+  const script = `(() => {
+    const el = document.querySelector(${JSON.stringify(selector)});
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    const o = document.createElement("div");
+    o.style.cssText = "position:fixed;pointer-events:none;z-index:2147483647;border:2px solid #ff4081;background:rgba(255,64,129,0.15);box-sizing:border-box;left:" + r.x + "px;top:" + r.y + "px;width:" + r.width + "px;height:" + r.height + "px";
+    document.body.appendChild(o);
+    setTimeout(() => o.remove(), ${durationMs});
+    return true;
+  })()`;
+  await evalOk(cap, paneId, script);
+  return { value: null };
+}
+
+// ---------- dialog ----------
+
+export async function dialogAccept(
+  cap: PaneBrowserCap,
+  paneId: string,
+  state: PaneState,
+  args: Record<string, unknown>
+): Promise<{ value: unknown }> {
+  const d = state.pendingDialog;
+  if (!d) throw new ModelPathError("INVALID_VALUE", "dialog accept: no pending dialog");
+  const promptText = optionalString(args, "promptText");
+  await cap.respondToDialog({ paneId, requestId: d.requestId, accept: true, promptText });
+  state.pendingDialog = null;
+  return { value: { kind: d.kind } };
+}
+
+export async function dialogDismiss(
+  cap: PaneBrowserCap,
+  paneId: string,
+  state: PaneState,
+  _args: Record<string, unknown>
+): Promise<{ value: unknown }> {
+  const d = state.pendingDialog;
+  if (!d) throw new ModelPathError("INVALID_VALUE", "dialog dismiss: no pending dialog");
+  await cap.respondToDialog({ paneId, requestId: d.requestId, accept: false });
+  state.pendingDialog = null;
+  return { value: { kind: d.kind } };
+}
+
+// ---------- console / errors ----------
+
+export async function consoleList(
+  cap: PaneBrowserCap,
+  paneId: string,
+  _state: PaneState,
+  args: Record<string, unknown>
+): Promise<{ value: unknown }> {
+  const clear = args.clear === true;
+  const level = optionalString(args, "level");
+  let entries = await cap.getConsoleBuffer({ paneId, clear });
+  if (level && level !== "all") entries = entries.filter((e) => e.level === level);
+  return { value: entries };
+}
+
+export async function errorsList(
+  cap: PaneBrowserCap,
+  paneId: string,
+  state: PaneState,
+  args: Record<string, unknown>
+): Promise<{ value: unknown }> {
+  return await consoleList(cap, paneId, state, { ...args, level: "error" });
+}
+
 // ---------- dispatcher ----------
 
 export const AGENT_OPS = new Set<string>([
@@ -555,6 +697,14 @@ export const AGENT_OPS = new Set<string>([
   "focus",
   "fill",
   "scrollTo",
+  "check",
+  "uncheck",
+  "select",
+  "highlight",
+  "dialogAccept",
+  "dialogDismiss",
+  "consoleList",
+  "errorsList",
   "getText",
   "getHtml",
   "getValue",
@@ -597,6 +747,14 @@ export async function dispatchAgentOp(
     case "isEnabled": return isEnabled(cap, paneId, state, args);
     case "isChecked": return isChecked(cap, paneId, state, args);
     case "wait": return wait(cap, paneId, state, args);
+    case "check": return check(cap, paneId, state, args);
+    case "uncheck": return uncheck(cap, paneId, state, args);
+    case "select": return select(cap, paneId, state, args);
+    case "highlight": return highlight(cap, paneId, state, args);
+    case "dialogAccept": return dialogAccept(cap, paneId, state, args);
+    case "dialogDismiss": return dialogDismiss(cap, paneId, state, args);
+    case "consoleList": return consoleList(cap, paneId, state, args);
+    case "errorsList": return errorsList(cap, paneId, state, args);
     default: throw new ModelPathError("INVALID_VALUE", `unknown agent op '${op}'`);
   }
 }

@@ -16,6 +16,7 @@ import type { ClientRegistry } from "./clientRegistry";
 import type { DiscoveredLocalExtension } from "./localExtensions";
 import { createBuiltinPaneSpecs, createExtensionPaneSpecs, type ExtensionModuleImporter } from "./paneSpecs";
 import { createBrowserPaneController, type AuthorityBrowserPaneController } from "./browserPaneController";
+import { BrowserAgentSurface } from "./browserAgentSurface";
 import type { FlmuxSessionStore } from "./sessionStore";
 
 export interface WebModeShellAuthority {
@@ -84,6 +85,8 @@ export async function createWebModeShellAuthority(options: {
     host: shellCore,
     terminal: shellCore.createTerminalDelegate()
   });
+  const agentSurface = new BrowserAgentSurface(shellCore, browserController);
+  browserController.setAgentSurface(agentSurface);
   const clientId = `server_${crypto.randomUUID()}`;
 
   // Persisted snapshot layouts survive across restarts if a session store

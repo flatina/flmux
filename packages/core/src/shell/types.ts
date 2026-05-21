@@ -15,6 +15,7 @@ export type PathErrorCode =
   | "INVALID_VALUE"
   | "INVALID_PATH"
   | "NO_CURRENT_PANE"
+  | "NOT_SUPPORTED"
   | "INTERNAL_ERROR";
 
 export interface ShellPathEntry {

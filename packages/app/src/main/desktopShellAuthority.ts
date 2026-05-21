@@ -20,6 +20,7 @@ import type { ClientRegistry } from "./clientRegistry";
 import type { DiscoveredLocalExtension } from "./localExtensions";
 import { createBuiltinPaneSpecs, createExtensionPaneSpecs, type ExtensionModuleImporter } from "./paneSpecs";
 import { createBrowserPaneController, type AuthorityBrowserPaneController } from "./browserPaneController";
+import { BrowserAgentSurface } from "./browserAgentSurface";
 import type { FlmuxSessionStore } from "./sessionStore";
 import type { TerminalService } from "./terminal-service";
 
@@ -87,6 +88,8 @@ export async function createDesktopShellAuthority(options: {
     host: shellCore,
     terminal: shellCore.createTerminalDelegate()
   });
+  const agentSurface = new BrowserAgentSurface(shellCore, browserController);
+  browserController.setAgentSurface(agentSurface);
   const clientId = `desktop_${crypto.randomUUID()}`;
 
   let persistedOuterLayout: unknown | null = null;

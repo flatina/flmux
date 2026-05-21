@@ -1,6 +1,7 @@
 import type { Connection } from "bunite-core/rpc";
 import { ModelPathError, type BrowserPaneCallable, type BrowserPaneController } from "@flmux/core/shell";
 import { paneBrowserCap, type PaneBrowserCap } from "../shared/rendererBridge";
+import type { BrowserAgentSurface } from "./browserAgentSurface";
 
 /**
  * Bridges core's path layer to the renderer-served `paneBrowserCap`. One
@@ -20,11 +21,15 @@ export interface AuthorityBrowserPaneController extends BrowserPaneController {
    * to current cap proxy; throws if no connection. Re-resolved on each
    * connection change (capPromise invalidated). */
   primCap(): Promise<PaneBrowserCap>;
+  /** Inject agent surface for composition op routing. Authority wires this
+   * after construction (cycle: controller ↔ agent surface). */
+  setAgentSurface(agent: BrowserAgentSurface | null): void;
 }
 
 export function createBrowserPaneController(): AuthorityBrowserPaneController {
   let conn: Connection | null = null;
   let capPromise: Promise<PaneBrowserCap> | null = null;
+  let agentSurface: BrowserAgentSurface | null = null;
   const connListeners = new Set<(conn: Connection | null) => void>();
 
   function notifyConn(next: Connection | null) {
@@ -60,6 +65,9 @@ export function createBrowserPaneController(): AuthorityBrowserPaneController {
     op: BrowserPaneCallable,
     args: Record<string, unknown>
   ): Promise<{ value: unknown }> {
+    if (agentSurface && agentSurface.handles(op)) {
+      return await agentSurface.call(paneId, op, args);
+    }
     const cap = await getCap();
     switch (op) {
       case "evaluate": {
@@ -149,6 +157,9 @@ export function createBrowserPaneController(): AuthorityBrowserPaneController {
       return () => connListeners.delete(handler);
     },
     primCap: getCap,
+    setAgentSurface(agent) {
+      agentSurface = agent;
+    },
     call: (paneId, op, args) => dispatch(paneId, op, args),
     getStatus: () => undefined
   };

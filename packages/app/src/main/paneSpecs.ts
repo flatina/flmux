@@ -1,10 +1,12 @@
 import {
   createBrowserPaneSpec,
   isTerminalPaneStateRecord,
+  PRIMITIVE_OPS,
   type BrowserPaneController,
   type NewPaneInput,
   type PaneSpec
 } from "@flmux/core/shell";
+import { AGENT_OPS } from "./browserAgentSurface";
 import type {
   ExtensionManifestPane,
   ExtensionPaneSpec,
@@ -21,12 +23,14 @@ import type { DiscoveredLocalExtension } from "./localExtensions";
 type ServerModule = { default?: ExtensionServerDefinition };
 export type ExtensionModuleImporter = (entryUrl: string) => Promise<ServerModule>;
 
+const BROWSER_CALLABLE_OPS: ReadonlySet<string> = new Set([...PRIMITIVE_OPS, ...AGENT_OPS]);
+
 export function createBuiltinPaneSpecs(
   projectDir: string,
   options: { browserController?: BrowserPaneController } = {}
 ): PaneSpec[] {
   return [
-    createBrowserPaneSpec({ controller: options.browserController }),
+    createBrowserPaneSpec({ controller: options.browserController, callableOps: BROWSER_CALLABLE_OPS }),
     {
       kind: "terminal",
       lifecycle: {

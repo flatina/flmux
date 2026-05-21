@@ -3,26 +3,12 @@ import { ModelPathError, type BrowserPaneCallable, type BrowserPaneController } 
 import { paneBrowserCap, type PaneBrowserCap } from "../shared/rendererBridge";
 import type { BrowserAgentSurface } from "./browserAgentSurface";
 
-/**
- * Bridges core's path layer to the renderer-served `paneBrowserCap`. One
- * controller per authority. Holds the most-recent renderer connection;
- * desktop has exactly one. Web mode multi-tab: last bind wins (v1 — adequate
- * for single-user-per-authority usage; multi-tab automation routing is v2).
- */
+// authority-level; latest-conn-wins
 export interface AuthorityBrowserPaneController extends BrowserPaneController {
   setConnection(conn: Connection | null): void;
   clearConnectionIf(conn: Connection): void;
-  /** Subscribe to connection rebind events. Triggered on every `setConnection`
-   * (including null→conn, conn→conn-prime, conn→null) and on `clearConnectionIf`
-   * when it matches. Consumers (`BrowserAgentSurface`) use this to restart
-   * pane-scoped streams + cap-bootstrap caches. Returns an unsubscribe fn. */
   onConnectionChanged(handler: (conn: Connection | null) => void): () => void;
-  /** Expose primCap promise to consumers (agent surface, etc.). Resolves
-   * to current cap proxy; throws if no connection. Re-resolved on each
-   * connection change (capPromise invalidated). */
   primCap(): Promise<PaneBrowserCap>;
-  /** Inject agent surface for composition op routing. Authority wires this
-   * after construction (cycle: controller ↔ agent surface). */
   setAgentSurface(agent: BrowserAgentSurface | null): void;
 }
 
@@ -44,8 +30,6 @@ export function createBrowserPaneController(): AuthorityBrowserPaneController {
 
   function getCap(): Promise<PaneBrowserCap> {
     if (!conn) {
-      // No PathErrorCode for "server transiently unavailable"; INVALID_VALUE
-      // is the closest caller-actionable code (retry once renderer connects).
       throw new ModelPathError("INVALID_VALUE", "browser pane automation: no renderer connection bound");
     }
     if (!capPromise) capPromise = conn.bootstrap(paneBrowserCap);
@@ -117,8 +101,7 @@ export function createBrowserPaneController(): AuthorityBrowserPaneController {
           format: optionalScreenshotFormat(args.format),
           quality: optionalNumber(args.quality)
         });
-        // JSON.stringify(Uint8Array) produces a numeric-key object, not an
-        // array — base64-encode so the CLI consumer reads a stable string.
+        // JSON.stringify(Uint8Array) drops bytes — base64 for CLI roundtrip.
         if (result.ok) {
           return {
             value: {

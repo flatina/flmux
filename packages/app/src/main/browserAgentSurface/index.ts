@@ -14,8 +14,6 @@ export {
 } from "./targetResolver";
 export { AGENT_OPS } from "./ops";
 
-/** Per-authority agent surface. Lifecycle = authority lifecycle. Listens to
- * shell pane.added/removed, holds a `PaneState` per browser pane. */
 export class BrowserAgentSurface {
   private panes = new Map<string, PaneState>();
   private paneWorkspace = new Map<string, string>();
@@ -65,13 +63,9 @@ export class BrowserAgentSurface {
 
   async call(paneId: string, op: string, args: Record<string, unknown>): Promise<{ value: unknown }> {
     const state = this.requirePane(paneId);
-    // Idempotent — start race: pane.added fires async start; user may invoke
-    // an op before bus listens. Await ensures bus + dialog tracking ready.
     await state.start();
     const cap = await this.controller.primCap();
     const result = await dispatchAgentOp(op, cap, paneId, state, args);
-    // Surface newly-adopted popups triggered during this op (best-effort
-    // window — see PaneState.drainRecentAdoptions).
     if (op === "click" || op === "dblclick" || op === "press" || op === "type") {
       const adoptions = state.drainRecentAdoptions();
       if (adoptions.length > 0) {

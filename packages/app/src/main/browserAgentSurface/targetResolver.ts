@@ -11,11 +11,7 @@ export type Target =
   | { type: "testid"; testid: string }
   | { type: "coord"; x: number; y: number };
 
-/** Parse user-facing target string. Forms:
- * - `@e1` — ref
- * - `text=Submit` / `label=Email` / `testid=foo`
- * - `role=button[name='Save']`
- * - CSS otherwise. */
+// `@e1` | `text=` / `label=` / `testid=` / `role=name[name='X']` | `x,y` | CSS
 export function parseTarget(input: string): Target {
   const s = input.trim();
   if (s.startsWith("@")) return { type: "ref", ref: s };
@@ -40,12 +36,8 @@ export interface ResolvedTarget {
   visible: boolean;
 }
 
-/** Compose a selector from a parsed Target. ref targets bypass this and go
- * through the RefRegistry lookup path. Coords also bypass. */
+// "" return = caller should run findElementScript via evaluate
 export function selectorForTarget(t: Exclude<Target, { type: "ref" } | { type: "coord" }>): string {
-  // Literal embedding via JSON.stringify when composing; here we just pick a
-  // raw CSS selector or describe a JS-side lookup. CSS-resolvable forms get
-  // a CSS selector; text/label/role need page-side JS via evaluate.
   switch (t.type) {
     case "css":
       return t.selector;
@@ -54,14 +46,10 @@ export function selectorForTarget(t: Exclude<Target, { type: "ref" } | { type: "
     case "text":
     case "label":
     case "role":
-      // Page-side JS — resolver caller passes through `findElementSelector` JS,
-      // which returns a unique selector for the element.
       return "";
   }
 }
 
-/** Page-side JS resolving non-CSS targets to a unique selector path. Embeds
- * target params as JSON literals to close injection. */
 export function findElementScript(t: Exclude<Target, { type: "ref" } | { type: "coord" } | { type: "css" }>): string {
   const payload = JSON.stringify(t);
   return `(() => {
@@ -108,8 +96,6 @@ export function findElementScript(t: Exclude<Target, { type: "ref" } | { type: "
   })()`;
 }
 
-/** Resolve a single target to a selector + viewport rect. Caller uses the
- * rect for coord-based native input dispatch. */
 export async function resolveTarget(
   cap: PaneBrowserCap,
   paneId: string,
@@ -132,7 +118,6 @@ export async function resolveTarget(
     if (!rect.ok) {
       throw new ModelPathError("INVALID_VALUE", `stale_ref: ${target.ref} (${rect.code}: ${rect.message})`);
     }
-    // Signature revalidation via page-side JS — score-based match.
     const liveSig = await readSignature(cap, paneId, entry.selector, entry.frameId);
     if (!liveSig) {
       throw new ModelPathError("INVALID_VALUE", `stale_ref: ${target.ref} (signature unreadable)`);
@@ -165,7 +150,6 @@ export async function resolveTarget(
   return { selector, rect: rect.rect, visible: rect.visible };
 }
 
-/** Read element signature for ref revalidation. Single evaluate per call. */
 async function readSignature(
   cap: PaneBrowserCap,
   paneId: string,

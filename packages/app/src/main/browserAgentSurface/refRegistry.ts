@@ -47,24 +47,15 @@ export class RefRegistry {
     return this.refs.size;
   }
 
-  /** Drop entries without bumping generation — next `beginSnapshot` advances.
-   * Use for hard invalidate on load-finish (refs gone, no new snapshot yet). */
   clear(): void {
     this.refs.clear();
   }
 }
 
-/** Weighted match score with `role` as mandatory gate.
- *
- * - role mismatch → score 0 (different element kind, definitely stale)
- * - id same as ancestorIdHint counted once (not double-credited)
- * - id/ancestorIdHint = 3, name = 2, textHash/domOrderKey = 1
- *
- * Threshold 4 — id-less elements need role + name + (text OR order). Pure
- * domOrderKey shift (virtualized scroll) without text/name match → 2 < 4 → stale. */
+// role mandatory gate; id/ancestorIdHint=3, name=2, textHash/domOrderKey=1
 export function signatureScore(a: RefSignature, b: RefSignature): number {
   if (a.role !== b.role) return 0;
-  let score = 2; // role gate satisfied
+  let score = 2;
   const aId = a.id || a.ancestorIdHint;
   const bId = b.id || b.ancestorIdHint;
   if (aId && aId === bId) score += 3;

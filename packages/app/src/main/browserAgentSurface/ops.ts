@@ -34,7 +34,6 @@ function targetOf(args: Record<string, unknown>): Target {
   return parseTarget(expectString(args, "target"));
 }
 
-// Click coord = rect center (CSS px viewport-relative).
 function center(rect: { x: number; y: number; width: number; height: number }) {
   return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
 }
@@ -216,8 +215,6 @@ export async function click(
   state: PaneState,
   args: Record<string, unknown>
 ): Promise<{ value: unknown }> {
-  // BC: `{x, y}` without `target` routes straight to primitive — preserves the
-  // pre-agent v1 contract for HTTP callers passing raw coords.
   if (typeof args.target !== "string" && typeof args.x === "number" && typeof args.y === "number") {
     await cap.click({
       paneId,
@@ -230,6 +227,23 @@ export async function click(
     return { value: null };
   }
   const target = targetOf(args);
+  // ref/text/role need signature gate via resolveCoord; CSS goes atomic.
+  if (target.type === "css") {
+    const caps = await state.getCapabilities();
+    if (caps.resolveAndClick) {
+      const result = await cap.resolveAndClick({
+        paneId,
+        selector: target.selector,
+        button: optionalButton(args.button),
+        clickCount: optionalNumber(args, "clickCount"),
+        modifiers: optionalModifierArr(args.modifiers)
+      });
+      if (!result.ok) {
+        throw new ModelPathError("INVALID_VALUE", `click: ${result.code}: ${result.message}`);
+      }
+      return { value: { rect: result.rect, isTrustedEvent: result.isTrustedEvent } };
+    }
+  }
   const resolved = await resolveCoord(cap, paneId, state, target);
   rejectFrameInput(resolved);
   await cap.click({

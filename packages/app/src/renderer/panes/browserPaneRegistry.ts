@@ -12,6 +12,7 @@ import type {
   BrowserPaneListFramesResult,
   BrowserPaneModifier,
   BrowserPaneNavigationState,
+  BrowserPaneResolveAndClickResult,
   BrowserPaneScreenshotResult,
   BrowserPaneSurfaceEvent,
   BrowserPaneWaitForDownloadResult,
@@ -82,6 +83,15 @@ export interface BuniteWebviewAutomationElement extends HTMLElement {
     newSurfaceId: number,
     gracePeriodMs: number
   ): Promise<{ ok: true; deadlineMs: number } | { ok: false; code: string; message: string }>;
+  resolveAndClick(
+    selector: string,
+    opts?: {
+      frameId?: string;
+      button?: "left" | "middle" | "right";
+      clickCount?: number;
+      modifiers?: BrowserPaneModifier[];
+    }
+  ): Promise<BrowserPaneResolveAndClickResult>;
 }
 
 const elements = new Map<string, BuniteWebviewAutomationElement>();
@@ -241,6 +251,8 @@ export function createPaneBrowserCapImpl(): PaneBrowserCapImpl {
     dismissPopup: ({ paneId, newSurfaceId }) => requireElement(paneId).dismissPopup(newSurfaceId),
     extendPopupTimeout: ({ paneId, newSurfaceId, gracePeriodMs }) =>
       requireElement(paneId).extendAdoptionTimeout(newSurfaceId, gracePeriodMs),
+    resolveAndClick: ({ paneId, selector, ...opts }) =>
+      requireElement(paneId).resolveAndClick(selector, opts),
 
     // Stage F — streams (DOM event re-dispatched by element)
     surfaceEvents: ({ paneId }) =>

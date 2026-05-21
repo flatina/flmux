@@ -6,11 +6,7 @@ import {
 } from "./panes";
 import { normalizeBrowserUrl } from "./shellCore";
 
-/** Primitive ops directly forwarded to bunite SurfaceCap.
- * App-owned superset (extended by Stage E+F + agent layer in `paneSpecs.ts`)
- * is passed via `callableOps`; core stays unaware of the full op universe.
- * `click` intentionally omitted — agent layer owns it (supports both target
- * resolution and `{x,y}` coord), routes to cap.click internally. */
+// `click` omitted — agent layer owns it (target resolution OR raw coord).
 export const PRIMITIVE_OPS = [
   "goBack",
   "reload",
@@ -22,15 +18,9 @@ export const PRIMITIVE_OPS = [
   "capabilities"
 ] as const;
 
-/** Widened to `string` — actual whitelisting lives in app-owned
- * `callableOps` Set. Keeps core free of drift when new ops land. */
+// app-owned whitelist via `callableOps`; core stays generic
 export type BrowserPaneCallable = string;
 
-/**
- * App-injected gateway from `path.call`/`path.get(/status)` to the live
- * bunite surface. Spec stays unaware of bunite RPC; controller resolves
- * paneId → surfaceId and dispatches.
- */
 export interface BrowserPaneController {
   call(paneId: string, op: BrowserPaneCallable, args: Record<string, unknown>): Promise<{ value: unknown }>;
   getStatus(paneId: string): Record<string, unknown> | undefined;
@@ -38,19 +28,9 @@ export interface BrowserPaneController {
 
 export interface BrowserPaneSpecOptions {
   controller?: BrowserPaneController;
-  /** Allowed op names for `/panes/{id}/browser/{op}` path calls. Default =
-   * `PRIMITIVE_OPS`. App-side composition (agent surface) extends this with
-   * its own ops without touching core. */
   callableOps?: ReadonlySet<string>;
 }
 
-/**
- * Shared browser-kind pane spec — lifecycle, subtree, and persistence.
- * Composes browser URLs from `workspace.appOrigin` rather than closing over
- * any caller state, so web and desktop can share the same factory. Pass
- * `controller` to expose automation calls (`/panes/{id}/browser/{op}`) and
- * runtime-derived status. Omit for read-only restoration use (tests).
- */
 export function createBrowserPaneSpec(options: BrowserPaneSpecOptions = {}): PaneSpec<BrowserPaneStateRecord> {
   const { controller } = options;
   const callableOps = options.callableOps ?? new Set<string>(PRIMITIVE_OPS);

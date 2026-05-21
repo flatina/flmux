@@ -93,13 +93,7 @@ export const flmuxBridgeCap = defineCap("flmux.bridge", {
 export type FlmuxBridgeCap = ClientOf<typeof flmuxBridgeCap>;
 export type FlmuxBridgeCapImpl = ImplOf<typeof flmuxBridgeCap>;
 
-// Renderer-served — per-renderer registry of `<bunite-webview>` elements
-// keyed by paneId. Main bootstraps once per session; methods take paneId in
-// args and delegate to the live element.
-//
-// Schema mirrors bunite SurfaceCap (Stage A-F). Types not re-exported from
-// `bunite-core/rpc` are defined below structurally — keep in sync with
-// `bunite-core/rpc/framework`.
+// Renderer-served. Types below mirror bunite-core/rpc/framework structurally.
 export type BrowserPaneModifier = "alt" | "ctrl" | "meta" | "shift";
 
 export type BrowserPaneEvaluateResult =
@@ -120,16 +114,19 @@ export interface BrowserPaneCapabilities {
   press: boolean;
   scroll: boolean;
   screenshot: boolean;
-  // Stage F caps (appended)
   accessibilitySnapshot?: boolean;
   getBoundingRect?: boolean;
   frames?: boolean;
   downloads?: boolean;
   popups?: boolean;
+  resolveAndClick?: boolean;
   formats?: ("png" | "jpeg")[];
 }
 
-// Stage F result envelopes — mirror bunite framework
+export type BrowserPaneResolveAndClickResult =
+  | { ok: true; rect: { x: number; y: number; width: number; height: number }; isTrustedEvent: boolean }
+  | { ok: false; code: string; message: string };
+
 export interface BrowserPaneAxNode {
   nodeId: string;
   role: string;
@@ -175,7 +172,6 @@ export type BrowserPaneNavigationState = {
   currentUrl: string;
 };
 
-// Stage E/F supporting types
 export type BrowserPaneDownloadPolicy = "auto" | "ask" | "block";
 
 export type BrowserPaneDownloadEvent =
@@ -217,8 +213,7 @@ export interface BrowserPaneConsoleEntry {
   ts: number;
 }
 
-// Stage F surface event — mirror bunite's `SurfaceEvent` (epoch + popup arm).
-// Imported `SurfaceEvent` from bunite is preferred; this shape kept for ref.
+// prefer `SurfaceEvent` from bunite-core/rpc; this kept for cap schema.
 export type BrowserPaneSurfaceEvent =
   | { type: "navigate"; epoch: number; url: string }
   | { type: "load-start"; epoch: number; url: string }
@@ -235,7 +230,6 @@ export type BrowserPaneSurfaceEvent =
     };
 
 export const paneBrowserCap = defineCap("flmux.paneBrowser", {
-  // Stage A-D — existing
   evaluate: call<{ paneId: string; script: string; frameId?: string }, BrowserPaneEvaluateResult>(),
   click: call<{
     paneId: string;
@@ -260,7 +254,6 @@ export const paneBrowserCap = defineCap("flmux.paneBrowser", {
   goBack: call<{ paneId: string }, void>(),
   reload: call<{ paneId: string }, void>(),
 
-  // Stage E — mouse + dialog + waitFor + console + pressAction
   mouse: call<{
     paneId: string;
     action: "move" | "down" | "up";
@@ -294,7 +287,6 @@ export const paneBrowserCap = defineCap("flmux.paneBrowser", {
     modifiers?: BrowserPaneModifier[];
   }, void>(),
 
-  // Stage F — navigation state + surfaceEvents + accessibility + frames + downloads + popup
   getNavigationState: call<{ paneId: string }, BrowserPaneNavigationState>(),
   surfaceEvents: stream<{ paneId: string }, BrowserPaneSurfaceEvent>(),
   accessibilitySnapshot: call<{
@@ -325,6 +317,17 @@ export const paneBrowserCap = defineCap("flmux.paneBrowser", {
     { paneId: string; newSurfaceId: number; gracePeriodMs: number },
     | { ok: true; deadlineMs: number }
     | { ok: false; code: string; message: string }
+  >(),
+  resolveAndClick: call<
+    {
+      paneId: string;
+      selector: string;
+      frameId?: string;
+      button?: "left" | "middle" | "right";
+      clickCount?: number;
+      modifiers?: BrowserPaneModifier[];
+    },
+    BrowserPaneResolveAndClickResult
   >()
 });
 

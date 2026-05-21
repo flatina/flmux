@@ -3,9 +3,7 @@ import type { BrowserPaneSurfaceEvent, PaneBrowserCap } from "../../shared/rende
 type Listener = (e: BrowserPaneSurfaceEvent) => void;
 type StreamHandle = { cancel?: () => void };
 
-/** Per-pane fan-out of bunite surfaceEvents stream. flmux holds 1
- * subscription, multi-consumer set. Restart on connection rebind with
- * epoch-based replay so missed `load-finish` resurfaces. */
+// per-pane fan-out; restart replays load-finish if NavigationState advanced
 export class SurfaceEventBus {
   private listeners = new Set<Listener>();
   private stream: StreamHandle | null = null;
@@ -48,8 +46,6 @@ export class SurfaceEventBus {
     })();
   }
 
-  /** Reconnect path — cancel old stream, start fresh, then synthesize a
-   * `load-finish` if NavigationState advanced past `lastSeenEpoch`. */
   async restart(cap: PaneBrowserCap, paneId: string): Promise<void> {
     const previousEpoch = this.lastSeenEpoch;
     await this.start(cap, paneId);

@@ -19,8 +19,6 @@ export interface AdoptionState {
   startedAt: number;
 }
 
-/** Hook for popup adoption — agent surface owns workspace lookup + pane creation
- * (PaneState should not depend on shellCore directly). */
 export type CreatePopupPaneFn = (args: {
   openerPaneId: string;
   newSurfaceId: number;
@@ -29,8 +27,6 @@ export type CreatePopupPaneFn = (args: {
 
 const CAPS_TTL_MS = 30_000;
 const POPUP_ADOPT_TIMEOUT_MS = 5_000;
-/** flmux's cold-renderer + workbench mount worst-case. bunite caps total
- * grace at 60s from arm emit; this stays well under. */
 const POPUP_EXTEND_MS = 15_000;
 
 export class PaneState {
@@ -38,8 +34,6 @@ export class PaneState {
   readonly surfaceEventBus = new SurfaceEventBus();
   readonly pendingWaiters = new Map<string, Waiter>();
   readonly pendingPopupAdoptions = new Map<number, AdoptionState>();
-  /** Latest pending dialog (alert/confirm/prompt) — agent's `dialog accept`
-   * / `dialog dismiss` responds to this. Cleared on response or auto-dismiss. */
   pendingDialog: { requestId: number; kind: string; message: string } | null = null;
   private dialogStreamAbort: AbortController | null = null;
 
@@ -54,19 +48,14 @@ export class PaneState {
     private readonly controller: AuthorityBrowserPaneController,
     private readonly createPopupPane: CreatePopupPaneFn
   ) {
-    // navigate arm → soft invalidate (revalidation handled at resolve time
-    // via snapshotEpoch comparison); load-finish epoch > captured → hard
-    // invalidate (registry cleared).
     this.surfaceEventBus.on(this.onSurfaceEvent);
   }
 
   private onSurfaceEvent = (e: BrowserPaneSurfaceEvent) => {
     if (e.type === "load-finish") {
-      // Hard invalidate: page fully reloaded — all refs gone.
       this.refRegistry.clear();
     } else if (e.type === "popup") {
-      // Extend bunite's 5s adoption deadline BEFORE any await — pane create
-      // + renderer mount + IPC can blow the default on cold paths.
+      // bunite default 5s; extend before any await — JS single-turn wins.
       void this.controller
         .primCap()
         .then((cap) =>
@@ -95,16 +84,13 @@ export class PaneState {
         url,
         startedAt: Date.now()
       });
-      // Best-effort cleanup if adoption window expires (renderer mount or
-      // bunite auto-dismiss). bunite emits no signal at 5s; we drop our
-      // bookkeeping so newPanes aggregation stays bounded.
+      // bunite emits no auto-dismiss signal — drop bookkeeping after window.
       setTimeout(() => this.pendingPopupAdoptions.delete(newSurfaceId), POPUP_ADOPT_TIMEOUT_MS * 2);
     } catch (err) {
       console.warn(`[browserAgentSurface] popup adoption failed for ${this.paneId}`, err);
     }
   }
 
-  /** Drain adoptions completed within the recent trigger window. */
   drainRecentAdoptions(sinceMs = POPUP_ADOPT_TIMEOUT_MS): AdoptionState[] {
     const cutoff = Date.now() - sinceMs;
     return Array.from(this.pendingPopupAdoptions.values()).filter((a) => a.startedAt >= cutoff);
@@ -117,9 +103,9 @@ export class PaneState {
       const cap = await this.controller.primCap();
       await this.surfaceEventBus.start(cap, this.paneId);
       this.startDialogTracking(cap);
-      this.startStarted = true; // only after success — first-failure retries on rebind
+      this.startStarted = true;
     } catch {
-      // surface not ready yet — onConnectionChanged will retry on rebind.
+      // retried on next connection rebind
     }
   }
 
@@ -154,17 +140,16 @@ export class PaneState {
       this.dialogStreamAbort = null;
       this.capabilities = null;
       this.capabilitiesFetchedAt = 0;
-      // Cancel in-flight waiters — events won't arrive on this conn.
       for (const w of this.pendingWaiters.values()) w.cancel("connection lost");
       this.pendingWaiters.clear();
-      this.startStarted = false; // allow start() retry on next bind
+      this.startStarted = false;
       return;
     }
     try {
       const cap = await this.controller.primCap();
       await this.surfaceEventBus.restart(cap, this.paneId);
       this.startDialogTracking(cap);
-      // Engine may have changed (WV2↔CEF) — invalidate cached caps.
+      // engine may differ post-rebind (WV2↔CEF)
       this.capabilities = null;
       this.capabilitiesFetchedAt = 0;
       this.startStarted = true;

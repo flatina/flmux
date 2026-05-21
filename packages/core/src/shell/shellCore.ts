@@ -95,8 +95,10 @@ export interface ShellCoreOptions {
 const IMPLICIT_DEFAULT_SLOT_KEY = "default";
 
 // paneId = `p<5 base36 minutes-since-epoch><2 base36 counter>` = 8 chars.
+// Counter module-level: avoids cross-authority collision in web multi-user.
 const PANE_ID_EPOCH_MS = Date.UTC(2026, 0, 1);
 const PANE_ID_COUNTER_MOD = 1296;
+let paneIdCounter = 0;
 
 export class ShellCore implements ShellModelHost {
   private readonly workspaces = new Map<string, WorkspaceRecord>();
@@ -107,7 +109,6 @@ export class ShellCore implements ShellModelHost {
   // as clientId; tests treat it as a harness id. Core only routes.
   private readonly activeSlots = new Map<string, ActiveStateSlot>();
   private readonly defaultSlotKey: string;
-  private paneIdCounter = 0;
   private appTitle: string;
   private appOrigin: string;
   private seq = 0;
@@ -1107,7 +1108,7 @@ export class ShellCore implements ShellModelHost {
   private allocatePaneId(): string {
     const minutes = Math.max(0, Math.floor((Date.now() - PANE_ID_EPOCH_MS) / 60_000));
     const t = minutes.toString(36).padStart(5, "0").slice(-5);
-    const n = (this.paneIdCounter++ % PANE_ID_COUNTER_MOD).toString(36).padStart(2, "0");
+    const n = (paneIdCounter++ % PANE_ID_COUNTER_MOD).toString(36).padStart(2, "0");
     return `p${t}${n}`;
   }
 

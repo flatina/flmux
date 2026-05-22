@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Interactions · Browser CLI Fixtures</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="interactions">
+  <h1>Interactions</h1>
+  <nav><a href="index.html">← back</a></nav>
+
+  <section>
+    <h2>Click counter</h2>
+    <button id="click-me">Click me</button>
+    <span>count = <span id="click-out" data-out>0</span></span>
+  </section>
+
+  <section>
+    <h2>Double-click</h2>
+    <button id="dbl-target">Double-click here</button>
+    <span id="dbl-out" data-out></span>
+  </section>
+
+  <section>
+    <h2>Hover</h2>
+    <div id="hover-target" class="hover-target" data-testid="hover-target">Hover over me</div>
+    <span id="hover-out" data-out></span>
+  </section>
+
+  <section>
+    <h2>Focus + Type + Press</h2>
+    <input id="focus-input" placeholder="Focus me" />
+    <span id="focus-out" data-out></span>
+    <br><br>
+    <input id="type-target" placeholder="Type here" />
+    <span id="type-out" data-out></span>
+    <br><br>
+    <input id="press-target" placeholder="Press Enter" />
+    <span id="press-out" data-out></span>
+  </section>
+
+  <section>
+    <h2>Scroll</h2>
+    <div class="scroll-box" id="scroll-container">
+      <div class="item">item 1</div>
+      <div class="item">item 2</div>
+      <div class="item">item 3</div>
+      <div class="item">item 4</div>
+      <div class="item">item 5</div>
+      <div class="item">item 6</div>
+      <div class="item">item 7</div>
+      <div class="item" id="scroll-last">item 8 (last)</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Async reveal (wait)</h2>
+    <button id="reveal-async">Reveal in 800ms</button>
+    <span id="async-out" data-out></span>
+    <div id="async-result" class="hidden" data-out></div>
+  </section>
+
+  <section>
+    <h2>State / visibility (is)</h2>
+    <button id="enabled-btn">enabled</button>
+    <button id="disabled-btn" disabled>disabled</button>
+    <span id="visible-text">visible text</span>
+    <span id="hidden-text" class="hidden">hidden text</span>
+    <input type="checkbox" id="precheck" checked />
+    <input type="checkbox" id="preuncheck" />
+  </section>
+
+  <section>
+    <h2>Highlight target</h2>
+    <div class="highlight-me" data-testid="highlight-target">highlight me</div>
+  </section>
+
+  <script src="script.js"></script>
+</body>
+</html>

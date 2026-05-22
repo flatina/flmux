@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Forms · Browser CLI Fixtures</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="forms">
+  <h1>Forms</h1>
+  <nav><a href="index.html">← back</a></nav>
+
+  <section>
+    <h2>Text + Email + Textarea (fill / type)</h2>
+    <label for="fill-name">Name</label>
+    <input id="fill-name" name="name" placeholder="Type a name" />
+    <label for="fill-email">Email</label>
+    <input id="fill-email" name="email" type="email" placeholder="name@example.com" />
+    <label for="fill-note">Note</label>
+    <textarea id="fill-note" rows="3"></textarea>
+  </section>
+
+  <section>
+    <h2>Checkbox + Radio (check / uncheck)</h2>
+    <label><input type="checkbox" id="check-subscribe" /> Subscribe to newsletter</label>
+    <div class="row">
+      <label><input type="radio" name="role" value="admin" /> admin</label>
+      <label><input type="radio" name="role" value="user" checked /> user</label>
+      <label><input type="radio" name="role" value="guest" /> guest</label>
+    </div>
+  </section>
+
+  <section>
+    <h2>Select (select)</h2>
+    <label for="color-select">Color</label>
+    <select id="color-select">
+      <option value="">--</option>
+      <option value="red">Red</option>
+      <option value="green">Green</option>
+      <option value="blue">Blue</option>
+    </select>
+  </section>
+
+  <section>
+    <h2>Submit</h2>
+    <button id="submit-form">Submit</button>
+    <p>Snapshot: <span id="form-out" data-out></span></p>
+  </section>
+
+  <script src="script.js"></script>
+</body>
+</html>

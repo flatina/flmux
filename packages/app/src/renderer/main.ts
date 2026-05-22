@@ -1,3 +1,4 @@
+import "bunite-core/polyfill";
 import { bootstrap as bootstrapCap, getConnection, type BuniteWebGlobal } from "bunite-core/rpc/renderer";
 import { flmuxBridgeCap, paneBrowserCap, type FlmuxBridgeCap, type SessionCap } from "../shared/rendererBridge";
 import { registerLocalExternalPaneDescriptors } from "./external/registerLocalExternalPaneDescriptors";

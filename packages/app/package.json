@@ -24,7 +24,7 @@
     "bunite-core": "^0.16.0",
     "bunite-native-win-x64": "^0.0.14",
     "citty": "^0.2.2",
-    "dockview-core": "^5.1.0",
+    "dockview-core": "^6.4.0",
     "elysia": "^1.4.28",
     "qrcode-terminal": "^0.12.0"
   },

@@ -112,10 +112,19 @@ function requireElement(paneId: string): BuniteWebviewAutomationElement {
   return el;
 }
 
-async function requireSurfaceId(paneId: string): Promise<number> {
-  const el = requireElement(paneId);
-  if (el._surfaceId == null) throw new Error(`browser pane '${paneId}': surface not ready`);
-  return el._surfaceId;
+async function requireSurfaceId(paneId: string, timeoutMs = 5000): Promise<number> {
+  // Both the element registration (Dockview mount of the pane panel) and the
+  // surface id assignment land asynchronously after pane creation. Stream
+  // subscriptions (dialogs/console/download) fire before either is ready when
+  // the CLI immediately follows /panes/new with a state-touching op. Poll for
+  // both via elements.get (non-throwing) instead of requireElement.
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const el = elements.get(paneId);
+    if (el && el._surfaceId != null) return el._surfaceId;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  throw new Error(`browser pane '${paneId}': surface not ready after ${timeoutMs}ms`);
 }
 
 // SurfaceCap singleton — for streams bunite element doesn't re-dispatch as

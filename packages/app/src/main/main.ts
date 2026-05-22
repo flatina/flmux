@@ -151,7 +151,7 @@ const app =
     ? (() => {
         process.env.BUNITE_CEF_DIR ??= resolve(installRoot, "dist/cef");
         return new AppRuntime({
-          logLevel: "info",
+          logLevel: (process.env.BUNITE_LOG_LEVEL as "debug" | "info" | "warn" | "error" | "silent") ?? "info",
           userDataDir: flmuxPaths.cefUserDataDir
         });
       })()

@@ -141,15 +141,18 @@ function createExtensionPaneSpec(
   spec: ExtensionPaneSpec | undefined
 ): PaneSpec {
   const defaultTitle = manifestPane.defaultTitle;
-  const singletonScope = manifestPane.singletonScope;
+  // edgeGroup implies workspace singleton — explicit singletonScope still wins.
+  const singletonScope = manifestPane.singletonScope ?? (manifestPane.edgeGroup ? "workspace" : undefined);
+  const edgeGroup = manifestPane.edgeGroup;
 
   if (!spec) {
     if (!defaultTitle) {
-      return { kind: manifestPane.kind, singletonScope };
+      return { kind: manifestPane.kind, singletonScope, edgeGroup };
     }
     return {
       kind: manifestPane.kind,
       singletonScope,
+      edgeGroup,
       lifecycle: {
         getTitle: ({ input }) => input.title?.trim() || defaultTitle
       }
@@ -169,6 +172,7 @@ function createExtensionPaneSpec(
   return {
     kind: manifestPane.kind,
     singletonScope,
+    edgeGroup,
     lifecycle: mergedLifecycle,
     persistence: adaptExtensionPersistence(spec),
     pathMount: spec.pathMount ? adaptExtensionPanePathMount(spec.pathMount) : undefined

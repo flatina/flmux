@@ -32,6 +32,7 @@ export interface PaneDescriptor<TStateRecord extends PaneStateRecord = PaneState
   defaultTitle?: string;
   minimumWidth?: number;
   maximumWidth?: number;
+  initialWidth?: number;
 }
 
 export class PaneRegistry extends CorePaneRegistry<PaneDescriptor> {}

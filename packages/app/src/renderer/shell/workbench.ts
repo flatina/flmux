@@ -5,12 +5,15 @@ import {
   themeLight,
   type CreateComponentOptions,
   type DockviewApi,
+  type DockviewGroupPanelApi,
   type DockviewPanelApi,
   type DockviewTheme,
   type GroupPanelPartInitParameters,
   type IContentRenderer,
   type SerializedDockview
 } from "dockview-core";
+
+import type { PaneEdgeGroup } from "@flmux/core/shell";
 
 function currentDockviewTheme(): DockviewTheme {
   const explicit = document.documentElement.dataset.theme;
@@ -72,6 +75,8 @@ type WorkspaceRecord = {
   innerResizeObserver: ResizeObserver | null;
   pendingInnerLayout: SerializedDockview | null;
   pendingPanes: PendingPane[] | null;
+  edgeGroups: Map<PaneEdgeGroup, DockviewGroupPanelApi>;
+  paneEdge: Map<string, PaneEdgeGroup>;
 };
 
 const OUTER_WORKSPACE_COMPONENT = "workspace";
@@ -366,6 +371,23 @@ export class FlmuxWorkbench {
     if (record.innerApi.getPanel(payload.paneId)) {
       return;
     }
+    // Set BEFORE addPanel — addPanel synchronously triggers the tab
+    // renderer's init() → applyIcon(), which reads this map. kind is
+    // immutable per pane, so no refresh path is needed.
+    this.paneIdToKind.set(payload.paneId, payload.snapshot.kind);
+
+    const descriptor = this.paneRegistry.get(payload.snapshot.kind);
+    const edge = descriptor?.edgeGroup;
+    if (edge) {
+      this.addPaneToEdgeGroup(record, edge, {
+        id: payload.paneId,
+        kind: payload.snapshot.kind,
+        title: payload.snapshot.title,
+        params: payload.params
+      });
+      return;
+    }
+
     // Stale referencePaneId → fall back to activePanel. Absent → root-level split
     // (column-fill helper's "new column" relies on this).
     const referencePanel = payload.referencePaneId
@@ -376,10 +398,6 @@ export class FlmuxWorkbench {
         ? { referencePanel, direction: payload.place }
         : { direction: payload.place }
       : undefined;
-    // Set BEFORE addPanel — addPanel synchronously triggers the tab
-    // renderer's init() → applyIcon(), which reads this map. kind is
-    // immutable per pane, so no refresh path is needed.
-    this.paneIdToKind.set(payload.paneId, payload.snapshot.kind);
     record.innerApi.addPanel({
       id: payload.paneId,
       component: payload.snapshot.kind,
@@ -390,11 +408,62 @@ export class FlmuxWorkbench {
     });
   }
 
-  private paneAddPanelConstraints(kind: string): { minimumWidth?: number; maximumWidth?: number } {
+  private rehydrateEdgeGroupsFromLayout(
+    record: WorkspaceRecord,
+    layout: { panels?: Record<string, { contentComponent?: string }> }
+  ) {
+    if (!record.innerApi) return;
+    for (const pos of ["left", "right", "top", "bottom"] as const) {
+      const api = record.innerApi.getEdgeGroup(pos);
+      if (api) record.edgeGroups.set(pos, api);
+    }
+    for (const [paneId, state] of Object.entries(layout.panels ?? {})) {
+      const edge = state.contentComponent ? this.paneRegistry.get(state.contentComponent)?.edgeGroup : undefined;
+      if (edge) record.paneEdge.set(paneId, edge);
+    }
+  }
+
+  private addPaneToEdgeGroup(
+    record: WorkspaceRecord,
+    edge: PaneEdgeGroup,
+    pane: { id: string; kind: string; title: string; params?: Record<string, unknown> }
+  ) {
+    const innerApi = record.innerApi!;
+    let edgeApi = record.edgeGroups.get(edge) ?? innerApi.getEdgeGroup(edge);
+    if (!edgeApi) {
+      // First pane decides sizing — pane.minimumWidth/maximumWidth/initialWidth
+      // map to edge group minimumSize/maximumSize/initialSize. Later panes in
+      // the same group are ignored (group already exists).
+      const d = this.paneRegistry.get(pane.kind);
+      edgeApi = innerApi.addEdgeGroup(edge, {
+        id: `edge-${record.id}-${edge}`,
+        ...(d?.minimumWidth !== undefined ? { minimumSize: d.minimumWidth } : {}),
+        ...(d?.maximumWidth !== undefined ? { maximumSize: d.maximumWidth } : {}),
+        ...(d?.initialWidth !== undefined ? { initialSize: d.initialWidth } : {})
+      });
+    }
+    record.edgeGroups.set(edge, edgeApi);
+    record.paneEdge.set(pane.id, edge);
+    innerApi.addPanel({
+      id: pane.id,
+      component: pane.kind,
+      title: pane.title,
+      params: pane.params,
+      position: { referenceGroup: edgeApi.id },
+      ...this.paneAddPanelConstraints(pane.kind)
+    });
+  }
+
+  private paneAddPanelConstraints(kind: string): {
+    minimumWidth?: number;
+    maximumWidth?: number;
+    initialWidth?: number;
+  } {
     const descriptor = this.paneRegistry.get(kind);
-    const constraints: { minimumWidth?: number; maximumWidth?: number } = {};
+    const constraints: { minimumWidth?: number; maximumWidth?: number; initialWidth?: number } = {};
     if (descriptor?.minimumWidth !== undefined) constraints.minimumWidth = descriptor.minimumWidth;
     if (descriptor?.maximumWidth !== undefined) constraints.maximumWidth = descriptor.maximumWidth;
+    if (descriptor?.initialWidth !== undefined) constraints.initialWidth = descriptor.initialWidth;
     return constraints;
   }
 
@@ -403,6 +472,18 @@ export class FlmuxWorkbench {
     record?.innerApi?.getPanel(payload.paneId)?.api.close();
     this.paneIdToKind.delete(payload.paneId);
     clearPaneHeaderMenu(payload.paneId);
+    // Dockview leaves empty edge groups (structural). Remove on last pane close.
+    if (record?.innerApi) {
+      const edge = record.paneEdge.get(payload.paneId);
+      if (edge) {
+        record.paneEdge.delete(payload.paneId);
+        const stillUsed = Array.from(record.paneEdge.values()).some((e) => e === edge);
+        if (!stillUsed) {
+          record.innerApi.removeEdgeGroup(edge);
+          record.edgeGroups.delete(edge);
+        }
+      }
+    }
     // New-active selection now arrives as a separate scope=client
     // pane.activeChanged — this handler only closes the panel.
   }
@@ -432,7 +513,13 @@ export class FlmuxWorkbench {
       return;
     }
     const record = this.workspaces.get(payload.workspaceId);
-    record?.innerApi?.getPanel(payload.paneId)?.api.setActive();
+    if (!record) return;
+    const edge = record.paneEdge.get(payload.paneId);
+    if (edge) {
+      const edgeApi = record.edgeGroups.get(edge);
+      if (edgeApi?.isCollapsed()) edgeApi.expand();
+    }
+    record.innerApi?.getPanel(payload.paneId)?.api.setActive();
   }
 
   // ── Outer-panel renderer helpers (called by WorkspaceOuterPanelRenderer) ──
@@ -515,6 +602,7 @@ export class FlmuxWorkbench {
             if (state.contentComponent) this.paneIdToKind.set(id, state.contentComponent);
           }
           record.innerApi.fromJSON(record.pendingInnerLayout);
+          this.rehydrateEdgeGroupsFromLayout(record, layout);
         } catch (error) {
           console.warn(`failed to restore workspace '${record.id}' inner layout; falling back to reset`, error);
           this.disposingWorkspace.add(record.id);
@@ -532,8 +620,12 @@ export class FlmuxWorkbench {
         const innerApi = record.innerApi;
         let firstPanelId: string | null = null;
         for (const pane of record.pendingPanes) {
-          // Set BEFORE addPanel — see applyPaneAdded for the same ordering.
           this.paneIdToKind.set(pane.id, pane.kind);
+          const edge = this.paneRegistry.get(pane.kind)?.edgeGroup;
+          if (edge) {
+            this.addPaneToEdgeGroup(record, edge, pane);
+            continue;
+          }
           innerApi.addPanel({
             id: pane.id,
             component: pane.kind,
@@ -825,7 +917,9 @@ export class FlmuxWorkbench {
       innerHost: null,
       innerResizeObserver: null,
       pendingInnerLayout: null,
-      pendingPanes: null
+      pendingPanes: null,
+      edgeGroups: new Map(),
+      paneEdge: new Map()
     };
     this.workspaces.set(workspaceId, record);
     return record;

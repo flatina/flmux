@@ -45,6 +45,13 @@ const fixtures: Fixture[] = [
       panes: [{ kind: "alpha", singletonScope: "app" }]
     })
   },
+  {
+    name: "panes — edgeGroup left",
+    input: makeBase({
+      entrypoints: { renderer: "./index.ts" },
+      panes: [{ kind: "alpha", edgeGroup: "left" }]
+    })
+  },
   { name: "not-an-object", input: 42 },
   { name: "missing all fields", input: {} },
   { name: "wrong apiVersion", input: makeBase({ apiVersion: 999, entrypoints: { renderer: "./index.ts" } }) },
@@ -88,6 +95,13 @@ const fixtures: Fixture[] = [
     input: makeBase({
       entrypoints: { renderer: "./index.ts" },
       panes: [{ kind: "a", singletonScope: "global" }]
+    })
+  },
+  {
+    name: "pane edgeGroup invalid",
+    input: makeBase({
+      entrypoints: { renderer: "./index.ts" },
+      panes: [{ kind: "a", edgeGroup: "center" }]
     })
   },
   {

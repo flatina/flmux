@@ -21,15 +21,18 @@ export interface ExtensionManifestCommand {
 }
 
 export type PaneSingletonScope = "workspace" | "app";
+export type PaneEdgeGroup = "left" | "right" | "top" | "bottom";
 
 export interface ExtensionManifestPane {
   kind: string;
   defaultTitle?: string;
   singletonScope?: PaneSingletonScope;
+  edgeGroup?: PaneEdgeGroup;
   // Relative path to an SVG/PNG icon. Replaces the default hamburger glyph on the pane's tab header.
   icon?: string;
   minimumWidth?: number;
   maximumWidth?: number;
+  initialWidth?: number;
 }
 
 export interface ExtensionManifest {
@@ -253,6 +256,7 @@ function validateManifestPanes(value: unknown) {
     const kind = asNonEmptyString(entry.kind);
     const defaultTitle = entry.defaultTitle === undefined ? undefined : asNonEmptyString(entry.defaultTitle);
     const singletonScope = entry.singletonScope;
+    const edgeGroup = entry.edgeGroup;
     const iconPath = validateManifestEntrypointPath(entry.icon, `panes[${index}].icon`);
     const minimumWidthRaw = entry.minimumWidth;
     let minimumWidth: number | undefined;
@@ -272,6 +276,15 @@ function validateManifestPanes(value: unknown) {
       }
       maximumWidth = maximumWidthRaw;
     }
+    const initialWidthRaw = entry.initialWidth;
+    let initialWidth: number | undefined;
+    if (initialWidthRaw !== undefined) {
+      if (typeof initialWidthRaw !== "number" || !Number.isFinite(initialWidthRaw) || initialWidthRaw <= 0) {
+        errors.push(`Manifest field 'panes[${index}].initialWidth' must be a positive finite number when provided`);
+        return;
+      }
+      initialWidth = initialWidthRaw;
+    }
 
     if (!kind) {
       errors.push(`Manifest field 'panes[${index}].kind' must be a non-empty string`);
@@ -283,6 +296,10 @@ function validateManifestPanes(value: unknown) {
     }
     if (singletonScope !== undefined && singletonScope !== "workspace" && singletonScope !== "app") {
       errors.push(`Manifest field 'panes[${index}].singletonScope' must be 'workspace' or 'app' when provided`);
+      return;
+    }
+    if (edgeGroup !== undefined && edgeGroup !== "left" && edgeGroup !== "right" && edgeGroup !== "top" && edgeGroup !== "bottom") {
+      errors.push(`Manifest field 'panes[${index}].edgeGroup' must be 'left'|'right'|'top'|'bottom' when provided`);
       return;
     }
     if (iconPath) {
@@ -300,9 +317,11 @@ function validateManifestPanes(value: unknown) {
       kind,
       ...(defaultTitle ? { defaultTitle } : {}),
       ...(singletonScope ? { singletonScope } : {}),
+      ...(edgeGroup ? { edgeGroup } : {}),
       ...(icon ? { icon } : {}),
       ...(minimumWidth !== undefined ? { minimumWidth } : {}),
-      ...(maximumWidth !== undefined ? { maximumWidth } : {})
+      ...(maximumWidth !== undefined ? { maximumWidth } : {}),
+      ...(initialWidth !== undefined ? { initialWidth } : {})
     });
   });
 

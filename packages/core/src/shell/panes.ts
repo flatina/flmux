@@ -72,12 +72,16 @@ export type PaneSubtreeMount<TRecord extends PaneStateRecord = PaneStateRecord> 
 
 export type PaneSingletonScope = "workspace" | "app";
 
+export type PaneEdgeGroup = "left" | "right" | "top" | "bottom";
+
 export interface PaneSpec<TRecord extends PaneStateRecord = PaneStateRecord> {
   kind: string;
   /** Constrain `/panes/new` to a single instance — `"workspace"`: one per
    *  workspace; `"app"`: one across the whole shell (active only when the
    *  existing pane sits in caller's active workspace). */
   singletonScope?: PaneSingletonScope;
+  /** Mount in dockview edge group at this position. Implies workspace singleton. */
+  edgeGroup?: PaneEdgeGroup;
   lifecycle?: PaneLifecycleHooks<TRecord>;
   persistence?: PanePersistenceHooks<TRecord>;
   subtreeMounts?: PaneSubtreeMount<TRecord>[];

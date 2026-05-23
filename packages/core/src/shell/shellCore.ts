@@ -1145,10 +1145,11 @@ export class ShellCore implements ShellModelHost {
     slotKey: string
   ): ShellPaneRecordSnapshot {
     const slot = this.ensureSlot(slotKey);
-    if (slot.activePaneIdByWorkspace.get(workspace.id) !== paneId) {
-      slot.activePaneIdByWorkspace.set(workspace.id, paneId);
-      this.emit({ topic: "pane.activeChanged", payload: { workspaceId: workspace.id, paneId } }, slotKey);
-    }
+    slot.activePaneIdByWorkspace.set(workspace.id, paneId);
+    // Always re-emit — `/panes/new` of an existing singleton is a "summon"
+    // intent (focus + expand collapsed edge group). Renderer setActive is
+    // idempotent so no-op when nothing visually changes.
+    this.emit({ topic: "pane.activeChanged", payload: { workspaceId: workspace.id, paneId } }, slotKey);
     return this.createPaneSnapshot(workspace, paneId);
   }
 

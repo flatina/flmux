@@ -553,6 +553,7 @@ const viewIdToClientId = new Map<number, string>();
 // Web-only: records which user owns each minted clientId so WS
 // register + shellModel.path.* calls route to the right authority.
 const clientIdToUserId = new Map<string, string>();
+const MAX_SESSIONS_PER_USER = Number(process.env.FLMUX_MAX_SESSIONS_PER_USER) || 25;
 // Terminal event routing index: paneId → owning authority. Replaces the
 // naive fan-out-to-every-authority pattern so terminal events apply to
 // exactly the authority that owns the pane, not every authority whose
@@ -777,6 +778,9 @@ function setupConnection(
       : await userAuthorityRegistry!.getOrCreate(userId);
     const sessionId = mode === "desktop" ? DESKTOP_CLIENT_ID : `web_${crypto.randomUUID()}`;
     if (mode === "web") {
+      if (countUserClients(userId) >= MAX_SESSIONS_PER_USER) {
+        throw new Error(`session limit reached for user '${userId}' (max ${MAX_SESSIONS_PER_USER})`);
+      }
       clientIdToUserId.set(sessionId, userId);
       cancelPendingAuthorityEviction(userId);
     }

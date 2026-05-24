@@ -14,7 +14,17 @@ void bootstrap().catch((error) => {
   document.body.innerHTML = `<pre class="fatal">${String(error)}</pre>`;
 });
 
+// Token is already in the `flmux_web_token` cookie; drop it from the URL so it
+// doesn't linger in history/referrer.
+function stripAuthTokenFromUrl() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("token")) return;
+  url.searchParams.delete("token");
+  window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+}
+
 async function bootstrap() {
+  stripAuthTokenFromUrl();
   setupTheme();
   // Cross-bundle conn share — 0-externals extension bundles each inline bunite-core.
   const conn = await getConnection();

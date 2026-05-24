@@ -301,7 +301,9 @@ function authorizeRequest(
   }
 
   if (queryToken && queryToken === presentedToken && cookieToken !== presentedToken) {
-    setHeader(set, "set-cookie", serializeCookie(authorizer.cookieName, presentedToken));
+    const fwdProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+    const secure = (fwdProto ?? url.protocol.replace(/:$/, "")) === "https";
+    setHeader(set, "set-cookie", serializeCookie(authorizer.cookieName, presentedToken, secure));
   }
 
   return { ok: true, context };
@@ -389,8 +391,11 @@ function readBearerToken(rawAuthorizationHeader: string | null) {
   return match ? match[1] : null;
 }
 
-function serializeCookie(name: string, value: string) {
-  return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Strict`;
+function serializeCookie(name: string, value: string, secure: boolean) {
+  // Secure only behind TLS (X-Forwarded-Proto: https from Funnel/proxy); omitted
+  // on plain-http dev so the cookie reaches the insecure ws:// RPC handshake
+  // (browsers withhold Secure cookies from non-secure connections).
+  return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly${secure ? "; Secure" : ""}; SameSite=Strict`;
 }
 
 class FlmuxAuthzError extends Error {

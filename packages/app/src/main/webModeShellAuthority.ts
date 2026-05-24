@@ -79,7 +79,9 @@ export async function createWebModeShellAuthority(options: {
     // driver (CLI, external HTTP calls without a browser client). B2
     // replaces this with per-client (browser) slots.
     defaultSlotKey: "server",
-    authorityUserId: options.userId
+    authorityUserId: options.userId,
+    maxPanes: Number(process.env.FLMUX_MAX_PANES_PER_USER) || 200,
+    maxTerminals: Number(process.env.FLMUX_MAX_TERMINALS_PER_USER) || 50
   });
   const shellModel = createShellModel({
     host: shellCore,

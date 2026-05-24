@@ -56,6 +56,9 @@ interface WorkspaceRecord {
 export interface ShellCoreOptions {
   paneRegistry: PaneSpecRegistry;
   runtimeLabel: string;
+  /** Per-shell createPane caps (restore exempt). Undefined = no cap. */
+  maxPanes?: number;
+  maxTerminals?: number;
   /** Install root used to resolve terminal cwd and as the ptyd root. */
   projectDir: string;
   terminalBackend: TerminalBackend;
@@ -746,7 +749,27 @@ export class ShellCore implements ShellModelHost {
       );
     }
     const workspace = this.requireWorkspace(workspaceId);
+    this.assertPaneQuota(input.kind);
     return this.addPane(workspace, input, slotKey);
+  }
+
+  private assertPaneQuota(kind: string): void {
+    const { maxPanes, maxTerminals } = this.options;
+    if (maxPanes === undefined && maxTerminals === undefined) return;
+    let total = 0;
+    let terminals = 0;
+    for (const ws of this.workspaces.values()) {
+      for (const pane of ws.paneStates.values()) {
+        total += 1;
+        if (isTerminalPaneStateRecord(pane)) terminals += 1;
+      }
+    }
+    if (maxPanes !== undefined && total >= maxPanes) {
+      throw new ModelPathError("INVALID_VALUE", `pane limit reached (max ${maxPanes})`);
+    }
+    if (kind === "terminal" && maxTerminals !== undefined && terminals >= maxTerminals) {
+      throw new ModelPathError("INVALID_VALUE", `terminal limit reached (max ${maxTerminals})`);
+    }
   }
 
   async closePane(paneId: string): Promise<{ paneId: string; closed: boolean }> {

@@ -297,6 +297,12 @@ function authorizeRequest(
   // a synthetic context. The denial below still fires in the normal path.
   const context = authorizer.authorize(presentedToken);
   if (!context) {
+    const fwd = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+    console.warn(
+      `[flmux] auth denied: ${request.method} ${url.pathname} ` +
+        `(cookie=${Boolean(cookieToken)} bearer=${Boolean(bearerToken)} query=${Boolean(queryToken)}` +
+        `${fwd ? ` from=${fwd}` : ""})`
+    );
     return denyUnauthorized(set);
   }
 

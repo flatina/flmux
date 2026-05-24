@@ -378,6 +378,9 @@ class ShellModel implements ShellModelAPI {
       if (pane.kind !== "terminal") {
         return throwPathError("NOT_CALLABLE", "Terminal actions only apply to terminal panes");
       }
+      // Gate terminal runtime ops by role — a pre-existing/restored terminal in
+      // the user's shell must not be operable when their role forbids terminals.
+      this.host.assertPaneKindAllowed(pane.kind);
 
       if (segments.length === 4 && segments[3] === "attach") {
         // attach is idempotent: the delegate returns the existing runtime

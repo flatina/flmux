@@ -99,6 +99,9 @@ function createAuthorizerFromStores(options: {
       return null;
     },
     isPaneKindAllowed(user, kind) {
+      if (user.denyPaneKinds.includes(kind)) {
+        return false;
+      }
       if (user.allowPaneKinds === "*") {
         return true;
       }
@@ -121,7 +124,9 @@ function resolveDevContext(userStore: UserStore, name: string): FlmuxAuthorizati
   const existing = userStore.getUser(name);
   const user: FlmuxUser = existing ?? {
     name,
+    role: "developer",
     allowPaneKinds: "*",
+    denyPaneKinds: [],
     allowPaths: "*"
   };
   return { user, tokenId: "dev-auth-as" };

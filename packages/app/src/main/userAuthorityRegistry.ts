@@ -29,6 +29,9 @@ interface WebModeUserAuthorityRegistryOptions {
    * restarts per-user. Omit to keep authorities in-memory only (tests,
    * dev without auth). */
   sessionsDir?: string;
+  /** Builds a per-user pane-kind role gate (resolved fresh per call so role
+   * edits apply without restart). Injected into each user's ShellCore. */
+  makePaneKindGuard?(userId: string): (kind: string) => void;
 }
 
 export interface WebModeUserAuthorityRegistry {
@@ -78,7 +81,8 @@ export function createWebModeUserAuthorityRegistry(
       clientRegistry: options.clientRegistry,
       localExtensions: options.localExtensions,
       sessionStore,
-      userId
+      userId,
+      paneKindGuard: options.makePaneKindGuard?.(userId)
     });
     authorities.set(userId, authority);
     // Subscribe BEFORE start() so any pane.added emitted during session

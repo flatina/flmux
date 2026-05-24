@@ -88,6 +88,31 @@ describe("ShellCore", () => {
     expect(await core.listPanes()).toEqual([]);
   });
 
+  it("paneKindGuard gates createPane and falls back to placeholder on restore", async () => {
+    const paneRegistry = new PaneRegistry<PaneSpec>();
+    paneRegistry.register(createPlaceholderPaneSpec());
+    for (const spec of builtinSpecs()) paneRegistry.register(spec);
+    const core = new ShellCore({
+      paneRegistry,
+      runtimeLabel: "test",
+      projectDir: PROJECT_DIR,
+      terminalBackend: recordingTerminalBackend(),
+      paneKindGuard: (kind) => {
+        if (kind === "terminal") throw new Error("terminal denied for role");
+      }
+    });
+    core.setAppOrigin(ORIGIN);
+    core.initialize();
+
+    await expect(core.createPane({ kind: "terminal", cwd: "." })).rejects.toThrow();
+    const browser = await core.createPane({ kind: "browser", url: "/ok" });
+    expect(browser.kind).toBe("browser");
+
+    // Restore of a now-forbidden kind must not throw — it substitutes placeholder.
+    const restored = core.restorePane("workspace.1", { paneId: "p.term", kind: "terminal" });
+    expect(restored.kind).not.toBe("terminal");
+  });
+
   it("creates and closes panes and tracks paneWorkspaceIds via lookupPane", async () => {
     const { core } = buildShellCore();
     const created = await core.createPane({ kind: "browser", url: "/about" });

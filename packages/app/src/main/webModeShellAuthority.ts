@@ -57,6 +57,8 @@ export async function createWebModeShellAuthority(options: {
    * `/status/clients/{id}/userId` so extensions can key session state
    * per user. `undefined` (legacy single-tenant tests) maps to `"local"`. */
   userId?: string;
+  /** Per-user pane-kind role gate; forwarded to ShellCore. */
+  paneKindGuard?: (kind: string) => void;
 }): Promise<WebModeShellAuthority> {
   const browserController = createBrowserPaneController();
   const paneRegistry = new PaneRegistry<PaneSpec>();
@@ -81,7 +83,8 @@ export async function createWebModeShellAuthority(options: {
     defaultSlotKey: "server",
     authorityUserId: options.userId,
     maxPanes: Number(process.env.FLMUX_MAX_PANES_PER_USER) || 200,
-    maxTerminals: Number(process.env.FLMUX_MAX_TERMINALS_PER_USER) || 50
+    maxTerminals: Number(process.env.FLMUX_MAX_TERMINALS_PER_USER) || 50,
+    paneKindGuard: options.paneKindGuard
   });
   const shellModel = createShellModel({
     host: shellCore,

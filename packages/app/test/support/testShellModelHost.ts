@@ -127,6 +127,8 @@ export class TestShellModelHost implements ShellModelHost {
     }
   }
 
+  assertPaneKindAllowed(_kind: string): void {}
+
   createModel(): ShellModelAPI {
     return createShellModel({
       host: this,

@@ -197,6 +197,8 @@ export interface ShellModelHost {
   listPanesByWorkspace(workspaceId: string): Awaitable<ShellPaneRecordSnapshot[]>;
   getPane(paneId: string): Awaitable<ShellPaneRecordSnapshot | undefined>;
   createPane(input: NewPaneInput, options?: ShellCreatePaneOptions): Awaitable<ShellPaneRecordSnapshot>;
+  /** Role gate — throws `ModelPathError` when the caller may not use `kind`. No-op when unguarded. */
+  assertPaneKindAllowed(kind: string): void;
   closePane(paneId: string): Awaitable<{ paneId: string; closed: boolean }>;
   setActivePane(paneId: string, options?: ShellSetActivePaneOptions): Awaitable<void>;
   setScopedProperty(target: ScopedPropertyTarget, key: string, value: unknown): Awaitable<{ value: unknown }>;

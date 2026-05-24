@@ -59,6 +59,8 @@ export interface ShellCoreOptions {
   /** Per-shell createPane caps (restore exempt). Undefined = no cap. */
   maxPanes?: number;
   maxTerminals?: number;
+  /** Per-user pane-kind role gate (web). Throws to deny. Undefined = unguarded (desktop). */
+  paneKindGuard?: (kind: string) => void;
   /** Install root used to resolve terminal cwd and as the ptyd root. */
   projectDir: string;
   terminalBackend: TerminalBackend;
@@ -250,6 +252,9 @@ export class ShellCore implements ShellModelHost {
     workspace: WorkspaceRecord,
     input: { paneId: string; kind: string; params?: Record<string, unknown>; title?: string }
   ): ShellPaneRecordSnapshot {
+    // Restore is a pane-instantiation seam too — gate it so a downgraded user's
+    // persisted terminal can't be re-created. Throw → caller substitutes placeholder.
+    this.assertPaneKindAllowed(input.kind);
     const spec = this.options.paneRegistry.get(input.kind);
     if (!spec) {
       throw new Error(`Unknown pane kind '${input.kind}'`);
@@ -749,8 +754,14 @@ export class ShellCore implements ShellModelHost {
       );
     }
     const workspace = this.requireWorkspace(workspaceId);
+    this.assertPaneKindAllowed(input.kind);
     this.assertPaneQuota(input.kind);
     return this.addPane(workspace, input, slotKey);
+  }
+
+  /** Role gate (injected per-user in web mode); invoked at every pane-kind seam. */
+  assertPaneKindAllowed(kind: string): void {
+    this.options.paneKindGuard?.(kind);
   }
 
   private assertPaneQuota(kind: string): void {

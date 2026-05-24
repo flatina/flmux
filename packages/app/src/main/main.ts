@@ -7,6 +7,7 @@ import {
 } from "bunite-core";
 import type { Connection } from "bunite-core/rpc";
 import type { PathCallerContext, SequencedShellCoreEvent, ShellModelAPI } from "@flmux/core/shell";
+import { ModelPathError } from "@flmux/core/shell";
 import { flmuxBridgeCap, type FlmuxSessionSaveLayouts } from "../shared/rendererBridge";
 import { resolveWorkspaceTabstripMode } from "../shared/workspaceTabstrip";
 import { isCompiledBinary } from "../shared/buildTarget";
@@ -331,6 +332,7 @@ async function attachExtensionsForSession(opts: {
   const state: SessionExtensionsState = { serveHandles: [], sessionDisposes: [] };
   for (const [extId, def] of extensionServers) {
     if (!def.onSession) continue;
+    if (!userCanUseExtension(opts.userId, extId)) continue;
     const initPromise = extensionServerInits.get(extId);
     if (initPromise) await initPromise;
     const dataDir = resolveExtensionDataDir(extId);
@@ -485,7 +487,12 @@ const userAuthorityRegistry: WebModeUserAuthorityRegistry | null =
         },
         // Per-user session persistence under the auth dir — each
         // authenticated user gets `<authDir>/sessions/<userId>/session.json`.
-        sessionsDir: runtimeMode === "web" ? flmuxPaths.webSessionsDir : undefined
+        sessionsDir: runtimeMode === "web" ? flmuxPaths.webSessionsDir : undefined,
+        makePaneKindGuard: (userId) => (kind) => {
+          if (!isPaneKindAllowedForUser(userId, kind)) {
+            throw new ModelPathError("NOT_CALLABLE", `pane kind '${kind}' is not permitted for user '${userId}'`);
+          }
+        }
       })
     : null;
 
@@ -618,6 +625,23 @@ function detachAllPanesForSession(sessionId: string) {
 function scopeMatches(event: SequencedShellCoreEvent, clientId: string): boolean {
   if (event.scope === "all") return true;
   return event.targetClientId === clientId;
+}
+
+// Per-user pane-kind role gate (web). Resolves the role fresh each call so
+// users.toml edits apply without restart. Desktop (no authorizer) = allow.
+function isPaneKindAllowedForUser(userId: string, kind: string): boolean {
+  if (!webModeAuthorizer) return true;
+  const user = webModeAuthorizer.resolveUserByName(userId);
+  return user ? webModeAuthorizer.isPaneKindAllowed(user, kind) : false;
+}
+
+// An extension's caps are served to a user only if their role can use at least
+// one of its pane kinds. Pane-less utility extensions are always available.
+function userCanUseExtension(userId: string, extId: string): boolean {
+  const ext = localExtensions.find((e) => e.id === extId);
+  const kinds = ext?.runtimeManifest.panes?.map((p) => p.kind) ?? [];
+  if (kinds.length === 0) return true;
+  return kinds.some((k) => isPaneKindAllowedForUser(userId, k));
 }
 
 // Broadcast ACL gate: deliver only if user has read on the event's mapped path.
@@ -853,7 +877,8 @@ async function bindMintedSession(opts: {
       return clientRegistry.subscribeLive(sessionId, emit);
     },
     paneEmitters,
-    canSubscribeTerminalForPane: (paneId) => paneIdToAuthority.get(paneId) === authority,
+    canSubscribeTerminalForPane: (paneId) =>
+      paneIdToAuthority.get(paneId) === authority && isPaneKindAllowedForUser(userId, "terminal"),
     pushLayout: (layouts) => pushLayoutForViewId(viewId, layouts)
   });
 

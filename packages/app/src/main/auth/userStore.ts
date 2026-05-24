@@ -23,7 +23,11 @@ export type AllowPathsConfig =
 
 export interface FlmuxUser {
   name: string;
+  role: string | undefined;
   allowPaneKinds: AllowPaneKinds;
+  /** Kinds blocked even when allowPaneKinds permits — lets a role grant `*`
+   * minus a few (operator = all but `terminal`). */
+  denyPaneKinds: readonly string[];
   allowPaths: AllowPathsConfig;
 }
 
@@ -62,17 +66,46 @@ export function createUserStore(filePath: string): UserStore {
   };
 }
 
+// Role presets: developer/admin = full; operator = everything but terminal.
+// `user` and other roles use explicit allow_pane_kinds (positive allowlist).
+const ROLE_PRESETS: Record<string, { allowPaneKinds: AllowPaneKinds; denyPaneKinds: readonly string[] }> = {
+  developer: { allowPaneKinds: "*", denyPaneKinds: [] },
+  admin: { allowPaneKinds: "*", denyPaneKinds: [] },
+  operator: { allowPaneKinds: "*", denyPaneKinds: ["terminal"] }
+};
+
 function parseUser(raw: Record<string, unknown>): FlmuxUser {
   const name = typeof raw.name === "string" ? raw.name.trim() : "";
   if (!name) {
     throw new Error("users.toml: user.name is required");
   }
 
+  const role = typeof raw.role === "string" ? raw.role.trim() : undefined;
+  const preset = role ? ROLE_PRESETS[role] : undefined;
+  const allowPaneKinds =
+    raw.allow_pane_kinds !== undefined ? parseAllowPaneKinds(raw.allow_pane_kinds, name) : preset?.allowPaneKinds;
+  if (allowPaneKinds === undefined) {
+    throw new Error(`users.toml: user '${name}' needs allow_pane_kinds or a preset role (developer|operator|admin)`);
+  }
+  const denyPaneKinds =
+    raw.deny_pane_kinds !== undefined
+      ? parseStringArray(raw.deny_pane_kinds, name, "deny_pane_kinds")
+      : (preset?.denyPaneKinds ?? []);
+
   return {
     name,
-    allowPaneKinds: parseAllowPaneKinds(raw.allow_pane_kinds, name),
+    role,
+    allowPaneKinds,
+    denyPaneKinds,
     allowPaths: parseAllowPaths(raw.allow_paths, name)
   };
+}
+
+function parseStringArray(raw: unknown, userName: string, field: string): readonly string[] {
+  if (Array.isArray(raw) && raw.every((e) => typeof e === "string")) {
+    return [...(raw as string[])];
+  }
+  throw new Error(`users.toml: user '${userName}' has invalid ${field} (expected array of strings)`);
 }
 
 function parseAllowPaneKinds(raw: unknown, userName: string): AllowPaneKinds {

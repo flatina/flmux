@@ -100,12 +100,12 @@ function readDevAuthAsFlag(argv: readonly string[]): string | undefined {
   return value;
 }
 
-// Mirrors bunite's getBaseDir: entry-script dir in dev, binary dir when compiled.
-const baseDir = isCompiledBinary || !(Bun.main && existsSync(Bun.main))
-  ? dirname(process.execPath)
-  : dirname(Bun.main);
-// Deploy: renderer/extensions next to baseDir. Dev: 3 levels up.
-const isDeployLayout = existsSync(resolve(baseDir, "renderer"));
+// Mirrors bunite's getBaseDir. Deploy layout ⟺ baseDir from the exe (compiled,
+// or no Bun.main). NOT existsSync(baseDir/renderer): in dev the source
+// `src/renderer` sits next to baseDir and false-positives → serves the
+// un-transpiled `/main.ts` (octet-stream → module script rejected → blank).
+const isDeployLayout = isCompiledBinary || !(Bun.main && existsSync(Bun.main));
+const baseDir = isDeployLayout ? dirname(process.execPath) : dirname(Bun.main);
 const rendererDir = isDeployLayout ? resolve(baseDir, "renderer") : resolve(baseDir, "../dist/renderer");
 const installRoot = isDeployLayout ? baseDir : resolve(baseDir, "../../..");
 const flmuxPaths = resolveFlmuxPaths(resolveFlmuxRootDir(installRoot));

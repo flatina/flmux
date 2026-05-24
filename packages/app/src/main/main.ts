@@ -65,8 +65,17 @@ type ShellAuthority = Pick<
 
 const runtimeMode = resolveFlmuxRuntimeMode();
 const devAuthAs = readDevAuthAsFlag(Bun.argv);
+// `--dev-auth-as` fabricates an all-permissive user for every request — it must
+// never activate on a public deployment. Honor it only in explicit dev mode
+// (`--dev` flag or preset `FLMUX_DEV_MODE=1`); fail closed otherwise so a stray
+// flag in production refuses to boot rather than silently opening the door.
+const devModeRequested = process.env.FLMUX_DEV_MODE === "1" || Bun.argv.includes("--dev");
+if (devAuthAs && !devModeRequested) {
+  console.error("[flmux] FATAL: --dev-auth-as requires dev mode (--dev or FLMUX_DEV_MODE=1); refusing to start.");
+  process.exit(1);
+}
 process.env.BUNITE_REMOTE_DEBUGGING_PORT ??= "9227";
-process.env.FLMUX_DEV_MODE ??= Bun.argv.includes("--dev") || devAuthAs ? "1" : "";
+process.env.FLMUX_DEV_MODE ??= devModeRequested ? "1" : "";
 const hiddenWindow = process.env.FLMUX_HIDDEN_WINDOW === "1";
 
 function parseOptionalPort(value: string | undefined): number | undefined {

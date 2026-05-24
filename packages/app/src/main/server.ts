@@ -33,6 +33,47 @@ interface FlmuxServerHandle {
 // CSRF origin allowlist for cookie-auth requests; null = check off (desktop).
 let webAllowedOrigins: ReadonlySet<string> | null = null;
 
+const WS_MAX_PAYLOAD_BYTES = 4 * 1024 * 1024;
+const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
+const AUTH_WINDOW_MS = Number(process.env.FLMUX_AUTH_RATELIMIT_WINDOW_MS) || 60_000;
+const AUTH_MAX_FAILURES = Number(process.env.FLMUX_AUTH_RATELIMIT_MAX_FAILURES) || 10;
+const AUTH_LOCKOUT_MS = Number(process.env.FLMUX_AUTH_LOCKOUT_MS) || 300_000;
+
+// Brute-force lockout, keyed on x-forwarded-for (the Funnel/proxy-set client
+// IP). Spoofable without a trusted proxy in front; acceptable behind one.
+const authFailures = new Map<string, { times: number[]; lockedUntil: number }>();
+
+function rateLimitKey(request: Request): string {
+  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
+}
+
+function isLockedOut(key: string): boolean {
+  const e = authFailures.get(key);
+  return e ? e.lockedUntil > Date.now() : false;
+}
+
+function recordAuthFailure(key: string): void {
+  const now = Date.now();
+  const e = authFailures.get(key) ?? { times: [], lockedUntil: 0 };
+  e.times = e.times.filter((t) => now - t < AUTH_WINDOW_MS);
+  e.times.push(now);
+  if (e.times.length >= AUTH_MAX_FAILURES) {
+    e.lockedUntil = now + AUTH_LOCKOUT_MS;
+    e.times = [];
+  }
+  authFailures.set(key, e);
+  if (authFailures.size > 10_000) pruneAuthFailures(now);
+}
+
+function pruneAuthFailures(now: number): void {
+  for (const [k, e] of authFailures) {
+    const last = e.times[e.times.length - 1];
+    if (e.lockedUntil <= now && (last === undefined || now - last >= AUTH_WINDOW_MS)) {
+      authFailures.delete(k);
+    }
+  }
+}
+
 export function startFlmuxServer(options: {
   rendererDir: string;
   /** Request-scoped router resolver. Desktop returns its single authority
@@ -55,7 +96,7 @@ export function startFlmuxServer(options: {
   onRpcConnection?(conn: Connection, authContext: FlmuxAuthorizationContext | null): void;
 }): FlmuxServerHandle {
   const hostname = "127.0.0.1";
-  const app = new Elysia()
+  const app = new Elysia({ websocket: { maxPayloadLength: WS_MAX_PAYLOAD_BYTES } })
     .get("/health", () => ({ ok: true }))
     .get("/api/clients", async ({ request, set }) => {
       const auth = authorizeRequest(request, set, options.authorizer);
@@ -267,7 +308,7 @@ export function startFlmuxServer(options: {
     });
   }
 
-  app.listen({ hostname, port: options.port ?? 0 });
+  app.listen({ hostname, port: options.port ?? 0, maxRequestBodySize: MAX_REQUEST_BODY_BYTES });
   const server = app.server;
   if (!server) {
     throw new Error("Elysia server failed to start");
@@ -300,6 +341,12 @@ function authorizeRequest(
     return { ok: true, context: null };
   }
 
+  const rlKey = rateLimitKey(request);
+  if (isLockedOut(rlKey)) {
+    set.status = 429;
+    return { ok: false };
+  }
+
   const url = new URL(request.url);
   const cookieToken = readCookie(request.headers.get("cookie"), authorizer.cookieName);
   const bearerToken = readBearerToken(request.headers.get("authorization"));
@@ -316,6 +363,7 @@ function authorizeRequest(
         `(cookie=${Boolean(cookieToken)} bearer=${Boolean(bearerToken)} query=${Boolean(queryToken)}` +
         `${fwd ? ` from=${fwd}` : ""})`
     );
+    recordAuthFailure(rlKey);
     return denyUnauthorized(set);
   }
 
@@ -333,6 +381,7 @@ function authorizeRequest(
     setHeader(set, "set-cookie", serializeCookie(authorizer.cookieName, presentedToken, secure));
   }
 
+  authFailures.delete(rlKey);
   return { ok: true, context };
 }
 

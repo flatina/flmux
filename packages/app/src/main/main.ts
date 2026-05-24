@@ -756,7 +756,8 @@ function buildShellConfig() {
     mode: runtimeMode,
     appOrigin: serverOrigin,
     projectDir,
-    localExtensions: createLocalExtensionLoadEntries(localExtensions, serverOrigin),
+    // Web: relative URLs so ext modules load via the page origin (proxy/Funnel), not the internal bind.
+    localExtensions: createLocalExtensionLoadEntries(localExtensions, runtimeMode === "web" ? "" : serverOrigin),
     devMode: process.env.FLMUX_DEV_MODE === "1",
     workspaceTabstrip: resolveWorkspaceTabstripMode({ runtimeMode, platform: process.platform })
   };

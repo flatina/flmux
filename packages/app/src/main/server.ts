@@ -30,6 +30,9 @@ interface FlmuxServerHandle {
   stop(): void;
 }
 
+// CSRF origin allowlist for cookie-auth requests; null = check off (desktop).
+let webAllowedOrigins: ReadonlySet<string> | null = null;
+
 export function startFlmuxServer(options: {
   rendererDir: string;
   /** Request-scoped router resolver. Desktop returns its single authority
@@ -44,6 +47,8 @@ export function startFlmuxServer(options: {
   authorizer?: FlmuxWebModeAuthorizer;
   /** Explicit listen port. Undefined → OS-assigned (current default). */
   port?: number;
+  /** Public browser origin (behind Funnel) added to the CSRF allowlist. */
+  publicOrigin?: string;
   /** Called on every accepted WS upgrade with a fresh bunite Connection and
    *  the auth context resolved at upgrade time. Web mode: context.user is
    *  set (auth gate already passed). Desktop mode: WS isn't used (preload). */
@@ -268,6 +273,14 @@ export function startFlmuxServer(options: {
     throw new Error("Elysia server failed to start");
   }
 
+  webAllowedOrigins = options.authorizer
+    ? new Set(
+        [`http://${hostname}:${server.port}`, `http://localhost:${server.port}`, options.publicOrigin].filter(
+          (o): o is string => Boolean(o)
+        )
+      )
+    : null;
+
   return {
     origin: `http://${hostname}:${server.port}`,
     stop() {
@@ -304,6 +317,14 @@ function authorizeRequest(
         `${fwd ? ` from=${fwd}` : ""})`
     );
     return denyUnauthorized(set);
+  }
+
+  // CSRF: cookie auth is ambient on cross-origin browser requests; bearer/query aren't.
+  if (cookieToken && presentedToken === cookieToken && webAllowedOrigins) {
+    const origin = request.headers.get("origin");
+    if (origin && !webAllowedOrigins.has(origin)) {
+      return denyUnauthorized(set);
+    }
   }
 
   if (queryToken && queryToken === presentedToken && cookieToken !== presentedToken) {

@@ -870,6 +870,7 @@ const server = startFlmuxServer({
   resolveShellModelRouter: resolveShellModelRouterForRequest,
   localExtensions,
   port: portResolution.port,
+  publicOrigin: process.env.FLMUX_PUBLIC_ORIGIN,
   saveSession: desktopAuthority
     ? (_context, layouts) => desktopAuthority.persistSession(layouts)
     : userAuthorityRegistry

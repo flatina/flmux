@@ -52,6 +52,8 @@ import type {
   FlmuxSessionBootstrapResponse
 } from "../../shared/rendererBridge";
 import { getFlmuxRendererLifecyclePolicy } from "../../shared/runtimeMode";
+import type { WorkspaceTabstripMode } from "../../shared/workspaceTabstrip";
+import { FlmuxTitlebar, type FlmuxTitlebarWorkspace } from "./titlebar";
 import { resolveTerminalCwdFromRoot } from "@flmux/core/terminal/path";
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
 import { createShellModelClientOverSession } from "./shellModelClient";
@@ -97,9 +99,7 @@ export class FlmuxWorkbench {
 
   private readonly workspaces = new Map<string, WorkspaceRecord>();
   private readonly paneIdToKind = new Map<string, string>();
-  // disposingWorkspace covers the user-originated outer-panel-close path where
-  // applyingCoreState is false but dockview's synchronous inner-disposal
-  // cascade needs inner onDidRemovePanel handlers to skip /panes/{id}/close.
+  // User-closed workspace: inner panes' onDidRemovePanel should skip /panes/{id}/close (parent teardown).
   private readonly disposingWorkspace = new Set<string>();
   private outerApi: DockviewApi | null = null;
 
@@ -115,18 +115,19 @@ export class FlmuxWorkbench {
   // Suppresses dockview→pathCall while we are applying core-driven state to dockview
   private applyingCoreState = false;
 
-  // Session persistence: renderer pushes layout deltas on every change via
-  // `flmux.layout.push`; main debounces + writes via `sessionStore`. The
-  // pagehide beacon is the last-chance flush for an in-flight push that
-  // might not make it over the wire before the tab/window closes.
+  // Layout deltas → main (debounced sessionStore write). Pagehide beacon flushes pending delta.
   private sessionPersistenceEnabled = false;
   private sessionPersistenceSuppressed = false;
+
+  private readonly tabstripMode: WorkspaceTabstripMode;
+  private titlebar: FlmuxTitlebar | null = null;
 
   constructor(
     private readonly config: FlmuxRendererBootstrapConfig,
     private readonly session: SessionCap
   ) {
     this.lifecyclePolicy = getFlmuxRendererLifecyclePolicy(config.mode);
+    this.tabstripMode = config.workspaceTabstrip;
     registerBuiltinPaneDescriptors(this.paneRegistry, {
       installRoot: config.projectDir,
       resolveTerminalCwd: resolveTerminalCwdFromRoot
@@ -148,27 +149,85 @@ export class FlmuxWorkbench {
     this.paneRegistry.register(descriptor);
   }
 
-  // Programmatic outer-tab activation. Skips dockview entirely and drives
-  // the same `shellModel.pathCall` the `onDidActivePanelChange` handler
-  // would invoke — routes through preload/WS so `hostRequests.ts` injects
-  // `caller.clientId`. Dockview's synthetic-click and
-  // `panel.api.setActive()` paths don't reliably reach this RPC.
+  // Programmatic outer-tab activation; dockview synthetic-click / setActive() are unreliable for this RPC.
   setActiveWorkspace(workspaceId: string): void {
     void this.shellModel.pathCall(`/workspaces/${workspaceId}/setActive`);
   }
 
+  private outerTabstripVisible(): boolean {
+    switch (this.tabstripMode) {
+      case "outer-always":
+        return true;
+      case "outer-auto": {
+        if (this.workspaces.size >= 2) return true;
+        // Inner prefix only mounts on existing groups — empty workspace falls back to outer.
+        const active = this.activeWorkspaceId ? this.workspaces.get(this.activeWorkspaceId) : null;
+        return (active?.innerApi?.panels?.length ?? 0) === 0;
+      }
+      case "titlebar":
+      case "none":
+        return false;
+    }
+  }
+
+  private syncOuterTabstripVisibility(): void {
+    const hide = !this.outerTabstripVisible();
+    this.shellEl.classList.toggle("flmux-outer-tabstrip-hidden", hide);
+    this.syncTitlebarTabs();
+  }
+
+  private usesInnerPrefixMenus(): boolean {
+    return this.tabstripMode === "outer-auto" || this.tabstripMode === "none";
+  }
+
+  private maybeMountTitlebar() {
+    if (this.tabstripMode !== "titlebar") return;
+    const host = document.querySelector<HTMLElement>(".flmux-titlebar-host");
+    if (!host) return;
+    this.titlebar = new FlmuxTitlebar({
+      listKinds: () =>
+        this.paneRegistry
+          .list()
+          .filter((d) => d.kind !== PLACEHOLDER_PANE_KIND)
+          .map((d) => ({
+            kind: d.kind,
+            label: d.defaultTitle ?? humanizePaneKind(d.kind),
+            iconUrl: d.iconUrl
+          })),
+      onAddPane: (kind, workspaceId) => {
+        void this.shellModel.pathCall("/panes/new", { kind, workspaceId, place: "right" });
+      },
+      onNewWorkspace: () => { void this.shellModel.pathCall("/workspaces/new"); },
+      onResetWorkspace: (id) => { void this.shellModel.pathCall(`/workspaces/${id}/reset`); },
+      onCloseWorkspace: (id) => { void this.shellModel.pathCall(`/workspaces/${id}/delete`); },
+      onActivateWorkspace: (id) => { void this.shellModel.pathCall(`/workspaces/${id}/setActive`); }
+    });
+    host.append(this.titlebar.element);
+    document.body.classList.add("flmux-has-titlebar");
+  }
+
+  private syncTitlebarTabs() {
+    if (!this.titlebar) return;
+    const list: FlmuxTitlebarWorkspace[] = [];
+    if (this.outerApi) {
+      for (const panel of this.outerApi.panels) {
+        list.push({ id: panel.id, title: panel.title ?? panel.id });
+      }
+    } else {
+      for (const id of this.workspaces.keys()) list.push({ id, title: id });
+    }
+    this.titlebar.setWorkspaces(list, this.activeWorkspaceId);
+  }
+
   async start() {
+    this.maybeMountTitlebar();
     this.initializeOuterShell();
 
-    // SessionCap is established before workbench start (see renderer/main.ts).
-    // Fetch initial snapshot via the single bootstrap method on the cap —
-    // works identically in desktop/web; identity is server-side closure.
     const bootstrap = await this.session.bootstrap();
     this.applyBootstrap(bootstrap);
     this.lastAppliedSeq = bootstrap.seqStart;
     this.bootstrapped = true;
-    // Persist resumeToken for tab refresh — next connection's resumeSession
-    // reuses the same slot (active workspace/pane preserved across grace).
+    // resumeToken cookie → tab refresh reuses same session slot within grace.
     document.cookie = `flmux-session=${encodeURIComponent(bootstrap.resumeToken)}; Path=/; SameSite=Strict`;
 
     this.drainBufferedEvents();
@@ -179,9 +238,6 @@ export class FlmuxWorkbench {
 
     if (this.lifecyclePolicy.persistSession) {
       this.sessionPersistenceEnabled = true;
-      // Pagehide beacon: last-chance flush. Main's 250 ms debounce might
-      // hold a pending delta when the tab/window goes away; beacon POSTs
-      // the latest layout directly for an immediate write.
       window.addEventListener("pagehide", () => {
         if (this.sessionPersistenceSuppressed) return;
         this.saveLayoutsViaBeacon(this.serializeSessionLayouts());
@@ -228,6 +284,7 @@ export class FlmuxWorkbench {
       if (this.activeWorkspaceId) {
         this.outerApi!.getPanel(this.activeWorkspaceId)?.api.setActive();
       }
+      this.syncOuterTabstripVisibility();
     } finally {
       this.sessionPersistenceSuppressed = false;
       this.applyingCoreState = priorApplying;
@@ -326,18 +383,15 @@ export class FlmuxWorkbench {
         title: payload.title
       });
     }
+    this.syncOuterTabstripVisibility();
   }
 
   private applyWorkspaceRemoved(payload: { id: string }) {
-    // applyingCoreState is already true, so outer/inner onDidRemovePanel
-    // callbacks fired by dockview's disposal cascade short-circuit before
-    // the pathCall branch — no extra guard needed here. A follow-up
-    // workspace.activeChanged (scope=client, target=this client)
-    // re-points outer setActive; this handler just closes the panel.
     this.outerApi?.getPanel(payload.id)?.api.close();
     const removed = this.workspaces.get(payload.id);
     removed?.statusStore.dispose();
     this.workspaces.delete(payload.id);
+    this.syncOuterTabstripVisibility();
   }
 
   private applyWorkspaceTitleChanged(payload: { id: string; title: string }) {
@@ -345,6 +399,7 @@ export class FlmuxWorkbench {
     if (payload.id === this.activeWorkspaceId) {
       this.updateDocumentTitle();
     }
+    this.syncTitlebarTabs();
   }
 
   private applyWorkspaceActiveChanged(payload: { id: string | null }) {
@@ -352,6 +407,7 @@ export class FlmuxWorkbench {
     if (payload.id) {
       this.outerApi?.getPanel(payload.id)?.api.setActive();
     }
+    this.syncOuterTabstripVisibility();
     this.updateDocumentTitle();
   }
 
@@ -371,9 +427,7 @@ export class FlmuxWorkbench {
     if (record.innerApi.getPanel(payload.paneId)) {
       return;
     }
-    // Set BEFORE addPanel — addPanel synchronously triggers the tab
-    // renderer's init() → applyIcon(), which reads this map. kind is
-    // immutable per pane, so no refresh path is needed.
+    // Set BEFORE addPanel: tab renderer's init() reads this map synchronously.
     this.paneIdToKind.set(payload.paneId, payload.snapshot.kind);
 
     const descriptor = this.paneRegistry.get(payload.snapshot.kind);
@@ -385,11 +439,11 @@ export class FlmuxWorkbench {
         title: payload.snapshot.title,
         params: payload.params
       });
+      this.syncOuterTabstripVisibility();
       return;
     }
 
-    // Stale referencePaneId → fall back to activePanel. Absent → root-level split
-    // (column-fill helper's "new column" relies on this).
+    // Stale ref → activePanel fallback. Absent → root-level split (column-fill helper relies on this).
     const referencePanel = payload.referencePaneId
       ? record.innerApi.getPanel(payload.referencePaneId) ?? record.innerApi.activePanel
       : null;
@@ -406,6 +460,7 @@ export class FlmuxWorkbench {
       position,
       ...this.paneAddPanelConstraints(payload.snapshot.kind)
     });
+    this.syncOuterTabstripVisibility();
   }
 
   private rehydrateEdgeGroupsFromLayout(
@@ -431,15 +486,13 @@ export class FlmuxWorkbench {
     const innerApi = record.innerApi!;
     let edgeApi = record.edgeGroups.get(edge) ?? innerApi.getEdgeGroup(edge);
     if (!edgeApi) {
-      // First pane decides sizing — pane.minimumWidth/maximumWidth/initialWidth
-      // map to edge group minimumSize/maximumSize/initialSize. Later panes in
-      // the same group are ignored (group already exists).
+      // First pane decides sizing; later panes ignored. Width for left/right, height for top/bottom.
       const d = this.paneRegistry.get(pane.kind);
       edgeApi = innerApi.addEdgeGroup(edge, {
         id: `edge-${record.id}-${edge}`,
-        ...(d?.minimumWidth !== undefined ? { minimumSize: d.minimumWidth } : {}),
-        ...(d?.maximumWidth !== undefined ? { maximumSize: d.maximumWidth } : {}),
-        ...(d?.initialWidth !== undefined ? { initialSize: d.initialWidth } : {})
+        ...(d?.minimumSize !== undefined ? { minimumSize: d.minimumSize } : {}),
+        ...(d?.maximumSize !== undefined ? { maximumSize: d.maximumSize } : {}),
+        ...(d?.initialSize !== undefined ? { initialSize: d.initialSize } : {})
       });
     }
     record.edgeGroups.set(edge, edgeApi);
@@ -459,11 +512,12 @@ export class FlmuxWorkbench {
     maximumWidth?: number;
     initialWidth?: number;
   } {
+    // flmux *Size → Dockview *Width (column flow, orientation-agnostic).
     const descriptor = this.paneRegistry.get(kind);
     const constraints: { minimumWidth?: number; maximumWidth?: number; initialWidth?: number } = {};
-    if (descriptor?.minimumWidth !== undefined) constraints.minimumWidth = descriptor.minimumWidth;
-    if (descriptor?.maximumWidth !== undefined) constraints.maximumWidth = descriptor.maximumWidth;
-    if (descriptor?.initialWidth !== undefined) constraints.initialWidth = descriptor.initialWidth;
+    if (descriptor?.minimumSize !== undefined) constraints.minimumWidth = descriptor.minimumSize;
+    if (descriptor?.maximumSize !== undefined) constraints.maximumWidth = descriptor.maximumSize;
+    if (descriptor?.initialSize !== undefined) constraints.initialWidth = descriptor.initialSize;
     return constraints;
   }
 
@@ -484,8 +538,8 @@ export class FlmuxWorkbench {
         }
       }
     }
-    // New-active selection now arrives as a separate scope=client
-    // pane.activeChanged — this handler only closes the panel.
+    // New-active arrives via separate scope=client pane.activeChanged.
+    this.syncOuterTabstripVisibility();
   }
 
   private resolvePaneIcon(paneId: string): string | undefined {
@@ -531,10 +585,7 @@ export class FlmuxWorkbench {
     const innerApi = createDockview(host, {
       theme: currentDockviewTheme(),
       disableFloatingGroups: true,
-      // Keep pane content in OverlayRenderContainer so gridview restructure
-      // (e.g. addView's wrap-leaf-in-branch path) only updates CSS positions
-      // instead of detaching+re-attaching the pane host DOM — that orphan
-      // window resets scrollTop on overflow:auto descendants.
+      // OverlayRenderContainer: gridview restructure updates CSS, not DOM re-attach (preserves scrollTop).
       defaultRenderer: "always",
       defaultTabComponent: "pane-tab",
       createComponent: (options) => this.createInnerPanelRenderer(record, options),
@@ -554,18 +605,28 @@ export class FlmuxWorkbench {
                 iconUrl: descriptor.iconUrl
               })),
           onSelect: (kind) => {
-            // Pin to this group's active panel so the workbench stays on
-            // the panel-relative split path — without it, the absent-ref
-            // fallback now falls through to Dockview's root-level
-            // absolute placement (used by the column-fill helper for
-            // new-column cases) which would change inner-`+` UX.
+            // Pin to this group's active panel — keeps panel-relative split
+            // (root-level placement is reserved for the column-fill helper).
             void this.shellModel.pathCall("/panes/new", {
               kind,
               place: "right",
               referencePaneId: group.activePanel?.id
             });
           }
-        })
+        }),
+      createPrefixHeaderActionComponent: this.usesInnerPrefixMenus()
+        ? (group) => {
+            const action = new WorkspaceHeaderActions(group, {
+              onAdd: () => { void this.shellModel.pathCall("/workspaces/new"); },
+              onResetActive: () => {
+                if (!this.activeWorkspaceId) return;
+                void this.shellModel.pathCall(`/workspaces/${this.activeWorkspaceId}/reset`);
+              }
+            });
+            action.element.classList.add("flmux-workspace-prefix-menus");
+            return action;
+          }
+        : undefined
     });
     record.innerApi = innerApi;
 
@@ -594,9 +655,7 @@ export class FlmuxWorkbench {
     try {
       if (record.pendingInnerLayout) {
         try {
-          // Pre-populate kind map BEFORE fromJSON — fromJSON synchronously
-          // builds tabs (each running PaneTabRenderer.init → applyIcon),
-          // which read this map.
+          // Pre-populate kind map: fromJSON synchronously builds tabs that read it.
           const layout = record.pendingInnerLayout as { panels?: Record<string, { contentComponent?: string }> };
           for (const [id, state] of Object.entries(layout.panels ?? {})) {
             if (state.contentComponent) this.paneIdToKind.set(id, state.contentComponent);
@@ -651,6 +710,7 @@ export class FlmuxWorkbench {
     } finally {
       this.applyingCoreState = priorApplying;
     }
+    this.syncOuterTabstripVisibility();
   }
 
   detachInnerDockview(record: WorkspaceRecord) {
@@ -696,10 +756,7 @@ export class FlmuxWorkbench {
       theme: currentDockviewTheme(),
       disableFloatingGroups: true,
       defaultRenderer: "always",
-      // Workspace tabs get a hamburger menu before the title so panes can
-      // be added to a workspace whose inner Dockview is empty (the inner
-      // `+` only renders on a group, and we don't auto-seed a placeholder
-      // group on the last-pane-removed event).
+      // Workspace tab hamburger lets empty workspaces add panes (inner `+` only on groups).
       defaultTabComponent: "workspace-tab",
       createComponent: (options) => this.createOuterPanelRenderer(options),
       createTabComponent: (options) =>
@@ -753,12 +810,7 @@ export class FlmuxWorkbench {
       if (this.applyingCoreState || this.disposingWorkspace.has(panel.id)) {
         return;
       }
-      // Hold the guard across the pathCall Promise: dockview's synchronous
-      // disposal cascade (WorkspaceOuterPanelRenderer.dispose → innerApi.dispose
-      // → per-pane onDidRemovePanel) fires AFTER this callback returns but
-      // before the pathCall resolves. Inner handler checks disposingWorkspace
-      // to skip re-issuing /panes/{id}/close for panes being torn down by the
-      // parent workspace delete.
+      // Guard spans the pathCall: dockview disposal cascade fires before it resolves.
       this.disposingWorkspace.add(panel.id);
       void this.shellModel
         .pathCall(`/workspaces/${panel.id}/delete`)
@@ -797,8 +849,7 @@ export class FlmuxWorkbench {
           pushShellCoreEvent(event);
         }
       } catch (error) {
-        // Replay buffer rolled past lastAppliedSeq while disconnected — renderer
-        // can't reconcile; full reload restarts bridge → fresh session.
+        // Replay overflow → reload for fresh session.
         if (isReplayOverflow(error)) {
           console.warn("[flmux] replay overflow — reloading to resync");
           window.location.reload();
@@ -907,9 +958,7 @@ export class FlmuxWorkbench {
     }
     const record: WorkspaceRecord = {
       id: workspaceId,
-      // Renderer-local workspace bus. Extension panes publish+subscribe here
-      // via their PaneWorkspaceContext.bus. Cross-client broadcast (main-side
-      // publishers reaching renderer subscribers) is Phase B per plan v2.
+      // Renderer-local bus (cross-client broadcast deferred — architecture).
       bus: createWorkspaceBus(workspaceId),
       statusStore: createWorkspaceStatusStore(),
       outerPanelApi: null,

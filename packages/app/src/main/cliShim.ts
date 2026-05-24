@@ -1,11 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync, chmodSync } from "node:fs";
 import { resolve, join } from "node:path";
 import type { ExtensionManifestCommand } from "@flmux/extension-api";
+import { isCompiledBinary } from "../shared/buildTarget";
 
 const FLMUX_SHIM_NAME = "flmux";
 
-/** Root-level flmux CLI subcommands that must not be shadowed by an extension
- *  shim on PATH. Collisions would silently bypass the citty root dispatch. */
+// Built-in subcommands an extension shim must not shadow.
 const RESERVED_SHIM_NAMES: ReadonlySet<string> = new Set([
   FLMUX_SHIM_NAME,
   "clients",
@@ -19,41 +19,28 @@ const RESERVED_SHIM_NAMES: ReadonlySet<string> = new Set([
 
 export interface CliShimResult {
   ok: boolean;
-  /** Reason populated only when `ok` is false. */
   reason?: "no-cli-entry" | "no-bun-command";
-  /** Absolute path to the resolved CLI entry (TS source in dev, bundled JS in
-   *  packaged). Undefined when skipped. */
   entry?: string;
-  /** Absolute path to the bun runtime the shim invokes. */
   bunCommand?: string;
 }
 
 interface EnsureOptions {
   binDir: string;
-  /** Directory containing `main.ts` (dev) or `main.js` (packaged). Used to
-   *  locate the CLI entry next to it — same layout assumption as
-   *  `resolveAppPtydEntry` in ptyd/launch.ts. */
   baseDir: string;
-  /** Testing seam: override existence check. */
   fileExists?: (path: string) => boolean;
-  /** Testing seam: override `Bun.which("bun")`. */
   resolveBunCommand?: () => string | null;
 }
 
-/**
- * Write `<binDir>/flmux` (posix) and `<binDir>/flmux.cmd` (windows) pointing
- * at the flmux CLI entry resolved from this install's layout. Prepended to
- * terminal PATH in `createTerminalEnv` so panes can invoke `flmux <cmd>`
- * against the version that owns their rootDir.
- *
- * Idempotent — only writes when content differs, so boot-time calls are cheap.
- * Skips with `ok:false` when either the CLI entry or the bun runtime can't
- * be resolved; callers log and continue (PATH entry pointing to an empty
- * dir is harmless).
- */
+// Idempotent. Writes posix + .cmd shims so terminal panes' PATH can resolve `flmux`.
 export function ensureFlmuxCliShim(options: EnsureOptions): CliShimResult {
   const fileExists = options.fileExists ?? existsSync;
   const resolveBunCmd = options.resolveBunCommand ?? (() => Bun.which("bun"));
+
+  if (isCompiledBinary) {
+    mkdirSync(options.binDir, { recursive: true });
+    writeCompiledShimPair(options.binDir, FLMUX_SHIM_NAME, "cli", []);
+    return { ok: true, entry: process.execPath, bunCommand: process.execPath };
+  }
 
   const entry = resolveCliEntry(options.baseDir, fileExists);
   if (!entry) return { ok: false, reason: "no-cli-entry" };
@@ -67,23 +54,18 @@ export function ensureFlmuxCliShim(options: EnsureOptions): CliShimResult {
   return { ok: true, entry, bunCommand };
 }
 
+
 export interface ExtensionShimSource {
   extensionId: string;
   commands: readonly ExtensionManifestCommand[] | undefined;
 }
 
 export interface ExtensionShimsResult {
-  /** Shim names written this pass (excluding `flmux` itself). */
   written: readonly string[];
-  /** Shim names skipped with the reason — surfaced to the operator as
-   *  warnings so collisions are visible instead of silently dropped. */
   skipped: readonly { name: string; extensionId: string; reason: "reserved" | "duplicate" }[];
 }
 
-/** Write one PATH shim per extension command that opts in via its manifest
- *  `shim` field. Each shim forwards to `flmux <commandId> "$@"` so citty root
- *  dispatch stays the single entry point. Stale files in `binDir` (old shims
- *  from renamed / uninstalled extensions) are removed. */
+// Per extension command (manifest `shim` opt-in): forwards to `flmux <commandId>`. Prunes stale.
 export function ensureExtensionCliShims(options: {
   binDir: string;
   bunCommand: string;
@@ -96,6 +78,7 @@ export function ensureExtensionCliShims(options: {
   const skipped: { name: string; extensionId: string; reason: "reserved" | "duplicate" }[] = [];
   const claimed = new Set<string>();
 
+  const compiled = isCompiledBinary;
   for (const ext of options.extensions) {
     for (const command of ext.commands ?? []) {
       if (!command.shim) continue;
@@ -108,7 +91,11 @@ export function ensureExtensionCliShims(options: {
         continue;
       }
       claimed.add(command.shim);
-      writeShimPair(options.binDir, command.shim, options.bunCommand, [options.cliEntry, command.id]);
+      if (compiled) {
+        writeCompiledShimPair(options.binDir, command.shim, "cli", [command.id]);
+      } else {
+        writeShimPair(options.binDir, command.shim, options.bunCommand, [options.cliEntry, command.id]);
+      }
       written.push(command.shim);
     }
   }
@@ -135,9 +122,14 @@ function writeShimPair(binDir: string, name: string, bunCommand: string, leading
   writeIfChanged(join(binDir, `${name}.cmd`), renderCmdShim(bunCommand, leadingArgs));
 }
 
-/** Remove files in `binDir` that aren't part of the current shim universe so
- *  renamed or uninstalled extensions don't leave dangling commands on PATH.
- *  `binDir` is owned by flmux — other tools have no reason to write here. */
+function writeCompiledShimPair(binDir: string, name: string, mode: "cli", leadingArgs: readonly string[]): void {
+  const exe = process.execPath;
+  const posix = `#!/usr/bin/env sh\nFLMUX_INTERNAL_MODE=${mode} exec ${quotePosix(exe)} ${leadingArgs.map(quotePosix).join(" ")} "$@"\n`;
+  const cmd = `@echo off\r\nset "FLMUX_INTERNAL_MODE=${mode}"\r\n${quoteCmd(exe)} ${leadingArgs.map(quoteCmd).join(" ")} %*\r\n`;
+  writeIfChanged(join(binDir, name), posix, 0o755);
+  writeIfChanged(join(binDir, `${name}.cmd`), cmd);
+}
+
 function pruneStaleShims(binDir: string, expectedNames: ReadonlySet<string>): void {
   if (!existsSync(binDir)) return;
   const expectedFiles = new Set<string>();
@@ -166,14 +158,12 @@ function renderCmdShim(bunCommand: string, leadingArgs: readonly string[]): stri
 }
 
 function quotePosix(value: string): string {
-  // Single quotes preserve Windows path backslashes verbatim — double quotes
-  // would let the shell treat `\` as an escape character on some paths.
+  // Single-quoted preserves Windows backslashes; double would treat `\` as escape.
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 function quoteCmd(value: string): string {
-  // cmd.exe has no escape for embedded `"`; paths with quotes are extremely
-  // rare and not worth handling beyond a best-effort strip.
+  // cmd.exe has no `"` escape; embedded quotes in paths are rare — strip.
   return `"${value.replace(/"/g, "")}"`;
 }
 

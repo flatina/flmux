@@ -30,9 +30,9 @@ export interface ExtensionManifestPane {
   edgeGroup?: PaneEdgeGroup;
   // Relative path to an SVG/PNG icon. Replaces the default hamburger glyph on the pane's tab header.
   icon?: string;
-  minimumWidth?: number;
-  maximumWidth?: number;
-  initialWidth?: number;
+  minimumSize?: number;
+  maximumSize?: number;
+  initialSize?: number;
 }
 
 export interface ExtensionManifest {
@@ -258,32 +258,32 @@ function validateManifestPanes(value: unknown) {
     const singletonScope = entry.singletonScope;
     const edgeGroup = entry.edgeGroup;
     const iconPath = validateManifestEntrypointPath(entry.icon, `panes[${index}].icon`);
-    const minimumWidthRaw = entry.minimumWidth;
-    let minimumWidth: number | undefined;
-    if (minimumWidthRaw !== undefined) {
-      if (typeof minimumWidthRaw !== "number" || !Number.isFinite(minimumWidthRaw) || minimumWidthRaw <= 0) {
-        errors.push(`Manifest field 'panes[${index}].minimumWidth' must be a positive finite number when provided`);
+    const minimumSizeRaw = entry.minimumSize;
+    let minimumSize: number | undefined;
+    if (minimumSizeRaw !== undefined) {
+      if (typeof minimumSizeRaw !== "number" || !Number.isFinite(minimumSizeRaw) || minimumSizeRaw <= 0) {
+        errors.push(`Manifest field 'panes[${index}].minimumSize' must be a positive finite number when provided`);
         return;
       }
-      minimumWidth = minimumWidthRaw;
+      minimumSize = minimumSizeRaw;
     }
-    const maximumWidthRaw = entry.maximumWidth;
-    let maximumWidth: number | undefined;
-    if (maximumWidthRaw !== undefined) {
-      if (typeof maximumWidthRaw !== "number" || !Number.isFinite(maximumWidthRaw) || maximumWidthRaw <= 0) {
-        errors.push(`Manifest field 'panes[${index}].maximumWidth' must be a positive finite number when provided`);
+    const maximumSizeRaw = entry.maximumSize;
+    let maximumSize: number | undefined;
+    if (maximumSizeRaw !== undefined) {
+      if (typeof maximumSizeRaw !== "number" || !Number.isFinite(maximumSizeRaw) || maximumSizeRaw <= 0) {
+        errors.push(`Manifest field 'panes[${index}].maximumSize' must be a positive finite number when provided`);
         return;
       }
-      maximumWidth = maximumWidthRaw;
+      maximumSize = maximumSizeRaw;
     }
-    const initialWidthRaw = entry.initialWidth;
-    let initialWidth: number | undefined;
-    if (initialWidthRaw !== undefined) {
-      if (typeof initialWidthRaw !== "number" || !Number.isFinite(initialWidthRaw) || initialWidthRaw <= 0) {
-        errors.push(`Manifest field 'panes[${index}].initialWidth' must be a positive finite number when provided`);
+    const initialSizeRaw = entry.initialSize;
+    let initialSize: number | undefined;
+    if (initialSizeRaw !== undefined) {
+      if (typeof initialSizeRaw !== "number" || !Number.isFinite(initialSizeRaw) || initialSizeRaw <= 0) {
+        errors.push(`Manifest field 'panes[${index}].initialSize' must be a positive finite number when provided`);
         return;
       }
-      initialWidth = initialWidthRaw;
+      initialSize = initialSizeRaw;
     }
 
     if (!kind) {
@@ -319,9 +319,9 @@ function validateManifestPanes(value: unknown) {
       ...(singletonScope ? { singletonScope } : {}),
       ...(edgeGroup ? { edgeGroup } : {}),
       ...(icon ? { icon } : {}),
-      ...(minimumWidth !== undefined ? { minimumWidth } : {}),
-      ...(maximumWidth !== undefined ? { maximumWidth } : {}),
-      ...(initialWidth !== undefined ? { initialWidth } : {})
+      ...(minimumSize !== undefined ? { minimumSize } : {}),
+      ...(maximumSize !== undefined ? { maximumSize } : {}),
+      ...(initialSize !== undefined ? { initialSize } : {})
     });
   });
 

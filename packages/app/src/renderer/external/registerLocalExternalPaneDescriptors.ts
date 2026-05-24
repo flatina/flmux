@@ -31,17 +31,17 @@ export async function registerLocalExternalPaneDescriptors(
     const extId = extension.loadEntry.id;
     const paneIcons = extension.loadEntry.paneIcons ?? {};
     const paneDefaultTitles = extension.loadEntry.paneDefaultTitles ?? {};
-    const paneMinimumWidths = extension.loadEntry.paneMinimumWidths ?? {};
-    const paneMaximumWidths = extension.loadEntry.paneMaximumWidths ?? {};
-    const paneInitialWidths = extension.loadEntry.paneInitialWidths ?? {};
+    const paneMinimumSizes = extension.loadEntry.paneMinimumSizes ?? {};
+    const paneMaximumSizes = extension.loadEntry.paneMaximumSizes ?? {};
+    const paneInitialSizes = extension.loadEntry.paneInitialSizes ?? {};
     const paneEdgeGroups = extension.loadEntry.paneEdgeGroups ?? {};
     for (const pane of extension.definition.panes ?? []) {
       const descriptor = createExternalPaneDescriptor(extId, pane);
       if (paneIcons[pane.kind]) descriptor.iconUrl = paneIcons[pane.kind];
       if (paneDefaultTitles[pane.kind]) descriptor.defaultTitle = paneDefaultTitles[pane.kind];
-      if (paneMinimumWidths[pane.kind] !== undefined) descriptor.minimumWidth = paneMinimumWidths[pane.kind];
-      if (paneMaximumWidths[pane.kind] !== undefined) descriptor.maximumWidth = paneMaximumWidths[pane.kind];
-      if (paneInitialWidths[pane.kind] !== undefined) descriptor.initialWidth = paneInitialWidths[pane.kind];
+      if (paneMinimumSizes[pane.kind] !== undefined) descriptor.minimumSize = paneMinimumSizes[pane.kind];
+      if (paneMaximumSizes[pane.kind] !== undefined) descriptor.maximumSize = paneMaximumSizes[pane.kind];
+      if (paneInitialSizes[pane.kind] !== undefined) descriptor.initialSize = paneInitialSizes[pane.kind];
       if (paneEdgeGroups[pane.kind]) descriptor.edgeGroup = paneEdgeGroups[pane.kind];
       host.registerExternalPane(descriptor);
     }

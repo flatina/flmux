@@ -75,8 +75,8 @@ describe("local extension loading", () => {
         rendererEntryUrl: "http://127.0.0.1:4321/__flmux/ext/sample.cowsay/0.1.0/index.js",
         paneIcons: {},
         paneDefaultTitles: {},
-        paneMinimumWidths: {},
-        paneMaximumWidths: {}, paneInitialWidths: {}, paneEdgeGroups: {}
+        paneMinimumSizes: {},
+        paneMaximumSizes: {}, paneInitialSizes: {}, paneEdgeGroups: {}
       }
     ]);
 
@@ -404,8 +404,8 @@ describe("local extension loading", () => {
         rendererEntryUrl: "http://127.0.0.1:4321/__flmux/ext/sample.cowsay/0.1.0/index.js",
         paneIcons: {},
         paneDefaultTitles: {},
-        paneMinimumWidths: {},
-        paneMaximumWidths: {}, paneInitialWidths: {}, paneEdgeGroups: {}
+        paneMinimumSizes: {},
+        paneMaximumSizes: {}, paneInitialSizes: {}, paneEdgeGroups: {}
       },
       {
         id: "sample.inspector",
@@ -415,8 +415,8 @@ describe("local extension loading", () => {
         rendererEntryUrl: "http://127.0.0.1:4321/__flmux/ext/sample.inspector/0.1.0/index.js",
         paneIcons: {},
         paneDefaultTitles: {},
-        paneMinimumWidths: {},
-        paneMaximumWidths: {}, paneInitialWidths: {}, paneEdgeGroups: {}
+        paneMinimumSizes: {},
+        paneMaximumSizes: {}, paneInitialSizes: {}, paneEdgeGroups: {}
       }
     ];
 

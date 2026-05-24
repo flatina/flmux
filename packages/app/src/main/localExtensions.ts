@@ -131,9 +131,9 @@ export function createLocalExtensionLoadEntries(
       const rendererEntrypoint = extension.rendererEntryRelativePath!;
       const paneIcons: Record<string, string> = {};
       const paneDefaultTitles: Record<string, string> = {};
-      const paneMinimumWidths: Record<string, number> = {};
-      const paneMaximumWidths: Record<string, number> = {};
-      const paneInitialWidths: Record<string, number> = {};
+      const paneMinimumSizes: Record<string, number> = {};
+      const paneMaximumSizes: Record<string, number> = {};
+      const paneInitialSizes: Record<string, number> = {};
       const paneEdgeGroups: Record<string, "left" | "right" | "top" | "bottom"> = {};
       for (const pane of extension.runtimeManifest.panes ?? []) {
         if (pane.icon) {
@@ -142,14 +142,14 @@ export function createLocalExtensionLoadEntries(
         if (pane.defaultTitle) {
           paneDefaultTitles[pane.kind] = pane.defaultTitle;
         }
-        if (pane.minimumWidth !== undefined) {
-          paneMinimumWidths[pane.kind] = pane.minimumWidth;
+        if (pane.minimumSize !== undefined) {
+          paneMinimumSizes[pane.kind] = pane.minimumSize;
         }
-        if (pane.maximumWidth !== undefined) {
-          paneMaximumWidths[pane.kind] = pane.maximumWidth;
+        if (pane.maximumSize !== undefined) {
+          paneMaximumSizes[pane.kind] = pane.maximumSize;
         }
-        if (pane.initialWidth !== undefined) {
-          paneInitialWidths[pane.kind] = pane.initialWidth;
+        if (pane.initialSize !== undefined) {
+          paneInitialSizes[pane.kind] = pane.initialSize;
         }
         if (pane.edgeGroup) {
           paneEdgeGroups[pane.kind] = pane.edgeGroup;
@@ -163,9 +163,9 @@ export function createLocalExtensionLoadEntries(
         rendererEntryUrl: `${baseUrl}/${toServedExtensionPath(rendererEntrypoint)}${query}`,
         paneIcons,
         paneDefaultTitles,
-        paneMinimumWidths,
-        paneMaximumWidths,
-        paneInitialWidths,
+        paneMinimumSizes,
+        paneMaximumSizes,
+        paneInitialSizes,
         paneEdgeGroups
       } satisfies FlmuxLocalExtensionLoadEntry;
     });

@@ -5,7 +5,7 @@
     "": {
       "name": "flmux",
       "dependencies": {
-        "bunite-core": "^0.16.0",
+        "bunite-core": "^0.17.1",
       },
       "devDependencies": {
         "@biomejs/biome": "2.4.12",
@@ -51,8 +51,10 @@
         "@flmux/extension-api": "workspace:*",
         "@xterm/addon-fit": "^0.10.0",
         "@xterm/xterm": "^5.5.0",
-        "bunite-core": "^0.16.0",
-        "bunite-native-win-x64": "^0.0.14",
+        "bunite-core": "^0.17.1",
+        "bunite-native-linux-x64": "^0.0.5",
+        "bunite-native-mac-arm64": "^0.0.5",
+        "bunite-native-win-x64": "^0.0.15",
         "citty": "^0.2.2",
         "dockview-core": "^6.4.0",
         "elysia": "^1.4.28",
@@ -78,7 +80,7 @@
       "name": "@flmux/extension-api",
       "version": "0.0.0",
       "dependencies": {
-        "bunite-core": "^0.16.0",
+        "bunite-core": "^0.17.1",
         "citty": "^0.2.2",
       },
     },
@@ -365,11 +367,15 @@
 
     "bun-types": ["bun-types@1.3.14", "", { "dependencies": { "@types/node": "*" } }, "sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ=="],
 
-    "bunite-core": ["bunite-core@0.16.0", "", { "dependencies": { "msgpackr": "^1.11.9" }, "optionalDependencies": { "bunite-native-linux-x64": "0.0.4", "bunite-native-mac-arm64": "0.0.4", "bunite-native-win-x64": "0.0.14" } }, "sha512-yWKdxYTF5Ll9jWlps3n+A0cBlcBQTvbA/3lpzMY7E0+OWd/xwQyy3VnXKEiO6dTmFNbqR1goNcZoPY8y3zUdtg=="],
+    "bunite-core": ["bunite-core@0.17.1", "", { "dependencies": { "msgpackr": "^1.11.9" }, "optionalDependencies": { "bunite-native-linux-x64": "0.0.5", "bunite-native-mac-arm64": "0.0.5", "bunite-native-win-x64": "0.0.15" } }, "sha512-VTcGOTCXqGQQPc+SD83SHbjvDqkiRBv0Fi6QD8jN8D1bXXuwMoGmLuwOHcuaXJLDok8bI3bSn15/WlGhb+G1ZQ=="],
 
     "bunite-dev": ["bunite-dev@0.0.6", "", { "peerDependencies": { "bunite-core": "*" }, "bin": { "bunite-build": "scripts/build.ts", "bunite-setup-cef": "scripts/setup-cef.ts" } }, "sha512-n1IY861UXO5zGR8jWHuNUr3If/TN3+kQCZCdW3IAUOR5nK7qwuwGujZNTyvuqlt9AKuiTOTVnyy2DeaS2s9Kog=="],
 
-    "bunite-native-win-x64": ["bunite-native-win-x64@0.0.14", "", { "os": "win32", "cpu": "x64" }, "sha512-2lLrmlIr+YgTZ8KKz2+i6XrIU2okxuwEHOSPimGM5hdugPMPhzRzq38VOPyiFtvv8dbEXqLOV1vwVN7E2i/ebQ=="],
+    "bunite-native-linux-x64": ["bunite-native-linux-x64@0.0.5", "", { "os": "linux", "cpu": "x64" }, "sha512-32uF8SX9yxhWJEBWpi2WJ8izqddDjzfsfFBq0ix1C3+ZV3RgIFcK9NP2IxMEkYNVBInCGzkIDoUgRjFlhVAUGg=="],
+
+    "bunite-native-mac-arm64": ["bunite-native-mac-arm64@0.0.5", "", { "os": "darwin", "cpu": "arm64" }, "sha512-/1nEjzrDLS3v3c64s6AYx//g372dWs4CieeWj6UnIKHqCNHk1Xy63TVI9uaqk0guWLW4IaEmKAHqVpxt6HjdcQ=="],
+
+    "bunite-native-win-x64": ["bunite-native-win-x64@0.0.15", "", { "os": "win32", "cpu": "x64" }, "sha512-AcTsVqsbxyZMQKFUKqA9pIp/dsuvMreK4ahj7eYY++7VutSZcm7Tp/dXNxviTWBeaStJSuozIXVIdQgUucGt4w=="],
 
     "citty": ["citty@0.2.2", "", {}, "sha512-+6vJA3L98yv+IdfKGZHBNiGW5KHn22e/JwID0Strsz8h4S/csAu/OuICwxrg44k5MRiZHWIo8XXuJgQTriRP4w=="],
 
@@ -478,6 +484,8 @@
     "yaml": ["yaml@2.9.0", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA=="],
 
     "zod": ["zod@4.4.3", "", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
+
+    "bunite-dev/bunite-core": ["bunite-core@file:../bunite/package", { "dependencies": { "msgpackr": "^1.11.9" }, "optionalDependencies": { "bunite-native-linux-x64": "0.0.5", "bunite-native-mac-arm64": "0.0.5", "bunite-native-win-x64": "0.0.15" } }],
 
     "playwright/fsevents": ["fsevents@2.3.2", "", { "os": "darwin" }, "sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA=="],
   }

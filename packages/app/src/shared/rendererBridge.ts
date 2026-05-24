@@ -11,6 +11,7 @@ import type {
   WorkspaceStatusSnapshot
 } from "@flmux/core/shell/types";
 import type { FlmuxRuntimeMode } from "./runtimeMode";
+import type { WorkspaceTabstripMode } from "./workspaceTabstrip";
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
 
 export interface FlmuxShellSnapshot {
@@ -22,10 +23,7 @@ export interface FlmuxShellSnapshot {
 }
 
 export interface FlmuxSessionBootstrapResponse {
-  /** Opaque resume token. Renderer stores in cookie/localStorage for the
-   * next connection to call `resumeSession({resumeToken})` and recover the
-   * same slot state (active workspace/pane). Equals the server-minted
-   * sessionId; clients treat as opaque. */
+  /** Opaque resume token; next connection passes via resumeSession to keep slot state. */
   resumeToken: string;
   snapshot: FlmuxShellSnapshot;
   outerLayout: unknown | null;
@@ -46,9 +44,9 @@ export interface FlmuxLocalExtensionLoadEntry {
   rendererEntryUrl: string;
   paneIcons: Record<string, string>;
   paneDefaultTitles: Record<string, string>;
-  paneMinimumWidths: Record<string, number>;
-  paneMaximumWidths: Record<string, number>;
-  paneInitialWidths: Record<string, number>;
+  paneMinimumSizes: Record<string, number>;
+  paneMaximumSizes: Record<string, number>;
+  paneInitialSizes: Record<string, number>;
   paneEdgeGroups: Record<string, "left" | "right" | "top" | "bottom">;
 }
 
@@ -58,11 +56,10 @@ export interface FlmuxRendererBootstrapConfig {
   projectDir: string;
   localExtensions: FlmuxLocalExtensionLoadEntry[];
   devMode: boolean;
+  workspaceTabstrip: WorkspaceTabstripMode;
 }
 
-// SessionCap — identity (sessionId/userId) is server-side in the impl factory's
-// closure, not on the wire. Per-call args carry only data (sourcePaneId,
-// workspaceId hints).
+// Identity sealed in impl-factory closure; per-call args carry only data hints.
 export const sessionCap = defineCap("flmux.session", {
   bootstrap: call<void, FlmuxSessionBootstrapResponse>(),
 
@@ -81,11 +78,7 @@ export const sessionCap = defineCap("flmux.session", {
 export type SessionCap = ClientOf<typeof sessionCap>;
 export type SessionCapImpl = ImplOf<typeof sessionCap>;
 
-// flmuxBridgeCap — anonymous entry. Auth happens at WS upgrade; bridge
-// methods mint sessionCap bound to the upgrade-time user. Per method:
-// - createSession:        web, fresh slot.
-// - resumeSession:        web, replays grace-window slot via cookie token.
-// - createDesktopSession: preload only (attestation.level === "app-internal").
+// Anonymous entry; auth at WS upgrade. createDesktopSession is preload-only (attestation gate).
 export const flmuxBridgeCap = defineCap("flmux.bridge", {
   createSession: call<void, typeof sessionCap>({ returns: cap(sessionCap) }),
   resumeSession: call<{ resumeToken: string }, typeof sessionCap>({ returns: cap(sessionCap) }),

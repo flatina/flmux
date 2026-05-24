@@ -209,11 +209,162 @@ select:focus {
     monospace;
 }
 
+.flmux-titlebar-host {
+  display: none;
+}
+
+body.flmux-has-titlebar .flmux-titlebar-host {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.flmux-titlebar {
+  height: 32px;
+  display: flex;
+  align-items: stretch;
+  background: var(--fl-panel-background);
+  color: var(--fl-foreground);
+  border-bottom: 1px solid var(--fl-panel-border);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.flmux-titlebar--blurred {
+  filter: brightness(0.85);
+}
+
+.flmux-titlebar__app {
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+.flmux-titlebar__tabs {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-width: 0;
+}
+
+.flmux-titlebar__tab {
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  border-right: 1px solid var(--fl-panel-border);
+  cursor: default;
+  max-width: 240px;
+  gap: 2px;
+}
+
+.flmux-titlebar__tab--active {
+  background: var(--fl-tab-active-background);
+}
+
+.flmux-titlebar__tab-menu,
+.flmux-titlebar__tab-close,
+.flmux-titlebar__btn,
+.flmux-titlebar__win-btn {
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  font-size: 13px;
+}
+
+.flmux-titlebar__tab-menu {
+  width: 20px;
+  height: 22px;
+  border-radius: 3px;
+}
+
+.flmux-titlebar__tab-menu:hover {
+  background: var(--fl-button-hover-background);
+}
+
+.flmux-titlebar__tab-title {
+  padding: 0 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  cursor: pointer;
+}
+
+.flmux-titlebar__tab-close {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+.flmux-titlebar__tab-close:hover {
+  background: var(--fl-button-hover-background);
+  opacity: 1;
+}
+
+.flmux-titlebar__menus {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+}
+
+.flmux-titlebar__btn {
+  width: 24px;
+  height: 22px;
+  border-radius: 3px;
+}
+
+.flmux-titlebar__btn:hover {
+  background: var(--fl-button-hover-background);
+}
+
+.flmux-titlebar__controls {
+  display: flex;
+  align-items: stretch;
+}
+
+.flmux-titlebar__win-btn {
+  width: 44px;
+  height: 100%;
+  line-height: 1;
+  font-size: 13px;
+}
+
+.flmux-titlebar__win-btn:hover {
+  background: var(--fl-button-hover-background);
+}
+
+.flmux-titlebar__win-btn--close:hover {
+  background: #dc2626;
+  color: #fff;
+}
+
 .dockview-shell {
   flex: 1;
   min-height: 0;
   position: relative;
   overflow: hidden;
+}
+
+.dockview-shell.flmux-outer-tabstrip-hidden .dv-tabs-and-actions-container:not(.workspace-panel *) {
+  display: none;
+}
+
+.dockview-shell .flmux-workspace-prefix-menus {
+  display: none;
+}
+
+.dockview-shell.flmux-outer-tabstrip-hidden .flmux-workspace-prefix-menus {
+  display: flex;
 }
 
 .workspace-panel {

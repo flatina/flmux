@@ -8,6 +8,8 @@ import {
 import type { Connection } from "bunite-core/rpc";
 import type { PathCallerContext, SequencedShellCoreEvent, ShellModelAPI } from "@flmux/core/shell";
 import { flmuxBridgeCap, type FlmuxSessionSaveLayouts } from "../shared/rendererBridge";
+import { resolveWorkspaceTabstripMode } from "../shared/workspaceTabstrip";
+import { isCompiledBinary } from "../shared/buildTarget";
 import { createSessionImpl } from "./sessionImpl";
 import { createBridgeImpl, type MintedSession } from "./bridgeImpl";
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
@@ -73,9 +75,7 @@ function parseOptionalPort(value: string | undefined): number | undefined {
 }
 
 function prependFlmuxBinToPath(binDir: string): void {
-  // Reuse the existing PATH key's casing (Windows preserves source casing
-  // even though the var is case-insensitive); a blind `process.env.PATH =`
-  // would create a sibling entry.
+  // Reuse existing PATH casing on Windows; blind assignment creates a sibling entry.
   const existingKey = Object.keys(process.env).find((key) => key.toUpperCase() === "PATH");
   const key = existingKey ?? "PATH";
   const current = existingKey ? process.env[existingKey] : undefined;
@@ -86,23 +86,23 @@ function readDevAuthAsFlag(argv: readonly string[]): string | undefined {
   const i = argv.indexOf("--dev-auth-as");
   if (i < 0 || i + 1 >= argv.length) return undefined;
   const value = argv[i + 1]?.trim();
-  // Reject the next arg if it looks like another flag — prevents
-  // `--dev-auth-as --web` from silently enabling the bypass as user "--web".
+  // Reject next flag — `--dev-auth-as --web` would silently bypass as user "--web".
   if (!value || value.startsWith("--")) return undefined;
   return value;
 }
 
-// Mirrors bunite's internal `getBaseDir()` (shared/paths.ts): use the
-// entry-script dir in dev, the binary dir when compiled. This lets web
-// mode resolve renderer assets without constructing `AppRuntime` (which
-// boots CEF). Desktop mode would normally pull the same result through
-// `app.resolve(...)`; we keep one code path so both modes agree.
-const baseDir = Bun.main && existsSync(Bun.main) ? dirname(Bun.main) : dirname(process.execPath);
-const rendererDir = resolve(baseDir, "../dist/renderer");
-const installRoot = resolve(baseDir, "../../..");
+// Mirrors bunite's getBaseDir: entry-script dir in dev, binary dir when compiled.
+const baseDir = isCompiledBinary || !(Bun.main && existsSync(Bun.main))
+  ? dirname(process.execPath)
+  : dirname(Bun.main);
+// Deploy: renderer/extensions next to baseDir. Dev: 3 levels up.
+const isDeployLayout = existsSync(resolve(baseDir, "renderer"));
+const rendererDir = isDeployLayout ? resolve(baseDir, "renderer") : resolve(baseDir, "../dist/renderer");
+const installRoot = isDeployLayout ? baseDir : resolve(baseDir, "../../..");
 const flmuxPaths = resolveFlmuxPaths(resolveFlmuxRootDir(installRoot));
 const projectDir = flmuxPaths.rootDir;
-const localExtensionsRootDir = resolveConfiguredLocalExtensionsRootDir(resolve(baseDir, "../../../extensions"));
+const defaultExtensionsRoot = isDeployLayout ? resolve(baseDir, "extensions") : resolve(baseDir, "../../../extensions");
+const localExtensionsRootDir = resolveConfiguredLocalExtensionsRootDir(defaultExtensionsRoot);
 
 const instanceLockKey = (() => {
   try {
@@ -118,32 +118,18 @@ if (!instanceLock.acquired) {
   process.exit(1);
 }
 
-// Only desktop mode needs the CEF runtime. Web mode runs as a headless
-// Bun server and instantiating AppRuntime eagerly would boot CEF for
-// nothing (bunite's `new AppRuntime` triggers `initNativeRuntime`). Pin
-// CEF's userDataDir to our `.flmux/cef-userdata/` so cookies / shader
-// cache live alongside the rest of flmux state (tests override via
-// BUNITE_USER_DATA_DIR for per-run isolation).
-// CEF native code requires userDataDir to exist before boot — the mkdtemp
-// tests used to provide this implicitly. `mkdirSync` here recursively
-// creates `<rootDir>/.flmux/cef-userdata/` if absent.
+// CEF needs userDataDir to exist before boot (boot path: `new AppRuntime`).
 if (runtimeMode === "desktop") {
   mkdirSync(flmuxPaths.cefUserDataDir, { recursive: true });
 }
 
-// Write `<rootDir>/.flmux/bin/flmux{,.cmd}` pointing at this install's CLI
-// entry so terminal panes (which prepend `.flmux/bin` to PATH) can invoke
-// `flmux <cmd>` against the version that owns their rootDir. Skipped with a
-// warning when the layout can't be resolved — the empty dir is harmless.
+// `.flmux/bin/flmux{,.cmd}` — terminal-pane PATH shim for this install's CLI.
 const shimResult = ensureFlmuxCliShim({ binDir: flmuxPaths.binDir, baseDir });
 if (!shimResult.ok) {
   console.warn(`[flmux] cli shim skipped (${shimResult.reason})`);
 }
 
-// Mirror the env terminal panes get into the flmux process itself so
-// extension server entries (and anything else flmux spawns) inherit
-// `<.flmux/bin>` on PATH and `FLMUX_ROOT` — making `flmux <cmd>` reachable
-// without each extension reconstructing the path.
+// Mirror terminal-pane env into flmux process so spawned extension servers inherit it.
 process.env.FLMUX_ROOT = flmuxPaths.rootDir;
 prependFlmuxBinToPath(flmuxPaths.binDir);
 const app =
@@ -164,10 +150,7 @@ const clientRegistry = new ClientRegistry(
 );
 const terminalService = createTerminalService();
 const sessionStore = runtimeMode === "desktop" ? createSessionStore({ filePath: flmuxPaths.desktopSessionFile }) : null;
-// paneId → set of stream emit callbacks (one per `shell.terminalEvents`
-// stream consumer). Terminal events fan out to every emitter so multiple
-// tabs of the same user can share a pane. Stream abort removes the emitter
-// from the Set; `pane.removed` clears the whole entry.
+// paneId → terminalEvents stream emitters. Fan-out for multi-tab same-pane sharing.
 const paneEmitters = new Map<string, Set<(event: TerminalRuntimeEvent) => void>>();
 const localExtensions = await discoverConfiguredLocalExtensions(localExtensionsRootDir);
 
@@ -177,9 +160,7 @@ const extDataRootResolved = resolve(flmuxPaths.extDataRootDir);
 function resolveExtensionDataDir(extensionId: string): string | null {
   if (!knownExtensionIds.has(extensionId)) return null;
   const dir = resolve(flmuxPaths.extDataRootDir, extensionId);
-  // Defense in depth: validator rejects path-segment chars in ids, but
-  // re-verify the join stays under extDataRootDir so a validator
-  // regression can't escape into auth/, tmp/, etc.
+  // Defense in depth: ensure resolved dir stays under extDataRootDir.
   const rootWithSep = extDataRootResolved.endsWith(sep) ? extDataRootResolved : extDataRootResolved + sep;
   if (!dir.startsWith(rootWithSep)) return null;
   if (!provisionedExtensionDirs.has(extensionId)) {
@@ -189,9 +170,7 @@ function resolveExtensionDataDir(extensionId: string): string | null {
   return dir;
 }
 
-// Per-extension PATH shims (opt-in via manifest `commands[].shim`). Requires
-// the flmux shim pair to have resolved — shares its bun + cli entry so both
-// point at the same install.
+// Per-extension PATH shims (opt-in via manifest `commands[].shim`).
 if (shimResult.ok && shimResult.entry && shimResult.bunCommand) {
   const extensionShims = ensureExtensionCliShims({
     binDir: flmuxPaths.binDir,
@@ -207,9 +186,7 @@ if (shimResult.ok && shimResult.entry && shimResult.bunCommand) {
   }
 }
 
-// Extension server entries: imported once, registered per (paneId, clientId)
-// subscription. Module-level state lives inside the extension's server module
-// (e.g. a cache keyed by paneId) — flmux only wires the transport channel.
+// Extension server entries: imported once, registered per (paneId, clientId) subscription.
 const extensionServers = new Map<string, ExtensionServerDefinition>();
 const extensionServerInits = new Map<string, Promise<void>>();
 for (const ext of localExtensions) {
@@ -263,18 +240,8 @@ function paneInstanceKey(extId: string, paneId: string, clientId: string) {
   return `${extId}::${paneId}::${clientId}`;
 }
 
-function clientInstanceKey(extId: string, clientId: string) {
-  return `${extId}::${clientId}`;
-}
-
-/**
- * ACL-aware ShellClient for an extension server entry. Calls route through
- * the same `allow_paths` + `allow_pane_kinds` gates as HTTP. Desktop
- * (no authorizer) grants through, same as preload/WS trust.
- *
- * Returns null when the pane→authority mapping isn't established yet
- * (racing `clientIdToConnection` writes); caller warns and retries.
- */
+// ACL-aware ShellClient for extension server entries. Desktop grants through.
+// Returns null when pane→authority mapping is racing; caller retries.
 function createExtensionShellClient(paneId: string | null, sessionId: string): ShellClientImport | null {
   const authority = paneId ? paneIdToAuthority.get(paneId) : resolveAuthorityForClient(sessionId);
   if (!authority) return null;
@@ -284,8 +251,7 @@ function createExtensionShellClient(paneId: string | null, sessionId: string): S
     ? { slotKey: sessionId, sourcePaneId: paneId }
     : { slotKey: sessionId };
 
-  // Per-call resolve: session cleanup / token revocation drops ACL on the
-  // next shell call instead of using a stale snapshot.
+  // Per-call resolve so token revocation drops ACL on the next call.
   function resolveUser(): FlmuxUserImport | null {
     if (!authorizer) return null;
     const userId = clientIdToUserId.get(sessionId);
@@ -336,18 +302,14 @@ function createExtensionShellClient(paneId: string | null, sessionId: string): S
   };
 }
 
-/** Fire each extension's `onSession` and serve its returned cap on the
- *  connection. Each impl closure captures sessionId/userId, so per-call
- *  identity needs no wire-side caller args. Returns the handles for the
- *  session's dispose to unserve on connection close. */
+// Per-session: fire each extension's onSession + serve returned caps. Impl closure captures identity.
 async function attachExtensionsForSession(opts: {
   conn: Connection;
   sessionId: string;
   userId: string;
   authority: ShellAuthority;
 }): Promise<SessionExtensionsState> {
-  // Resume-on-new-conn before old close: detach old state synchronously so
-  // its disposes fire on the previous Connection, not the new one.
+  // Resume-on-new-conn: detach old sync so disposes fire on previous Connection.
   const previous = sessionExtensionsBySessionId.get(opts.sessionId);
   if (previous) {
     sessionExtensionsBySessionId.delete(opts.sessionId);
@@ -356,8 +318,6 @@ async function attachExtensionsForSession(opts: {
         console.warn(`[flmux] previous-session dispose error:`, err);
       }
     }
-    // serveHandles on the OLD connection — bunite will unserve them when that
-    // conn closes; not our job here.
   }
   const state: SessionExtensionsState = { serveHandles: [], sessionDisposes: [] };
   for (const [extId, def] of extensionServers) {
@@ -592,9 +552,7 @@ const clientIdToUserId = new Map<string, string>();
 // startup, web on first getOrCreate via the registry's onAuthorityCreated
 // hook).
 const paneIdToAuthority = new Map<string, ShellAuthority>();
-// Lifecycle-subscription unsubs keyed by the tracked authority — so we
-// can tear down the subscription at authority eviction without leaking
-// a shellCore subscriber for the process lifetime.
+// Per-authority unsubs so eviction doesn't leak shellCore subscribers.
 const paneLifecycleUnsubs = new WeakMap<ShellAuthority, () => void>();
 
 function trackPaneLifecycle(authority: ShellAuthority): () => void {
@@ -624,10 +582,6 @@ function trackPaneLifecycle(authority: ShellAuthority): () => void {
   return unsub;
 }
 
-// After a client's connection is bound (post-register): fire each
-// extension's `onClientConnected` (per-client notification, fire-and-forget).
-// Cap registration already happened synchronously at connection setup, so
-// the renderer's `bootstrap(extCap)` doesn't depend on this chain.
 function retroattachPanesForSession(sessionId: string): void {
   const authority = resolveAuthorityForClient(sessionId);
   if (!authority) return;
@@ -656,18 +610,13 @@ function scopeMatches(event: SequencedShellCoreEvent, clientId: string): boolean
   return event.targetClientId === clientId;
 }
 
-/**
- * Broadcast-forwarder ACL gate (B3): event is only delivered if the
- * client's user can read the path the event corresponds to. Desktop
- * mode (no authorizer) and users with `allow_paths = "*"` pass through.
- * Unmapped events (structural, no specific path) pass through too.
- */
+// Broadcast ACL gate: deliver only if user has read on the event's mapped path.
 function isEventAllowedForClient(
   authorizer: FlmuxWebModeAuthorizer | null,
   clientId: string,
   event: SequencedShellCoreEvent
 ): boolean {
-  // Fail-open on user-resolution miss (vs. assertAllowed's fail-closed): avoids teardown-race throws in the broadcast loop.
+  // Fail-open on miss: avoids teardown-race throws in broadcast loop.
   if (!authorizer) return true;
   const userId = clientIdToUserId.get(clientId);
   if (!userId) return true;
@@ -678,12 +627,6 @@ function isEventAllowedForClient(
   return authorizer.isPathAllowed(user, "read", path);
 }
 
-/**
- * Resolve the authority an client belongs to. Desktop has a single
- * authority and ignores `clientId`; web looks up the owning user via
- * the bootstrap-time mapping. Returns null in web mode if the client
- * is unknown (e.g. stale cookie after server restart).
- */
 function resolveAuthorityForClient(clientId: string): ShellAuthority | null {
   if (desktopAuthority) return desktopAuthority;
   const userId = clientIdToUserId.get(clientId);
@@ -698,19 +641,7 @@ function resolveAuthorityForViewId(viewId: number, hints?: { clientId?: string }
   return resolveAuthorityForClient(clientId);
 }
 
-/**
- * Install the always-on ring-buffer subscriber for `clientId`. Called
- * at client creation time (desktop preload register, web HTTP bootstrap)
- * so the buffer is alive from the moment the client exists — including
- * the window between `/api/shell/bootstrap` response and the browser's WS
- * `flmux.client.register` call. Idempotent.
- */
-/**
- * Subscribe to the client's authority once, fan events into the ring buffer
- * + every live `shell.events()` stream emitter for this client. Installed
- * at clientId creation (HTTP bootstrap for web, desktop authority creation
- * for desktop) and lives until the client is evicted.
- */
+// Subscribe once per clientId; fan events into ring buffer + live stream emitters. Idempotent.
 function installAuthoritySubscriber(clientId: string) {
   const authority = resolveAuthorityForClient(clientId);
   if (!authority) return;
@@ -742,10 +673,7 @@ function bindClientTransport(clientId: string, viewId: number, connection: Conne
   retroattachPanesForSession(clientId);
 }
 
-/** Main-side session-save debounce. Per-authority — each user in web
- * mode debounces independently; desktop debounces its single authority.
- * Web authorities with no `persistSession` method (no sessionStore wired)
- * silently drop the push. */
+// Per-authority debounce; auths without persistSession silently drop.
 const SESSION_SAVE_DEBOUNCE_MS = 250;
 type PersistingAuthority = ShellAuthority & {
   persistSession(layouts: FlmuxSessionSaveLayouts): Promise<void>;
@@ -757,9 +685,7 @@ function pushLayoutForViewId(viewId: number, layouts: FlmuxSessionSaveLayouts) {
   const authority = resolveAuthorityForViewId(viewId);
   if (!authority?.persistSession) return;
   const persisting = authority as PersistingAuthority;
-  // Coalescing shape: overwrite pendingLayouts + early-return keeps the
-  // already-armed timer; the latest layout wins when it fires. A burst of
-  // pushes inside the debounce window writes once.
+  // Latest-wins coalescing: keep armed timer, overwrite pending.
   pendingLayoutsByAuthority.set(persisting, layouts);
   if (debounceTimerByAuthority.has(persisting)) return;
   const timer = setTimeout(() => {
@@ -780,8 +706,7 @@ function releaseView(viewId: number) {
   viewIdToConnection.delete(viewId);
   if (clientId) {
     viewIdToClientId.delete(viewId);
-    // Skip teardown if sessionId was rebound to a newer viewId
-    // (refresh-before-close lands new register before stale close fires).
+    // sessionId may already be rebound to a newer viewId (refresh-before-close).
     const current = clientRegistry.get(clientId);
     if (current && current.viewId !== null && current.viewId !== viewId) {
       clientRegistry.detachRenderer(viewId);
@@ -790,17 +715,14 @@ function releaseView(viewId: number) {
     if (conn) detachExtensionsForSession(clientId, conn);
     detachAllPanesForSession(clientId);
     clientRegistry.markDisconnected(clientId, (state) => {
-      // Order matters: read userId, delete the entry, THEN schedule.
-      // maybeScheduleAuthorityEviction → countUserClients reads the
-      // same map and relies on the entry being gone to count zero.
+      // Read userId, delete entry, THEN schedule — countUserClients depends on this order.
       const userId = clientIdToUserId.get(state.clientId);
       clientIdToUserId.delete(state.clientId);
       console.log(`[flmux] client ${state.clientId} evicted after grace period`);
       if (userId) maybeScheduleAuthorityEviction(userId);
     });
   }
-  // paneEmitters self-clean via stream abort when the underlying
-  // connection closes; nothing else to wipe here.
+  // paneEmitters self-clean via stream abort on connection close.
   clientRegistry.detachRenderer(viewId);
 }
 
@@ -812,8 +734,7 @@ async function resolveShellModelRouterForRequest(
     throw new Error("No authority registry configured");
   }
   if (!context) {
-    // Web mode always runs with an authorizer — if auth passed, context
-    // must be non-null. Guard here for shape safety.
+    // Web mode always has an authorizer; auth-passed implies context non-null.
     throw new Error("resolveShellModelRouter: web mode requires an auth context");
   }
   const authority = await userAuthorityRegistry.getOrCreate(context.user.name);
@@ -826,7 +747,8 @@ function buildShellConfig() {
     appOrigin: serverOrigin,
     projectDir,
     localExtensions: createLocalExtensionLoadEntries(localExtensions, serverOrigin),
-    devMode: process.env.FLMUX_DEV_MODE === "1"
+    devMode: process.env.FLMUX_DEV_MODE === "1",
+    workspaceTabstrip: resolveWorkspaceTabstripMode({ runtimeMode, platform: process.platform })
   };
 }
 
@@ -962,13 +884,10 @@ const server = startFlmuxServer({
       : undefined
 });
 serverOrigin = server.origin;
-// FLMUX_ORIGIN parity: only known after server.listen, so set on env now —
-// child processes spawned by extensions can reach the same server without
-// passing --origin.
+// Spawned extensions inherit FLMUX_ORIGIN — no --origin needed.
 process.env.FLMUX_ORIGIN = serverOrigin;
 if (desktopAuthority) {
-  // Subscribe BEFORE start() so any pane.added emitted during session
-  // restore indexes correctly for terminal routing.
+  // Subscribe before start() so session-restore pane.added events index correctly.
   trackPaneLifecycle(desktopAuthority);
   await desktopAuthority.start(server.origin);
 }
@@ -986,11 +905,7 @@ if (webModeAuthPaths) {
 }
 
 terminalService.subscribe((event: TerminalRuntimeEvent) => {
-  // paneId→authority index replaces the O(n_users) fan-out. Events for
-  // unknown panes (no paneId or no index entry) are skipped — the
-  // shellCore-side applyTerminalEvent would have no-op'd anyway, and
-  // enforced routing beats the old probabilistic paneId-uniqueness
-  // argument (two authorities can't both accept the same event).
+  // paneId→authority index routes terminal events; unknown panes skip.
   if (event.paneId) {
     paneIdToAuthority.get(event.paneId)?.applyTerminalEvent(event);
   }
@@ -998,10 +913,7 @@ terminalService.subscribe((event: TerminalRuntimeEvent) => {
 });
 
 async function stopRuntime() {
-  // Graceful shutdown is the user's explicit "I'm done" — also tell the
-  // install-scoped daemon to stop. The tmux-style "daemon survives to
-  // adopt on next launch" invariant covers crash/SIGKILL paths that
-  // bypass this handler, not deliberate Ctrl+C. See internal notes
+  // Graceful: tell install-scoped daemon to stop (tmux-style persistence covers crash paths).
   try {
     const lock = await new PtydLockFile(flmuxPaths.rootDir).load();
     if (lock) {
@@ -1015,17 +927,16 @@ async function stopRuntime() {
 }
 
 if (runtimeMode === "desktop" && app) {
+  const tabstripMode = resolveWorkspaceTabstripMode({ runtimeMode, platform: process.platform });
   const win = new BrowserWindow({
     title: `flmux skeleton v${app.version} - ${app.engineName ?? "engine"} ${app.engineVersion ?? "unknown"}`,
     frame: { x: 80, y: 80, width: 1280, height: 860 },
     url: server.origin,
-    titleBarStyle: "default",
+    titleBarStyle: tabstripMode === "titlebar" ? "hidden" : "default",
     hidden: hiddenWindow,
     preloadOrigins: [server.origin],
     serve: (conn) => {
-      // `serve` may run synchronously inside BrowserWindow's constructor —
-      // `win.webviewId` isn't assigned yet at that point. Defer to the next
-      // microtask so the post-constructor assignment lands first.
+      // Defer: `serve` may run inside BrowserWindow constructor, before webviewId is assigned.
       queueMicrotask(() => {
         const viewId = win.webviewId;
         conn.onClose(() => releaseView(viewId));
@@ -1046,6 +957,5 @@ if (runtimeMode === "desktop" && app) {
       process.exit(0);
     });
   }
-  // Bun.serve (invoked by `startFlmuxServer`) owns the event loop in
-  // web mode — no native runtime needed.
+  // Web mode: Bun.serve owns the event loop; no native runtime.
 }

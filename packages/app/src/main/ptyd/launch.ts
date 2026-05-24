@@ -2,13 +2,17 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { PtydLaunchPlan } from "@flmux/core/terminal/ptyd/client";
+import { isCompiledBinary } from "../../shared/buildTarget";
 
 export function createAppPtydLaunchPlan(): PtydLaunchPlan {
-  const launch = resolveAppPtydEntry();
+  const launch = isCompiledBinary
+    ? { command: process.execPath, args: [], cwd: dirname(process.execPath) }
+    : resolveAppPtydEntry();
   return {
     ...launch,
     launch(env) {
-      launchDetachedProcess(launch, env);
+      const finalEnv = isCompiledBinary ? { ...env, FLMUX_INTERNAL_MODE: "ptyd" } : env;
+      launchDetachedProcess(launch, finalEnv);
     }
   };
 }
@@ -61,7 +65,9 @@ function launchDetachedProcess(
   launch: { command: string; args: string[]; cwd: string },
   env: Record<string, string | undefined>
 ) {
-  const shouldHideViaPowerShell = process.platform === "win32" && !isDevLikeProcess();
+  // Skip PS wrapper when args is empty (compiled self-dispatch — GUI exe, no console).
+  const shouldHideViaPowerShell =
+    process.platform === "win32" && !isDevLikeProcess() && launch.args.length > 0;
   if (shouldHideViaPowerShell) {
     const powerShell =
       Bun.which("pwsh.exe") ?? Bun.which("pwsh") ?? Bun.which("powershell.exe") ?? Bun.which("powershell");

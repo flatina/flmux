@@ -3,11 +3,11 @@ import { existsSync, readFileSync } from "node:fs";
 export type AllowPaneKinds = "*" | readonly string[];
 
 /**
- * Path-level ACL for `/api/model/path/*` HTTP callers (CLI + external
- * scripts). Each key lists glob patterns of paths the user may read /
- * write / call. Preload (desktop CEF) and WS (authenticated browser
- * after `/api/shell/bootstrap`) bypass this check — they are trusted
- * transports after auth.
+ * Read/write/call glob ACL on shell paths. The same `isPathAllowed`
+ * gates both HTTP `/api/model/path/*` and the cap path (`sessionImpl`)
+ * — WS is NOT a bypass. Only desktop preload skips it (no web-mode
+ * authorizer = single trusted local user). Live WS events are
+ * `read`-filtered separately (eventAclPath.ts).
  *
  * Glob subset: literals, `*` (matches any chars within one segment),
  * `**` (matches zero or more segments). Absent `allow_paths` or value

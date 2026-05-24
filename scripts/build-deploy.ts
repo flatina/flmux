@@ -20,7 +20,7 @@ import { $ } from "bun";
 import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-type Target = "win" | "mac" | "linux";
+type Target = "win" | "mac" | "linux" | "linux-arm64";
 interface TargetSpec {
   bunTarget: string;
   exeName: string;
@@ -54,8 +54,31 @@ const TARGETS: Record<Target, TargetSpec> = {
     nativeFiles: ["libBuniteNative.so"],
     launcherName: "flmux.sh",
     launcherContent: `#!/usr/bin/env sh\nexport FLMUX_EXTENSIONS_ROOT="$(dirname "$0")/extensions"\nexec "$(dirname "$0")/flmux" "$@"\n`
+  },
+  "linux-arm64": {
+    bunTarget: "bun-linux-arm64",
+    exeName: "flmux",
+    nativePkg: "bunite-native-linux-arm64",
+    nativeFiles: ["libBuniteNative.so"],
+    launcherName: "flmux.sh",
+    launcherContent: `#!/usr/bin/env sh\nexport FLMUX_EXTENSIONS_ROOT="$(dirname "$0")/extensions"\nexec "$(dirname "$0")/flmux" "$@"\n`
   }
 };
+
+// Web-only: skips bunite native (web mode never instantiates AppRuntime) and
+// runs `--web`. Terminals need the bun-pty rust lib (no arm64 npm prebuild yet)
+// — pass `--pty-lib=<path to librust_pty.so>` to bundle it; the launcher points
+// BUN_PTY_LIB at it.
+function webLauncher(): string {
+  return [
+    "#!/usr/bin/env sh",
+    'dir="$(cd "$(dirname "$0")" && pwd)"',
+    'export FLMUX_EXTENSIONS_ROOT="$dir/extensions"',
+    '[ -f "$dir/librust_pty.so" ] && export BUN_PTY_LIB="$dir/librust_pty.so"',
+    'exec "$dir/flmux" --web "$@"',
+    ""
+  ].join("\n");
+}
 
 function hostTarget(): Target {
   switch (process.platform) {
@@ -74,6 +97,8 @@ if (!(target in TARGETS)) {
   process.exit(1);
 }
 const spec = TARGETS[target];
+const webOnly = args.includes("--web");
+const ptyLib = args.find((a) => a.startsWith("--pty-lib="))?.slice("--pty-lib=".length);
 
 const outArgIdx = args.indexOf("--out");
 const repoRoot = resolve(dirname(Bun.main), "..");
@@ -89,7 +114,8 @@ console.log(`Target: ${target} (${spec.bunTarget})`);
 console.log(`Out:    ${outDir}\n`);
 
 // 1. Resolve native package (download tarball if cross-target's native isn't installed locally).
-const nativeDir = await ensureNativePackage(spec.nativePkg);
+// Web-only skips bunite native — web mode never instantiates AppRuntime.
+const nativeDir = webOnly ? null : await ensureNativePackage(spec.nativePkg);
 
 // 2. Compile entrypoint → exe
 console.log(`1. compile entrypoint → ${spec.exeName}`);
@@ -121,15 +147,29 @@ if (!existsSync(viteOut)) {
 }
 cpSync(viteOut, join(outDir, "renderer"), { recursive: true });
 
-// 4. Native files
-console.log(`\n3. native (${spec.nativePkg})`);
-for (const f of spec.nativeFiles) {
-  const src = join(nativeDir, f);
-  if (!existsSync(src)) {
-    console.error(`  missing: ${src}`);
-    process.exit(1);
+// 4. Native files (web-only: skip bunite native; optionally bundle the bun-pty lib)
+if (webOnly) {
+  console.log("\n3. native (web — bunite native skipped)");
+  if (ptyLib) {
+    if (!existsSync(ptyLib)) {
+      console.error(`  --pty-lib not found: ${ptyLib}`);
+      process.exit(1);
+    }
+    cpSync(ptyLib, join(outDir, "librust_pty.so"));
+    console.log(`  OK       librust_pty.so`);
+  } else {
+    console.warn("  no --pty-lib given — terminal panes need BUN_PTY_LIB / librust_pty.so at runtime");
   }
-  cpSync(src, join(outDir, f));
+} else {
+  console.log(`\n3. native (${spec.nativePkg})`);
+  for (const f of spec.nativeFiles) {
+    const src = join(nativeDir!, f);
+    if (!existsSync(src)) {
+      console.error(`  missing: ${src}`);
+      process.exit(1);
+    }
+    cpSync(src, join(outDir, f));
+  }
 }
 
 // 5. Extensions (expanded dist; sample.* skipped)
@@ -162,7 +202,7 @@ for (const entry of readdirSync(srcExtDir, { withFileTypes: true })) {
   console.log(`  OK       ${entry.name} (${manifest.id})`);
   copied += 1;
 }
-if (copied === 0) {
+if (copied === 0 && !webOnly) {
   console.error("\nno private extensions copied — aborting");
   process.exit(1);
 }
@@ -170,7 +210,7 @@ if (copied === 0) {
 // 6. Launcher
 console.log("\n5. launcher");
 const launcherPath = join(outDir, spec.launcherName);
-writeFileSync(launcherPath, spec.launcherContent);
+writeFileSync(launcherPath, webOnly ? webLauncher() : spec.launcherContent);
 if (target !== "win") chmodSync(launcherPath, 0o755);
 
 // 7. Size report

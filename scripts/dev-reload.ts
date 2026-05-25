@@ -1,6 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { toTerminalRootKey } from "../packages/core/src/terminal/rootKey";
+import { getPtydControlIpcPath } from "../packages/core/src/terminal/ptyd/ipcPaths";
+import { callJsonRpcIpc } from "../packages/core/src/terminal/ptyd/jsonRpcIpc";
 
 // Kill any flmux listening on the configured port, then hand off to `bun run dev`.
 // `bun run dev` already chains `build:extensions`, so this collapses kill+build+restart
@@ -11,6 +14,10 @@ const forwarded = process.argv.slice(2);
 const port = resolvePort(rootDir, forwarded);
 
 if (port !== undefined) await killListenersOnPort(port);
+// Port-kill drops only the main process; ptyd is parent-death-persistent and
+// would orphan across repeated dev restarts. Gracefully stop the install-scoped
+// daemon too (no-op if none is running).
+await stopPtyd(rootDir);
 
 spawn("bun", ["run", "dev", ...forwarded], { stdio: "inherit", shell: true }).on("exit", (code) =>
   process.exit(code ?? 0)
@@ -31,6 +38,16 @@ function parsePort(value: string | undefined): number | undefined {
   if (!value) return undefined;
   const n = Number.parseInt(value, 10);
   return Number.isInteger(n) && n > 0 && n < 65536 ? n : undefined;
+}
+
+async function stopPtyd(root: string) {
+  // Graceful daemon.stop on the install-scoped ptyd; the call throws (caught)
+  // when none is running. rootKey-scoped, so other installs' ptyds are untouched.
+  try {
+    await callJsonRpcIpc(getPtydControlIpcPath(toTerminalRootKey(root)), "daemon.stop", undefined, 3000);
+  } catch {
+    // no ptyd for this root (or already stopped) — nothing to clean up
+  }
 }
 
 async function killListenersOnPort(p: number) {

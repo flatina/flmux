@@ -15,7 +15,7 @@ import type { DiscoveredLocalExtension } from "./localExtensions";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
 import type { FlmuxAuthorizationContext, FlmuxWebModeAuthorizer } from "./webModeAuth";
 import type { WebauthnAuthService } from "./auth/webauthnService";
-import { LOGIN_PAGE_HTML, ENROLL_PAGE_HTML } from "./auth/authPages";
+import { renderLoginPage, renderEnrollPage } from "./auth/authPages";
 import { readCookie } from "./auth/cookies";
 
 const MIME_TYPES: Record<string, string> = {
@@ -79,6 +79,7 @@ export function startFlmuxServer(options: {
    *  state on page unload. cap RPC's pushLayout is the primary path. */
   saveSession?(context: FlmuxAuthorizationContext | null, layouts: FlmuxSessionSaveLayouts): Promise<void>;
   authorizer?: FlmuxWebModeAuthorizer;
+  appName?: string;
   /** Explicit listen port. Undefined → OS-assigned (current default). */
   port?: number;
   /** Public browser origin (behind Funnel) added to the CSRF allowlist. */
@@ -92,6 +93,7 @@ export function startFlmuxServer(options: {
   webauthn?: WebauthnAuthService;
 }): FlmuxServerHandle {
   const hostname = "127.0.0.1";
+  const appName = options.appName ?? "flmux";
   const app = new Elysia({ websocket: { maxPayloadLength: WS_MAX_PAYLOAD_BYTES } })
     // Per-IP request-rate limit (web only). generator runs first (skip has 2
     // params), so "" from an unresolvable/misconfigured key is produced then
@@ -109,8 +111,8 @@ export function startFlmuxServer(options: {
     // Pre-auth carve-out: login/enroll pages + the passkey ceremony endpoints
     // are reachable WITHOUT a session (they exist to create one). Every other
     // route stays behind authorizeRequest via `.all("*")`.
-    .get("/login", () => htmlPage(LOGIN_PAGE_HTML))
-    .get("/enroll", () => htmlPage(ENROLL_PAGE_HTML))
+    .get("/login", () => htmlPage(renderLoginPage(appName)))
+    .get("/enroll", () => htmlPage(renderEnrollPage(appName)))
     .post("/api/auth/passkey/register/options", ({ request }) =>
       options.webauthn ? options.webauthn.handleRegisterOptions(request) : notFound()
     )

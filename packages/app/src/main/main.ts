@@ -35,7 +35,7 @@ import { createWebauthnAuthService } from "./auth/webauthnService";
 import type { FlmuxUser as FlmuxUserImport } from "./auth/userStore";
 import { eventToReadPath } from "./auth/eventAclPath";
 import { resolveFlmuxServerPort } from "./auth/serverConfig";
-import { resolveFlmuxAppTitle } from "./appConfig";
+import { resolveFlmuxAppTitle, resolveFlmuxAppName } from "./appConfig";
 import { resolveFlmuxRuntimeMode } from "./runtimeMode";
 import { resolveFlmuxRootDir, resolveFlmuxPaths } from "./flmuxPaths";
 import { ensureFlmuxCliShim, ensureExtensionCliShims } from "./cliShim";
@@ -449,13 +449,15 @@ if (devAuthAs && runtimeMode === "web") {
   console.warn(`[flmux] --dev-auth-as has no effect in ${runtimeMode} mode; ignored`);
 }
 
+const appName = resolveFlmuxAppName(flmuxPaths.appConfigFile) ?? "flmux";
+
 const desktopAuthority: DesktopShellAuthority | null =
   runtimeMode === "desktop" && sessionStore
     ? await createDesktopShellAuthority({
         projectDir,
         runtimeLabel: "desktop local-http preload ok",
         appVersion: FLMUX_APP_VERSION,
-        initialAppTitle: resolveFlmuxAppTitle(flmuxPaths.appConfigFile),
+        initialAppTitle: resolveFlmuxAppTitle(flmuxPaths.appConfigFile) ?? appName,
         terminalService,
         sessionStore,
         clientRegistry,
@@ -475,7 +477,7 @@ const userAuthorityRegistry: WebModeUserAuthorityRegistry | null =
     ? createWebModeUserAuthorityRegistry({
         projectDir,
         appVersion: FLMUX_APP_VERSION,
-        initialAppTitle: resolveFlmuxAppTitle(flmuxPaths.appConfigFile),
+        initialAppTitle: resolveFlmuxAppTitle(flmuxPaths.appConfigFile) ?? appName,
         terminalService,
         clientRegistry,
         localExtensions,
@@ -805,6 +807,7 @@ function buildShellConfig(authContext: FlmuxAuthorizationContext | null): FlmuxR
     : undefined;
   return {
     mode: runtimeMode,
+    appName,
     appOrigin: serverOrigin,
     projectDir,
     // Web: relative URLs so ext modules load via the page origin (proxy/Funnel), not the internal bind.
@@ -926,6 +929,7 @@ const portResolution = resolveFlmuxServerPort({
 
 const server = startFlmuxServer({
   rendererDir,
+  appName,
   resolveShellModelRouter: resolveShellModelRouterForRequest,
   localExtensions,
   port: portResolution.port,

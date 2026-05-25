@@ -52,6 +52,7 @@ export interface FlmuxLocalExtensionLoadEntry {
 
 export interface FlmuxRendererBootstrapConfig {
   mode: FlmuxRuntimeMode;
+  appName: string;
   appOrigin: string;
   projectDir: string;
   localExtensions: FlmuxLocalExtensionLoadEntry[];

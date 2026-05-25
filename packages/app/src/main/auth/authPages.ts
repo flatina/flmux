@@ -82,12 +82,17 @@ const PAGE_STYLE = /* css */ `
   #status.err { color: #ff9a9a; }
 `;
 
-export const LOGIN_PAGE_HTML = `<!doctype html>
+const escapeHtml = (s: string) =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+export const renderLoginPage = (appName: string) => {
+  const brand = escapeHtml(appName);
+  return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>flmux — Sign in</title><style>${PAGE_STYLE}</style></head>
+<title>${brand} — Sign in</title><style>${PAGE_STYLE}</style></head>
 <body><main>
-  <h1>Sign in to flmux</h1>
+  <h1>Sign in to ${brand}</h1>
   <p>Use your passkey — no username needed.</p>
   <button id="go">Sign in with passkey</button>
   <div id="status"></div>
@@ -111,14 +116,17 @@ async function login() {
 }
 btn.addEventListener("click", login);
 </script></body></html>`;
+};
 
-export const ENROLL_PAGE_HTML = `<!doctype html>
+export const renderEnrollPage = (appName: string) => {
+  const brand = escapeHtml(appName);
+  return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>flmux — Register passkey</title><style>${PAGE_STYLE}</style></head>
+<title>${brand} — Register passkey</title><style>${PAGE_STYLE}</style></head>
 <body><main>
   <h1>Register your passkey</h1>
-  <p>Create a passkey for this flmux account on this device.</p>
+  <p>Create a passkey for this ${brand} account on this device.</p>
   <button id="go">Register passkey</button>
   <div id="status"></div>
 </main>
@@ -144,3 +152,4 @@ async function enroll() {
 }
 btn.addEventListener("click", enroll);
 </script></body></html>`;
+};

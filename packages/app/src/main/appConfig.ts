@@ -8,12 +8,20 @@ import { existsSync, readFileSync } from "node:fs";
  * persist via session.json and override the config on subsequent boots.
  */
 export function resolveFlmuxAppTitle(configFile: string | null | undefined): string | undefined {
+  return readAppStringKey(configFile, "title");
+}
+
+export function resolveFlmuxAppName(configFile: string | null | undefined): string | undefined {
+  return readAppStringKey(configFile, "name");
+}
+
+function readAppStringKey(configFile: string | null | undefined, key: "title" | "name"): string | undefined {
   if (!configFile || !existsSync(configFile)) return undefined;
   try {
     const raw = readFileSync(configFile, "utf8");
-    const parsed = Bun.TOML.parse(raw) as { app?: { title?: unknown } };
-    const title = parsed.app?.title;
-    return typeof title === "string" && title.trim().length > 0 ? title : undefined;
+    const parsed = Bun.TOML.parse(raw) as { app?: Record<string, unknown> };
+    const value = parsed.app?.[key];
+    return typeof value === "string" && value.trim().length > 0 ? value : undefined;
   } catch {
     return undefined;
   }

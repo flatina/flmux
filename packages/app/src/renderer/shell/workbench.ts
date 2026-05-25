@@ -109,7 +109,7 @@ export class FlmuxWorkbench {
   private eventBuffer: SequencedShellCoreEvent[] = [];
 
   // Mirrored app-level state (needed to render document title; core is authoritative)
-  private appTitle = "flmux";
+  private appTitle: string;
   private activeWorkspaceId: string | null = null;
 
   // Suppresses dockview→pathCall while we are applying core-driven state to dockview
@@ -128,6 +128,7 @@ export class FlmuxWorkbench {
   ) {
     this.lifecyclePolicy = getFlmuxRendererLifecyclePolicy(config.mode);
     this.tabstripMode = config.workspaceTabstrip;
+    this.appTitle = config.appName;
     registerBuiltinPaneDescriptors(this.paneRegistry, {
       installRoot: config.projectDir,
       resolveTerminalCwd: resolveTerminalCwdFromRoot

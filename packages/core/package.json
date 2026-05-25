@@ -4,9 +4,6 @@
   "version": "0.0.0",
   "type": "module",
   "main": "src/index.ts",
-  "dependencies": {
-    "@flatina/bun-pty": "^0.4.8"
-  },
   "exports": {
     ".": "./src/index.ts",
     "./shell": "./src/shell/index.ts",

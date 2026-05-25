@@ -66,15 +66,13 @@ const TARGETS: Record<Target, TargetSpec> = {
 };
 
 // Web-only: skips bunite native (web mode never instantiates AppRuntime) and
-// runs `--web`. Terminals need the bun-pty rust lib (no arm64 npm prebuild yet)
-// — pass `--pty-lib=<path to librust_pty.so>` to bundle it; the launcher points
-// BUN_PTY_LIB at it.
+// runs `--web`. Terminals use Bun.Terminal (built into the runtime, all-arch) —
+// no native pty lib to bundle.
 function webLauncher(): string {
   return [
     "#!/usr/bin/env sh",
     'dir="$(cd "$(dirname "$0")" && pwd)"',
     'export FLMUX_EXTENSIONS_ROOT="$dir/extensions"',
-    '[ -f "$dir/librust_pty.so" ] && export BUN_PTY_LIB="$dir/librust_pty.so"',
     'exec "$dir/flmux" --web "$@"',
     ""
   ].join("\n");
@@ -98,7 +96,6 @@ if (!(target in TARGETS)) {
 }
 const spec = TARGETS[target];
 const webOnly = args.includes("--web");
-const ptyLib = args.find((a) => a.startsWith("--pty-lib="))?.slice("--pty-lib=".length);
 
 const outArgIdx = args.indexOf("--out");
 const repoRoot = resolve(dirname(Bun.main), "..");
@@ -147,19 +144,9 @@ if (!existsSync(viteOut)) {
 }
 cpSync(viteOut, join(outDir, "renderer"), { recursive: true });
 
-// 4. Native files (web-only: skip bunite native; optionally bundle the bun-pty lib)
+// 4. Native files (web-only: skip bunite native; terminals use built-in Bun.Terminal)
 if (webOnly) {
-  console.log("\n3. native (web — bunite native skipped)");
-  if (ptyLib) {
-    if (!existsSync(ptyLib)) {
-      console.error(`  --pty-lib not found: ${ptyLib}`);
-      process.exit(1);
-    }
-    cpSync(ptyLib, join(outDir, "librust_pty.so"));
-    console.log(`  OK       librust_pty.so`);
-  } else {
-    console.warn("  no --pty-lib given — terminal panes need BUN_PTY_LIB / librust_pty.so at runtime");
-  }
+  console.log("\n3. native (web — bunite native skipped; terminals use Bun.Terminal)");
 } else {
   console.log(`\n3. native (${spec.nativePkg})`);
   for (const f of spec.nativeFiles) {

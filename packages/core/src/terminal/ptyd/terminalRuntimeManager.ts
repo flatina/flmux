@@ -1,4 +1,4 @@
-import { spawn, type IPty } from "@flatina/bun-pty";
+import { spawnPty, type PtyProcess } from "./ptyProcess";
 import { join, delimiter } from "node:path";
 import type { TerminalRuntimeSummary } from "../types";
 import type {
@@ -17,7 +17,7 @@ import type {
 interface TerminalRuntimeRecord {
   ownerPaneId: string | null;
   summary: TerminalRuntimeSummary;
-  pty: IPty | null;
+  pty: PtyProcess | null;
 }
 
 const DEFAULT_COLS = 120;
@@ -63,13 +63,6 @@ export class TerminalRuntimeManager {
 
     const cwd = normalizePath(params.cwd ?? this.rootDir);
     const shell = resolveDefaultShell();
-    const pty = spawn(shell, resolveShellArgs(shell), {
-      cwd,
-      cols: DEFAULT_COLS,
-      rows: DEFAULT_ROWS,
-      name: resolveTerminalName(),
-      env: createTerminalEnv(this.rootDir, params.appOrigin)
-    });
     const now = new Date().toISOString();
 
     const summary: TerminalRuntimeSummary = {
@@ -86,29 +79,34 @@ export class TerminalRuntimeManager {
     const record: TerminalRuntimeRecord = {
       ownerPaneId: params.paneId ?? null,
       summary,
-      pty
+      pty: null
     };
-    pty.onData((data) => {
-      const current = this.runtimes.get(params.runtimeId);
-      if (current !== record) {
-        return;
-      }
+    record.pty = spawnPty(shell, resolveShellArgs(shell), {
+      cwd,
+      cols: DEFAULT_COLS,
+      rows: DEFAULT_ROWS,
+      env: createTerminalEnv(this.rootDir, params.appOrigin),
+      onData: (data) => {
+        const current = this.runtimes.get(params.runtimeId);
+        if (current !== record) {
+          return;
+        }
 
-      current.summary.updatedAt = new Date().toISOString();
-      this.pushEvent({ type: "output", runtimeId: params.runtimeId, data });
-    });
-    pty.onExit((event) => {
-      const current = this.runtimes.get(params.runtimeId);
-      if (current !== record) {
-        return;
-      }
+        current.summary.updatedAt = new Date().toISOString();
+        this.pushEvent({ type: "output", runtimeId: params.runtimeId, data });
+      },
+      onExit: (exitCode, signal) => {
+        const current = this.runtimes.get(params.runtimeId);
+        if (current !== record) {
+          return;
+        }
 
-      current.summary.alive = false;
-      current.summary.exitCode = typeof event.exitCode === "number" ? event.exitCode : null;
-      current.summary.signal =
-        typeof event.signal === "string" || typeof event.signal === "number" ? String(event.signal) : null;
-      current.summary.updatedAt = new Date().toISOString();
-      this.pushEvent({ type: "state", terminal: { ...current.summary } });
+        current.summary.alive = false;
+        current.summary.exitCode = exitCode;
+        current.summary.signal = signal;
+        current.summary.updatedAt = new Date().toISOString();
+        this.pushEvent({ type: "state", terminal: { ...current.summary } });
+      }
     });
 
     this.runtimes.set(params.runtimeId, record);

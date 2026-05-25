@@ -45,7 +45,7 @@
     },
     "packages/app": {
       "name": "@flmux/app",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "@flmux/core": "workspace:*",
         "@flmux/extension-api": "workspace:*",
@@ -72,9 +72,6 @@
     "packages/core": {
       "name": "@flmux/core",
       "version": "0.0.0",
-      "dependencies": {
-        "@flatina/bun-pty": "^0.4.8",
-      },
     },
     "packages/extension-api": {
       "name": "@flmux/extension-api",
@@ -170,8 +167,6 @@
     "@esbuild/win32-ia32": ["@esbuild/win32-ia32@0.25.12", "", { "os": "win32", "cpu": "ia32" }, "sha512-HkqnmmBoCbCwxUKKNPBixiWDGCpQGVsrQfJoVGYLPT41XWF8lHuE5N6WhVia2n4o5QK5M4tYr21827fNhi4byQ=="],
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.25.12", "", { "os": "win32", "cpu": "x64" }, "sha512-alJC0uCZpTFrSL0CCDjcgleBXPnCrEAhTBILpeAp7M/OFgoqtAetfBzX0xM00MUsVVPpVjlPuMbREqnZCXaTnA=="],
-
-    "@flatina/bun-pty": ["@flatina/bun-pty@0.4.8", "", {}, "sha512-cdJEOFb+OCMY7qbNI2Aonm6TLh59+4GGW0UTgcTAXWP8KXHYrSlM879TCxG8Q8w9M8IHj9JIcptKgYiY3mAxaw=="],
 
     "@flmux-ext/counter": ["@flmux-ext/counter@workspace:extensions/counter"],
 

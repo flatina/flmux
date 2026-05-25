@@ -52,10 +52,8 @@ class HeaderActionButton {
 
 export class WorkspaceHeaderActions implements IHeaderActionsRenderer {
   readonly element = document.createElement("div");
-  private readonly themeButton = document.createElement("button");
-  private readonly resetButton = document.createElement("button");
-  private readonly addButton = document.createElement("button");
-  private themePopup: HTMLDivElement | null = null;
+  private readonly menuButton = document.createElement("button");
+  private popup: HTMLDivElement | null = null;
   private disposers: Array<() => void> = [];
 
   constructor(
@@ -63,75 +61,42 @@ export class WorkspaceHeaderActions implements IHeaderActionsRenderer {
     private readonly handlers: { onAdd: () => void; onResetActive: () => void }
   ) {
     this.element.className = "header-action";
-    this.themeButton.type = "button";
-    this.themeButton.className = "header-action__btn";
-    this.syncThemeButton();
-    this.resetButton.type = "button";
-    this.resetButton.className = "header-action__btn";
-    this.resetButton.textContent = "↻";
-    this.resetButton.title = "Reset Active Workspace";
-    this.addButton.type = "button";
-    this.addButton.className = "header-action__btn";
-    this.addButton.textContent = "+";
-    this.addButton.title = "New Workspace";
-    this.element.append(this.themeButton, this.resetButton, this.addButton);
+    this.menuButton.type = "button";
+    this.menuButton.className = "header-action__btn";
+    this.menuButton.textContent = "☰";
+    this.menuButton.title = "Workspace menu";
+    this.element.append(this.menuButton);
   }
 
   init(_params: IGroupHeaderProps) {
-    const addListener = (event: Event) => {
+    const toggleListener = (event: Event) => {
       event.preventDefault();
       event.stopPropagation();
-      this.handlers.onAdd();
-    };
-    const resetListener = (event: Event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      this.handlers.onResetActive();
-    };
-    const themeListener = (event: Event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      this.toggleThemePopup();
+      this.togglePopup();
     };
     const docPointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null;
-      if (target && (this.themeButton.contains(target) || this.themePopup?.contains(target))) return;
-      this.closeThemePopup();
+      if (target && (this.menuButton.contains(target) || this.popup?.contains(target))) return;
+      this.closePopup();
     };
-    const themeChangeListener = () => this.syncThemeButton();
 
-    this.addButton.addEventListener("click", addListener);
-    this.resetButton.addEventListener("click", resetListener);
-    this.themeButton.addEventListener("click", themeListener);
+    this.menuButton.addEventListener("click", toggleListener);
     document.addEventListener("pointerdown", docPointerDown);
-    document.addEventListener("flmux-theme-change", themeChangeListener);
     this.disposers.push(
-      () => this.addButton.removeEventListener("click", addListener),
-      () => this.resetButton.removeEventListener("click", resetListener),
-      () => this.themeButton.removeEventListener("click", themeListener),
-      () => document.removeEventListener("pointerdown", docPointerDown),
-      () => document.removeEventListener("flmux-theme-change", themeChangeListener)
+      () => this.menuButton.removeEventListener("click", toggleListener),
+      () => document.removeEventListener("pointerdown", docPointerDown)
     );
   }
 
-  private syncThemeButton() {
-    const preference = getThemePreference();
-    this.themeButton.textContent = THEME_GLYPH[preference];
-    this.themeButton.title = `Theme: ${preference[0]!.toUpperCase()}${preference.slice(1)}`;
+  private togglePopup() {
+    if (this.popup) this.closePopup();
+    else this.openPopup();
   }
 
-  private toggleThemePopup() {
-    if (this.themePopup) {
-      this.closeThemePopup();
-    } else {
-      this.openThemePopup();
-    }
-  }
-
-  private openThemePopup() {
-    const current = getThemePreference();
+  private openPopup() {
     const popup = document.createElement("div");
     popup.className = "header-action-popup";
+    const current = getThemePreference();
 
     for (const option of THEME_OPTIONS) {
       const item = document.createElement("button");
@@ -144,28 +109,49 @@ export class WorkspaceHeaderActions implements IHeaderActionsRenderer {
       item.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        this.closeThemePopup();
+        this.closePopup();
         setThemePreference(option.preference);
-        this.syncThemeButton();
+      });
+      popup.append(item);
+    }
+
+    const separator = document.createElement("div");
+    separator.className = "header-action-popup__sep";
+    popup.append(separator);
+
+    const actions: ReadonlyArray<{ label: string; run: () => void }> = [
+      { label: "↻  Reset Workspace", run: () => this.handlers.onResetActive() },
+      { label: "+  New Workspace", run: () => this.handlers.onAdd() }
+    ];
+    for (const { label, run } of actions) {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "header-action-popup__item";
+      item.textContent = label;
+      item.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.closePopup();
+        run();
       });
       popup.append(item);
     }
 
     document.body.append(popup);
-    this.themePopup = popup;
+    this.popup = popup;
 
-    const rect = this.themeButton.getBoundingClientRect();
+    const rect = this.menuButton.getBoundingClientRect();
     popup.style.top = `${rect.bottom + 4}px`;
     popup.style.left = `${Math.max(4, rect.right - popup.offsetWidth)}px`;
   }
 
-  private closeThemePopup() {
-    this.themePopup?.remove();
-    this.themePopup = null;
+  private closePopup() {
+    this.popup?.remove();
+    this.popup = null;
   }
 
   dispose() {
-    this.closeThemePopup();
+    this.closePopup();
     for (const dispose of this.disposers.splice(0)) {
       dispose();
     }

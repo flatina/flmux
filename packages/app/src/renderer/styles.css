@@ -459,6 +459,12 @@ body.flmux-has-titlebar .flmux-titlebar-host {
   border-color: var(--fl-widget-border);
 }
 
+.header-action-popup__sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--fl-widget-border);
+}
+
 .header-action-popup__empty {
   padding: 6px 10px;
   color: var(--fl-description-foreground);

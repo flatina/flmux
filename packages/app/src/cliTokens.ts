@@ -6,6 +6,7 @@ import { generateToken, generateUserHandle } from "./main/auth/tokenFormat";
 import { createTokenStore } from "./main/auth/tokenStore";
 import { createUserStore, type AllowPaneKinds, type FlmuxUser } from "./main/auth/userStore";
 import { stringifyUsersToml } from "./main/auth/tomlWriter";
+import { generateDisplayName } from "./main/auth/displayName";
 
 export async function runTokensCli(rawArgs: string[]): Promise<unknown> {
   const [subcommand, ...rest] = rawArgs;
@@ -45,6 +46,7 @@ function bootstrap(paths: FlmuxAuthPaths, argv: string[]) {
   const user: FlmuxUser = {
     name: userName,
     handle: generateUserHandle(),
+    displayName: generateDisplayName(),
     role: "admin",
     allowPaneKinds: parseAllowPaneKinds(allowPaneKindsArg),
     denyPaneKinds: [],

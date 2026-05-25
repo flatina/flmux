@@ -138,6 +138,27 @@ export function startFlmuxServer(options: {
         clients: await router.listClients()
       };
     })
+    // Self-edit profile. Behind authorizeRequest; the target user is taken
+    // from the session context only — never a request param — so a user can
+    // only edit their OWN display name. Desktop has no authorizer → 404.
+    .post("/api/auth/profile", ({ request, set }) => {
+      const auth = authorizeRequest(request, set, options.authorizer);
+      if (!auth.ok) {
+        return "Unauthorized";
+      }
+      if (!options.authorizer || !auth.context) {
+        return notFound();
+      }
+      const authorizer = options.authorizer;
+      const userName = auth.context.user.name;
+      return handleJsonRequest<{ displayName?: unknown }>(request, set, async (input) => {
+        if (typeof input.displayName !== "string") {
+          throw new Error("displayName is required");
+        }
+        const updated = authorizer.userStore.setDisplayName(userName, input.displayName);
+        return { displayName: updated.displayName };
+      });
+    })
     // Shared static assets at /__flmux/assets/<file>. One route per asset
     // for now — keeps the surface trivial; if/when shared assets need
     // theme overlays (e.g. /__flmux/assets/theme/<file>), pivot to a

@@ -7,6 +7,7 @@ import { createTokenStore } from "./main/auth/tokenStore";
 import { createUserStore, type AllowPaneKinds, type FlmuxUser } from "./main/auth/userStore";
 import { createWebauthnStore } from "./main/auth/webauthnStore";
 import { stringifyUsersToml } from "./main/auth/tomlWriter";
+import { generateDisplayName, validateDisplayName } from "./main/auth/displayName";
 
 const ENROLLMENT_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -49,6 +50,8 @@ function createUser(paths: FlmuxAuthPaths, argv: string[]) {
   }
   const role = readFlag(argv, "--role") ?? "user";
   const allowPaneKindsArg = readFlag(argv, "--allow-pane-kinds");
+  const displayNameArg = readFlag(argv, "--display-name");
+  const displayName = displayNameArg ? validateDisplayName(displayNameArg) : generateDisplayName();
 
   const userStore = createUserStore(paths.usersFile);
   if (userStore.getUser(name)) {
@@ -67,6 +70,7 @@ function createUser(paths: FlmuxAuthPaths, argv: string[]) {
   const user: FlmuxUser = {
     name,
     handle: generateUserHandle(),
+    displayName,
     role,
     allowPaneKinds,
     denyPaneKinds: [],
@@ -74,7 +78,7 @@ function createUser(paths: FlmuxAuthPaths, argv: string[]) {
   };
   writeUsersFile(paths.usersFile, [...userStore.listUsers(), user]);
 
-  return { ok: true, authDir: paths.authDir, user: name, role };
+  return { ok: true, authDir: paths.authDir, user: name, role, displayName };
 }
 
 async function enroll(paths: FlmuxAuthPaths, argv: string[]) {

@@ -622,7 +622,7 @@ export class FlmuxWorkbench {
                 if (!this.activeWorkspaceId) return;
                 void this.shellModel.pathCall(`/workspaces/${this.activeWorkspaceId}/reset`);
               }
-            });
+            }, this.config);
             action.element.classList.add("flmux-workspace-prefix-menus");
             return action;
           }
@@ -791,7 +791,7 @@ export class FlmuxWorkbench {
             }
             void this.shellModel.pathCall(`/workspaces/${this.activeWorkspaceId}/reset`);
           }
-        })
+        }, this.config)
     });
 
     this.outerApi.onDidActivePanelChange((panel) => {

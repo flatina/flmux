@@ -1,4 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { stringifyUsersToml } from "./tomlWriter";
+import { validateDisplayName } from "./displayName";
 
 export type AllowPaneKinds = "*" | readonly string[];
 
@@ -27,6 +30,10 @@ export interface FlmuxUser {
    * handle. Independent of the mutable `name` so a rename never breaks
    * discoverable credentials. Absent for machine-only users (no passkeys). */
   handle: string | undefined;
+  /** Human-facing label, auto-generated at signup (adjective-noun). Mutable
+   * via the self-edit profile endpoint. Absent for pre-existing users → the
+   * renderer falls back to `name`. */
+  displayName: string | undefined;
   role: string | undefined;
   allowPaneKinds: AllowPaneKinds;
   /** Kinds blocked even when allowPaneKinds permits — lets a role grant `*`
@@ -39,6 +46,9 @@ export interface UserStore {
   getUser(name: string): FlmuxUser | null;
   getUserByHandle(handle: string): FlmuxUser | null;
   listUsers(): FlmuxUser[];
+  /** Set a user's display name and rewrite users.toml atomically (tmp+rename).
+   * Validates via `validateDisplayName`. Throws if the user is absent. */
+  setDisplayName(name: string, displayName: string): FlmuxUser;
 }
 
 export function createUserStore(filePath: string): UserStore {
@@ -73,8 +83,28 @@ export function createUserStore(filePath: string): UserStore {
     },
     listUsers() {
       return [...load().values()];
+    },
+    setDisplayName(name, displayName) {
+      const validated = validateDisplayName(displayName);
+      // Re-read first so a concurrent CLI write isn't clobbered.
+      const byName = load();
+      const existing = byName.get(name);
+      if (!existing) {
+        throw new Error(`users.toml: user '${name}' not found`);
+      }
+      const updated: FlmuxUser = { ...existing, displayName: validated };
+      byName.set(name, updated);
+      writeUsersFile(filePath, [...byName.values()]);
+      return updated;
     }
   };
+}
+
+function writeUsersFile(filePath: string, users: readonly FlmuxUser[]): void {
+  mkdirSync(dirname(filePath), { recursive: true });
+  const tmpPath = `${filePath}.tmp.${process.pid}`;
+  writeFileSync(tmpPath, stringifyUsersToml(users), "utf8");
+  renameSync(tmpPath, filePath);
 }
 
 // Role presets: developer/admin = full; operator = everything but terminal.
@@ -104,10 +134,13 @@ function parseUser(raw: Record<string, unknown>): FlmuxUser {
       : (preset?.denyPaneKinds ?? []);
 
   const handle = typeof raw.handle === "string" && raw.handle.trim() ? raw.handle.trim() : undefined;
+  const displayName =
+    typeof raw.display_name === "string" && raw.display_name.trim() ? raw.display_name.trim() : undefined;
 
   return {
     name,
     handle,
+    displayName,
     role,
     allowPaneKinds,
     denyPaneKinds,

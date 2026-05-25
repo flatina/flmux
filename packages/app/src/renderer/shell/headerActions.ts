@@ -6,23 +6,12 @@ import type {
 } from "dockview-core";
 import { DefaultTab } from "dockview-core";
 import type { PaneHeaderMenu, PaneHeaderMenuItem } from "@flmux/extension-api";
+import type { FlmuxRendererBootstrapConfig } from "../../shared/rendererBridge";
 import { getPaneHeaderMenu } from "../external/paneTabMenuRegistry";
-import { getThemePreference, setThemePreference, type ThemePreference } from "../theme";
+import { openSettingsDialog } from "./settingsDialog";
 
 
 type Disposer = () => void;
-
-const THEME_GLYPH: Record<ThemePreference, string> = {
-  light: "☀",
-  dark: "☾",
-  system: "◐"
-};
-
-const THEME_OPTIONS: ReadonlyArray<{ preference: ThemePreference; label: string }> = [
-  { preference: "light", label: "Light" },
-  { preference: "dark", label: "Dark" },
-  { preference: "system", label: "System" }
-];
 
 class HeaderActionButton {
   readonly element = document.createElement("div");
@@ -58,7 +47,8 @@ export class WorkspaceHeaderActions implements IHeaderActionsRenderer {
 
   constructor(
     _group: DockviewGroupPanel,
-    private readonly handlers: { onAdd: () => void; onResetActive: () => void }
+    private readonly handlers: { onAdd: () => void; onResetActive: () => void },
+    private readonly config: FlmuxRendererBootstrapConfig
   ) {
     this.element.className = "header-action";
     this.menuButton.type = "button";
@@ -96,34 +86,8 @@ export class WorkspaceHeaderActions implements IHeaderActionsRenderer {
   private openPopup() {
     const popup = document.createElement("div");
     popup.className = "header-action-popup";
-    const current = getThemePreference();
 
-    for (const option of THEME_OPTIONS) {
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = "header-action-popup__item";
-      if (option.preference === current) {
-        item.classList.add("header-action-popup__item--active");
-      }
-      item.textContent = `${THEME_GLYPH[option.preference]}  ${option.label}`;
-      item.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        this.closePopup();
-        setThemePreference(option.preference);
-      });
-      popup.append(item);
-    }
-
-    const separator = document.createElement("div");
-    separator.className = "header-action-popup__sep";
-    popup.append(separator);
-
-    const actions: ReadonlyArray<{ label: string; run: () => void }> = [
-      { label: "↻  Reset Workspace", run: () => this.handlers.onResetActive() },
-      { label: "+  New Workspace", run: () => this.handlers.onAdd() }
-    ];
-    for (const { label, run } of actions) {
+    const addItem = (label: string, run: () => void) => {
       const item = document.createElement("button");
       item.type = "button";
       item.className = "header-action-popup__item";
@@ -135,7 +99,25 @@ export class WorkspaceHeaderActions implements IHeaderActionsRenderer {
         run();
       });
       popup.append(item);
+    };
+    const addSeparator = () => {
+      const separator = document.createElement("div");
+      separator.className = "header-action-popup__sep";
+      popup.append(separator);
+    };
+
+    const account = this.config.mode === "web" ? this.config.account : undefined;
+    if (account) {
+      addItem(`👤  ${account.displayName ?? account.name}`, () =>
+        openSettingsDialog(this.config, "account")
+      );
     }
+    addItem("⚙  Settings…", () => openSettingsDialog(this.config, "appearance"));
+
+    addSeparator();
+
+    addItem("↻  Reset Workspace", () => this.handlers.onResetActive());
+    addItem("+  New Workspace", () => this.handlers.onAdd());
 
     document.body.append(popup);
     this.popup = popup;

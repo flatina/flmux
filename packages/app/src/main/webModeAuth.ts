@@ -162,6 +162,7 @@ function resolveDevContext(userStore: UserStore, name: string): FlmuxAuthorizati
   const user: FlmuxUser = existing ?? {
     name,
     handle: undefined,
+    displayName: undefined,
     role: "developer",
     allowPaneKinds: "*",
     denyPaneKinds: [],

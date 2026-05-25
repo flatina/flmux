@@ -57,6 +57,10 @@ export interface FlmuxRendererBootstrapConfig {
   localExtensions: FlmuxLocalExtensionLoadEntry[];
   devMode: boolean;
   workspaceTabstrip: WorkspaceTabstripMode;
+  /** Signed-in user (web mode only). Carries the login id + optional display
+   * name so the renderer can render the Account settings section. Omitted in
+   * desktop mode (single trusted local user, no account surface). */
+  account?: { name: string; displayName?: string };
 }
 
 // Identity sealed in impl-factory closure; per-call args carry only data hints.

@@ -471,6 +471,194 @@ body.flmux-has-titlebar .flmux-titlebar-host {
   font-size: 12px;
 }
 
+/* Settings modal */
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.settings-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(640px, 90vw);
+  max-height: 80vh;
+  background: var(--fl-widget-background);
+  border: 1px solid var(--fl-widget-border);
+  border-radius: 10px;
+  box-shadow: var(--fl-widget-shadow);
+  color: var(--fl-foreground);
+  overflow: hidden;
+}
+
+.settings-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--fl-widget-border);
+}
+
+.settings-dialog__title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-dialog__close {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--fl-description-foreground);
+  font-size: 13px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.settings-dialog__close:hover {
+  background: var(--fl-button-hover-background);
+  color: var(--fl-foreground);
+}
+
+.settings-dialog__main {
+  display: flex;
+  min-height: 240px;
+  overflow: hidden;
+}
+
+.settings-dialog__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 0 0 160px;
+  padding: 12px 8px;
+  border-right: 1px solid var(--fl-widget-border);
+}
+
+.settings-dialog__nav-item {
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 5px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fl-foreground);
+  font-size: 12px;
+  cursor: pointer;
+}
+.settings-dialog__nav-item:hover {
+  background: var(--fl-button-hover-background);
+}
+.settings-dialog__nav-item--active {
+  background: var(--fl-button-background);
+  border-color: var(--fl-widget-border);
+}
+
+.settings-dialog__body {
+  flex: 1 1 auto;
+  padding: 16px 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-section-heading {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fl-description-foreground);
+  margin-top: 8px;
+}
+.settings-section-heading:first-child {
+  margin-top: 0;
+}
+
+.settings-option-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.settings-option {
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: 5px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fl-foreground);
+  font-size: 12px;
+  cursor: pointer;
+}
+.settings-option:hover {
+  background: var(--fl-button-hover-background);
+}
+.settings-option--active {
+  color: var(--fl-accent-foreground);
+  border-color: var(--fl-widget-border);
+}
+
+.settings-field-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.settings-field-row--logout {
+  margin-top: 16px;
+}
+
+.settings-input {
+  flex: 1 1 auto;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: var(--fl-input-background);
+  border: 1px solid var(--fl-input-border);
+  color: var(--fl-input-foreground);
+  font-size: 12px;
+}
+.settings-input::placeholder {
+  color: var(--fl-input-placeholder-foreground);
+}
+
+.settings-readonly {
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: var(--fl-input-background);
+  border: 1px solid var(--fl-input-border);
+  color: var(--fl-description-foreground);
+  font-size: 12px;
+}
+
+.settings-btn {
+  padding: 6px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--fl-widget-border);
+  background: var(--fl-button-secondary-background);
+  color: var(--fl-button-secondary-foreground);
+  font-size: 12px;
+  cursor: pointer;
+}
+.settings-btn:hover {
+  background: var(--fl-button-hover-background);
+}
+.settings-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.settings-btn--primary {
+  background: var(--fl-button-background);
+  color: var(--fl-button-foreground);
+}
+.settings-btn--danger {
+  color: var(--fl-error-foreground);
+  border-color: var(--fl-error-foreground);
+}
+
+.settings-field-error {
+  color: var(--fl-error-foreground);
+  font-size: 12px;
+}
+
 .workspace-tab-menu-btn {
   width: 18px;
   height: 18px;

@@ -8,7 +8,7 @@ import {
 import type { Connection } from "bunite-core/rpc";
 import type { PathCallerContext, SequencedShellCoreEvent, ShellModelAPI } from "@flmux/core/shell";
 import { ModelPathError } from "@flmux/core/shell";
-import { flmuxBridgeCap, type FlmuxSessionSaveLayouts } from "../shared/rendererBridge";
+import { flmuxBridgeCap, type FlmuxRendererBootstrapConfig, type FlmuxSessionSaveLayouts } from "../shared/rendererBridge";
 import { resolveWorkspaceTabstripMode } from "../shared/workspaceTabstrip";
 import { isCompiledBinary } from "../shared/buildTarget";
 import { createSessionImpl } from "./sessionImpl";
@@ -793,7 +793,16 @@ async function resolveShellModelRouterForRequest(
   return authority.router;
 }
 
-function buildShellConfig() {
+function buildShellConfig(authContext: FlmuxAuthorizationContext | null): FlmuxRendererBootstrapConfig {
+  // Web only: carry the signed-in user so the renderer can show the Account
+  // section. Resolve the display name fresh so a self-edit reflects without a
+  // restart. Desktop (no authContext) omits `account` — no account surface.
+  const account = authContext
+    ? {
+        name: authContext.user.name,
+        displayName: webModeAuthorizer?.getUser(authContext.user.name)?.displayName ?? authContext.user.displayName
+      }
+    : undefined;
   return {
     mode: runtimeMode,
     appOrigin: serverOrigin,
@@ -801,7 +810,8 @@ function buildShellConfig() {
     // Web: relative URLs so ext modules load via the page origin (proxy/Funnel), not the internal bind.
     localExtensions: createLocalExtensionLoadEntries(localExtensions, runtimeMode === "web" ? "" : serverOrigin),
     devMode: process.env.FLMUX_DEV_MODE === "1",
-    workspaceTabstrip: resolveWorkspaceTabstripMode({ runtimeMode, platform: process.platform })
+    workspaceTabstrip: resolveWorkspaceTabstripMode({ runtimeMode, platform: process.platform }),
+    account
   };
 }
 
@@ -827,7 +837,7 @@ function setupConnection(
       clientIdToUserId.set(sessionId, userId);
       cancelPendingAuthorityEviction(userId);
     }
-    return bindMintedSession({ conn, viewId, authority, sessionId, userId });
+    return bindMintedSession({ conn, viewId, authority, sessionId, userId, authContext });
   };
 
   const resumeExisting = async (resumeToken: string): Promise<MintedSession | null> => {
@@ -840,7 +850,7 @@ function setupConnection(
     const authority = userAuthorityRegistry?.get(userId);
     if (!authority) return null;
     cancelPendingAuthorityEviction(userId);
-    return bindMintedSession({ conn, viewId, authority, sessionId: resumeToken, userId });
+    return bindMintedSession({ conn, viewId, authority, sessionId: resumeToken, userId, authContext });
   };
 
   conn.serve(flmuxBridgeCap, createBridgeImpl({
@@ -856,8 +866,9 @@ async function bindMintedSession(opts: {
   authority: ShellAuthority;
   sessionId: string;
   userId: string;
+  authContext: FlmuxAuthorizationContext | null;
 }): Promise<MintedSession> {
-  const { conn, viewId, authority, sessionId, userId } = opts;
+  const { conn, viewId, authority, sessionId, userId, authContext } = opts;
   bindClientTransport(sessionId, viewId, conn);
   await attachExtensionsForSession({ conn, sessionId, userId, authority });
   // Latest-wins routing for browser pane automation. Newer binds overwrite;
@@ -887,7 +898,7 @@ async function bindMintedSession(opts: {
       }
     },
     bootstrap: () => authority.shellBootstrap(sessionId),
-    buildConfig: buildShellConfig,
+    buildConfig: () => buildShellConfig(authContext),
     subscribeShellEvents: (sinceSeq, emit) => {
       const replay = clientRegistry.replayAfter(sessionId, sinceSeq);
       if (replay === null) return null;

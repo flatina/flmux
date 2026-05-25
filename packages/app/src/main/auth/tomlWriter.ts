@@ -17,6 +17,9 @@ export function stringifyUsersToml(users: readonly FlmuxUser[]): string {
     if (user.handle !== undefined) {
       lines.push(`handle = ${tomlString(user.handle)}`);
     }
+    if (user.displayName !== undefined) {
+      lines.push(`display_name = ${tomlString(user.displayName)}`);
+    }
     lines.push(`allow_pane_kinds = ${renderAllowPaneKinds(user.allowPaneKinds)}`);
     if (user.allowPaths === "*") {
       lines.push(`allow_paths = ${tomlString("*")}`);

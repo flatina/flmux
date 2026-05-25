@@ -39,20 +39,30 @@ const AUTH_WINDOW_MS = Number(process.env.FLMUX_AUTH_RATELIMIT_WINDOW_MS) || 60_
 const AUTH_MAX_FAILURES = Number(process.env.FLMUX_AUTH_RATELIMIT_MAX_FAILURES) || 10;
 const AUTH_LOCKOUT_MS = Number(process.env.FLMUX_AUTH_LOCKOUT_MS) || 300_000;
 
-// Brute-force lockout, keyed on x-forwarded-for (the Funnel/proxy-set client
-// IP). Spoofable without a trusted proxy in front; acceptable behind one.
+// Per-IP auth brute-force lockout. Key = a trusted proxy's resolved client IP
+// only — client-supplied X-Forwarded-For is never trusted. Tailscale Funnel does
+// NOT set XFF (tailscale/tailscale#12972); the real IP must come from a proxy
+// that restored it via PROXY protocol (`funnel --proxy-protocol=2` → nginx/Caddy
+// → XFF). Set FLMUX_TRUST_XFF=1 only when such a proxy is in front; otherwise the
+// key is null and per-IP lockout is disabled — tokens are 256-bit so brute-force
+// isn't viable regardless, and a shared fallback key would let one client lock
+// everyone out (DoS).
+const TRUST_XFF = process.env.FLMUX_TRUST_XFF === "1";
 const authFailures = new Map<string, { times: number[]; lockedUntil: number }>();
 
-function rateLimitKey(request: Request): string {
-  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
+function rateLimitKey(request: Request): string | null {
+  if (!TRUST_XFF) return null;
+  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
 }
 
-function isLockedOut(key: string): boolean {
+function isLockedOut(key: string | null): boolean {
+  if (key === null) return false;
   const e = authFailures.get(key);
   return e ? e.lockedUntil > Date.now() : false;
 }
 
-function recordAuthFailure(key: string): void {
+function recordAuthFailure(key: string | null): void {
+  if (key === null) return;
   const now = Date.now();
   const e = authFailures.get(key) ?? { times: [], lockedUntil: 0 };
   e.times = e.times.filter((t) => now - t < AUTH_WINDOW_MS);
@@ -357,7 +367,7 @@ function authorizeRequest(
   // a synthetic context. The denial below still fires in the normal path.
   const context = authorizer.authorize(presentedToken);
   if (!context) {
-    const fwd = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+    const fwd = TRUST_XFF ? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() : undefined;
     console.warn(
       `[flmux] auth denied: ${request.method} ${url.pathname} ` +
         `(cookie=${Boolean(cookieToken)} bearer=${Boolean(bearerToken)} query=${Boolean(queryToken)}` +
@@ -381,7 +391,7 @@ function authorizeRequest(
     setHeader(set, "set-cookie", serializeCookie(authorizer.cookieName, presentedToken, secure));
   }
 
-  authFailures.delete(rlKey);
+  if (rlKey) authFailures.delete(rlKey);
   return { ok: true, context };
 }
 

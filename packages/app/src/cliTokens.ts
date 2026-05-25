@@ -2,7 +2,7 @@ import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { resolveFlmuxAuthPaths, type FlmuxAuthPaths } from "./main/auth/authConfig";
 import { resolveFlmuxPaths } from "./main/flmuxPaths";
-import { generateToken } from "./main/auth/tokenFormat";
+import { generateToken, generateUserHandle } from "./main/auth/tokenFormat";
 import { createTokenStore } from "./main/auth/tokenStore";
 import { createUserStore, type AllowPaneKinds, type FlmuxUser } from "./main/auth/userStore";
 import { stringifyUsersToml } from "./main/auth/tomlWriter";
@@ -10,11 +10,7 @@ import { stringifyUsersToml } from "./main/auth/tomlWriter";
 export async function runTokensCli(rawArgs: string[]): Promise<unknown> {
   const [subcommand, ...rest] = rawArgs;
   if (!subcommand) {
-    throw new Error("tokens requires a subcommand (bootstrap | issue | revoke | list | users | qr)");
-  }
-
-  if (subcommand === "qr") {
-    return renderQr(rest);
+    throw new Error("tokens requires a subcommand (bootstrap | issue | revoke | list | users)");
   }
 
   const { authDir, argv } = extractAuthDirFlag(rest);
@@ -36,38 +32,6 @@ export async function runTokensCli(rawArgs: string[]): Promise<unknown> {
   }
 }
 
-export function buildAttachUrl(origin: string, token: string): string {
-  const normalizedOrigin = origin.replace(/\/+$/, "");
-  if (!/^https?:\/\//.test(normalizedOrigin)) {
-    throw new Error(`tokens qr: --origin must start with http:// or https:// (got '${origin}')`);
-  }
-  return `${normalizedOrigin}/?token=${encodeURIComponent(token)}`;
-}
-
-async function renderQr(argv: string[]): Promise<undefined> {
-  const tokenValue = readFlag(argv, "--token");
-  const origin = readFlag(argv, "--origin");
-  if (!tokenValue) {
-    throw new Error("tokens qr: --token <plaintext-token> is required");
-  }
-  if (!origin) {
-    throw new Error("tokens qr: --origin <url> is required");
-  }
-
-  const url = buildAttachUrl(origin, tokenValue);
-  const qrcode = (await import("qrcode-terminal")).default;
-
-  await new Promise<void>((resolve) => {
-    qrcode.generate(url, { small: true }, (rendered: string) => {
-      process.stdout.write(`${rendered}\n`);
-      process.stdout.write(`${url}\n`);
-      resolve();
-    });
-  });
-
-  return undefined;
-}
-
 function bootstrap(paths: FlmuxAuthPaths, argv: string[]) {
   const userName = readFlag(argv, "--name") ?? "admin";
   const allowPaneKindsArg = readFlag(argv, "--allow-pane-kinds") ?? "*";
@@ -80,6 +44,7 @@ function bootstrap(paths: FlmuxAuthPaths, argv: string[]) {
 
   const user: FlmuxUser = {
     name: userName,
+    handle: generateUserHandle(),
     role: "admin",
     allowPaneKinds: parseAllowPaneKinds(allowPaneKindsArg),
     denyPaneKinds: [],
@@ -165,6 +130,7 @@ function issueTokenFor(paths: FlmuxAuthPaths, userName: string, options: { label
     tokenHash: generated.hash,
     tokenPrefix: generated.prefix,
     createdAt: new Date().toISOString(),
+    kind: "machine",
     label: options.label,
     expiresAt: options.expiresAt
   });

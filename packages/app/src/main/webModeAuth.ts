@@ -1,12 +1,20 @@
 import type { FlmuxAuthPaths } from "./auth/authConfig";
 import { matchAnyPathGlob } from "./auth/pathGlob";
 import { hashToken } from "./auth/tokenFormat";
-import { createTokenStore, type TokenStore } from "./auth/tokenStore";
+import { createTokenStore, type FlmuxIssuedToken, type TokenStore } from "./auth/tokenStore";
 import { createUserStore, type FlmuxUser, type UserStore } from "./auth/userStore";
 
 export interface FlmuxAuthorizationContext {
   user: FlmuxUser;
   tokenId: string;
+}
+
+/** Result of validating an enrollment token. Never overlaps with a session:
+ * resolved against the enrollment namespace only, returns the bound user name
+ * — caller mints credentials, then consumes the token. */
+export interface FlmuxEnrollmentGrant {
+  tokenId: string;
+  user: string;
 }
 
 /** `/api/model/path/*` methods gated by `allow_paths`. `list` is treated
@@ -15,8 +23,19 @@ export type PathAccessMethod = "read" | "write" | "call";
 
 export interface FlmuxWebModeAuthorizer {
   readonly cookieName: string;
-  readonly queryParam: string;
+  /** Underlying token store — the server uses it to mint sessions, consume
+   * enrollment tokens, prune, and watch for external revokes. */
+  readonly tokenStore: TokenStore;
+  readonly userStore: UserStore;
+  /** Resolve a presented token to a session context. Only `session` and
+   * `machine` tokens resolve; `enrollment` tokens NEVER do (resolving one
+   * would grant a full session without registering a passkey = bypass). */
   authorize(tokenValue: string): FlmuxAuthorizationContext | null;
+  /** Validate a single-use enrollment token: must exist in the enrollment
+   * namespace, be unexpired, and bind to an existing user. Does NOT consume
+   * — caller consumes via `tokenStore.removeById` after a successful
+   * registration (atomic winner-takes-all). */
+  verifyEnrollmentToken(tokenValue: string): FlmuxEnrollmentGrant | null;
   /** Look up a user by name. Used by the WS event forwarder to check
    * `allow_paths.read` against shellCore events — we only have the
    * userId via `clientIdToUserId`, not a token. */
@@ -57,7 +76,8 @@ function createAuthorizerFromStores(options: {
 
   return {
     cookieName: "flmux_web_token",
-    queryParam: "token",
+    tokenStore: options.tokenStore,
+    userStore: options.userStore,
     authorize(tokenValue) {
       if (devAuthAsName) {
         // Resolve on every request so edits to users.toml take effect
@@ -69,15 +89,15 @@ function createAuthorizerFromStores(options: {
       }
 
       const tokenRecord = options.tokenStore.findByHash(hashToken(tokenValue));
-      if (!tokenRecord) {
+      // Enrollment tokens are a separate namespace — they grant the right to
+      // register a passkey, never a session. Refusing them here is the
+      // non-negotiable barrier against "valid enrollment link = full session".
+      if (!tokenRecord || tokenRecord.kind === "enrollment") {
         return null;
       }
 
-      if (tokenRecord.expiresAt) {
-        const expiryMs = Date.parse(tokenRecord.expiresAt);
-        if (Number.isNaN(expiryMs) || expiryMs <= Date.now()) {
-          return null;
-        }
+      if (isExpired(tokenRecord)) {
+        return null;
       }
 
       const user = options.userStore.getUser(tokenRecord.user);
@@ -86,6 +106,17 @@ function createAuthorizerFromStores(options: {
       }
 
       return { user, tokenId: tokenRecord.id };
+    },
+    verifyEnrollmentToken(tokenValue) {
+      if (!tokenValue) return null;
+      const record = options.tokenStore.findByHash(hashToken(tokenValue));
+      if (!record || record.kind !== "enrollment" || isExpired(record)) {
+        return null;
+      }
+      if (!options.userStore.getUser(record.user)) {
+        return null;
+      }
+      return { tokenId: record.id, user: record.user };
     },
     getUser(name) {
       return options.userStore.getUser(name);
@@ -120,10 +151,17 @@ function createAuthorizerFromStores(options: {
   };
 }
 
+function isExpired(token: FlmuxIssuedToken): boolean {
+  if (!token.expiresAt) return false;
+  const expiryMs = Date.parse(token.expiresAt);
+  return Number.isNaN(expiryMs) || expiryMs <= Date.now();
+}
+
 function resolveDevContext(userStore: UserStore, name: string): FlmuxAuthorizationContext {
   const existing = userStore.getUser(name);
   const user: FlmuxUser = existing ?? {
     name,
+    handle: undefined,
     role: "developer",
     allowPaneKinds: "*",
     denyPaneKinds: [],

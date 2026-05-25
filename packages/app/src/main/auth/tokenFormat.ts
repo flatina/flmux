@@ -20,3 +20,9 @@ export function generateToken(): GeneratedToken {
 export function hashToken(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
+
+/** Stable random WebAuthn user handle (base64url-encoded 64 random bytes).
+ * Opaque, non-PII, never reassigned — decoupled from the mutable username. */
+export function generateUserHandle(): string {
+  return randomBytes(64).toString("base64url");
+}

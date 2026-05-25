@@ -14,6 +14,9 @@ import paneSvg from "./assets/pane.svg" with { type: "text" };
 import type { DiscoveredLocalExtension } from "./localExtensions";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
 import type { FlmuxAuthorizationContext, FlmuxWebModeAuthorizer } from "./webModeAuth";
+import type { WebauthnAuthService } from "./auth/webauthnService";
+import { LOGIN_PAGE_HTML, ENROLL_PAGE_HTML } from "./auth/authPages";
+import { readCookie } from "./auth/cookies";
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -84,6 +87,9 @@ export function startFlmuxServer(options: {
    *  the auth context resolved at upgrade time. Web mode: context.user is
    *  set (auth gate already passed). Desktop mode: WS isn't used (preload). */
   onRpcConnection?(conn: Connection, authContext: FlmuxAuthorizationContext | null): void;
+  /** Passkey auth service (web mode). Owns `/api/auth/*`, mints sessions, and
+   *  tracks live `/rpc` connections by tokenId for logout/revoke close. */
+  webauthn?: WebauthnAuthService;
 }): FlmuxServerHandle {
   const hostname = "127.0.0.1";
   const app = new Elysia({ websocket: { maxPayloadLength: WS_MAX_PAYLOAD_BYTES } })
@@ -100,6 +106,26 @@ export function startFlmuxServer(options: {
       })
     )
     .get("/health", () => ({ ok: true }))
+    // Pre-auth carve-out: login/enroll pages + the passkey ceremony endpoints
+    // are reachable WITHOUT a session (they exist to create one). Every other
+    // route stays behind authorizeRequest via `.all("*")`.
+    .get("/login", () => htmlPage(LOGIN_PAGE_HTML))
+    .get("/enroll", () => htmlPage(ENROLL_PAGE_HTML))
+    .post("/api/auth/passkey/register/options", ({ request }) =>
+      options.webauthn ? options.webauthn.handleRegisterOptions(request) : notFound()
+    )
+    .post("/api/auth/passkey/register/verify", ({ request }) =>
+      options.webauthn ? options.webauthn.handleRegisterVerify(request) : notFound()
+    )
+    .post("/api/auth/passkey/authenticate/options", ({ request }) =>
+      options.webauthn ? options.webauthn.handleAuthenticateOptions(request) : notFound()
+    )
+    .post("/api/auth/passkey/authenticate/verify", ({ request }) =>
+      options.webauthn ? options.webauthn.handleAuthenticateVerify(request) : notFound()
+    )
+    .post("/api/auth/logout", ({ request }) =>
+      options.webauthn ? options.webauthn.handleLogout(request) : notFound()
+    )
     .get("/api/clients", async ({ request, set }) => {
       const auth = authorizeRequest(request, set, options.authorizer);
       if (!auth.ok) {
@@ -212,6 +238,14 @@ export function startFlmuxServer(options: {
     .all("*", ({ request, set }) => {
       const auth = authorizeRequest(request, set, options.authorizer);
       if (!auth.ok) {
+        // Unauthenticated top-level navigation → login page (a human with no
+        // session). Non-navigation (XHR/asset) keeps the 401 so callers see
+        // the failure rather than an HTML body.
+        if (options.webauthn && isNavigationRequest(request)) {
+          set.status = 302;
+          setHeader(set, "location", "/login");
+          return "";
+        }
         return "Unauthorized";
       }
 
@@ -245,6 +279,8 @@ export function startFlmuxServer(options: {
     const onConn = options.onRpcConnection;
     const wsToReceive = new WeakMap<object, (bytes: Uint8Array) => void>();
     const wsToConn = new WeakMap<object, Connection>();
+    // Per-socket unregister fn for the tokenId→connection live registry.
+    const wsToUntrack = new WeakMap<object, () => void>();
     app.ws("/rpc", {
       beforeHandle({ request, set }) {
         const auth = authorizeRequest(request, set, options.authorizer);
@@ -283,6 +319,17 @@ export function startFlmuxServer(options: {
           origin: new URL((ws as { url?: string }).url ?? "http://localhost").origin
         });
         wsToConn.set(raw, conn);
+        // Track by session tokenId so logout / external revoke can force-close
+        // this live socket. Machine bearer / dev-auth-as tokenIds are tracked
+        // too but simply never targeted by logout.
+        if (options.webauthn && auth.context?.tokenId) {
+          wsToUntrack.set(
+            raw,
+            options.webauthn.registerRpcConnection(auth.context.tokenId, () => {
+              (raw as { close?(): void }).close?.();
+            })
+          );
+        }
         onConn(conn, auth.context);
       },
       message(ws, message) {
@@ -303,6 +350,8 @@ export function startFlmuxServer(options: {
         const conn = wsToConn.get(raw);
         wsToConn.delete(raw);
         wsToReceive.delete(raw);
+        wsToUntrack.get(raw)?.();
+        wsToUntrack.delete(raw);
         if (conn) {
           try { conn.shutdown("ws_close"); } catch { /* swallow */ }
         }
@@ -344,10 +393,11 @@ function authorizeRequest(
   }
 
   const url = new URL(request.url);
+  // Human `?token=` path retired: passkey sessions arrive via cookie, machines
+  // via bearer header. No query-token fallback (browser WS uses the cookie).
   const cookieToken = readCookie(request.headers.get("cookie"), authorizer.cookieName);
   const bearerToken = readBearerToken(request.headers.get("authorization"));
-  const queryToken = url.searchParams.get(authorizer.queryParam);
-  const presentedToken = cookieToken ?? bearerToken ?? queryToken ?? "";
+  const presentedToken = cookieToken ?? bearerToken ?? "";
 
   // `authorize("")` normally returns null; dev-auth-as mode makes it return
   // a synthetic context. The denial below still fires in the normal path.
@@ -356,24 +406,17 @@ function authorizeRequest(
     const fwd = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
     console.warn(
       `[flmux] auth denied: ${request.method} ${url.pathname} ` +
-        `(cookie=${Boolean(cookieToken)} bearer=${Boolean(bearerToken)} query=${Boolean(queryToken)}` +
-        `${fwd ? ` from=${fwd}` : ""})`
+        `(cookie=${Boolean(cookieToken)} bearer=${Boolean(bearerToken)}${fwd ? ` from=${fwd}` : ""})`
     );
     return denyUnauthorized(set);
   }
 
-  // CSRF: cookie auth is ambient on cross-origin browser requests; bearer/query aren't.
+  // CSRF: cookie auth is ambient on cross-origin browser requests; bearer isn't.
   if (cookieToken && presentedToken === cookieToken && webAllowedOrigins) {
     const origin = request.headers.get("origin");
     if (origin && !webAllowedOrigins.has(origin)) {
       return denyUnauthorized(set);
     }
-  }
-
-  if (queryToken && queryToken === presentedToken && cookieToken !== presentedToken) {
-    const fwdProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
-    const secure = (fwdProto ?? url.protocol.replace(/:$/, "")) === "https";
-    setHeader(set, "set-cookie", serializeCookie(authorizer.cookieName, presentedToken, secure));
   }
 
   return { ok: true, context };
@@ -436,22 +479,6 @@ function isPlainHeaderRecord(value: unknown): value is Record<string, string> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function readCookie(rawCookieHeader: string | null, cookieName: string) {
-  if (!rawCookieHeader) {
-    return null;
-  }
-
-  for (const entry of rawCookieHeader.split(";")) {
-    const [rawName, ...rawValue] = entry.trim().split("=");
-    if (rawName !== cookieName) {
-      continue;
-    }
-    return decodeURIComponent(rawValue.join("="));
-  }
-
-  return null;
-}
-
 function readBearerToken(rawAuthorizationHeader: string | null) {
   if (!rawAuthorizationHeader) {
     return null;
@@ -461,11 +488,28 @@ function readBearerToken(rawAuthorizationHeader: string | null) {
   return match ? match[1] : null;
 }
 
-function serializeCookie(name: string, value: string, secure: boolean) {
-  // Secure only behind TLS (X-Forwarded-Proto: https from Funnel/proxy); omitted
-  // on plain-http dev so the cookie reaches the insecure ws:// RPC handshake
-  // (browsers withhold Secure cookies from non-secure connections).
-  return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly${secure ? "; Secure" : ""}; SameSite=Strict`;
+function htmlPage(html: string): Response {
+  return new Response(html, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      // Pre-auth pages must never be framed (clickjacking on the ceremony).
+      "content-security-policy": "frame-ancestors 'none'",
+      "x-frame-options": "DENY"
+    }
+  });
+}
+
+function notFound(): Response {
+  return new Response("Not Found", { status: 404 });
+}
+
+// A top-level navigation (vs XHR/asset) — `Sec-Fetch-Mode: navigate` is the
+// reliable signal; fall back to an Accept: text/html GET for older clients.
+function isNavigationRequest(request: Request): boolean {
+  if (request.method !== "GET") return false;
+  const mode = request.headers.get("sec-fetch-mode");
+  if (mode) return mode === "navigate";
+  return (request.headers.get("accept") ?? "").includes("text/html");
 }
 
 class FlmuxAuthzError extends Error {

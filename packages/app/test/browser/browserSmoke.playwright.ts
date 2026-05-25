@@ -18,6 +18,22 @@ interface WebAppHandle {
 
 let handle: WebAppHandle | null = null;
 
+// The human `?token=` query path is retired; browsers authenticate via the
+// session cookie. Seed it directly (a bootstrap/machine token authorizes via
+// cookie too) so the page loads authenticated, then navigate plainly.
+async function gotoAuthed(
+  context: import("@playwright/test").BrowserContext,
+  page: import("@playwright/test").Page,
+  origin: string,
+  token: string
+) {
+  const url = new URL(origin);
+  await context.addCookies([
+    { name: "flmux_web_token", value: token, domain: url.hostname, path: "/", httpOnly: true }
+  ]);
+  await page.goto(origin + "/");
+}
+
 test.beforeAll(async () => {
   const rootDir = mkdtempSync(resolve(tmpdir(), "flmux-browser-smoke-"));
   const authDir = join(rootDir, ".flmux", "auth");
@@ -52,7 +68,7 @@ test("workbench bootstraps and mounts in real browser", async ({ browser }) => {
   const context = await browser.newContext();
   try {
     const page = await context.newPage();
-    await page.goto(`${handle.origin}/?token=${encodeURIComponent(handle.token)}`);
+    await gotoAuthed(context, page, handle.origin, handle.token);
     // Workbench mounts a `.dockview-shell` root once bootstrap completes +
     // the first `shellCore.event` subscribes. Wait for it as the smoke
     // end-state: all of bootstrap + WS attach + dockview render succeeded.
@@ -76,7 +92,7 @@ test("C1 WS reconnect replays buffered events (B1c)", async ({ browser }) => {
   const context = await browser.newContext();
   try {
     const page = await context.newPage();
-    await page.goto(`${handle.origin}/?token=${encodeURIComponent(handle.token)}`);
+    await gotoAuthed(context, page, handle.origin, handle.token);
     await expect(page.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
 
     const paneSelector = '.workspace-panel[data-workspace-id="workspace.1"] .browser-panel';
@@ -127,7 +143,7 @@ test("C2 tab refresh reuses clientId + preserves slot state (B2P3)", async ({ br
   const context = await browser.newContext();
   try {
     const page = await context.newPage();
-    await page.goto(`${handle.origin}/?token=${encodeURIComponent(handle.token)}`);
+    await gotoAuthed(context, page, handle.origin, handle.token);
     await expect(page.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
 
     const clientIdBefore = (await context.cookies(handle.origin)).find((c) => c.name === "flmux-session")?.value;
@@ -206,7 +222,7 @@ test("C3 two tabs of the same user keep independent active workspaces (B1b)", as
   const contextB = await browser.newContext();
   try {
     const pageA = await contextA.newPage();
-    await pageA.goto(`${handle.origin}/?token=${encodeURIComponent(handle.token)}`);
+    await gotoAuthed(contextA, pageA, handle.origin, handle.token);
     // Wait for a bootstrap-derived element, not the eager outer container —
     // the cookie is set by the bootstrap POST response.
     await expect(pageA.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
@@ -234,7 +250,7 @@ test("C3 two tabs of the same user keep independent active workspaces (B1b)", as
 
     // Tab B bootstraps into the same user but a fresh client.
     const pageB = await contextB.newPage();
-    await pageB.goto(`${handle.origin}/?token=${encodeURIComponent(handle.token)}`);
+    await gotoAuthed(contextB, pageB, handle.origin, handle.token);
     await expect(pageB.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
 
     const attachB = (await contextB.cookies(handle.origin)).find((c) => c.name === "flmux-session")!.value;
@@ -316,7 +332,7 @@ test("C6 allow_paths.read gates broadcast forwarder (B3)", async ({ browser }) =
   const context = await browser.newContext();
   try {
     const page = await context.newPage();
-    await page.goto(`${handle.origin}/?token=${encodeURIComponent(restrictedToken)}`);
+    await gotoAuthed(context, page, handle.origin, restrictedToken);
     await expect(page.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
 
     const cookieHeader = (await context.cookies(handle.origin)).map((c) => `${c.name}=${c.value}`).join("; ");
@@ -402,7 +418,7 @@ test("C8 cross-user resumeSession spoof falls through to fresh mint", async ({ b
   const aliceContext = await browser.newContext();
   try {
     const adminPage = await adminContext.newPage();
-    await adminPage.goto(`${handle.origin}/?token=${encodeURIComponent(handle.token)}`);
+    await gotoAuthed(adminContext, adminPage, handle.origin, handle.token);
     await expect(adminPage.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
     const adminSession = (await adminContext.cookies(handle.origin)).find((c) => c.name === "flmux-session")!.value;
     expect(adminSession).toMatch(/^web_/);
@@ -413,7 +429,7 @@ test("C8 cross-user resumeSession spoof falls through to fresh mint", async ({ b
     ]);
 
     const alicePage = await aliceContext.newPage();
-    await alicePage.goto(`${handle.origin}/?token=${encodeURIComponent(aliceToken)}`);
+    await gotoAuthed(aliceContext, alicePage, handle.origin, aliceToken);
     await expect(alicePage.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
 
     const aliceSession = (await aliceContext.cookies(handle.origin)).find((c) => c.name === "flmux-session")!.value;
@@ -468,7 +484,7 @@ test("C5 authority evicts after client+authority grace", async ({ browser }) => 
     let clientIdBefore: string;
     try {
       const page = await contextBefore.newPage();
-      await page.goto(`${origin}/?token=${encodeURIComponent(token)}`);
+      await gotoAuthed(contextBefore, page, origin, token);
       await expect(page.locator(".dockview-shell")).toBeVisible({ timeout: 20_000 });
       clientIdBefore = await getAuthorityClientId(contextBefore);
     } finally {
@@ -484,7 +500,7 @@ test("C5 authority evicts after client+authority grace", async ({ browser }) => 
     const contextAfter = await browser.newContext();
     try {
       const page = await contextAfter.newPage();
-      await page.goto(`${origin}/?token=${encodeURIComponent(token)}`);
+      await gotoAuthed(contextAfter, page, origin, token);
       await expect(page.locator(".dockview-shell")).toBeVisible({ timeout: 20_000 });
       const clientIdAfter = await getAuthorityClientId(contextAfter);
       expect(clientIdAfter).not.toBe(clientIdBefore);
@@ -524,7 +540,7 @@ test("C7 terminal runtime survives browser WS drop across page.reload", async ({
   const context = await browser.newContext();
   try {
     const page = await context.newPage();
-    await page.goto(`${handle.origin}/?token=${encodeURIComponent(handle.token)}`);
+    await gotoAuthed(context, page, handle.origin, handle.token);
     await expect(page.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
 
     const cookieHeader = (await context.cookies(handle.origin)).map((c) => `${c.name}=${c.value}`).join("; ");

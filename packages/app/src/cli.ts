@@ -4,6 +4,7 @@ import { defineCommand, runMain, type CommandDef } from "citty";
 import { browserCmd } from "./cliBrowser";
 import { discoverLocalCliCommands, defaultExtensionsRootDir, loadLocalCliCommandDef } from "./cliExtensions";
 import { runTokensCli } from "./cliTokens";
+import { runAuthCli } from "./cliAuth";
 import { resolveFlmuxPaths, resolveFlmuxRootDir } from "./main/flmuxPaths";
 import { commonArgs, printJson, resolveClientId, resolveOrigin, toFlmuxCliFlags } from "@flmux/extension-api/cli";
 import type { FlmuxCliFlags } from "@flmux/extension-api/cli";
@@ -162,11 +163,25 @@ const tokensCmd = defineCommand({
   meta: {
     name: "tokens",
     description:
-      "Manage users/tokens (bootstrap | issue | revoke | list | users | qr). Reads users.toml + users.tokens.toml under --auth-dir or <FLMUX_ROOT_DIR>/.flmux/auth."
+      "Manage machine bearer tokens (bootstrap | issue | revoke | list | users). Reads users.toml + users.tokens.toml under --auth-dir or <FLMUX_ROOT_DIR>/.flmux/auth."
   },
   // tokens has its own internal subcommand parser; forward raw args as-is.
   async run({ rawArgs }) {
     const result = await runTokensCli(rawArgs);
+    if (result !== undefined) {
+      printJson(result);
+    }
+  }
+});
+
+const authCmd = defineCommand({
+  meta: {
+    name: "auth",
+    description:
+      "Passkey accounts (create-user | enroll | credentials list|revoke). Enrollment tokens are single-use, short-TTL — deliver over a confidential channel."
+  },
+  async run({ rawArgs }) {
+    const result = await runAuthCli(rawArgs);
     if (result !== undefined) {
       printJson(result);
     }
@@ -193,6 +208,7 @@ async function buildSubCommands(): Promise<Record<string, CommandDef>> {
     set: setCmd as CommandDef,
     call: callCmd as CommandDef,
     tokens: tokensCmd as CommandDef,
+    auth: authCmd as CommandDef,
     browser: browserCmd
   };
 

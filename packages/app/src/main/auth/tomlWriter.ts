@@ -11,6 +11,12 @@ export function stringifyUsersToml(users: readonly FlmuxUser[]): string {
   for (const user of users) {
     lines.push("[[users]]");
     lines.push(`name = ${tomlString(user.name)}`);
+    if (user.role !== undefined) {
+      lines.push(`role = ${tomlString(user.role)}`);
+    }
+    if (user.handle !== undefined) {
+      lines.push(`handle = ${tomlString(user.handle)}`);
+    }
     lines.push(`allow_pane_kinds = ${renderAllowPaneKinds(user.allowPaneKinds)}`);
     if (user.allowPaths === "*") {
       lines.push(`allow_paths = ${tomlString("*")}`);
@@ -42,6 +48,7 @@ export function stringifyTokensToml(tokens: readonly FlmuxIssuedToken[]): string
     lines.push(`token_hash = ${tomlString(token.tokenHash)}`);
     lines.push(`token_prefix = ${tomlString(token.tokenPrefix)}`);
     lines.push(`created_at = ${tomlString(token.createdAt)}`);
+    lines.push(`kind = ${tomlString(token.kind)}`);
     if (token.label !== undefined) {
       lines.push(`label = ${tomlString(token.label)}`);
     }

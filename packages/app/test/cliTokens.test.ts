@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildAttachUrl, runTokensCli } from "../src/cliTokens";
+import { runTokensCli } from "../src/cliTokens";
+import { buildEnrollUrl, runAuthCli } from "../src/cliAuth";
 
 const tempDirs: string[] = [];
 
@@ -118,17 +119,31 @@ describe("cli tokens", () => {
     ).rejects.toThrow(/not a valid ISO timestamp/);
   });
 
-  it("builds attach urls for tokens qr and rejects non-http origins", () => {
-    expect(buildAttachUrl("http://127.0.0.1:1234", "abc")).toBe("http://127.0.0.1:1234/?token=abc");
-    expect(buildAttachUrl("http://127.0.0.1:1234/", "abc")).toBe("http://127.0.0.1:1234/?token=abc");
-    expect(buildAttachUrl("https://example.com/base", "a b/c")).toBe("https://example.com/base/?token=a%20b%2Fc");
-    expect(() => buildAttachUrl("file:///foo", "t")).toThrow(/must start with http/);
-    expect(() => buildAttachUrl("127.0.0.1", "t")).toThrow(/must start with http/);
+  it("builds enroll urls and rejects non-http origins", () => {
+    expect(buildEnrollUrl("http://127.0.0.1:1234", "abc")).toBe("http://127.0.0.1:1234/enroll?token=abc");
+    expect(buildEnrollUrl("http://127.0.0.1:1234/", "abc")).toBe("http://127.0.0.1:1234/enroll?token=abc");
+    expect(buildEnrollUrl("https://example.com/base", "a b/c")).toBe("https://example.com/base/enroll?token=a%20b%2Fc");
+    expect(() => buildEnrollUrl("file:///foo", "t")).toThrow(/must start with http/);
+    expect(() => buildEnrollUrl("127.0.0.1", "t")).toThrow(/must start with http/);
   });
 
-  it("requires --token and --origin for tokens qr", async () => {
-    await expect(runTokensCli(["qr"])).rejects.toThrow(/--token/);
-    await expect(runTokensCli(["qr", "--token", "abc"])).rejects.toThrow(/--origin/);
+  it("auth enroll issues an enrollment-namespace token bound to an existing user", async () => {
+    const authDir = await createTempAuthDir();
+    await runTokensCli(["bootstrap", "--name", "alice", "--auth-dir", authDir]);
+
+    const result = (await runAuthCli(["enroll", "--user", "alice", "--auth-dir", authDir])) as {
+      ok: true;
+      tokenId: string;
+      token: string;
+    };
+    expect(result.tokenId).toMatch(/^tok_/);
+
+    const tokensContent = await readFile(join(authDir, "users.tokens.toml"), "utf8");
+    expect(tokensContent).toContain(`kind = "enrollment"`);
+
+    await expect(runAuthCli(["enroll", "--user", "ghost", "--auth-dir", authDir])).rejects.toThrow(
+      /User 'ghost' not found/
+    );
   });
 
   it("rejects newline injection in user name and label", async () => {

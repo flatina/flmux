@@ -23,6 +23,10 @@ export type AllowPathsConfig =
 
 export interface FlmuxUser {
   name: string;
+  /** Stable random opaque id (base64url, ~64B) used as the WebAuthn user
+   * handle. Independent of the mutable `name` so a rename never breaks
+   * discoverable credentials. Absent for machine-only users (no passkeys). */
+  handle: string | undefined;
   role: string | undefined;
   allowPaneKinds: AllowPaneKinds;
   /** Kinds blocked even when allowPaneKinds permits — lets a role grant `*`
@@ -33,6 +37,7 @@ export interface FlmuxUser {
 
 export interface UserStore {
   getUser(name: string): FlmuxUser | null;
+  getUserByHandle(handle: string): FlmuxUser | null;
   listUsers(): FlmuxUser[];
 }
 
@@ -59,6 +64,12 @@ export function createUserStore(filePath: string): UserStore {
   return {
     getUser(name) {
       return load().get(name) ?? null;
+    },
+    getUserByHandle(handle) {
+      for (const user of load().values()) {
+        if (user.handle === handle) return user;
+      }
+      return null;
     },
     listUsers() {
       return [...load().values()];
@@ -92,8 +103,11 @@ function parseUser(raw: Record<string, unknown>): FlmuxUser {
       ? parseStringArray(raw.deny_pane_kinds, name, "deny_pane_kinds")
       : (preset?.denyPaneKinds ?? []);
 
+  const handle = typeof raw.handle === "string" && raw.handle.trim() ? raw.handle.trim() : undefined;
+
   return {
     name,
+    handle,
     role,
     allowPaneKinds,
     denyPaneKinds,

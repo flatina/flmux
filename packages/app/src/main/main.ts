@@ -31,6 +31,7 @@ import {
   type FlmuxAuthorizationContext,
   type FlmuxWebModeAuthorizer
 } from "./webModeAuth";
+import { createWebauthnAuthService } from "./auth/webauthnService";
 import type { FlmuxUser as FlmuxUserImport } from "./auth/userStore";
 import { eventToReadPath } from "./auth/eventAclPath";
 import { resolveFlmuxServerPort } from "./auth/serverConfig";
@@ -421,10 +422,27 @@ const webModeAuthPaths =
     ? {
         authDir: flmuxPaths.authDir,
         usersFile: flmuxPaths.usersFile,
-        tokensFile: flmuxPaths.tokensFile
+        tokensFile: flmuxPaths.tokensFile,
+        webauthnFile: flmuxPaths.webauthnFile
       }
     : null;
 const webModeAuthorizer = webModeAuthPaths ? createFlmuxWebModeAuthorizer(webModeAuthPaths, { devAuthAs }) : null;
+// Prune expired session/enrollment tokens off the hot path: once at startup,
+// then hourly. authorize()/findByHash never prune (per-request file churn).
+if (webModeAuthorizer) {
+  webModeAuthorizer.tokenStore.prune();
+  const pruneTimer = setInterval(() => webModeAuthorizer.tokenStore.prune(), 60 * 60 * 1000);
+  (pruneTimer as { unref?(): void }).unref?.();
+}
+const webauthnService =
+  runtimeMode === "web" && webModeAuthorizer
+    ? createWebauthnAuthService({
+        authorizer: webModeAuthorizer,
+        webauthnFile: flmuxPaths.webauthnFile,
+        tokensFile: flmuxPaths.tokensFile,
+        publicOrigin: process.env.FLMUX_PUBLIC_ORIGIN
+      })
+    : null;
 if (devAuthAs && runtimeMode === "web") {
   console.warn(`[flmux] [!] DEV AUTH: all web requests authenticated as '${devAuthAs}' — do not use in production`);
 } else if (devAuthAs) {
@@ -914,6 +932,7 @@ const server = startFlmuxServer({
         }
       : undefined,
   authorizer: webModeAuthorizer ?? undefined,
+  webauthn: webauthnService ?? undefined,
   onRpcConnection:
     runtimeMode === "web"
       ? (conn, authContext) => {
@@ -938,9 +957,9 @@ console.log(
 );
 if (webModeAuthPaths) {
   console.log(`[flmux] auth dir: ${webModeAuthPaths.authDir}`);
-  console.log(`[flmux] web origin: ${server.origin} (append ?token=<issued-token> on first attach)`);
+  console.log(`[flmux] web origin: ${server.origin} (sign in with a passkey at /login)`);
   console.log(
-    `[flmux] issue tokens via: bun src/cli.ts tokens issue --user <name> --auth-dir ${webModeAuthPaths.authDir}`
+    `[flmux] enroll a user: bun src/cli.ts auth enroll --user <name> --auth-dir ${webModeAuthPaths.authDir}`
   );
 }
 
@@ -962,6 +981,7 @@ async function stopRuntime() {
   } catch {
     /* best-effort */
   }
+  webauthnService?.dispose();
   terminalService.dispose?.();
   server.stop();
 }

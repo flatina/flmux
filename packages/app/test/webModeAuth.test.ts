@@ -15,7 +15,7 @@ afterEach(async () => {
 });
 
 describe("web mode auth (users + tokens store)", () => {
-  it("authorizes via cookie, bearer, and query while keeping /health public", async () => {
+  it("authorizes via cookie and bearer while keeping /health public", async () => {
     const { rendererDir, authDir } = await createFixture();
     const bootstrap = (await runTokensCli(["bootstrap", "--auth-dir", authDir])) as {
       user: string;
@@ -37,13 +37,10 @@ describe("web mode auth (users + tokens store)", () => {
       expect(unauthorized.status).toBe(401);
       expect(unauthorized.headers.get("www-authenticate")).toContain("Bearer");
 
-      const attach = await fetch(`${server.origin}/?token=${encodeURIComponent(bootstrap.token)}`);
-      expect(attach.status).toBe(200);
-      const cookie = attach.headers.get("set-cookie");
-      expect(cookie).toContain(`flmux_web_token=${bootstrap.token}`);
-
+      // Human `?token=` query path is retired; a token in the cookie still
+      // authorizes (the passkey session cookie reuses this exact mechanism).
       const withCookie = await fetch(`${server.origin}/api/clients`, {
-        headers: { cookie: cookie ?? "" }
+        headers: { cookie: `flmux_web_token=${encodeURIComponent(bootstrap.token)}` }
       });
       expect(withCookie.status).toBe(200);
 

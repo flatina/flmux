@@ -593,7 +593,10 @@ export class FlmuxWorkbench {
         options.name === "pane-tab"
           ? new PaneTabRenderer({ resolveIconUrl: (paneId) => this.resolvePaneIcon(paneId) })
           : undefined,
-      createRightHeaderActionComponent: (group) =>
+      // Left slot = right after the tabs, before the void/flex space (dockview
+      // appends pre → tabs → left → void → right). Puts the `+` beside the tabs
+      // rather than the far-right edge.
+      createLeftHeaderActionComponent: (group) =>
         new NewPaneHeaderAction(group, {
           listKinds: () =>
             this.paneRegistry

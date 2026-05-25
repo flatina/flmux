@@ -8,7 +8,7 @@ import { DefaultTab } from "dockview-core";
 import type { PaneHeaderMenu, PaneHeaderMenuItem } from "@flmux/extension-api";
 import type { FlmuxRendererBootstrapConfig } from "../../shared/rendererBridge";
 import { getPaneHeaderMenu } from "../external/paneTabMenuRegistry";
-import { openSettingsDialog } from "./settingsDialog";
+import { logout, openSettingsDialog } from "./settingsDialog";
 
 
 type Disposer = () => void;
@@ -118,6 +118,11 @@ export class WorkspaceHeaderActions implements IHeaderActionsRenderer {
 
     addItem("↻  Reset Workspace", () => this.handlers.onResetActive());
     addItem("+  New Workspace", () => this.handlers.onAdd());
+
+    if (account) {
+      addSeparator();
+      addItem("⎋  Log out", () => void logout());
+    }
 
     document.body.append(popup);
     this.popup = popup;

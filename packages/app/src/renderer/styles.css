@@ -359,6 +359,16 @@ body.flmux-has-titlebar .flmux-titlebar-host {
   display: none;
 }
 
+/* Hiding the strip via display:none leaves dockview's content host (render
+   overlay) offset by the old strip height — dockview re-pins it only on a
+   group resize (i.e. window resize), so force the full box here to reclaim
+   the freed height the moment the strip hides. Outer dockview only (inner
+   render overlays live inside .workspace-panel). */
+.dockview-shell.flmux-outer-tabstrip-hidden .dv-render-overlay:not(.workspace-panel *) {
+  top: 0 !important;
+  height: 100% !important;
+}
+
 .dockview-shell .flmux-workspace-prefix-menus {
   display: none;
 }

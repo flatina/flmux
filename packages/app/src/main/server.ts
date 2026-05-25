@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { Elysia } from "elysia";
+import { rateLimit } from "elysia-rate-limit";
 import { createConnection, createFrameTransport, type Connection } from "bunite-core/rpc";
 import type {
   ClientScopedPathCallInput,
@@ -35,53 +36,32 @@ let webAllowedOrigins: ReadonlySet<string> | null = null;
 
 const WS_MAX_PAYLOAD_BYTES = 4 * 1024 * 1024;
 const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
-const AUTH_WINDOW_MS = Number(process.env.FLMUX_AUTH_RATELIMIT_WINDOW_MS) || 60_000;
-const AUTH_MAX_FAILURES = Number(process.env.FLMUX_AUTH_RATELIMIT_MAX_FAILURES) || 10;
-const AUTH_LOCKOUT_MS = Number(process.env.FLMUX_AUTH_LOCKOUT_MS) || 300_000;
+const RATE_LIMIT_WINDOW_MS = Number(process.env.FLMUX_RATELIMIT_WINDOW_MS) || 60_000;
+const RATE_LIMIT_MAX = Number(process.env.FLMUX_RATELIMIT_MAX) || 600;
 
-// Per-IP auth brute-force lockout. Key = a trusted proxy's resolved client IP
-// only — client-supplied X-Forwarded-For is never trusted. Tailscale Funnel does
-// NOT set XFF (tailscale/tailscale#12972); the real IP must come from a proxy
-// that restored it via PROXY protocol (`funnel --proxy-protocol=2` → nginx/Caddy
-// → XFF). Set FLMUX_TRUST_XFF=1 only when such a proxy is in front; otherwise the
-// key is null and per-IP lockout is disabled — tokens are 256-bit so brute-force
-// isn't viable regardless, and a shared fallback key would let one client lock
-// everyone out (DoS).
-const TRUST_XFF = process.env.FLMUX_TRUST_XFF === "1";
-const authFailures = new Map<string, { times: number[]; lockedUntil: number }>();
+// Per-IP request-rate limit key. Trust is derived from the socket origin, not a
+// flag: X-Forwarded-For is honored only when the connection actually arrives from
+// a trusted address (default loopback — flmux binds 127.0.0.1). Behind Tailscale
+// Funnel, tailscaled proxies from loopback and sets a trustworthy XFF (the real
+// client IP; client-forged XFF is dropped), so the real IP is used. Direct clients
+// are keyed by their socket IP. A trusted-origin connection with no XFF returns ""
+// → skipped, never bucketed under loopback (which would share one key across all
+// clients = DoS). FLMUX_TRUSTED_PROXIES (comma list) overrides for a non-colocated
+// proxy.
+const TRUSTED_PROXIES = parseTrustedProxies(process.env.FLMUX_TRUSTED_PROXIES);
 
-function rateLimitKey(request: Request): string | null {
-  if (!TRUST_XFF) return null;
-  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+function parseTrustedProxies(raw: string | undefined): ReadonlySet<string> {
+  if (raw) return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
+  return new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 }
 
-function isLockedOut(key: string | null): boolean {
-  if (key === null) return false;
-  const e = authFailures.get(key);
-  return e ? e.lockedUntil > Date.now() : false;
-}
-
-function recordAuthFailure(key: string | null): void {
-  if (key === null) return;
-  const now = Date.now();
-  const e = authFailures.get(key) ?? { times: [], lockedUntil: 0 };
-  e.times = e.times.filter((t) => now - t < AUTH_WINDOW_MS);
-  e.times.push(now);
-  if (e.times.length >= AUTH_MAX_FAILURES) {
-    e.lockedUntil = now + AUTH_LOCKOUT_MS;
-    e.times = [];
+function rateLimitKey(request: Request, server: { requestIP(req: Request): { address: string } | null } | null): string {
+  const socketIP = server?.requestIP(request)?.address;
+  if (!socketIP) return "";
+  if (TRUSTED_PROXIES.has(socketIP)) {
+    return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "";
   }
-  authFailures.set(key, e);
-  if (authFailures.size > 10_000) pruneAuthFailures(now);
-}
-
-function pruneAuthFailures(now: number): void {
-  for (const [k, e] of authFailures) {
-    const last = e.times[e.times.length - 1];
-    if (e.lockedUntil <= now && (last === undefined || now - last >= AUTH_WINDOW_MS)) {
-      authFailures.delete(k);
-    }
-  }
+  return socketIP;
 }
 
 export function startFlmuxServer(options: {
@@ -107,6 +87,18 @@ export function startFlmuxServer(options: {
 }): FlmuxServerHandle {
   const hostname = "127.0.0.1";
   const app = new Elysia({ websocket: { maxPayloadLength: WS_MAX_PAYLOAD_BYTES } })
+    // Per-IP request-rate limit (web only). generator runs first (skip has 2
+    // params), so "" from an unresolvable/misconfigured key is produced then
+    // skipped here — no shared bucket. Desktop (no authorizer) is fully skipped.
+    .use(
+      rateLimit({
+        scoping: "global",
+        duration: RATE_LIMIT_WINDOW_MS,
+        max: RATE_LIMIT_MAX,
+        generator: (request, server) => rateLimitKey(request, server),
+        skip: (_request, key) => !options.authorizer || !key
+      })
+    )
     .get("/health", () => ({ ok: true }))
     .get("/api/clients", async ({ request, set }) => {
       const auth = authorizeRequest(request, set, options.authorizer);
@@ -351,12 +343,6 @@ function authorizeRequest(
     return { ok: true, context: null };
   }
 
-  const rlKey = rateLimitKey(request);
-  if (isLockedOut(rlKey)) {
-    set.status = 429;
-    return { ok: false };
-  }
-
   const url = new URL(request.url);
   const cookieToken = readCookie(request.headers.get("cookie"), authorizer.cookieName);
   const bearerToken = readBearerToken(request.headers.get("authorization"));
@@ -367,13 +353,12 @@ function authorizeRequest(
   // a synthetic context. The denial below still fires in the normal path.
   const context = authorizer.authorize(presentedToken);
   if (!context) {
-    const fwd = TRUST_XFF ? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() : undefined;
+    const fwd = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
     console.warn(
       `[flmux] auth denied: ${request.method} ${url.pathname} ` +
         `(cookie=${Boolean(cookieToken)} bearer=${Boolean(bearerToken)} query=${Boolean(queryToken)}` +
         `${fwd ? ` from=${fwd}` : ""})`
     );
-    recordAuthFailure(rlKey);
     return denyUnauthorized(set);
   }
 
@@ -391,7 +376,6 @@ function authorizeRequest(
     setHeader(set, "set-cookie", serializeCookie(authorizer.cookieName, presentedToken, secure));
   }
 
-  if (rlKey) authFailures.delete(rlKey);
   return { ok: true, context };
 }
 

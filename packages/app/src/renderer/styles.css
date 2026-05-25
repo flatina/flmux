@@ -772,6 +772,21 @@ body.flmux-has-titlebar .flmux-titlebar-host {
   flex-direction: column;
 }
 
+.flmux-ext-pane-error {
+  height: 100%;
+  box-sizing: border-box;
+  padding: 16px;
+  overflow: auto;
+  color: var(--fl-error-foreground);
+  font: 13px/1.5 system-ui, sans-serif;
+  white-space: pre-wrap;
+}
+
+.flmux-ext-pane-error__title {
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
 .browser-panel__surface {
   display: block;
   width: 100%;

@@ -104,21 +104,42 @@ function wrapExternalPaneRenderer(
   return {
     element: host,
     init(params: GroupPanelPartInitParameters) {
-      synchronizeExternalPaneState(state, params.api, params.params);
-      instance = renderer.mount(host, createExternalPaneContext(extensionId, args, state));
+      // A throwing extension mount must stay contained to this pane — it runs
+      // inside dockview's layout restore, so an uncaught throw aborts the whole
+      // workbench bootstrap (main.ts renders the error as a blank fatal page).
+      // Render an in-pane error instead; the rest of the workbench is unaffected.
+      try {
+        synchronizeExternalPaneState(state, params.api, params.params);
+        instance = renderer.mount(host, createExternalPaneContext(extensionId, args, state));
+      } catch (error) {
+        console.error(`[flmux] extension pane '${extensionId}' failed to mount`, error);
+        renderPaneMountError(host, extensionId, error);
+      }
     },
     update(event: PanelUpdateEvent<Record<string, unknown>>) {
-      synchronizeExternalPaneState(state, null, event.params);
-      instance?.update?.(event.params);
+      try {
+        synchronizeExternalPaneState(state, null, event.params);
+        instance?.update?.(event.params);
+      } catch (error) {
+        console.error(`[flmux] extension pane '${extensionId}' update failed`, error);
+      }
     },
     layout(width, height) {
-      instance?.layout?.(width, height);
+      try {
+        instance?.layout?.(width, height);
+      } catch (error) {
+        console.error(`[flmux] extension pane '${extensionId}' layout failed`, error);
+      }
     },
     toJSON() {
       return instance?.toJSON?.() ?? {};
     },
     focus() {
-      instance?.focus?.();
+      try {
+        instance?.focus?.();
+      } catch (error) {
+        console.error(`[flmux] extension pane '${extensionId}' focus failed`, error);
+      }
     },
     dispose() {
       try {
@@ -128,6 +149,22 @@ function wrapExternalPaneRenderer(
       }
     }
   };
+}
+
+/** In-pane fallback when an extension's mount throws — keeps the failure local
+ * (the pane shows the error) instead of bubbling up and blanking the workbench. */
+function renderPaneMountError(host: HTMLElement, extensionId: string, error: unknown): void {
+  if (typeof document === "undefined") return;
+  host.replaceChildren();
+  const box = document.createElement("div");
+  box.className = "flmux-ext-pane-error";
+  const title = document.createElement("div");
+  title.className = "flmux-ext-pane-error__title";
+  title.textContent = `This pane failed to load — ${extensionId}`;
+  const detail = document.createElement("div");
+  detail.textContent = error instanceof Error ? error.message : String(error);
+  box.append(title, detail);
+  host.append(box);
 }
 
 function createPaneHostElement(): HTMLElement {

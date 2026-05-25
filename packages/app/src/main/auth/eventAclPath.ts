@@ -28,6 +28,12 @@ export function eventToReadPath(event: SequencedShellCoreEvent): string | null {
       return `/status/panes/${event.payload.paneId}`;
     case "pane.activeChanged":
       return event.targetClientId ? `/status/clients/${event.targetClientId}/currentWorkspace` : null;
+    default: {
+      // New topic = compile error: forces explicit mapping, else a forgotten
+      // topic would broadcast as structural (silent read-ACL fail-open).
+      const _exhaustive: never = event;
+      void _exhaustive;
+      return "/__unmapped_event__"; // unreachable; fails closed if hit
+    }
   }
-  return null;
 }

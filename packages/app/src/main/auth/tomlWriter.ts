@@ -21,6 +21,9 @@ export function stringifyUsersToml(users: readonly FlmuxUser[]): string {
       lines.push(`display_name = ${tomlString(user.displayName)}`);
     }
     lines.push(`allow_pane_kinds = ${renderAllowPaneKinds(user.allowPaneKinds)}`);
+    if (user.denyPaneKinds.length > 0) {
+      lines.push(`deny_pane_kinds = [${user.denyPaneKinds.map(tomlString).join(", ")}]`);
+    }
     if (user.allowPaths === "*") {
       lines.push(`allow_paths = ${tomlString("*")}`);
     } else {
@@ -30,6 +33,17 @@ export function stringifyUsersToml(users: readonly FlmuxUser[]): string {
           lines.push(`allow_paths.${method} = [${globs.map(tomlString).join(", ")}]`);
         }
       }
+    }
+    // fs fields: written when non-default so a setDisplayName rewrite doesn't
+    // silently drop an explicit override and re-derive a broader preset.
+    if (user.fsUnconfined) {
+      lines.push(`fs_unconfined = true`);
+    }
+    if (user.dirsRw.length > 0) {
+      lines.push(`dirs_rw = [${user.dirsRw.map(tomlString).join(", ")}]`);
+    }
+    if (user.dirsRo.length > 0) {
+      lines.push(`dirs_ro = [${user.dirsRo.map(tomlString).join(", ")}]`);
     }
     lines.push("");
   }

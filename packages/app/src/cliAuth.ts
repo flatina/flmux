@@ -58,9 +58,10 @@ function createUser(paths: FlmuxAuthPaths, argv: string[]) {
     throw new Error(`User '${name}' already exists in ${paths.usersFile}`);
   }
 
-  // `user`/custom roles need an explicit pane-kind allowlist; preset roles
-  // (developer/operator/admin) derive theirs from the role.
-  const presetRole = role === "developer" || role === "operator" || role === "admin";
+  // Preset roles (dev/tech/user) derive pane-kinds + fs from the role on load;
+  // custom roles need an explicit pane-kind allowlist. fs fields default here
+  // and the preset fills them in `parseUser` (writer omits defaults).
+  const presetRole = role === "dev" || role === "tech" || role === "user";
   const allowPaneKinds: AllowPaneKinds = allowPaneKindsArg
     ? parseAllowPaneKinds(allowPaneKindsArg)
     : presetRole
@@ -74,7 +75,10 @@ function createUser(paths: FlmuxAuthPaths, argv: string[]) {
     role,
     allowPaneKinds,
     denyPaneKinds: [],
-    allowPaths: "*"
+    allowPaths: "*",
+    fsUnconfined: false,
+    dirsRw: [],
+    dirsRo: []
   };
   writeUsersFile(paths.usersFile, [...userStore.listUsers(), user]);
 

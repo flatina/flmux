@@ -47,13 +47,17 @@ function bootstrap(paths: FlmuxAuthPaths, argv: string[]) {
     name: userName,
     handle: generateUserHandle(),
     displayName: generateDisplayName(),
-    role: "admin",
+    role: "dev",
     allowPaneKinds: parseAllowPaneKinds(allowPaneKindsArg),
     denyPaneKinds: [],
     // Bootstrap grants the initial admin full path access. Per-path ACL
     // is opt-in via subsequent hand-edits to users.toml (`allow_paths`
     // table); default `"*"` matches the admin-bootstrap intent.
-    allowPaths: "*"
+    allowPaths: "*",
+    // `dev` tier → unconfined fs (derived from the role preset on load).
+    fsUnconfined: false,
+    dirsRw: [],
+    dirsRo: []
   };
   writeUsersFile(paths.usersFile, [user]);
 

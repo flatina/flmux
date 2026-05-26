@@ -163,10 +163,13 @@ function resolveDevContext(userStore: UserStore, name: string): FlmuxAuthorizati
     name,
     handle: undefined,
     displayName: undefined,
-    role: "developer",
+    role: "dev",
     allowPaneKinds: "*",
     denyPaneKinds: [],
-    allowPaths: "*"
+    allowPaths: "*",
+    fsUnconfined: true,
+    dirsRw: [],
+    dirsRo: []
   };
   return { user, tokenId: "dev-auth-as" };
 }

@@ -34,6 +34,9 @@ interface FlmuxPaths {
    * advertised. Boundary is advisory (server entries have full fs access),
    * not syscall-enforced. */
   extDataRootDir: string;
+  /** `<rootDir>/.flmux_users` — **sibling** of `.flmux` so the auth-secret
+   * tree stays outside any user bind. Root of per-user/shared fs dirs. */
+  usersRootDir: string;
 }
 
 export function resolveFlmuxRootDir(installRoot: string, env: NodeJS.ProcessEnv = process.env): string {
@@ -59,6 +62,7 @@ export function resolveFlmuxPaths(rootDir: string): FlmuxPaths {
     webSessionsDir: join(authDir, "sessions"),
     desktopSessionFile: join(flmuxDir, "session.json"),
     appConfigFile: join(flmuxDir, "app.toml"),
-    extDataRootDir: join(flmuxDir, "ext")
+    extDataRootDir: join(flmuxDir, "ext"),
+    usersRootDir: join(rootDir, ".flmux_users")
   };
 }

@@ -34,6 +34,8 @@ import {
 import { createWebauthnAuthService } from "./auth/webauthnService";
 import type { FlmuxUser as FlmuxUserImport } from "./auth/userStore";
 import { eventToReadPath } from "./auth/eventAclPath";
+import { createFsPolicyResolver } from "./auth/fsPolicy";
+import type { ExtensionFsPolicy } from "@flmux/extension-api";
 import { resolveFlmuxServerPort } from "./auth/serverConfig";
 import { resolveFlmuxAppTitle, resolveFlmuxAppName } from "./appConfig";
 import { resolveFlmuxRuntimeMode } from "./runtimeMode";
@@ -167,6 +169,7 @@ const localExtensions = await discoverConfiguredLocalExtensions(localExtensionsR
 
 const knownExtensionIds = new Set(localExtensions.map((ext) => ext.id));
 const provisionedExtensionDirs = new Set<string>();
+const fsPolicyResolver = createFsPolicyResolver(flmuxPaths.usersRootDir);
 const extDataRootResolved = resolve(flmuxPaths.extDataRootDir);
 function resolveExtensionDataDir(extensionId: string): string | null {
   if (!knownExtensionIds.has(extensionId)) return null;
@@ -331,6 +334,14 @@ async function attachExtensionsForSession(opts: {
     }
   }
   const state: SessionExtensionsState = { serveHandles: [], sessionDisposes: [] };
+  // Per-user fs grant (shared by the session's extensions). Desktop (no
+  // authorizer) = unconfined; web resolves per user, absent → fail-closed.
+  const fsPolicy: ExtensionFsPolicy = webModeAuthorizer
+    ? (() => {
+        const u = webModeAuthorizer.getUser(opts.userId);
+        return u ? fsPolicyResolver.resolve(u) : { unconfined: false, binds: [] };
+      })()
+    : { unconfined: true, binds: [] };
   for (const [extId, def] of extensionServers) {
     if (!def.onSession) continue;
     if (!userCanUseExtension(opts.userId, extId)) continue;
@@ -345,6 +356,7 @@ async function attachExtensionsForSession(opts: {
         dataDir,
         sessionId: opts.sessionId,
         userId: opts.userId,
+        fsPolicy,
         shell,
         serve: <C extends CapDef<any, any>>(cap: C, impl: ImplOf<C>) => {
           state.serveHandles.push(opts.conn.serve(cap, impl));

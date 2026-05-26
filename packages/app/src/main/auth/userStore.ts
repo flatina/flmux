@@ -37,9 +37,15 @@ export interface FlmuxUser {
   role: string | undefined;
   allowPaneKinds: AllowPaneKinds;
   /** Kinds blocked even when allowPaneKinds permits — lets a role grant `*`
-   * minus a few (operator = all but `terminal`). */
+   * minus a few (non-dev tiers = all but `terminal`). */
   denyPaneKinds: readonly string[];
   allowPaths: AllowPathsConfig;
+  /** Filesystem grant for the agent sandbox (+ Phase-2 `/fs`), resolved by
+   * `fsPolicy.ts` — NOT `allowPaths` (fail-open). `fsUnconfined` = full fs;
+   * else `dirsRw`/`dirsRo` (templated, base-confined; empty = no access). */
+  fsUnconfined: boolean;
+  dirsRw: readonly string[];
+  dirsRo: readonly string[];
 }
 
 export interface UserStore {
@@ -62,11 +68,19 @@ export function createUserStore(filePath: string): UserStore {
     const users = (parsed.users ?? []).map(parseUser);
 
     const byName = new Map<string, FlmuxUser>();
+    const handles = new Set<string>();
     for (const user of users) {
       if (byName.has(user.name)) {
         throw new Error(`users.toml: duplicate user name '${user.name}'`);
       }
       byName.set(user.name, user);
+      // Handles key per-user fs dirs; a duplicate would alias two users' workspaces.
+      if (user.handle !== undefined) {
+        if (handles.has(user.handle)) {
+          throw new Error(`users.toml: duplicate handle '${user.handle}'`);
+        }
+        handles.add(user.handle);
+      }
     }
     return byName;
   }
@@ -107,12 +121,35 @@ function writeUsersFile(filePath: string, users: readonly FlmuxUser[]): void {
   renameSync(tmpPath, filePath);
 }
 
-// Role presets: developer/admin = full; operator = everything but terminal.
-// `user` and other roles use explicit allow_pane_kinds (positive allowlist).
-const ROLE_PRESETS: Record<string, { allowPaneKinds: AllowPaneKinds; denyPaneKinds: readonly string[] }> = {
-  developer: { allowPaneKinds: "*", denyPaneKinds: [] },
-  admin: { allowPaneKinds: "*", denyPaneKinds: [] },
-  operator: { allowPaneKinds: "*", denyPaneKinds: ["terminal"] }
+// Org tiers. Only `dev` gets terminal + unconfined fs. `tech`/`user` are
+// agent-sandboxed (no terminal); `tech` additionally writes shared skills.
+// Unknown role with no explicit fields → parse error / no fs (fail-closed).
+const OWN_WORKSPACE = "{flmux_users}/u/{handle}";
+const SHARED_SKILLS = "{flmux_users}/shared_skills";
+const SHARED_RW = "{flmux_users}/shared_rw";
+interface RolePreset {
+  allowPaneKinds: AllowPaneKinds;
+  denyPaneKinds: readonly string[];
+  fsUnconfined: boolean;
+  dirsRw: readonly string[];
+  dirsRo: readonly string[];
+}
+const ROLE_PRESETS: Record<string, RolePreset> = {
+  dev: { allowPaneKinds: "*", denyPaneKinds: [], fsUnconfined: true, dirsRw: [], dirsRo: [] },
+  tech: {
+    allowPaneKinds: "*",
+    denyPaneKinds: ["terminal"],
+    fsUnconfined: false,
+    dirsRw: [OWN_WORKSPACE, SHARED_SKILLS, SHARED_RW],
+    dirsRo: []
+  },
+  user: {
+    allowPaneKinds: "*",
+    denyPaneKinds: ["terminal"],
+    fsUnconfined: false,
+    dirsRw: [OWN_WORKSPACE, SHARED_RW],
+    dirsRo: []
+  }
 };
 
 function parseUser(raw: Record<string, unknown>): FlmuxUser {
@@ -126,25 +163,35 @@ function parseUser(raw: Record<string, unknown>): FlmuxUser {
   const allowPaneKinds =
     raw.allow_pane_kinds !== undefined ? parseAllowPaneKinds(raw.allow_pane_kinds, name) : preset?.allowPaneKinds;
   if (allowPaneKinds === undefined) {
-    throw new Error(`users.toml: user '${name}' needs allow_pane_kinds or a preset role (developer|operator|admin)`);
+    throw new Error(`users.toml: user '${name}' needs allow_pane_kinds or a preset role (dev|tech|user)`);
   }
   const denyPaneKinds =
     raw.deny_pane_kinds !== undefined
       ? parseStringArray(raw.deny_pane_kinds, name, "deny_pane_kinds")
       : (preset?.denyPaneKinds ?? []);
 
-  const handle = typeof raw.handle === "string" && raw.handle.trim() ? raw.handle.trim() : undefined;
+  // base64url handle is a path component (`u/<handle>`); reject anything that
+  // could escape (`/`, `.`, etc.) at load so a hand-edited handle can't.
+  const handleRaw = typeof raw.handle === "string" && raw.handle.trim() ? raw.handle.trim() : undefined;
+  if (handleRaw !== undefined && !/^[A-Za-z0-9_-]+$/.test(handleRaw)) {
+    throw new Error(`users.toml: user '${name}' has invalid handle (expected base64url chars)`);
+  }
   const displayName =
     typeof raw.display_name === "string" && raw.display_name.trim() ? raw.display_name.trim() : undefined;
 
+  const fsUnconfined = typeof raw.fs_unconfined === "boolean" ? raw.fs_unconfined : (preset?.fsUnconfined ?? false);
+
   return {
     name,
-    handle,
+    handle: handleRaw,
     displayName,
     role,
     allowPaneKinds,
     denyPaneKinds,
-    allowPaths: parseAllowPaths(raw.allow_paths, name)
+    allowPaths: parseAllowPaths(raw.allow_paths, name),
+    fsUnconfined,
+    dirsRw: raw.dirs_rw !== undefined ? parseStringArray(raw.dirs_rw, name, "dirs_rw") : (preset?.dirsRw ?? []),
+    dirsRo: raw.dirs_ro !== undefined ? parseStringArray(raw.dirs_ro, name, "dirs_ro") : (preset?.dirsRo ?? [])
   };
 }
 

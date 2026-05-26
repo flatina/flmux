@@ -34,6 +34,12 @@ export interface ExtensionServerSessionContext {
   /** Filesystem the host grants this session — the extension confines its own
    * command execution (e.g. agent bash) to this. See `ExtensionFsPolicy`. */
   fsPolicy: ExtensionFsPolicy;
+  /** Mint a session-scoped, user-scoped machine token (+ the local API origin)
+   * for calling flmux's HTTP API from a subprocess (e.g. a sandboxed CLI that
+   * can't use the in-process `shell` cap). Auto-revoked when the session ends.
+   * Web only — `undefined` in desktop (single trusted local user, no auth).
+   * Same user scope the extension already holds via `shell`. */
+  mintApiToken?(): { origin: string; token: string };
   shell: ShellClient;
   serve<C extends CapDef<any, any>>(cap: C, impl: ImplOf<C>): void;
   bootstrap<C extends CapDef<any, any>>(cap: C): Promise<ClientOf<C>>;

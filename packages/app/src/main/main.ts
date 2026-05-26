@@ -34,6 +34,7 @@ import { createWebauthnAuthService } from "./auth/webauthnService";
 import type { FlmuxUser as FlmuxUserImport } from "./auth/userStore";
 import { eventToReadPath } from "./auth/eventAclPath";
 import { createFsPolicyResolver } from "./auth/fsPolicy";
+import { generateToken } from "./auth/tokenFormat";
 import type { ExtensionFsPolicy } from "@flmux/extension-api";
 import { resolveFlmuxServerPort } from "./auth/serverConfig";
 import { resolveFlmuxAppTitle, resolveFlmuxAppName } from "./appConfig";
@@ -166,6 +167,8 @@ const localExtensions = await discoverConfiguredLocalExtensions(localExtensionsR
 const knownExtensionIds = new Set(localExtensions.map((ext) => ext.id));
 const provisionedExtensionDirs = new Set<string>();
 const fsPolicyResolver = createFsPolicyResolver(flmuxPaths.usersRootDir);
+// Backstop TTL for per-session agent API tokens (normally revoked on detach).
+const AGENT_API_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const extDataRootResolved = resolve(flmuxPaths.extDataRootDir);
 function resolveExtensionDataDir(extensionId: string): string | null {
   if (!knownExtensionIds.has(extensionId)) return null;
@@ -338,6 +341,33 @@ async function attachExtensionsForSession(opts: {
         return u ? fsPolicyResolver.resolve(u) : { unconfined: false, binds: [] };
       })()
     : { unconfined: true, binds: [] };
+  // Per-session machine token for subprocess HTTP callbacks (e.g. the agent's
+  // sandboxed CLI). User-scoped, revoked on session detach (state.sessionDisposes),
+  // TTL-backstopped against a crash. Web only — desktop has no auth.
+  const authz = webModeAuthorizer;
+  const mintApiToken = authz
+    ? () => {
+        const minted = generateToken();
+        authz.tokenStore.append({
+          id: minted.id,
+          user: opts.userId,
+          tokenHash: minted.hash,
+          tokenPrefix: minted.prefix,
+          createdAt: new Date().toISOString(),
+          kind: "machine",
+          label: `agent-api:${opts.sessionId}`,
+          expiresAt: new Date(Date.now() + AGENT_API_TOKEN_TTL_MS).toISOString()
+        });
+        state.sessionDisposes.push(() => {
+          try {
+            authz.tokenStore.removeById(minted.id);
+          } catch {
+            /* best-effort; TTL + startup prune backstops */
+          }
+        });
+        return { origin: serverOrigin, token: minted.value };
+      }
+    : undefined;
   for (const [extId, def] of extensionServers) {
     if (!def.onSession) continue;
     if (!userCanUseExtension(opts.userId, extId)) continue;
@@ -353,6 +383,7 @@ async function attachExtensionsForSession(opts: {
         sessionId: opts.sessionId,
         userId: opts.userId,
         fsPolicy,
+        mintApiToken,
         shell,
         serve: <C extends CapDef<any, any>>(cap: C, impl: ImplOf<C>) => {
           state.serveHandles.push(opts.conn.serve(cap, impl));

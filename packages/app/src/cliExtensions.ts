@@ -1,5 +1,6 @@
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import type { CommandDef } from "citty";
+import { resolveInstallLayout } from "./main/flmuxPaths";
 import {
   FLMUX_EXTENSION_COMMAND,
   type FlmuxExtensionCliContext,
@@ -157,5 +158,9 @@ export async function discoverLocalCliCommands(extensionsRootDir: string): Promi
 }
 
 export function defaultExtensionsRootDir() {
-  return resolveConfiguredLocalExtensionsRootDir(fileURLToPath(new URL("../../../extensions/", import.meta.url)));
+  // Compiled binary: import.meta.url is a $bunfs virtual path → derive from the
+  // exe instead (same drift the rootDir bug had). Dev: repo `extensions/`.
+  const { isDeployLayout, baseDir } = resolveInstallLayout();
+  const fallback = isDeployLayout ? resolve(baseDir, "extensions") : resolve(baseDir, "../../../extensions");
+  return resolveConfiguredLocalExtensionsRootDir(fallback);
 }

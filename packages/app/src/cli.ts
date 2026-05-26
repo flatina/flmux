@@ -1,11 +1,11 @@
 import { mkdirSync } from "node:fs";
-import { dirname, resolve as pathResolve, sep } from "node:path";
+import { resolve as pathResolve, sep } from "node:path";
 import { defineCommand, runMain, type CommandDef } from "citty";
 import { browserCmd } from "./cliBrowser";
 import { discoverLocalCliCommands, defaultExtensionsRootDir, loadLocalCliCommandDef } from "./cliExtensions";
 import { runTokensCli } from "./cliTokens";
 import { runAuthCli } from "./cliAuth";
-import { resolveFlmuxPaths, resolveFlmuxRootDir } from "./main/flmuxPaths";
+import { resolveFlmuxPaths, resolveFlmuxRootDir, resolveInstallLayout } from "./main/flmuxPaths";
 import { commonArgs, printJson, resolveClientId, resolveOrigin, toFlmuxCliFlags } from "@flmux/extension-api/cli";
 import type { FlmuxCliFlags } from "@flmux/extension-api/cli";
 import { FLMUX_APP_VERSION } from "./version";
@@ -243,8 +243,7 @@ async function buildSubCommands(): Promise<Record<string, CommandDef>> {
  * subcommand's `ctx.dataDir` agree on a single directory.
  */
 function createCliDataDirResolver(knownExtensionIds: string[]): (extensionId: string) => string | null {
-  const baseDir = Bun.main ? dirname(Bun.main) : dirname(process.execPath);
-  const installRoot = pathResolve(baseDir, "../../..");
+  const { installRoot } = resolveInstallLayout();
   const flmuxPaths = resolveFlmuxPaths(resolveFlmuxRootDir(installRoot));
   const known = new Set(knownExtensionIds);
   const provisioned = new Set<string>();

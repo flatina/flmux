@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, realpathSync } from "node:fs";
-import { delimiter, dirname, resolve, sep } from "node:path";
+import { mkdirSync, realpathSync } from "node:fs";
+import { delimiter, resolve, sep } from "node:path";
 import {
   BrowserWindow,
   AppRuntime,
@@ -10,7 +10,6 @@ import type { PathCallerContext, SequencedShellCoreEvent, ShellModelAPI } from "
 import { ModelPathError } from "@flmux/core/shell";
 import { flmuxBridgeCap, type FlmuxRendererBootstrapConfig, type FlmuxSessionSaveLayouts } from "../shared/rendererBridge";
 import { resolveWorkspaceTabstripMode } from "../shared/workspaceTabstrip";
-import { isCompiledBinary } from "../shared/buildTarget";
 import { createSessionImpl } from "./sessionImpl";
 import { createBridgeImpl, type MintedSession } from "./bridgeImpl";
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
@@ -39,7 +38,7 @@ import type { ExtensionFsPolicy } from "@flmux/extension-api";
 import { resolveFlmuxServerPort } from "./auth/serverConfig";
 import { resolveFlmuxAppTitle, resolveFlmuxAppName } from "./appConfig";
 import { resolveFlmuxRuntimeMode } from "./runtimeMode";
-import { resolveFlmuxRootDir, resolveFlmuxPaths } from "./flmuxPaths";
+import { resolveFlmuxRootDir, resolveFlmuxPaths, resolveInstallLayout } from "./flmuxPaths";
 import { ensureFlmuxCliShim, ensureExtensionCliShims } from "./cliShim";
 import { FLMUX_APP_VERSION } from "../version";
 import { PtydLockFile } from "@flmux/core/terminal/ptyd/lockFile";
@@ -104,14 +103,11 @@ function readDevAuthAsFlag(argv: readonly string[]): string | undefined {
   return value;
 }
 
-// Mirrors bunite's getBaseDir. Deploy layout ⟺ baseDir from the exe (compiled,
-// or no Bun.main). NOT existsSync(baseDir/renderer): in dev the source
-// `src/renderer` sits next to baseDir and false-positives → serves the
-// un-transpiled `/main.ts` (octet-stream → module script rejected → blank).
-const isDeployLayout = isCompiledBinary || !(Bun.main && existsSync(Bun.main));
-const baseDir = isDeployLayout ? dirname(process.execPath) : dirname(Bun.main);
+// Deploy vs dev layout (compiled exe dir vs repo root). NOT existsSync(baseDir/
+// renderer): in dev the source `src/renderer` sits next to baseDir and
+// false-positives → serves un-transpiled `/main.ts` (rejected → blank).
+const { isDeployLayout, baseDir, installRoot } = resolveInstallLayout();
 const rendererDir = isDeployLayout ? resolve(baseDir, "renderer") : resolve(baseDir, "../dist/renderer");
-const installRoot = isDeployLayout ? baseDir : resolve(baseDir, "../../..");
 const flmuxPaths = resolveFlmuxPaths(resolveFlmuxRootDir(installRoot));
 const projectDir = flmuxPaths.rootDir;
 const defaultExtensionsRoot = isDeployLayout ? resolve(baseDir, "extensions") : resolve(baseDir, "../../../extensions");

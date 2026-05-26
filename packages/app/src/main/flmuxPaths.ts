@@ -1,4 +1,6 @@
-import { resolve, join } from "node:path";
+import { resolve, join, dirname } from "node:path";
+import { existsSync } from "node:fs";
+import { isCompiledBinary } from "../shared/buildTarget";
 
 interface FlmuxPaths {
   /** Install root — parent of `.flmux/`. All other paths derive from this. */
@@ -37,6 +39,28 @@ interface FlmuxPaths {
   /** `<rootDir>/.flmux_users` — **sibling** of `.flmux` so the auth-secret
    * tree stays outside any user bind. Root of per-user/shared fs dirs. */
   usersRootDir: string;
+}
+
+export interface FlmuxInstallLayout {
+  /** Compiled binary, or no real `Bun.main` → deploy layout (baseDir = exe dir). */
+  isDeployLayout: boolean;
+  /** Deploy: `process.execPath` dir. Dev: dir of the entry `Bun.main`. */
+  baseDir: string;
+  /** Parent of `.flmux`. Deploy: `baseDir`. Dev: repo root (`baseDir/../../..`). */
+  installRoot: string;
+}
+
+/**
+ * Mirrors bunite `getBaseDir`: a compiled binary's `Bun.main` is a `$bunfs`/`~BUN`
+ * virtual path, so `dirname(Bun.main)` is bogus (climbs to `/`). Derive from
+ * `process.execPath` instead. Single source for both `main.ts` and the CLI so
+ * they can't drift (the CLI once resolved rootDir to `/` → `mkdir '/.flmux'`).
+ */
+export function resolveInstallLayout(): FlmuxInstallLayout {
+  const isDeployLayout = isCompiledBinary || !(Bun.main && existsSync(Bun.main));
+  const baseDir = isDeployLayout ? dirname(process.execPath) : dirname(Bun.main!);
+  const installRoot = isDeployLayout ? baseDir : resolve(baseDir, "../../..");
+  return { isDeployLayout, baseDir, installRoot };
 }
 
 export function resolveFlmuxRootDir(installRoot: string, env: NodeJS.ProcessEnv = process.env): string {

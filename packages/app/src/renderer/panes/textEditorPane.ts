@@ -5,7 +5,7 @@ import { json } from "@codemirror/lang-json";
 import { html } from "@codemirror/lang-html";
 import { css } from "@codemirror/lang-css";
 import { python } from "@codemirror/lang-python";
-import { EditorState, type Extension, type TransactionSpec } from "@codemirror/state";
+import { Compartment, EditorState, type Extension, type TransactionSpec } from "@codemirror/state";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { EditorView } from "@codemirror/view";
 import { basicSetup } from "codemirror";
@@ -120,10 +120,17 @@ export class TextEditorPaneRenderer implements IContentRenderer {
   private body?: HTMLElement;
   private disposed = false;
   private readonly createTextEditorView: TextEditorPaneViewFactory;
+  private readonly themeCompartment = new Compartment();
+  private readonly onThemeChange = () => {
+    this.view?.dispatch({
+      effects: this.themeCompartment.reconfigure(activeThemeExtension())
+    });
+  };
 
   constructor(private readonly deps: TextEditorPaneRendererDependencies) {
     this.element.className = "text-editor-panel";
     this.createTextEditorView = deps.textEditorViewFactory ?? ((options) => new EditorView(options));
+    document.addEventListener("flmux-theme-change", this.onThemeChange);
   }
 
   init(params: GroupPanelPartInitParameters) {
@@ -147,6 +154,7 @@ export class TextEditorPaneRenderer implements IContentRenderer {
     if (this.disposed) return;
     this.disposed = true;
     this.loadToken += 1;
+    document.removeEventListener("flmux-theme-change", this.onThemeChange);
     this.destroyView();
     this.element.replaceChildren();
     this.banner = undefined;
@@ -213,7 +221,7 @@ export class TextEditorPaneRenderer implements IContentRenderer {
     this.view = this.createTextEditorView({
       state: EditorState.create({
         doc: content,
-        extensions: textEditorExtensions(path)
+        extensions: textEditorExtensions(path, this.themeCompartment)
       }),
       parent: this.body
     });
@@ -268,16 +276,27 @@ export class TextEditorPaneRenderer implements IContentRenderer {
   }
 }
 
-function textEditorExtensions(path: string): Extension[] {
+function textEditorExtensions(path: string, themeCompartment: Compartment): Extension[] {
   const language = languageForPath(path);
   return [
     basicSetup,
     EditorState.readOnly.of(true),
     EditorView.editable.of(false),
-    oneDark,
+    themeCompartment.of(activeThemeExtension()),
     THEME_FROM_VARS,
     ...(language ? [language] : [])
   ];
+}
+
+function isDarkTheme(): boolean {
+  const explicit = globalThis.document?.documentElement?.dataset?.theme;
+  if (explicit === "dark") return true;
+  if (explicit === "light") return false;
+  return globalThis.window?.matchMedia?.("(prefers-color-scheme: dark)").matches ?? true;
+}
+
+function activeThemeExtension(): Extension {
+  return isDarkTheme() ? oneDark : [];
 }
 
 function languageForPath(path: string): Extension | null {

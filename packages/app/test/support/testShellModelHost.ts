@@ -34,6 +34,7 @@ function newTestPaneId(): string {
 type StoredPane =
   | { id: string; kind: "browser"; title: string; url: string }
   | { id: string; kind: "cowsay"; title: string }
+  | { id: string; kind: "explorer"; title: string; root: string }
   | { id: string; kind: "inspector"; title: string; subscription?: string }
   | { id: string; kind: "scratchpad"; title: string; note?: string }
   | {
@@ -334,7 +335,12 @@ export class TestShellModelHost implements ShellModelHost {
 
   hasPaneKind(kind: string): boolean {
     return (
-      kind === "browser" || kind === "cowsay" || kind === "terminal" || kind === "inspector" || kind === "scratchpad"
+      kind === "browser" ||
+      kind === "cowsay" ||
+      kind === "explorer" ||
+      kind === "terminal" ||
+      kind === "inspector" ||
+      kind === "scratchpad"
     );
   }
 
@@ -704,6 +710,14 @@ export class TestShellModelHost implements ShellModelHost {
           title: input.title?.trim() || "Cowsay"
         };
 
+      case "explorer":
+        return {
+          id: paneId,
+          kind: "explorer",
+          title: input.title?.trim() || "Explorer",
+          root: typeof input.params?.root === "string" && input.params.root.length > 0 ? input.params.root : "/"
+        };
+
       case "inspector":
         return {
           id: paneId,
@@ -763,6 +777,12 @@ export class TestShellModelHost implements ShellModelHost {
       };
     }
 
+    if (pane.kind === "explorer") {
+      return {
+        root: pane.root
+      };
+    }
+
     if (pane.kind === "scratchpad") {
       return {
         note: pane.note ?? ""
@@ -788,6 +808,12 @@ export class TestShellModelHost implements ShellModelHost {
     if (pane.kind === "terminal") {
       return {
         cwd: pane.cwd
+      };
+    }
+
+    if (pane.kind === "explorer") {
+      return {
+        root: pane.root
       };
     }
 

@@ -1,5 +1,6 @@
 import { PLACEHOLDER_PANE_KIND, createBrowserPaneSpec } from "@flmux/core/shell";
 import { BrowserPaneRenderer } from "../panes/browserPane";
+import { ExplorerPaneRenderer } from "../panes/explorerPane";
 import { PlaceholderPaneRenderer } from "../panes/placeholderPane";
 import { TerminalPaneRenderer } from "../panes/terminalPane";
 import { type PaneDescriptor, type PaneRegistry, isTerminalPaneRecord } from "./paneRegistry";
@@ -26,6 +27,24 @@ function createBuiltinPaneDescriptors(deps: BuiltinPaneDescriptorDependencies): 
           normalizeUrl: runtime.normalizeBrowserUrl,
           onUrlChange: runtime.onBrowserUrlChange
         })
+    },
+    {
+      kind: "explorer",
+      defaultTitle: "Explorer",
+      edgeGroup: "left",
+      singletonScope: "workspace",
+      createRenderer: ({ runtime }) =>
+        new ExplorerPaneRenderer({
+          shellModel: runtime.shellModel
+        }),
+      lifecycle: {
+        createParams: ({ input }) => explorerParams(input.params),
+        getTitle: ({ params }) => explorerTitle(optionalStringParam(params?.root) ?? "/")
+      },
+      persistence: {
+        normalizeRestoredParams: ({ params }) => explorerParams(params),
+        serializeParams: ({ currentParams }) => explorerParams(currentParams)
+      }
     },
     {
       kind: "terminal",
@@ -104,4 +123,12 @@ function createBuiltinPaneDescriptors(deps: BuiltinPaneDescriptorDependencies): 
 
 function optionalStringParam(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function explorerParams(params: Record<string, unknown> | undefined) {
+  return { root: optionalStringParam(params?.root) ?? "/" };
+}
+
+function explorerTitle(root: string) {
+  return root === "/" ? "Explorer" : `Explorer (${root})`;
 }

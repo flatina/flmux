@@ -32,6 +32,19 @@ export function createBuiltinPaneSpecs(
   return [
     createBrowserPaneSpec({ controller: options.browserController, callableOps: BROWSER_CALLABLE_OPS }),
     {
+      kind: "explorer",
+      edgeGroup: "left",
+      singletonScope: "workspace",
+      lifecycle: {
+        createParams: ({ input }) => explorerParams(input.params),
+        getTitle: ({ params }) => explorerTitle(optionalStringParam(params?.root) ?? "/")
+      },
+      persistence: {
+        normalizeRestoredParams: ({ params }) => explorerParams(params),
+        serializeParams: ({ currentParams }) => explorerParams(currentParams)
+      }
+    },
+    {
       kind: "terminal",
       lifecycle: {
         createParams: ({ input }) => ({
@@ -185,4 +198,12 @@ async function defaultImportServerModule(entryUrl: string): Promise<ServerModule
 
 function optionalStringParam(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function explorerParams(params: Record<string, unknown> | undefined) {
+  return { root: optionalStringParam(params?.root) ?? "/" };
+}
+
+function explorerTitle(root: string) {
+  return root === "/" ? "Explorer" : `Explorer (${root})`;
 }

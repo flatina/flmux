@@ -454,14 +454,15 @@ export class FlmuxWorkbench {
         : { direction: payload.place }
       : undefined;
     // Dockview's active-group fallback can land a non-edge pane inside an edge
-    // group when the source pane is one — anchor to a non-edge panel instead.
+    // group when the source pane is one — anchor to a non-edge panel, or split
+    // the root grid when the main area is still empty.
     if (!position) {
       const activeId = record.innerApi.activePanel?.id;
       if (!activeId || record.paneEdge.has(activeId)) {
         const mainAnchor = record.innerApi.panels.find((p) => !record.paneEdge.has(p.id));
-        if (mainAnchor) {
-          position = { referencePanel: mainAnchor, direction: "within" };
-        }
+        position = mainAnchor
+          ? { referencePanel: mainAnchor, direction: "within" }
+          : { direction: "right" };
       }
     }
     record.innerApi.addPanel({

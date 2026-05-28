@@ -11,7 +11,7 @@
     "extensions/scratchpad"
   ],
   "scripts": {
-    "build:extensions": "bun run --filter @flmux/extension-devkit build ../../extensions/cowsay ../../extensions/counter ../../extensions/header-menu ../../extensions/inspector ../../extensions/scratchpad",
+    "build:extensions": "bun scripts/dev-extensions.ts build",
     "pack:extensions": "bun scripts/pack-extensions.ts",
     "build": "bun run --filter @flmux/app build",
     "dev": "bun run --filter @flmux/app dev",
@@ -20,7 +20,7 @@
     "test:smoke": "cd packages/app && bun run test:smoke",
     "test:harness-smoke": "cd packages/app && bun run test:harness-smoke",
     "typecheck": "cd packages/app && bun run typecheck",
-    "validate:extensions": "bun run --filter @flmux/extension-devkit validate ../../extensions/cowsay ../../extensions/counter ../../extensions/header-menu ../../extensions/inspector ../../extensions/scratchpad",
+    "validate:extensions": "bun scripts/dev-extensions.ts validate",
     "format": "biome format --write",
     "format:check": "biome format",
     "lint": "biome lint",

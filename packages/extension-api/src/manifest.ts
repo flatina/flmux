@@ -44,6 +44,7 @@ export interface ExtensionManifest {
   entrypoints: ExtensionManifestEntrypoints;
   commands?: ExtensionManifestCommand[];
   panes?: ExtensionManifestPane[];
+  devOnly?: boolean;
 }
 
 export type ExtensionManifestValidationResult =
@@ -96,6 +97,11 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
   const serverPath = validateManifestEntrypointPath(server, "entrypoints.server");
   const commandsResult = validateManifestCommands(commands, Boolean(cli));
   const panesResult = validateManifestPanes(panes);
+  const devOnlyRaw = value.devOnly;
+  if (devOnlyRaw !== undefined && typeof devOnlyRaw !== "boolean") {
+    errors.push("Manifest field 'devOnly' must be a boolean when provided");
+  }
+  const devOnly = typeof devOnlyRaw === "boolean" ? devOnlyRaw : undefined;
 
   if (rendererPath) {
     errors.push(rendererPath);
@@ -136,7 +142,8 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
         server: typeof server === "string" ? server.trim() : undefined
       },
       commands: commandsResult.ok ? commandsResult.commands : undefined,
-      panes: panesResult.ok ? panesResult.panes : undefined
+      panes: panesResult.ok ? panesResult.panes : undefined,
+      ...(devOnly !== undefined ? { devOnly } : {})
     }
   };
 }

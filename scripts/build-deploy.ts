@@ -169,14 +169,14 @@ for (const entry of readdirSync(srcExtDir, { withFileTypes: true })) {
   if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
   const manifestPath = join(srcExtDir, entry.name, "manifest.json");
   if (!existsSync(manifestPath)) continue;
-  let manifest: { id?: string };
+  let manifest: { id?: string; devOnly?: unknown };
   try {
     manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   } catch {
     continue;
   }
   if (typeof manifest.id !== "string") continue;
-  if (manifest.id.startsWith("sample.")) {
+  if (manifest.devOnly === true) {
     console.log(`  (skip)   ${entry.name}`);
     continue;
   }

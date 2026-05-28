@@ -518,6 +518,16 @@ class ShellModel implements ShellModelAPI {
       return { ok: true, value: await this.fs.stat({ path: requiredFsPathArg(args) }) };
     }
 
+    if (op === "write") {
+      return {
+        ok: true,
+        value: await this.fs.write({
+          path: requiredFsPathArg(args),
+          content: requiredFsContentArg(args)
+        })
+      };
+    }
+
     return throwPathError("NOT_CALLABLE", "Path is not callable");
   }
 
@@ -1636,6 +1646,14 @@ function requiredFsPathArg(args: Record<string, unknown>): string {
   }
 
   return args.path;
+}
+
+function requiredFsContentArg(args: Record<string, unknown>): string {
+  if (typeof args.content !== "string") {
+    throw new ModelPathError("INVALID_VALUE", "call /fs/write requires content=<string>");
+  }
+
+  return args.content;
 }
 
 function optionalMaxBytes(value: unknown): number | undefined {

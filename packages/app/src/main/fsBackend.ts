@@ -7,8 +7,12 @@ import {
   readSync,
   readdirSync,
   realpathSync,
+  renameSync,
+  unlinkSync,
+  writeSync,
   type Stats
 } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { ModelPathError, type FsBackend, type FsEntryKind, type FsListEntry } from "@flmux/core/shell";
 import type { ExtensionFsBind, ExtensionFsPolicy } from "@flmux/extension-api";
@@ -20,6 +24,7 @@ export interface CreateFsBackendOptions {
 
 interface NormalizedBind {
   realPath: string;
+  mode: "ro" | "rw";
   virtual: string;
   virtualSegments: string[];
 }
@@ -91,6 +96,32 @@ class NodeFsBackend implements FsBackend {
     return readUtf8File(target.realPath, input.maxBytes);
   }
 
+  write({ path: inputPath, content }: { path: string; content: string }) {
+    const buf = Buffer.from(content, "utf8");
+
+    if (this.unconfined) {
+      const parsed = parseUnconfinedPath(inputPath);
+      if (parsed.segments.length === 0) {
+        throw new ModelPathError("INVALID_PATH", "Path is not a file");
+      }
+      return writeAtomicNoFollow(this.projectRoot, parsed.segments, buf);
+    }
+
+    const parsed = parseVirtualPath(inputPath, { rejectNativeAbsolute: true });
+    const matched = this.matchBind(parsed.normalized);
+    if (!matched) {
+      throw new ModelPathError("NOT_FOUND", "Path not found");
+    }
+    if (matched.mode !== "rw") {
+      throw new ModelPathError("NOT_WRITABLE", "Path is not writable");
+    }
+    const relSegments = parsed.segments.slice(matched.virtualSegments.length);
+    if (relSegments.length === 0) {
+      throw new ModelPathError("INVALID_PATH", "Path is not a file");
+    }
+    return writeAtomicNoFollow(matched.realPath, relSegments, buf);
+  }
+
   stat({ path: inputPath }: { path: string }) {
     if (this.unconfined) {
       return toStatResult(this.resolveUnconfined(inputPath).stats);
@@ -160,6 +191,7 @@ function normalizeBind(bind: ExtensionFsBind): NormalizedBind | null {
     const parsed = parseVirtualPath(bind.virtual, { rejectNativeAbsolute: true });
     return {
       realPath: canonicalizeExisting(bind.realPath),
+      mode: bind.mode,
       virtual: parsed.normalized,
       virtualSegments: parsed.segments
     };
@@ -304,6 +336,88 @@ function readUtf8File(filePath: string, maxBytes: number | undefined) {
   } finally {
     closeSync(fd);
   }
+}
+
+// TOCTOU on ancestor swap is the same residual class as the read path (Node lacks openat).
+function writeAtomicNoFollow(
+  root: string,
+  segments: readonly string[],
+  buf: Buffer
+): { bytesWritten: number } {
+  if (segments.length === 0) {
+    throw new ModelPathError("INVALID_PATH", "Path is not a file");
+  }
+  const parentSegments = segments.slice(0, -1);
+  const leafName = segments[segments.length - 1]!;
+  if (leafName === "..") {
+    throw new ModelPathError("INVALID_PATH", "Parent path segments are not allowed");
+  }
+
+  const parentResolved = resolveUnderRoot(root, parentSegments);
+  if (!parentResolved.stats.isDirectory()) {
+    throw new ModelPathError("NOT_FOUND", "Path not found");
+  }
+  const parentDir = parentResolved.realPath;
+  const leafPath = join(parentDir, leafName);
+
+  // rename() replaces a leaf symlink itself (not its target); pre-check rejects that and dir clobber.
+  try {
+    const leafStats = lstatSync(leafPath);
+    if (leafStats.isSymbolicLink()) {
+      throw new ModelPathError("INVALID_PATH", "Symbolic links are not allowed in filesystem paths");
+    }
+    if (!leafStats.isFile()) {
+      throw new ModelPathError("INVALID_PATH", "Path is not a file");
+    }
+  } catch (error) {
+    if (error instanceof ModelPathError) throw error;
+    const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
+    if (code !== "ENOENT") throw mapFsError(error);
+  }
+
+  const tmpName = `.flmux-write-${process.pid}-${randomBytes(6).toString("hex")}.${leafName}.tmp`;
+  const tmpPath = join(parentDir, tmpName);
+  let fd: number;
+  try {
+    // O_NOFOLLOW is 0 on Windows; O_EXCL carries the fresh-create guarantee on both platforms.
+    fd = openSync(
+      tmpPath,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | O_NOFOLLOW,
+      0o644
+    );
+  } catch (error) {
+    throw mapFsError(error);
+  }
+
+  try {
+    let offset = 0;
+    while (offset < buf.length) {
+      const written = writeSync(fd, buf, offset, buf.length - offset);
+      if (written === 0) throw new Error("writeSync returned 0");
+      offset += written;
+    }
+  } catch (error) {
+    closeSync(fd);
+    safeUnlink(tmpPath);
+    if (error instanceof ModelPathError) throw error;
+    throw mapFsError(error);
+  }
+  closeSync(fd);
+
+  try {
+    renameSync(tmpPath, leafPath);
+  } catch (error) {
+    safeUnlink(tmpPath);
+    throw mapFsError(error);
+  }
+
+  return { bytesWritten: buf.length };
+}
+
+function safeUnlink(targetPath: string): void {
+  try {
+    unlinkSync(targetPath);
+  } catch {}
 }
 
 function tryCanonicalizeExisting(targetPath: string): string | null {

@@ -24,8 +24,13 @@ export interface FsStatResult {
   mtimeMs: number;
 }
 
+export interface FsWriteResult {
+  bytesWritten: number;
+}
+
 export interface FsBackend {
   list(input: { path: string }): Awaitable<FsListResult>;
   read(input: { path: string; maxBytes?: number }): Awaitable<FsReadResult>;
   stat(input: { path: string }): Awaitable<FsStatResult>;
+  write(input: { path: string; content: string }): Awaitable<FsWriteResult>;
 }

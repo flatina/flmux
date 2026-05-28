@@ -48,6 +48,7 @@ export interface FlmuxLocalExtensionLoadEntry {
   paneMaximumSizes: Record<string, number>;
   paneInitialSizes: Record<string, number>;
   paneEdgeGroups: Record<string, "left" | "right" | "top" | "bottom">;
+  paneNewMenu: Record<string, boolean>;
 }
 
 export interface FlmuxRendererBootstrapConfig {

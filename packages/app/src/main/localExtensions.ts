@@ -135,6 +135,7 @@ export function createLocalExtensionLoadEntries(
       const paneMaximumSizes: Record<string, number> = {};
       const paneInitialSizes: Record<string, number> = {};
       const paneEdgeGroups: Record<string, "left" | "right" | "top" | "bottom"> = {};
+      const paneNewMenu: Record<string, boolean> = {};
       for (const pane of extension.runtimeManifest.panes ?? []) {
         if (pane.icon) {
           paneIcons[pane.kind] = `${baseUrl}/${toServedExtensionPath(pane.icon)}${query}`;
@@ -154,6 +155,9 @@ export function createLocalExtensionLoadEntries(
         if (pane.edgeGroup) {
           paneEdgeGroups[pane.kind] = pane.edgeGroup;
         }
+        if (pane.newMenu !== undefined) {
+          paneNewMenu[pane.kind] = pane.newMenu;
+        }
       }
       return {
         id: extension.id,
@@ -166,7 +170,8 @@ export function createLocalExtensionLoadEntries(
         paneMinimumSizes,
         paneMaximumSizes,
         paneInitialSizes,
-        paneEdgeGroups
+        paneEdgeGroups,
+        paneNewMenu
       } satisfies FlmuxLocalExtensionLoadEntry;
     });
 }

@@ -46,6 +46,7 @@ export function createBuiltinPaneSpecs(
     },
     {
       kind: "textEditor",
+      newMenu: false,
       lifecycle: {
         createParams: ({ input }) => textEditorParams(input.params),
         getTitle: ({ params }) => textEditorTitle(optionalStringParam(params?.path) ?? "")
@@ -168,15 +169,17 @@ function createExtensionPaneSpec(
   // edgeGroup implies workspace singleton — explicit singletonScope still wins.
   const singletonScope = manifestPane.singletonScope ?? (manifestPane.edgeGroup ? "workspace" : undefined);
   const edgeGroup = manifestPane.edgeGroup;
+  const newMenu = manifestPane.newMenu;
 
   if (!spec) {
     if (!defaultTitle) {
-      return { kind: manifestPane.kind, singletonScope, edgeGroup };
+      return { kind: manifestPane.kind, singletonScope, edgeGroup, newMenu };
     }
     return {
       kind: manifestPane.kind,
       singletonScope,
       edgeGroup,
+      newMenu,
       lifecycle: {
         getTitle: ({ input }) => input.title?.trim() || defaultTitle
       }
@@ -197,6 +200,7 @@ function createExtensionPaneSpec(
     kind: manifestPane.kind,
     singletonScope,
     edgeGroup,
+    newMenu,
     lifecycle: mergedLifecycle,
     persistence: adaptExtensionPersistence(spec),
     pathMount: spec.pathMount ? adaptExtensionPanePathMount(spec.pathMount) : undefined

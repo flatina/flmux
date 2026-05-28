@@ -50,6 +50,7 @@ function createBuiltinPaneDescriptors(deps: BuiltinPaneDescriptorDependencies): 
     {
       kind: "textEditor",
       defaultTitle: "Text Editor",
+      newMenu: false,
       createRenderer: ({ runtime }) =>
         new TextEditorPaneRenderer({
           shellModel: runtime.shellModel

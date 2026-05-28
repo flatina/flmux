@@ -82,6 +82,8 @@ export interface PaneSpec<TRecord extends PaneStateRecord = PaneStateRecord> {
   singletonScope?: PaneSingletonScope;
   /** Mount in dockview edge group at this position. Implies workspace singleton. */
   edgeGroup?: PaneEdgeGroup;
+  /** When false, hide the kind from the `+` new-pane menu. Default true. */
+  newMenu?: boolean;
   lifecycle?: PaneLifecycleHooks<TRecord>;
   persistence?: PanePersistenceHooks<TRecord>;
   subtreeMounts?: PaneSubtreeMount<TRecord>[];

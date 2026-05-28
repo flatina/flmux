@@ -35,6 +35,7 @@ export async function registerLocalExternalPaneDescriptors(
     const paneMaximumSizes = extension.loadEntry.paneMaximumSizes ?? {};
     const paneInitialSizes = extension.loadEntry.paneInitialSizes ?? {};
     const paneEdgeGroups = extension.loadEntry.paneEdgeGroups ?? {};
+    const paneNewMenu = extension.loadEntry.paneNewMenu ?? {};
     for (const pane of extension.definition.panes ?? []) {
       const descriptor = createExternalPaneDescriptor(extId, pane);
       if (paneIcons[pane.kind]) descriptor.iconUrl = paneIcons[pane.kind];
@@ -43,6 +44,7 @@ export async function registerLocalExternalPaneDescriptors(
       if (paneMaximumSizes[pane.kind] !== undefined) descriptor.maximumSize = paneMaximumSizes[pane.kind];
       if (paneInitialSizes[pane.kind] !== undefined) descriptor.initialSize = paneInitialSizes[pane.kind];
       if (paneEdgeGroups[pane.kind]) descriptor.edgeGroup = paneEdgeGroups[pane.kind];
+      if (paneNewMenu[pane.kind] !== undefined) descriptor.newMenu = paneNewMenu[pane.kind];
       host.registerExternalPane(descriptor);
     }
   }

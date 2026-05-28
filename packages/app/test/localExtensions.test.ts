@@ -76,7 +76,7 @@ describe("local extension loading", () => {
         paneIcons: {},
         paneDefaultTitles: {},
         paneMinimumSizes: {},
-        paneMaximumSizes: {}, paneInitialSizes: {}, paneEdgeGroups: {}
+        paneMaximumSizes: {}, paneInitialSizes: {}, paneEdgeGroups: {}, paneNewMenu: {}
       }
     ]);
 
@@ -405,7 +405,7 @@ describe("local extension loading", () => {
         paneIcons: {},
         paneDefaultTitles: {},
         paneMinimumSizes: {},
-        paneMaximumSizes: {}, paneInitialSizes: {}, paneEdgeGroups: {}
+        paneMaximumSizes: {}, paneInitialSizes: {}, paneEdgeGroups: {}, paneNewMenu: {}
       },
       {
         id: "sample.inspector",
@@ -416,7 +416,7 @@ describe("local extension loading", () => {
         paneIcons: {},
         paneDefaultTitles: {},
         paneMinimumSizes: {},
-        paneMaximumSizes: {}, paneInitialSizes: {}, paneEdgeGroups: {}
+        paneMaximumSizes: {}, paneInitialSizes: {}, paneEdgeGroups: {}, paneNewMenu: {}
       }
     ];
 

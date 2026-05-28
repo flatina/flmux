@@ -189,7 +189,7 @@ export class FlmuxWorkbench {
       listKinds: () =>
         this.paneRegistry
           .list()
-          .filter((d) => d.kind !== PLACEHOLDER_PANE_KIND)
+          .filter((d) => d.kind !== PLACEHOLDER_PANE_KIND && d.newMenu !== false)
           .map((d) => ({
             kind: d.kind,
             label: d.defaultTitle ?? humanizePaneKind(d.kind),
@@ -613,7 +613,7 @@ export class FlmuxWorkbench {
           listKinds: () =>
             this.paneRegistry
               .list()
-              .filter((descriptor) => descriptor.kind !== PLACEHOLDER_PANE_KIND)
+              .filter((descriptor) => descriptor.kind !== PLACEHOLDER_PANE_KIND && descriptor.newMenu !== false)
               .map((descriptor) => ({
                 kind: descriptor.kind,
                 label: descriptor.defaultTitle ?? humanizePaneKind(descriptor.kind),
@@ -780,7 +780,7 @@ export class FlmuxWorkbench {
               listKinds: () =>
                 this.paneRegistry
                   .list()
-                  .filter((descriptor) => descriptor.kind !== PLACEHOLDER_PANE_KIND)
+                  .filter((descriptor) => descriptor.kind !== PLACEHOLDER_PANE_KIND && descriptor.newMenu !== false)
                   .map((descriptor) => ({
                     kind: descriptor.kind,
                     label: descriptor.defaultTitle ?? humanizePaneKind(descriptor.kind),

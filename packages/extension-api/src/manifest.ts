@@ -33,6 +33,7 @@ export interface ExtensionManifestPane {
   minimumSize?: number;
   maximumSize?: number;
   initialSize?: number;
+  newMenu?: boolean;
 }
 
 export interface ExtensionManifest {
@@ -302,6 +303,11 @@ function validateManifestPanes(value: unknown) {
       errors.push(`Manifest field 'panes[${index}].edgeGroup' must be 'left'|'right'|'top'|'bottom' when provided`);
       return;
     }
+    const newMenu = entry.newMenu;
+    if (newMenu !== undefined && typeof newMenu !== "boolean") {
+      errors.push(`Manifest field 'panes[${index}].newMenu' must be a boolean when provided`);
+      return;
+    }
     if (iconPath) {
       errors.push(iconPath);
       return;
@@ -321,7 +327,8 @@ function validateManifestPanes(value: unknown) {
       ...(icon ? { icon } : {}),
       ...(minimumSize !== undefined ? { minimumSize } : {}),
       ...(maximumSize !== undefined ? { maximumSize } : {}),
-      ...(initialSize !== undefined ? { initialSize } : {})
+      ...(initialSize !== undefined ? { initialSize } : {}),
+      ...(newMenu !== undefined ? { newMenu } : {})
     });
   });
 

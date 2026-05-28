@@ -7,7 +7,7 @@ import { css } from "@codemirror/lang-css";
 import { python } from "@codemirror/lang-python";
 import { Compartment, EditorState, type Extension, type TransactionSpec } from "@codemirror/state";
 import { oneDark } from "@codemirror/theme-one-dark";
-import { EditorView } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 import { basicSetup } from "codemirror";
 import type { ShellModelAPI } from "@flmux/core/shell/types";
 
@@ -57,6 +57,14 @@ const TEXT_EDITOR_CSS = `
   color: var(--fl-warning-foreground, #ffd68a);
   background: var(--fl-warning-background, rgba(255, 186, 73, 0.12));
   font: 12px / 1.35 system-ui, sans-serif;
+}
+.flmux-text-editor__banner--error {
+  color: var(--fl-error-foreground, #ff9d9d);
+  background: var(--fl-error-background, rgba(255, 64, 64, 0.14));
+}
+.flmux-text-editor__banner--info {
+  color: var(--fl-description-foreground, #97a9c8);
+  background: var(--fl-side-background, rgba(255, 255, 255, 0.04));
 }
 .flmux-text-editor__body {
   flex: 1 1 auto;
@@ -119,6 +127,10 @@ export class TextEditorPaneRenderer implements IContentRenderer {
   private banner?: HTMLElement;
   private body?: HTMLElement;
   private disposed = false;
+  private savedContent = "";
+  private dirty = false;
+  private truncated = false;
+  private saving = false;
   private readonly createTextEditorView: TextEditorPaneViewFactory;
   private readonly themeCompartment = new Compartment();
   private readonly onThemeChange = () => {
@@ -195,8 +207,11 @@ export class TextEditorPaneRenderer implements IContentRenderer {
         this.renderError("Invalid /fs/read response");
         return;
       }
+      this.savedContent = read.content;
+      this.dirty = false;
+      this.truncated = read.truncated;
       this.renderEditor(path, read.content);
-      this.renderTruncatedBanner(read);
+      this.refreshBanner();
     } catch (error) {
       if (this.disposed || token !== this.loadToken) return;
       this.renderError(errorMessage(error));
@@ -221,21 +236,89 @@ export class TextEditorPaneRenderer implements IContentRenderer {
     this.view = this.createTextEditorView({
       state: EditorState.create({
         doc: content,
-        extensions: textEditorExtensions(path, this.themeCompartment)
+        extensions: textEditorExtensions(
+          path,
+          this.themeCompartment,
+          () => this.onDocChange(),
+          () => {
+            void this.save();
+            return true;
+          }
+        )
       }),
       parent: this.body
     });
   }
 
-  private renderTruncatedBanner(read: FsReadResult) {
-    if (!this.banner) return;
-    if (!read.truncated) {
-      this.banner.hidden = true;
-      this.banner.textContent = "";
+  private onDocChange() {
+    if (!this.view) return;
+    const next = this.view.state.doc.toString() !== this.savedContent;
+    if (next === this.dirty) return;
+    this.dirty = next;
+    this.refreshBanner();
+  }
+
+  private async save() {
+    if (!this.view || this.saving || this.disposed || !this.path) return;
+    if (this.truncated) {
+      this.setBanner("File was truncated on load - save disabled to avoid clobbering unread tail", "error");
       return;
     }
+    if (!this.dirty) return;
+    const content = this.view.state.doc.toString();
+    const token = this.loadToken;
+    this.saving = true;
+    this.setBanner("Saving…", "info");
+    try {
+      const result = await this.deps.shellModel.pathCall(
+        "/fs/write",
+        { path: this.path, content },
+        { sourcePaneId: this.paneId }
+      );
+      if (this.disposed || token !== this.loadToken) return;
+      if (!result.ok) {
+        this.setBanner(result.code ? `${result.code}: ${result.error}` : result.error, "error");
+        return;
+      }
+      this.savedContent = content;
+      this.dirty = this.view.state.doc.toString() !== this.savedContent;
+      this.refreshBanner();
+    } catch (error) {
+      if (this.disposed || token !== this.loadToken) return;
+      this.setBanner(errorMessage(error), "error");
+    } finally {
+      this.saving = false;
+    }
+  }
+
+  private refreshBanner() {
+    if (this.saving) return;
+    if (this.truncated) {
+      this.setBanner(
+        `Truncated - showing first ~${utf8ByteLength(this.savedContent)} bytes (save disabled)`,
+        "warning"
+      );
+      return;
+    }
+    if (this.dirty) {
+      this.setBanner("Modified - Ctrl+S to save", "info");
+      return;
+    }
+    this.clearBanner();
+  }
+
+  private setBanner(text: string, tone: "warning" | "error" | "info") {
+    if (!this.banner) return;
+    this.banner.className = `flmux-text-editor__banner flmux-text-editor__banner--${tone}`;
     this.banner.hidden = false;
-    this.banner.textContent = `Truncated - showing first ~${utf8ByteLength(read.content)} bytes`;
+    this.banner.textContent = text;
+  }
+
+  private clearBanner() {
+    if (!this.banner) return;
+    this.banner.className = "flmux-text-editor__banner";
+    this.banner.hidden = true;
+    this.banner.textContent = "";
   }
 
   private renderError(message: string, code?: string) {
@@ -276,12 +359,19 @@ export class TextEditorPaneRenderer implements IContentRenderer {
   }
 }
 
-function textEditorExtensions(path: string, themeCompartment: Compartment): Extension[] {
+function textEditorExtensions(
+  path: string,
+  themeCompartment: Compartment,
+  onChange: () => void,
+  onSave: () => boolean
+): Extension[] {
   const language = languageForPath(path);
   return [
     basicSetup,
-    EditorState.readOnly.of(true),
-    EditorView.editable.of(false),
+    keymap.of([{ key: "Mod-s", preventDefault: true, run: onSave }]),
+    EditorView.updateListener.of((update) => {
+      if (update.docChanged) onChange();
+    }),
     themeCompartment.of(activeThemeExtension()),
     THEME_FROM_VARS,
     ...(language ? [language] : [])

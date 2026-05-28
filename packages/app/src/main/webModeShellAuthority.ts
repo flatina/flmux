@@ -18,6 +18,9 @@ import { createBuiltinPaneSpecs, createExtensionPaneSpecs, type ExtensionModuleI
 import { createBrowserPaneController, type AuthorityBrowserPaneController } from "./browserPaneController";
 import { BrowserAgentSurface } from "./browserAgentSurface";
 import type { FlmuxSessionStore } from "./sessionStore";
+import { createFsBackend } from "./fsBackend";
+import type { FsPolicyResolver } from "./auth/fsPolicy";
+import type { FlmuxUser } from "./auth/userStore";
 
 export interface WebModeShellAuthority {
   readonly clientId: string;
@@ -59,6 +62,9 @@ export async function createWebModeShellAuthority(options: {
   userId?: string;
   /** Per-user pane-kind role gate; forwarded to ShellCore. */
   paneKindGuard?: (kind: string) => void;
+  /** Per-user filesystem policy source for `/fs/*`. Missing user/policy fails closed. */
+  fsPolicyResolver?: FsPolicyResolver;
+  resolveUserByName?: (userId: string) => FlmuxUser | null;
 }): Promise<WebModeShellAuthority> {
   const browserController = createBrowserPaneController();
   const paneRegistry = new PaneRegistry<PaneSpec>();
@@ -86,9 +92,21 @@ export async function createWebModeShellAuthority(options: {
     maxTerminals: Number(process.env.FLMUX_MAX_TERMINALS_PER_USER) || 50,
     paneKindGuard: options.paneKindGuard
   });
+  const fsPolicy =
+    options.fsPolicyResolver && options.userId
+      ? (() => {
+          const user = options.resolveUserByName?.(options.userId!) ?? null;
+          return user ? options.fsPolicyResolver!.resolve(user) : { unconfined: false, binds: [] };
+        })()
+      : { unconfined: false, binds: [] };
+
   const shellModel = createShellModel({
     host: shellCore,
-    terminal: shellCore.createTerminalDelegate()
+    terminal: shellCore.createTerminalDelegate(),
+    fs: createFsBackend({
+      projectDir: options.projectDir,
+      policy: fsPolicy
+    })
   });
   const agentSurface = new BrowserAgentSurface(shellCore, browserController);
   browserController.setAgentSurface(agentSurface);

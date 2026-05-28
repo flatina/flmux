@@ -16,10 +16,12 @@ import type {
   ScopedPropertyTarget,
   ShellTerminalDelegate
 } from "./types";
+import type { FsBackend } from "./fsBackend";
 
 export interface ShellModelDependencies {
   host: ShellModelHost;
   terminal: ShellTerminalDelegate;
+  fs?: FsBackend;
 }
 
 export function createShellModel(deps: ShellModelDependencies): ShellModelAPI {
@@ -29,10 +31,12 @@ export function createShellModel(deps: ShellModelDependencies): ShellModelAPI {
 class ShellModel implements ShellModelAPI {
   private readonly host: ShellModelHost;
   private readonly terminal: ShellTerminalDelegate;
+  private readonly fs: FsBackend | undefined;
 
   constructor(deps: ShellModelDependencies) {
     this.host = deps.host;
     this.terminal = deps.terminal;
+    this.fs = deps.fs;
   }
 
   async pathGet(path: string, caller: PathCallerContext = {}): Promise<PathGetResult> {
@@ -297,6 +301,10 @@ class ShellModel implements ShellModelAPI {
       return throwPathError("NOT_CALLABLE", "Path is not callable");
     }
 
+    if (segments[0] === "fs") {
+      return await this.callFs(segments.slice(1), args);
+    }
+
     if (segments[0] === "workspaces") {
       // Slot-aware mutations route client-scoped events (workspace.activeChanged)
       // to the right slot. Without slotKey they land on the authority default slot.
@@ -477,6 +485,37 @@ class ShellModel implements ShellModelAPI {
       if (mount && mountKey === mount.mountKey) {
         return await this.callPaneMountStatePath(mount, relativePath, args);
       }
+    }
+
+    return throwPathError("NOT_CALLABLE", "Path is not callable");
+  }
+
+  private async callFs(segments: string[], args: Record<string, unknown>): Promise<PathCallResult> {
+    if (!this.fs) {
+      return throwPathError("NOT_FOUND", "Filesystem backend is not available");
+    }
+
+    if (segments.length !== 1) {
+      return throwPathError("NOT_CALLABLE", "Path is not callable");
+    }
+
+    const op = segments[0];
+    if (op === "list") {
+      return { ok: true, value: await this.fs.list({ path: requiredFsPathArg(args) }) };
+    }
+
+    if (op === "read") {
+      return {
+        ok: true,
+        value: await this.fs.read({
+          path: requiredFsPathArg(args),
+          maxBytes: optionalMaxBytes(args.maxBytes)
+        })
+      };
+    }
+
+    if (op === "stat") {
+      return { ok: true, value: await this.fs.stat({ path: requiredFsPathArg(args) }) };
     }
 
     return throwPathError("NOT_CALLABLE", "Path is not callable");
@@ -1586,6 +1625,26 @@ function optionalString(value: unknown): string | undefined {
 
   if (typeof value !== "string") {
     throw new ModelPathError("INVALID_VALUE", "Expected a string value");
+  }
+
+  return value;
+}
+
+function requiredFsPathArg(args: Record<string, unknown>): string {
+  if (typeof args.path !== "string" || args.path.length === 0) {
+    throw new ModelPathError("INVALID_VALUE", "call /fs/* requires path=...");
+  }
+
+  return args.path;
+}
+
+function optionalMaxBytes(value: unknown): number | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new ModelPathError("INVALID_VALUE", "maxBytes must be a non-negative integer");
   }
 
   return value;

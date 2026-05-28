@@ -547,6 +547,8 @@ const userAuthorityRegistry: WebModeUserAuthorityRegistry | null =
         // Per-user session persistence under the auth dir — each
         // authenticated user gets `<authDir>/sessions/<userId>/session.json`.
         sessionsDir: runtimeMode === "web" ? flmuxPaths.webSessionsDir : undefined,
+        fsPolicyResolver,
+        resolveUserByName: (userId) => webModeAuthorizer?.resolveUserByName(userId) ?? null,
         makePaneKindGuard: (userId) => (kind) => {
           if (!isPaneKindAllowedForUser(userId, kind)) {
             throw new ModelPathError("NOT_CALLABLE", `pane kind '${kind}' is not permitted for user '${userId}'`);

@@ -4,6 +4,8 @@ import { createSessionStore } from "./sessionStore";
 import { createWebModeShellAuthority, type WebModeShellAuthority } from "./webModeShellAuthority";
 import type { ClientRegistry } from "./clientRegistry";
 import type { TerminalService } from "./terminal-service";
+import type { FsPolicyResolver } from "./auth/fsPolicy";
+import type { FlmuxUser } from "./auth/userStore";
 
 interface WebModeUserAuthorityRegistryOptions {
   projectDir: string;
@@ -32,6 +34,9 @@ interface WebModeUserAuthorityRegistryOptions {
   /** Builds a per-user pane-kind role gate (resolved fresh per call so role
    * edits apply without restart). Injected into each user's ShellCore. */
   makePaneKindGuard?(userId: string): (kind: string) => void;
+  /** Builds the per-user `/fs/*` policy at authority creation. */
+  fsPolicyResolver?: FsPolicyResolver;
+  resolveUserByName?(userId: string): FlmuxUser | null;
 }
 
 export interface WebModeUserAuthorityRegistry {
@@ -82,7 +87,9 @@ export function createWebModeUserAuthorityRegistry(
       localExtensions: options.localExtensions,
       sessionStore,
       userId,
-      paneKindGuard: options.makePaneKindGuard?.(userId)
+      paneKindGuard: options.makePaneKindGuard?.(userId),
+      fsPolicyResolver: options.fsPolicyResolver,
+      resolveUserByName: options.resolveUserByName
     });
     authorities.set(userId, authority);
     // Subscribe BEFORE start() so any pane.added emitted during session

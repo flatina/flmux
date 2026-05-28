@@ -28,6 +28,7 @@ describe("web mode shell authority", () => {
       {
         authorityClientId: authority.clientId,
         viewId: 0,
+        liveRenderers: 0,
         workspace: {
           id: "workspace.1",
           title: "Workspace 1",

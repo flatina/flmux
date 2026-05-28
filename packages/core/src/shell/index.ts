@@ -1,4 +1,5 @@
 export * from "./types";
+export * from "./fsBackend";
 export * from "./model";
 export * from "./workspaceBus";
 export * from "./workspaceStatusStore";

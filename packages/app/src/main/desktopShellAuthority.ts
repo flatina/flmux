@@ -23,6 +23,7 @@ import { createBrowserPaneController, type AuthorityBrowserPaneController } from
 import { BrowserAgentSurface } from "./browserAgentSurface";
 import type { FlmuxSessionStore } from "./sessionStore";
 import type { TerminalService } from "./terminal-service";
+import { createFsBackend } from "./fsBackend";
 
 export interface DesktopShellAuthority {
   readonly clientId: string;
@@ -86,7 +87,11 @@ export async function createDesktopShellAuthority(options: {
   });
   const shellModel = createShellModel({
     host: shellCore,
-    terminal: shellCore.createTerminalDelegate()
+    terminal: shellCore.createTerminalDelegate(),
+    fs: createFsBackend({
+      projectDir: options.projectDir,
+      policy: { unconfined: true, binds: [] }
+    })
   });
   const agentSurface = new BrowserAgentSurface(shellCore, browserController);
   browserController.setAgentSurface(agentSurface);

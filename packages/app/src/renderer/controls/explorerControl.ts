@@ -168,6 +168,7 @@ export function mountExplorerControl(
   let selectedPath: string | null = null;
   let loadToken = 0;
   let disposed = false;
+  let displayRootPath = rootPath;
 
   const rootNode: TreeNode = {
     path: rootPath,
@@ -343,6 +344,7 @@ export function mountExplorerControl(
         if (!disposed && node.loadToken === token) {
           node.loading = false;
           node.inFlight = undefined;
+          if (path === displayRootPath) advanceDisplayRoot();
           render();
         }
       }
@@ -399,23 +401,40 @@ export function mountExplorerControl(
       }
     };
 
-    // Root row hidden; children render at depth 0.
-    if (rootNode.loading) {
+    const displayNode = nodes.get(displayRootPath) ?? rootNode;
+    if (displayNode.loading) {
       rows.push({ type: "placeholder", message: "Loading", tone: "loading", depth: 0 });
-    } else if (rootNode.error) {
-      rows.push({ type: "placeholder", message: rootNode.error, tone: "error", depth: 0 });
-    } else if (rootNode.children) {
-      const children = rootNode.children.filter(shouldRenderEntry);
+    } else if (displayNode.error) {
+      rows.push({ type: "placeholder", message: displayNode.error, tone: "error", depth: 0 });
+    } else if (displayNode.children) {
+      const children = displayNode.children.filter(shouldRenderEntry);
       if (children.length === 0) {
         rows.push({ type: "placeholder", message: "(empty)", tone: "muted", depth: 0 });
       } else {
         for (const entry of children) {
-          const childPath = joinPath(rootNode.path, entry.name);
-          visit(upsertChildNode(childPath, entry, rootNode.path), 0);
+          const childPath = joinPath(displayNode.path, entry.name);
+          visit(upsertChildNode(childPath, entry, displayNode.path), 0);
         }
       }
     }
     return rows;
+  }
+
+  function advanceDisplayRoot(): void {
+    while (true) {
+      const node = nodes.get(displayRootPath);
+      if (!node?.children) return;
+      const visible = node.children.filter(shouldRenderEntry);
+      if (visible.length !== 1 || visible[0]!.kind !== "dir") return;
+      const childPath = joinPath(node.path, visible[0]!.name);
+      const childNode = upsertChildNode(childPath, visible[0]!, node.path);
+      displayRootPath = childPath;
+      expanded.add(childPath);
+      if (!childNode.children && !childNode.loading) {
+        void loadDir(childPath);
+        return;
+      }
+    }
   }
 
   function upsertChildNode(path: string, entry: ExplorerEntry, parentPath: string): TreeNode {

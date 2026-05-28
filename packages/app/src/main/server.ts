@@ -67,6 +67,18 @@ function rateLimitKey(request: Request, server: { requestIP(req: Request): { add
   return socketIP;
 }
 
+// Per-user (not per-IP) so co-located clients behind one NAT (meeting room)
+// don't share — and drain — a single bucket. null → caller falls back to IP.
+function rateLimitUserKey(request: Request, authorizer: FlmuxWebModeAuthorizer): string | null {
+  const token =
+    readCookie(request.headers.get("cookie"), authorizer.cookieName) ??
+    readBearerToken(request.headers.get("authorization")) ??
+    "";
+  if (!token) return null;
+  const name = authorizer.authorize(token)?.user.name;
+  return name ? `u:${name}` : null;
+}
+
 export function startFlmuxServer(options: {
   rendererDir: string;
   /** Request-scoped router resolver. Desktop returns its single authority
@@ -95,15 +107,17 @@ export function startFlmuxServer(options: {
   const hostname = "127.0.0.1";
   const appName = options.appName ?? "flmux";
   const app = new Elysia({ websocket: { maxPayloadLength: WS_MAX_PAYLOAD_BYTES } })
-    // Per-IP request-rate limit (web only). generator runs first (skip has 2
-    // params), so "" from an unresolvable/misconfigured key is produced then
-    // skipped here — no shared bucket. Desktop (no authorizer) is fully skipped.
+    // generator runs before skip (skip takes 2 params): an unresolvable "" key
+    // is produced then skipped, never bucketed shared. Desktop (no authorizer) skips.
     .use(
       rateLimit({
         scoping: "global",
         duration: RATE_LIMIT_WINDOW_MS,
         max: RATE_LIMIT_MAX,
-        generator: (request, server) => rateLimitKey(request, server),
+        generator: (request, server) => {
+          const userKey = options.authorizer ? rateLimitUserKey(request, options.authorizer) : null;
+          return userKey ?? rateLimitKey(request, server);
+        },
         skip: (_request, key) => !options.authorizer || !key
       })
     )

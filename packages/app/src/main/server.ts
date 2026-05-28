@@ -151,6 +151,7 @@ export function startFlmuxServer(options: {
       const router = await options.resolveShellModelRouter(auth.context);
       return {
         ok: true,
+        user: auth.context?.user?.name ?? null,
         clients: await router.listClients()
       };
     })

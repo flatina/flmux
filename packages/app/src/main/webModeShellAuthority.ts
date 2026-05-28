@@ -152,7 +152,12 @@ export async function createWebModeShellAuthority(options: {
       authorityClientId: clientId,
       shellModel,
       getWorkspace: async () => shellCore.getWorkspaceStatus(),
-      clientRegistry: options.clientRegistry
+      clientRegistry: options.clientRegistry,
+      // Live = transport bound (viewId set); the synthetic "server" slot isn't attachLive'd.
+      getLiveRendererCount: async () =>
+        (await shellCore.listClientSlots()).filter(
+          (slot) => (options.clientRegistry.get(slot.clientId)?.viewId ?? null) !== null
+        ).length
     }),
     subscribe: (handler) => shellCore.subscribe(handler),
     async start(origin: string) {

@@ -127,6 +127,17 @@ async function modelResultPost<T = unknown>(
   return payload.result;
 }
 
+const echoedOrigins = new Set<string>();
+
+/** One stderr line per origin: which user the token acts as, + warning when
+ * that authority has no live window. (stderr, so stdout JSON stays clean.) */
+function echoIdentityOnce(origin: string, user: string | null | undefined, liveRenderers: number | undefined): void {
+  if (echoedOrigins.has(origin) || !user) return;
+  echoedOrigins.add(origin);
+  const warn = liveRenderers === 0 ? " ⚠ no live window — changes not visible in any browser" : "";
+  console.error(`flmux: user=${user}${warn}`);
+}
+
 /**
  * Resolve the concrete clientId to target. If the user passed `--client`
  * (or `FLMUX_CLIENT_ID`) use that; otherwise ask flmux for its connected
@@ -138,8 +149,15 @@ export async function resolveClientId(origin: string, flags: FlmuxCliFlags): Pro
 
   const payload = await apiGet<{
     ok: true;
-    clients: Array<{ authorityClientId: string; workspace?: { id?: string; title?: string } | null }>;
+    user?: string | null;
+    clients: Array<{
+      authorityClientId: string;
+      workspace?: { id?: string; title?: string } | null;
+      liveRenderers?: number;
+    }>;
   }>(origin, "/api/clients", flags);
+
+  echoIdentityOnce(origin, payload.user, payload.clients[0]?.liveRenderers);
 
   if (payload.clients.length === 1) return payload.clients[0].authorityClientId;
   if (payload.clients.length === 0) {

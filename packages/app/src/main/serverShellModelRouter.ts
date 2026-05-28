@@ -14,6 +14,9 @@ export function createServerShellModelRouter(options: {
   shellModel: ShellModelAPI;
   getWorkspace(): Promise<WorkspaceStatusSnapshot>;
   clientRegistry: ClientRegistry;
+  /** Live renderer slot count for this authority — surfaced so CLI/HTTP callers
+   * can tell when an op targets a user with no window to show it. */
+  getLiveRendererCount?(): Promise<number>;
 }): FlmuxShellModelRouter {
   const authorityViewId = options.authorityViewId ?? 0;
 
@@ -32,7 +35,8 @@ export function createServerShellModelRouter(options: {
         {
           authorityClientId: options.authorityClientId,
           viewId: authorityViewId,
-          workspace: await options.getWorkspace()
+          workspace: await options.getWorkspace(),
+          liveRenderers: await options.getLiveRendererCount?.()
         }
       ];
     },

@@ -10,6 +10,9 @@ export interface FlmuxClientSummary {
   authorityClientId: string;
   viewId: number;
   workspace: WorkspaceStatusSnapshot | null;
+  /** Connected renderer (browser) slots in this authority. 0 ⇒ no window will
+   * show changes made via this token. Undefined when the router can't tell. */
+  liveRenderers?: number;
 }
 
 /** Internal router shape — distinct from the RPC-boundary

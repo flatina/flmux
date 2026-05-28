@@ -48,7 +48,7 @@ export type PathSetResult = { ok: true; value: unknown } | { ok: false; code: Pa
 
 export type PathCallResult = { ok: true; value: unknown } | { ok: false; code: PathErrorCode; error: string };
 
-export type BuiltinPaneKind = "browser" | "terminal" | "explorer";
+export type BuiltinPaneKind = "browser" | "terminal" | "explorer" | "textEditor";
 
 export type PaneKind = BuiltinPaneKind | (string & {});
 

@@ -448,11 +448,22 @@ export class FlmuxWorkbench {
     const referencePanel = payload.referencePaneId
       ? record.innerApi.getPanel(payload.referencePaneId) ?? record.innerApi.activePanel
       : null;
-    const position = payload.place
+    let position = payload.place
       ? referencePanel
         ? { referencePanel, direction: payload.place }
         : { direction: payload.place }
       : undefined;
+    // Dockview's active-group fallback can land a non-edge pane inside an edge
+    // group when the source pane is one — anchor to a non-edge panel instead.
+    if (!position) {
+      const activeId = record.innerApi.activePanel?.id;
+      if (!activeId || record.paneEdge.has(activeId)) {
+        const mainAnchor = record.innerApi.panels.find((p) => !record.paneEdge.has(p.id));
+        if (mainAnchor) {
+          position = { referencePanel: mainAnchor, direction: "within" };
+        }
+      }
+    }
     record.innerApi.addPanel({
       id: payload.paneId,
       component: payload.snapshot.kind,

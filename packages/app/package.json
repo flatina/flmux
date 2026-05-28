@@ -17,6 +17,15 @@
     "test:browser": "playwright test"
   },
   "dependencies": {
+    "@codemirror/lang-css": "^6.0.0",
+    "@codemirror/lang-html": "^6.0.0",
+    "@codemirror/lang-javascript": "^6.0.0",
+    "@codemirror/lang-json": "^6.0.0",
+    "@codemirror/lang-markdown": "^6.0.0",
+    "@codemirror/lang-python": "^6.0.0",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/theme-one-dark": "^6.1.0",
+    "@codemirror/view": "^6.43.0",
     "@flmux/core": "workspace:*",
     "@flmux/extension-api": "workspace:*",
     "@simplewebauthn/server": "^13",
@@ -27,6 +36,7 @@
     "bunite-native-mac-arm64": "^0.0.5",
     "bunite-native-win-x64": "^0.0.15",
     "citty": "^0.2.2",
+    "codemirror": "^6.0.2",
     "dockview-core": "^6.4.0",
     "elysia": "^1.4.28",
     "elysia-rate-limit": "^4.6.2",

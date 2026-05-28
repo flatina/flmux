@@ -3,6 +3,7 @@ import { BrowserPaneRenderer } from "../panes/browserPane";
 import { ExplorerPaneRenderer } from "../panes/explorerPane";
 import { PlaceholderPaneRenderer } from "../panes/placeholderPane";
 import { TerminalPaneRenderer } from "../panes/terminalPane";
+import { TextEditorPaneRenderer } from "../panes/textEditorPane";
 import { type PaneDescriptor, type PaneRegistry, isTerminalPaneRecord } from "./paneRegistry";
 
 interface BuiltinPaneDescriptorDependencies {
@@ -44,6 +45,22 @@ function createBuiltinPaneDescriptors(deps: BuiltinPaneDescriptorDependencies): 
       persistence: {
         normalizeRestoredParams: ({ params }) => explorerParams(params),
         serializeParams: ({ currentParams }) => explorerParams(currentParams)
+      }
+    },
+    {
+      kind: "textEditor",
+      defaultTitle: "Text Editor",
+      createRenderer: ({ runtime }) =>
+        new TextEditorPaneRenderer({
+          shellModel: runtime.shellModel
+        }),
+      lifecycle: {
+        createParams: ({ input }) => textEditorParams(input.params),
+        getTitle: ({ params }) => textEditorTitle(optionalStringParam(params?.path) ?? "")
+      },
+      persistence: {
+        normalizeRestoredParams: ({ params }) => textEditorParams(params),
+        serializeParams: ({ currentParams }) => textEditorParams(currentParams)
       }
     },
     {
@@ -131,4 +148,15 @@ function explorerParams(params: Record<string, unknown> | undefined) {
 
 function explorerTitle(root: string) {
   return root === "/" ? "Explorer" : `Explorer (${root})`;
+}
+
+function textEditorParams(params: Record<string, unknown> | undefined) {
+  return { path: optionalStringParam(params?.path) ?? "" };
+}
+
+function textEditorTitle(path: string) {
+  if (!path) return "Text Editor";
+  // Split on both separators — desktop unconfined accepts native Windows paths.
+  const trimmed = path.replace(/[\\/]+$/, "");
+  return trimmed.split(/[\\/]+/).filter(Boolean).pop() || "Text Editor";
 }

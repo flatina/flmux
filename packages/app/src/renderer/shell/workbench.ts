@@ -455,17 +455,17 @@ export class FlmuxWorkbench {
     }
 
     // Stale ref → activePanel fallback. Absent → root-level split (column-fill helper relies on this).
-    const referencePanel = payload.referencePaneId
+    const resolved = payload.referencePaneId
       ? record.innerApi.getPanel(payload.referencePaneId) ?? record.innerApi.activePanel
       : null;
-    let position = payload.place
-      ? referencePanel
-        ? { referencePanel, direction: payload.place }
+    // An edge-pane ref (e.g. the edge group's own `+`) would land a non-edge pane in the narrow edge group.
+    const refIsEdge = !!resolved && record.paneEdge.has(resolved.id);
+    let position = payload.place && !refIsEdge
+      ? resolved
+        ? { referencePanel: resolved, direction: payload.place }
         : { direction: payload.place }
       : undefined;
-    // Dockview's active-group fallback can land a non-edge pane inside an edge
-    // group when the source pane is one — anchor to a non-edge panel, or split
-    // the root grid when the main area is still empty.
+    // No usable ref: anchor to a non-edge panel, or split the root grid when the main area is empty.
     if (!position) {
       const activeId = record.innerApi.activePanel?.id;
       if (!activeId || record.paneEdge.has(activeId)) {

@@ -82,6 +82,13 @@ process.env.BUNITE_REMOTE_DEBUGGING_PORT ??= "9227";
 process.env.FLMUX_DEV_MODE ??= devModeRequested ? "1" : "";
 const hiddenWindow = process.env.FLMUX_HIDDEN_WINDOW === "1";
 
+process.on("uncaughtException", (err) => {
+  console.error("[flmux] uncaughtException (survived):", err);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[flmux] unhandledRejection (survived):", reason);
+});
+
 function parseOptionalPort(value: string | undefined): number | undefined {
   const n = Number.parseInt(value ?? "", 10);
   return Number.isFinite(n) && n > 0 && n < 65536 ? n : undefined;

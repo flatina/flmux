@@ -11,6 +11,7 @@ import type {
   FlmuxSessionSaveLayouts
 } from "../shared/rendererBridge";
 import paneSvg from "./assets/pane.svg" with { type: "text" };
+import folderSvg from "./assets/folder.svg" with { type: "text" };
 import type { DiscoveredLocalExtension } from "./localExtensions";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
 import type { FlmuxAuthorizationContext, FlmuxWebModeAuthorizer } from "./webModeAuth";
@@ -186,6 +187,13 @@ export function startFlmuxServer(options: {
         return "Unauthorized";
       }
       return new Response(paneSvg, { headers: { "content-type": "image/svg+xml" } });
+    })
+    .get("/__flmux/assets/folder.svg", ({ request, set }) => {
+      const auth = authorizeRequest(request, set, options.authorizer);
+      if (!auth.ok) {
+        return "Unauthorized";
+      }
+      return new Response(folderSvg, { headers: { "content-type": "image/svg+xml" } });
     })
     .get("/__flmux/ext/:extensionId/:version/manifest.json", ({ request, params, set }) => {
       const auth = authorizeRequest(request, set, options.authorizer);

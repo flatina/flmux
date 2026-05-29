@@ -63,6 +63,10 @@ export interface FlmuxRendererBootstrapConfig {
    * name so the renderer can render the Account settings section. Omitted in
    * desktop mode (single trusted local user, no account surface). */
   account?: { name: string; displayName?: string };
+  /** Web-mode pane-kind ACL, mirrored so the `+` menu hides kinds the user
+   * can't create. Server still enforces at `/panes/new`; this is UI-only.
+   * Omitted in desktop (no gate). */
+  allowedPaneKinds?: { allow: "*" | readonly string[]; deny: readonly string[] };
 }
 
 // Identity sealed in impl-factory closure; per-call args carry only data hints.

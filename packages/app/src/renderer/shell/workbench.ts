@@ -89,6 +89,16 @@ function isReplayOverflow(error: unknown): boolean {
   return e.code === "failed_precondition" && e.retry?.kind === "after-resync";
 }
 
+// Mirrors webModeAuth.isPaneKindAllowed. undefined acl (desktop) = no gate.
+function isPaneKindAllowed(
+  acl: { allow: "*" | readonly string[]; deny: readonly string[] } | undefined,
+  kind: string
+): boolean {
+  if (!acl) return true;
+  if (acl.deny.includes(kind)) return false;
+  return acl.allow === "*" || acl.allow.includes(kind);
+}
+
 export class FlmuxWorkbench {
   readonly shellModel: ShellModelAPI;
   private readonly lifecyclePolicy: ReturnType<typeof getFlmuxRendererLifecyclePolicy>;
@@ -181,20 +191,20 @@ export class FlmuxWorkbench {
     return this.tabstripMode === "outer-auto" || this.tabstripMode === "none";
   }
 
+  private listMenuKinds(): Array<{ kind: string; label: string; iconUrl?: string }> {
+    const acl = this.config.allowedPaneKinds;
+    return this.paneRegistry
+      .list()
+      .filter((d) => d.kind !== PLACEHOLDER_PANE_KIND && d.newMenu !== false && isPaneKindAllowed(acl, d.kind))
+      .map((d) => ({ kind: d.kind, label: d.defaultTitle ?? humanizePaneKind(d.kind), iconUrl: d.iconUrl }));
+  }
+
   private maybeMountTitlebar() {
     if (this.tabstripMode !== "titlebar") return;
     const host = document.querySelector<HTMLElement>(".flmux-titlebar-host");
     if (!host) return;
     this.titlebar = new FlmuxTitlebar({
-      listKinds: () =>
-        this.paneRegistry
-          .list()
-          .filter((d) => d.kind !== PLACEHOLDER_PANE_KIND && d.newMenu !== false)
-          .map((d) => ({
-            kind: d.kind,
-            label: d.defaultTitle ?? humanizePaneKind(d.kind),
-            iconUrl: d.iconUrl
-          })),
+      listKinds: () => this.listMenuKinds(),
       onAddPane: (kind, workspaceId) => {
         void this.shellModel.pathCall("/panes/new", { kind, workspaceId, place: "right" });
       },
@@ -611,15 +621,7 @@ export class FlmuxWorkbench {
       // rather than the far-right edge.
       createLeftHeaderActionComponent: (group) =>
         new NewPaneHeaderAction(group, {
-          listKinds: () =>
-            this.paneRegistry
-              .list()
-              .filter((descriptor) => descriptor.kind !== PLACEHOLDER_PANE_KIND && descriptor.newMenu !== false)
-              .map((descriptor) => ({
-                kind: descriptor.kind,
-                label: descriptor.defaultTitle ?? humanizePaneKind(descriptor.kind),
-                iconUrl: descriptor.iconUrl
-              })),
+          listKinds: () => this.listMenuKinds(),
           onSelect: (kind) => {
             // Pin to this group's active panel — keeps panel-relative split
             // (root-level placement is reserved for the column-fill helper).
@@ -778,15 +780,7 @@ export class FlmuxWorkbench {
       createTabComponent: (options) =>
         options.name === "workspace-tab"
           ? new WorkspaceTabRenderer({
-              listKinds: () =>
-                this.paneRegistry
-                  .list()
-                  .filter((descriptor) => descriptor.kind !== PLACEHOLDER_PANE_KIND && descriptor.newMenu !== false)
-                  .map((descriptor) => ({
-                    kind: descriptor.kind,
-                    label: descriptor.defaultTitle ?? humanizePaneKind(descriptor.kind),
-                    iconUrl: descriptor.iconUrl
-                  })),
+              listKinds: () => this.listMenuKinds(),
               onSelect: (kind, workspaceId) => {
                 void this.shellModel.pathCall("/panes/new", {
                   kind,

@@ -846,6 +846,9 @@ function buildShellConfig(authContext: FlmuxAuthorizationContext | null): FlmuxR
         displayName: webModeAuthorizer?.getUser(authContext.user.name)?.displayName ?? authContext.user.displayName
       }
     : undefined;
+  const allowedPaneKinds = authContext
+    ? { allow: authContext.user.allowPaneKinds, deny: authContext.user.denyPaneKinds }
+    : undefined;
   return {
     mode: runtimeMode,
     appName,
@@ -855,7 +858,8 @@ function buildShellConfig(authContext: FlmuxAuthorizationContext | null): FlmuxR
     localExtensions: createLocalExtensionLoadEntries(localExtensions, runtimeMode === "web" ? "" : serverOrigin),
     devMode: process.env.FLMUX_DEV_MODE === "1",
     workspaceTabstrip: resolveWorkspaceTabstripMode({ runtimeMode, platform: process.platform }),
-    account
+    account,
+    allowedPaneKinds
   };
 }
 

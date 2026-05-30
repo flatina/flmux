@@ -22,6 +22,22 @@ export interface ExtensionFsPolicy {
   binds: ExtensionFsBind[];
 }
 
+/** Virtual↔real path conversion backed by flmux's own containment (symlink
+ * reject + no-follow + canonical pin) — so extensions don't re-implement the
+ * security boundary. Available on the session ctx's `fsPolicy`. */
+export interface ExtensionFsPathMapper {
+  /** Resolve a `/w`-rooted virtual path to its real path + the bind's mode.
+   * `read`: full resolve (must exist, symlinks rejected). `write`: resolve the
+   * parent and reject a leaf that's a symlink or existing non-file; the caller
+   * must still open with `O_NOFOLLOW` (it holds the fd — flmux only returns a
+   * path). Throws a host-path-scrubbed error on escape / symlink / not-found /
+   * unwritable. */
+  toReal(virtual: string, intent: "read" | "write"): { realPath: string; mode: "ro" | "rw" };
+  /** Reverse-map a real path to its virtual `/w` path (longest realPath-prefix
+   * bind, after canonicalize). `null` if outside every bind. */
+  toVirtual(real: string): string | null;
+}
+
 /** Per-session context. Identity lives in closure (sessionId/userId free
  *  variables inside the impl), never on the wire. `serve` registers a cap
  *  on the connection scoped to this session; `bootstrap` reaches the same
@@ -32,8 +48,9 @@ export interface ExtensionServerSessionContext {
   sessionId: string;
   userId: string;
   /** Filesystem the host grants this session — the extension confines its own
-   * command execution (e.g. agent bash) to this. See `ExtensionFsPolicy`. */
-  fsPolicy: ExtensionFsPolicy;
+   * command execution (e.g. agent bash) to this. See `ExtensionFsPolicy`.
+   * Carries the virtual↔real mapper so the extension reuses flmux containment. */
+  fsPolicy: ExtensionFsPolicy & ExtensionFsPathMapper;
   /** Mint a session-scoped, user-scoped machine token (+ the local API origin)
    * for calling flmux's HTTP API from a subprocess (e.g. a sandboxed CLI that
    * can't use the in-process `shell` cap). Auto-revoked when the session ends.

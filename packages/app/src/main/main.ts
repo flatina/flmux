@@ -34,8 +34,9 @@ import { createWebauthnAuthService } from "./auth/webauthnService";
 import type { FlmuxUser as FlmuxUserImport } from "./auth/userStore";
 import { eventToReadPath } from "./auth/eventAclPath";
 import { createFsPolicyResolver } from "./auth/fsPolicy";
+import { createFsPathMapper } from "./fsBackend";
 import { generateToken } from "./auth/tokenFormat";
-import type { ExtensionFsPolicy } from "@flmux/extension-api";
+import type { ExtensionFsBind, ExtensionFsPolicy } from "@flmux/extension-api";
 import { resolveFlmuxServerPort } from "./auth/serverConfig";
 import { resolveFlmuxAppTitle, resolveFlmuxAppName } from "./appConfig";
 import { resolveFlmuxRuntimeMode } from "./runtimeMode";
@@ -256,6 +257,27 @@ function findExtensionIdForPaneKind(kind: string): string | undefined {
   return localExtensions.find((ext) => ext.runtimeManifest.panes?.some((p) => p.kind === kind))?.id;
 }
 
+const SHARED_SKILLS_VIRTUAL = "/w/shared_skills";
+
+// ro binds for each installed extension's manifest `sharedDir` (single-source:
+// source binds dist in place, archive extracts once into extSharedDir). Gated
+// per-extension by entitlement so an ext the role can't run never leaks its dir.
+async function resolveExtSharedBinds(userId: string): Promise<ExtensionFsBind[]> {
+  const binds: ExtensionFsBind[] = [];
+  for (const ext of localExtensions) {
+    const sharedDir = ext.runtimeManifest.sharedDir;
+    if (!sharedDir) continue;
+    if (!userCanUseExtension(userId, ext.id)) continue;
+    try {
+      const realPath = await ext.resolveSharedAssetDir(sharedDir, flmuxPaths.extSharedDir);
+      if (realPath) binds.push({ realPath, virtual: `/w/shared/${ext.id}`, mode: "ro" });
+    } catch (err) {
+      console.warn(`[flmux] failed to materialize sharedDir for '${ext.id}':`, err);
+    }
+  }
+  return binds;
+}
+
 function paneInstanceKey(extId: string, paneId: string, clientId: string) {
   return `${extId}::${paneId}::${clientId}`;
 }
@@ -342,12 +364,20 @@ async function attachExtensionsForSession(opts: {
   const state: SessionExtensionsState = { serveHandles: [], sessionDisposes: [] };
   // Per-user fs grant (shared by the session's extensions). Desktop (no
   // authorizer) = unconfined; web resolves per user, absent → fail-closed.
-  const fsPolicy: ExtensionFsPolicy = webModeAuthorizer
+  const basePolicy: ExtensionFsPolicy = webModeAuthorizer
     ? (() => {
         const u = webModeAuthorizer.getUser(opts.userId);
         return u ? fsPolicyResolver.resolve(u) : { unconfined: false, binds: [] };
       })()
     : { unconfined: true, binds: [] };
+  // Extensions' bundle `sharedDir` → ro `/w/shared/<id>`, gated to confined
+  // sessions that hold the shared_skills grant — so customer roles (no
+  // shared_skills) don't receive extension nohow assets.
+  if (!basePolicy.unconfined && basePolicy.binds.some((b) => b.virtual === SHARED_SKILLS_VIRTUAL)) {
+    basePolicy.binds.push(...(await resolveExtSharedBinds(opts.userId)));
+  }
+  // Carry virtual↔real conversion (flmux containment) so the extension reuses it.
+  const fsPolicy = { ...basePolicy, ...createFsPathMapper({ policy: basePolicy, projectDir }) };
   // Per-session machine token for subprocess HTTP callbacks (e.g. the agent's
   // sandboxed CLI). User-scoped, revoked on session detach (state.sessionDisposes),
   // TTL-backstopped against a crash. Web only — desktop has no auth.

@@ -239,7 +239,8 @@ describe("web mode shell authority", () => {
       resolveEntryImportUrl: async (relativePath) => {
         const { pathToFileURL } = await import("node:url");
         return pathToFileURL(resolve(scratchpadDistRoot, relativePath)).href;
-      }
+      },
+      resolveSharedAssetDir: async () => null
     };
 
     const clientRegistry = new ClientRegistry();
@@ -332,6 +333,7 @@ function createFakeDiscoveredExtension(options: {
     origin: "source",
     originPath: `/fake/${options.id}`,
     resolveRuntimeFile: () => null,
-    resolveEntryImportUrl: async () => `fake://${options.id}/index.js`
+    resolveEntryImportUrl: async () => `fake://${options.id}/index.js`,
+    resolveSharedAssetDir: async () => null
   };
 }

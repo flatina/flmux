@@ -45,6 +45,99 @@ export function createFsBackend(options: CreateFsBackendOptions): FsBackend {
   return new NodeFsBackend(options);
 }
 
+export interface FsPathMapper {
+  toReal(virtual: string, intent: "read" | "write"): { realPath: string; mode: "ro" | "rw" };
+  toVirtual(real: string): string | null;
+}
+
+// Virtual↔real conversion over the same binds/containment NodeFsBackend uses,
+// so extensions reuse flmux's boundary instead of re-implementing it.
+export function createFsPathMapper(options: CreateFsBackendOptions): FsPathMapper {
+  const projectRoot = tryCanonicalizeExisting(options.projectDir) ?? resolve(options.projectDir);
+  const unconfined = options.policy.unconfined;
+  const binds = options.policy.binds.flatMap((b) => {
+    const n = normalizeBind(b);
+    return n ? [n] : [];
+  });
+
+  // Parent fully resolved (no-follow); leaf joined. Pre-rejects a leaf that's a
+  // symlink or existing non-file, matching writeAtomicNoFollow's guards. The
+  // no-follow create itself is the caller's (it holds the fd) — same same-call
+  // TOCTOU residual as the read path.
+  function realOfParentLeaf(root: string, segments: readonly string[]): string {
+    if (segments.length === 0) throw new ModelPathError("INVALID_PATH", "Path is not a file");
+    const leaf = segments[segments.length - 1]!;
+    if (leaf === "..") throw new ModelPathError("INVALID_PATH", "Parent path segments are not allowed");
+    const parent = resolveUnderRoot(root, segments.slice(0, -1));
+    if (!parent.stats.isDirectory()) throw new ModelPathError("NOT_FOUND", "Path not found");
+    const leafPath = join(parent.realPath, leaf);
+    try {
+      const st = lstatSync(leafPath);
+      if (st.isSymbolicLink()) {
+        throw new ModelPathError("INVALID_PATH", "Symbolic links are not allowed in filesystem paths");
+      }
+      if (!st.isFile()) throw new ModelPathError("INVALID_PATH", "Path is not a file");
+    } catch (error) {
+      if (error instanceof ModelPathError) throw error;
+      const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
+      if (code !== "ENOENT") throw mapFsError(error);
+    }
+    return leafPath;
+  }
+
+  return {
+    toReal(virtual, intent) {
+      if (unconfined) {
+        const segs = parseUnconfinedPath(virtual).segments;
+        const realPath =
+          intent === "write" ? realOfParentLeaf(projectRoot, segs) : resolveUnderRoot(projectRoot, segs).realPath;
+        return { realPath, mode: "rw" };
+      }
+      const parsed = parseVirtualPath(virtual, { rejectNativeAbsolute: true });
+      const matched = matchBind(binds, parsed.normalized);
+      if (!matched) throw new ModelPathError("NOT_FOUND", "Path not found");
+      if (intent === "write" && matched.mode !== "rw") {
+        throw new ModelPathError("NOT_WRITABLE", "Path is not writable");
+      }
+      const rel = parsed.segments.slice(matched.virtualSegments.length);
+      const realPath =
+        intent === "write" ? realOfParentLeaf(matched.realPath, rel) : resolveUnderRoot(matched.realPath, rel).realPath;
+      return { realPath, mode: matched.mode };
+    },
+    toVirtual(real) {
+      const canon = tryCanonicalizeExisting(real) ?? resolve(real);
+      if (unconfined) return canon;
+      let best: { virtual: string; rel: string; realLen: number } | null = null;
+      for (const bind of binds) {
+        const rel = relativeUnder(bind.realPath, canon);
+        if (rel === null) continue;
+        if (!best || bind.realPath.length > best.realLen) {
+          best = { virtual: bind.virtual, rel, realLen: bind.realPath.length };
+        }
+      }
+      if (!best) return null;
+      return best.rel ? `${best.virtual}/${best.rel}` : best.virtual;
+    }
+  };
+}
+
+// Real path under `root`? Returns the "/"-joined remainder ("" if equal), else null.
+function relativeUnder(root: string, target: string): string | null {
+  const rel = relative(root, target);
+  if (rel === "") return "";
+  if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null;
+  return rel.split(sep).join("/");
+}
+
+function matchBind(binds: readonly NormalizedBind[], virtualPath: string): NormalizedBind | undefined {
+  let best: NormalizedBind | undefined;
+  for (const bind of binds) {
+    if (!isVirtualPrefix(virtualPath, bind.virtual)) continue;
+    if (!best || bind.virtualSegments.length > best.virtualSegments.length) best = bind;
+  }
+  return best;
+}
+
 class NodeFsBackend implements FsBackend {
   private readonly projectRoot: string;
   private readonly unconfined: boolean;
@@ -159,16 +252,7 @@ class NodeFsBackend implements FsBackend {
   }
 
   private matchBind(virtualPath: string): NormalizedBind | undefined {
-    let best: NormalizedBind | undefined;
-    for (const bind of this.binds) {
-      if (!isVirtualPrefix(virtualPath, bind.virtual)) {
-        continue;
-      }
-      if (!best || bind.virtualSegments.length > best.virtualSegments.length) {
-        best = bind;
-      }
-    }
-    return best;
+    return matchBind(this.binds, virtualPath);
   }
 
   private listVirtualChildren(virtualPath: string): FsListEntry[] {

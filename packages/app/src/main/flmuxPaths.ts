@@ -36,6 +36,10 @@ interface FlmuxPaths {
    * advertised. Boundary is advisory (server entries have full fs access),
    * not syscall-enforced. */
   extDataRootDir: string;
+  /** `<flmuxDir>/ext-shared` — extraction cache for archive-backed extensions'
+   * `sharedDir` subtree (keyed `<id>/<version>`). Source extensions bind their
+   * dist dir in place; this only materializes tarball assets. */
+  extSharedDir: string;
   /** `<rootDir>/.flmux_users` — **sibling** of `.flmux` so the auth-secret
    * tree stays outside any user bind. Root of per-user/shared fs dirs. */
   usersRootDir: string;
@@ -87,6 +91,7 @@ export function resolveFlmuxPaths(rootDir: string): FlmuxPaths {
     desktopSessionFile: join(flmuxDir, "session.json"),
     appConfigFile: join(flmuxDir, "app.toml"),
     extDataRootDir: join(flmuxDir, "ext"),
+    extSharedDir: join(flmuxDir, "ext-shared"),
     usersRootDir: join(rootDir, ".flmux_users")
   };
 }

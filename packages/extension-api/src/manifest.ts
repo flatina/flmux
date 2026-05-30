@@ -45,6 +45,10 @@ export interface ExtensionManifest {
   commands?: ExtensionManifestCommand[];
   panes?: ExtensionManifestPane[];
   devOnly?: boolean;
+  /** Bundle-relative dir exposed read-only to confined sessions (that hold the
+   * shared_skills grant) at the virtual path `/w/shared/<id>`. For agent assets
+   * (skills/SKILL.md) the model reads on-demand — single-source, no copy. */
+  sharedDir?: string;
 }
 
 export type ExtensionManifestValidationResult =
@@ -79,6 +83,9 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
   }
   if (!version) {
     errors.push("Manifest field 'version' must be a non-empty string");
+  } else if (!isPathSafeSegment(version)) {
+    // version is a path component of the archive shared-asset cache dir, like id.
+    errors.push("Manifest field 'version' must not contain path separators or '..'");
   }
   if (apiVersion !== FLMUX_EXTENSION_API_VERSION) {
     errors.push(
@@ -102,6 +109,11 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
     errors.push("Manifest field 'devOnly' must be a boolean when provided");
   }
   const devOnly = typeof devOnlyRaw === "boolean" ? devOnlyRaw : undefined;
+  const sharedDirError = validateManifestEntrypointPath(value.sharedDir, "sharedDir");
+  if (sharedDirError) {
+    errors.push(sharedDirError);
+  }
+  const sharedDir = typeof value.sharedDir === "string" ? value.sharedDir.trim().replace(/\\/g, "/") : undefined;
 
   if (rendererPath) {
     errors.push(rendererPath);
@@ -143,7 +155,8 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
       },
       commands: commandsResult.ok ? commandsResult.commands : undefined,
       panes: panesResult.ok ? panesResult.panes : undefined,
-      ...(devOnly !== undefined ? { devOnly } : {})
+      ...(devOnly !== undefined ? { devOnly } : {}),
+      ...(sharedDir ? { sharedDir } : {})
     }
   };
 }
@@ -152,6 +165,13 @@ const VALID_EXTENSION_ID_PATTERN = /^[a-zA-Z0-9._-]+$/;
 function isValidExtensionId(id: string): boolean {
   if (id === "." || id === "..") return false;
   return VALID_EXTENSION_ID_PATTERN.test(id);
+}
+
+// version goes into a filesystem path component; allow semver chars but reject
+// anything that could traverse (separators, `.`/`..`).
+function isPathSafeSegment(value: string): boolean {
+  if (value === "." || value === "..") return false;
+  return !/[/\\]/.test(value) && !value.split(/[/\\]/).includes("..");
 }
 
 function validateManifestEntrypointPath(value: unknown, label: string) {

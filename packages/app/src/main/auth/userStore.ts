@@ -25,10 +25,11 @@ export type AllowPathsConfig =
     };
 
 export interface FlmuxUser {
+  /** Login id + per-user fs path key (`u/<name>`). Path-safe (validated at
+   * load) and immutable in practice — no rename path; one would orphan the dir. */
   name: string;
-  /** Stable random opaque id (base64url, ~64B) used as the WebAuthn user
-   * handle. Independent of the mutable `name` so a rename never breaks
-   * discoverable credentials. Absent for machine-only users (no passkeys). */
+  /** Stable random opaque id (base64url, 128-bit) used as the WebAuthn user
+   * handle. Absent for machine-only users (no passkeys). */
   handle: string | undefined;
   /** Human-facing label, auto-generated at signup (adjective-noun). Mutable
    * via the self-edit profile endpoint. Absent for pre-existing users → the
@@ -68,13 +69,20 @@ export function createUserStore(filePath: string): UserStore {
     const users = (parsed.users ?? []).map(parseUser);
 
     const byName = new Map<string, FlmuxUser>();
+    const lowerNames = new Set<string>();
     const handles = new Set<string>();
     for (const user of users) {
       if (byName.has(user.name)) {
         throw new Error(`users.toml: duplicate user name '${user.name}'`);
       }
+      // name keys per-user fs dirs; reject case-insensitive aliases too, since
+      // they'd collide to one workspace on a case-insensitive filesystem.
+      const lower = user.name.toLowerCase();
+      if (lowerNames.has(lower)) {
+        throw new Error(`users.toml: user name '${user.name}' collides case-insensitively with another`);
+      }
+      lowerNames.add(lower);
       byName.set(user.name, user);
-      // Handles key per-user fs dirs; a duplicate would alias two users' workspaces.
       if (user.handle !== undefined) {
         if (handles.has(user.handle)) {
           throw new Error(`users.toml: duplicate handle '${user.handle}'`);
@@ -124,7 +132,7 @@ function writeUsersFile(filePath: string, users: readonly FlmuxUser[]): void {
 // Org tiers. Only `dev` gets terminal + unconfined fs. `tech`/`user` are
 // agent-sandboxed (no terminal); `tech` additionally writes shared skills.
 // Unknown role with no explicit fields → parse error / no fs (fail-closed).
-const OWN_WORKSPACE = "{flmux_users}/u/{handle}";
+const OWN_WORKSPACE = "{flmux_users}/u/{name}";
 const SHARED_SKILLS = "{flmux_users}/shared_skills";
 const SHARED_RW = "{flmux_users}/shared_rw";
 interface RolePreset {
@@ -152,10 +160,22 @@ const ROLE_PRESETS: Record<string, RolePreset> = {
   }
 };
 
+// `name` is the per-user fs path component (`u/<name>`); reject anything that
+// could escape so a hand-edited name can't, and keep it immutable in practice.
+const VALID_USER_NAME_PATTERN = /^[A-Za-z0-9._-]+$/;
+export function isPathSafeUserName(name: string): boolean {
+  return name !== "." && name !== ".." && VALID_USER_NAME_PATTERN.test(name);
+}
+
 function parseUser(raw: Record<string, unknown>): FlmuxUser {
   const name = typeof raw.name === "string" ? raw.name.trim() : "";
   if (!name) {
     throw new Error("users.toml: user.name is required");
+  }
+  if (!isPathSafeUserName(name)) {
+    throw new Error(
+      `users.toml: user '${name}' has invalid name (only ASCII letters, digits, '.', '_', '-'; not '.'/'..')`
+    );
   }
 
   const role = typeof raw.role === "string" ? raw.role.trim() : undefined;
@@ -170,8 +190,7 @@ function parseUser(raw: Record<string, unknown>): FlmuxUser {
       ? parseStringArray(raw.deny_pane_kinds, name, "deny_pane_kinds")
       : (preset?.denyPaneKinds ?? []);
 
-  // base64url handle is a path component (`u/<handle>`); reject anything that
-  // could escape (`/`, `.`, etc.) at load so a hand-edited handle can't.
+  // handle is the WebAuthn user id (base64url); keep the charset check.
   const handleRaw = typeof raw.handle === "string" && raw.handle.trim() ? raw.handle.trim() : undefined;
   if (handleRaw !== undefined && !/^[A-Za-z0-9_-]+$/.test(handleRaw)) {
     throw new Error(`users.toml: user '${name}' has invalid handle (expected base64url chars)`);

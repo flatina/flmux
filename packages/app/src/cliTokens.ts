@@ -4,7 +4,7 @@ import { resolveFlmuxAuthPaths, type FlmuxAuthPaths } from "./main/auth/authConf
 import { resolveFlmuxPaths } from "./main/flmuxPaths";
 import { generateToken, generateUserHandle } from "./main/auth/tokenFormat";
 import { createTokenStore } from "./main/auth/tokenStore";
-import { createUserStore, type AllowPaneKinds, type FlmuxUser } from "./main/auth/userStore";
+import { createUserStore, isPathSafeUserName, type AllowPaneKinds, type FlmuxUser } from "./main/auth/userStore";
 import { stringifyUsersToml } from "./main/auth/tomlWriter";
 import { generateDisplayName } from "./main/auth/displayName";
 
@@ -35,6 +35,11 @@ export async function runTokensCli(rawArgs: string[]): Promise<unknown> {
 
 function bootstrap(paths: FlmuxAuthPaths, argv: string[]) {
   const userName = readFlag(argv, "--name") ?? "admin";
+  if (!isPathSafeUserName(userName)) {
+    throw new Error(
+      `tokens bootstrap: --name must be a path-safe key (ASCII letters, digits, '.', '_', '-'; not '.'/'..') — it becomes the /w/u/<name> dir`
+    );
+  }
   const allowPaneKindsArg = readFlag(argv, "--allow-pane-kinds") ?? "*";
   const label = readFlag(argv, "--label") ?? "bootstrap";
 

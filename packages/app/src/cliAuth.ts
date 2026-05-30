@@ -4,7 +4,7 @@ import { resolveFlmuxAuthPaths, type FlmuxAuthPaths } from "./main/auth/authConf
 import { resolveFlmuxPaths } from "./main/flmuxPaths";
 import { generateToken, generateUserHandle } from "./main/auth/tokenFormat";
 import { createTokenStore } from "./main/auth/tokenStore";
-import { createUserStore, type AllowPaneKinds, type FlmuxUser } from "./main/auth/userStore";
+import { createUserStore, isPathSafeUserName, type AllowPaneKinds, type FlmuxUser } from "./main/auth/userStore";
 import { createWebauthnStore } from "./main/auth/webauthnStore";
 import { stringifyUsersToml } from "./main/auth/tomlWriter";
 import { generateDisplayName, validateDisplayName } from "./main/auth/displayName";
@@ -47,6 +47,11 @@ function createUser(paths: FlmuxAuthPaths, argv: string[]) {
   const name = readFlag(argv, "--name");
   if (!name) {
     throw new Error("auth create-user: --name <name> is required");
+  }
+  if (!isPathSafeUserName(name)) {
+    throw new Error(
+      `auth create-user: --name must be a path-safe key (ASCII letters, digits, '.', '_', '-'; not '.'/'..') — it becomes the /w/u/<name> dir`
+    );
   }
   const role = readFlag(argv, "--role") ?? "user";
   const allowPaneKindsArg = readFlag(argv, "--allow-pane-kinds");

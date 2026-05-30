@@ -20,8 +20,14 @@ export function createFsPolicyResolver(usersRootDir: string): FsPolicyResolver {
   const baseReal = realpathSync(usersRootDir);
   const basePrefix = baseReal.endsWith(sep) ? baseReal : baseReal + sep;
 
-  function resolveEntry(template: string, handle: string, mode: "ro" | "rw"): ExtensionFsBind | null {
-    const abs = resolve(template.replace(/\{flmux_users\}/g, baseReal).replace(/\{handle\}/g, handle));
+  function resolveEntry(template: string, name: string, mode: "ro" | "rw"): ExtensionFsBind | null {
+    const substituted = template.replace(/\{flmux_users\}/g, baseReal).replace(/\{name\}/g, name);
+    // Fail-closed on an unresolved placeholder (e.g. a stale `{handle}` from a
+    // hand-edited toml) — never bind a literal `{...}` dir shared across users.
+    if (/\{[^}]*\}/.test(substituted)) {
+      return null;
+    }
+    const abs = resolve(substituted);
     // Lexical pre-check so an escaping entry (`{flmux_users}/../etc`) is rejected
     // BEFORE we mkdir (don't create stray dirs outside the base).
     if (abs !== baseReal && !abs.startsWith(basePrefix)) {
@@ -51,18 +57,15 @@ export function createFsPolicyResolver(usersRootDir: string): FsPolicyResolver {
       if (user.fsUnconfined) {
         return { unconfined: true, binds: [] };
       }
-      // Confined but unkeyable → no fs (handle keys per-user dirs).
-      if (!user.handle) {
-        return { unconfined: false, binds: [] };
-      }
+      // `name` keys per-user dirs — always present and path-validated at load.
       // ro first, then rw, so a path granted both ends up rw (most-permissive).
       const byPath = new Map<string, ExtensionFsBind>();
       for (const t of user.dirsRo) {
-        const b = resolveEntry(t, user.handle, "ro");
+        const b = resolveEntry(t, user.name, "ro");
         if (b) byPath.set(b.realPath, b);
       }
       for (const t of user.dirsRw) {
-        const b = resolveEntry(t, user.handle, "rw");
+        const b = resolveEntry(t, user.name, "rw");
         if (b) byPath.set(b.realPath, b);
       }
       return { unconfined: false, binds: [...byPath.values()] };

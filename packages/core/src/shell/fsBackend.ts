@@ -28,9 +28,31 @@ export interface FsWriteResult {
   bytesWritten: number;
 }
 
+export interface FsCreateResult {
+  created: true;
+}
+
+export interface FsMkdirResult {
+  created: true;
+}
+
+export interface FsRenameResult {
+  renamed: true;
+}
+
+export interface FsDeleteResult {
+  deleted: true;
+  kind: FsEntryKind;
+}
+
 export interface FsBackend {
   list(input: { path: string }): Awaitable<FsListResult>;
   read(input: { path: string; maxBytes?: number }): Awaitable<FsReadResult>;
   stat(input: { path: string }): Awaitable<FsStatResult>;
   write(input: { path: string; content: string }): Awaitable<FsWriteResult>;
+  /** No-clobber empty-file create (fails if exists). */
+  create(input: { path: string }): Awaitable<FsCreateResult>;
+  mkdir(input: { path: string }): Awaitable<FsMkdirResult>;
+  rename(input: { from: string; to: string }): Awaitable<FsRenameResult>;
+  delete(input: { path: string; recursive?: boolean }): Awaitable<FsDeleteResult>;
 }

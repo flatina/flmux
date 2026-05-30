@@ -8,6 +8,7 @@ import {
 
 interface ExplorerPaneRendererDependencies {
   shellModel: ShellModelAPI;
+  userLabel?: string;
 }
 
 type ExplorerPaneParams = {
@@ -53,6 +54,7 @@ export class ExplorerPaneRenderer implements IContentRenderer {
     this.element.replaceChildren();
     this.control = mountExplorerControl(this.element, {
       root,
+      userLabel: this.deps.userLabel,
       listDir: async (path) => {
         const result = await this.deps.shellModel.pathCall("/fs/list", { path }, { sourcePaneId: this.paneId });
         if (!result.ok) {
@@ -72,9 +74,33 @@ export class ExplorerPaneRenderer implements IContentRenderer {
             { sourcePaneId: this.paneId }
           )
           .catch(() => {});
-      }
+      },
+      onCreateFile: (parent, name) => this.fsCall("/fs/create", { path: joinVirtual(parent, name) }),
+      onCreateFolder: (parent, name) => this.fsCall("/fs/mkdir", { path: joinVirtual(parent, name) }),
+      onRename: (path, newName) => this.fsCall("/fs/rename", { from: path, to: joinVirtual(parentOf(path), newName) }),
+      onDelete: (path, isDir) => this.fsCall("/fs/delete", { path, recursive: isDir })
     });
   }
+
+  // Single fs-mutation path: every UI trigger (header + context menu) routes
+  // through the control's shared actions to one of these. Throws a code-carrying
+  // error on failure so the control's banner maps it.
+  private async fsCall(path: string, args: Record<string, unknown>): Promise<void> {
+    const result = await this.deps.shellModel.pathCall(path, args, { sourcePaneId: this.paneId });
+    if (!result.ok) {
+      throw Object.assign(new Error(result.error), { code: result.code });
+    }
+  }
+}
+
+function joinVirtual(parent: string, name: string): string {
+  return parent === "/" ? `/${name}` : `${parent.replace(/\/+$/, "")}/${name}`;
+}
+
+function parentOf(path: string): string {
+  const trimmed = path.replace(/\/+$/, "");
+  const idx = trimmed.lastIndexOf("/");
+  return idx <= 0 ? "/" : trimmed.slice(0, idx);
 }
 
 function optionalStringParam(value: unknown) {

@@ -19,6 +19,8 @@ export interface PaneRendererRuntimeContext {
   workspaceStatus: WorkspaceStatusStore;
   normalizeBrowserUrl(value: string): string | null;
   onBrowserUrlChange(paneId: string, url: string): void;
+  /** Label for the explorer header (web: signed-in user; desktop: project name). */
+  userLabel: string;
 }
 
 export interface PaneDescriptor<TStateRecord extends PaneStateRecord = PaneStateRecord> extends PaneSpec<TStateRecord> {

@@ -3,11 +3,14 @@ import {
   constants,
   fstatSync,
   lstatSync,
+  mkdirSync,
   openSync,
   readSync,
   readdirSync,
   realpathSync,
   renameSync,
+  rmSync,
+  rmdirSync,
   unlinkSync,
   writeSync,
   type Stats
@@ -191,15 +194,45 @@ class NodeFsBackend implements FsBackend {
 
   write({ path: inputPath, content }: { path: string; content: string }) {
     const buf = Buffer.from(content, "utf8");
-
-    if (this.unconfined) {
-      const parsed = parseUnconfinedPath(inputPath);
-      if (parsed.segments.length === 0) {
-        throw new ModelPathError("INVALID_PATH", "Path is not a file");
-      }
-      return writeAtomicNoFollow(this.projectRoot, parsed.segments, buf);
+    const { root, segments } = this.resolveWritable(inputPath);
+    if (segments.length === 0) {
+      throw new ModelPathError("INVALID_PATH", "Path is not a file");
     }
+    return writeAtomicNoFollow(root, segments, buf);
+  }
 
+  create({ path: inputPath }: { path: string }) {
+    const { root, segments } = this.resolveWritable(inputPath);
+    return createNoFollow(root, segments);
+  }
+
+  mkdir({ path: inputPath }: { path: string }) {
+    const { root, segments } = this.resolveWritable(inputPath);
+    return mkdirNoFollow(root, segments);
+  }
+
+  delete({ path: inputPath, recursive }: { path: string; recursive?: boolean }) {
+    const { root, segments } = this.resolveWritable(inputPath);
+    return deleteNoFollow(root, segments, recursive ?? false);
+  }
+
+  rename({ from, to }: { from: string; to: string }) {
+    const src = this.resolveWritable(from);
+    const dst = this.resolveWritable(to);
+    // Cross-bind move would let a rw bind reach into another bind/user dir.
+    if (src.root !== dst.root) {
+      throw new ModelPathError("INVALID_PATH", "Cannot move across filesystem roots");
+    }
+    return renameNoFollow(src.root, src.segments, dst.segments);
+  }
+
+  // Resolve to {bind-real-root | projectRoot, rel segments} with the rw gate.
+  // `root` also serves as the bind identity for cross-bind checks. Empty
+  // segments (= the bind mount itself) are left for callers to reject per op.
+  private resolveWritable(inputPath: string): { root: string; segments: string[] } {
+    if (this.unconfined) {
+      return { root: this.projectRoot, segments: parseUnconfinedPath(inputPath).segments };
+    }
     const parsed = parseVirtualPath(inputPath, { rejectNativeAbsolute: true });
     const matched = this.matchBind(parsed.normalized);
     if (!matched) {
@@ -208,11 +241,7 @@ class NodeFsBackend implements FsBackend {
     if (matched.mode !== "rw") {
       throw new ModelPathError("NOT_WRITABLE", "Path is not writable");
     }
-    const relSegments = parsed.segments.slice(matched.virtualSegments.length);
-    if (relSegments.length === 0) {
-      throw new ModelPathError("INVALID_PATH", "Path is not a file");
-    }
-    return writeAtomicNoFollow(matched.realPath, relSegments, buf);
+    return { root: matched.realPath, segments: parsed.segments.slice(matched.virtualSegments.length) };
   }
 
   stat({ path: inputPath }: { path: string }) {
@@ -504,6 +533,143 @@ function safeUnlink(targetPath: string): void {
   } catch {}
 }
 
+const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
+
+// A user-typed leaf flows into a path; `validateRawPath` only blocks NUL/`..`
+// and splitPathSegments splits on `/`+`\`, so a bare name like `a/b` would
+// escape the row's dir. Enforce a single safe segment (also dodges Windows quirks).
+function validateLeafName(name: string): void {
+  if (!name || name === "." || name === "..") {
+    throw new ModelPathError("INVALID_PATH", "Invalid name");
+  }
+  if (/[/\\\x00]/.test(name) || /[<>:"|?*\x01-\x1f]/.test(name)) {
+    throw new ModelPathError("INVALID_PATH", "Name contains illegal characters");
+  }
+  if (name.endsWith(".") || name.endsWith(" ") || WINDOWS_RESERVED_NAME.test(name)) {
+    throw new ModelPathError("INVALID_PATH", "Name is reserved or malformed");
+  }
+}
+
+// Resolve the parent under `root` (no-follow) and return its real dir + leaf
+// name. Rejects empty segments (= the bind root itself) and validates the leaf.
+function resolveParentForLeaf(root: string, segments: readonly string[]): { parentDir: string; leaf: string } {
+  if (segments.length === 0) {
+    throw new ModelPathError("INVALID_PATH", "Cannot operate on the workspace root");
+  }
+  const leaf = segments[segments.length - 1]!;
+  validateLeafName(leaf);
+  const parent = resolveUnderRoot(root, segments.slice(0, -1));
+  if (!parent.stats.isDirectory()) {
+    throw new ModelPathError("NOT_FOUND", "Path not found");
+  }
+  return { parentDir: parent.realPath, leaf };
+}
+
+// No-clobber empty-file create: O_EXCL fails if the leaf exists, O_NOFOLLOW
+// refuses a planted symlink. (Distinct from write, which replaces.)
+function createNoFollow(root: string, segments: readonly string[]): { created: true } {
+  const { parentDir, leaf } = resolveParentForLeaf(root, segments);
+  let fd: number;
+  try {
+    fd = openSync(join(parentDir, leaf), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | O_NOFOLLOW, 0o644);
+  } catch (error) {
+    throw mapFsError(error);
+  }
+  closeSync(fd);
+  return { created: true };
+}
+
+function mkdirNoFollow(root: string, segments: readonly string[]): { created: true } {
+  const { parentDir, leaf } = resolveParentForLeaf(root, segments);
+  try {
+    mkdirSync(join(parentDir, leaf)); // non-recursive: parent already resolved, EEXIST if present
+  } catch (error) {
+    throw mapFsError(error);
+  }
+  return { created: true };
+}
+
+// rename within one bind (caller enforces same-root). Rejects: symlink source,
+// existing destination (no clobber), and moving a dir into its own subtree.
+function renameNoFollow(
+  root: string,
+  fromSegments: readonly string[],
+  toSegments: readonly string[]
+): { renamed: true } {
+  const from = resolveParentForLeaf(root, fromSegments);
+  const to = resolveParentForLeaf(root, toSegments);
+  const fromPath = join(from.parentDir, from.leaf);
+  const toPath = join(to.parentDir, to.leaf);
+
+  const fromStats = safeLstat(fromPath);
+  if (fromStats.isSymbolicLink()) {
+    throw new ModelPathError("INVALID_PATH", "Symbolic links are not allowed in filesystem paths");
+  }
+  // No-clobber (renameSync would replace on POSIX). Symlink dest rejected; a
+  // case-only rename (same canonical, non-symlink) is allowed.
+  if (existsLstat(toPath)) {
+    if (lstatSync(toPath).isSymbolicLink()) {
+      throw new ModelPathError("INVALID_PATH", "Symbolic links are not allowed in filesystem paths");
+    }
+    if (canonicalizeExisting(fromPath) !== canonicalizeExisting(toPath)) {
+      throw new ModelPathError("ALREADY_EXISTS", "Destination already exists");
+    }
+  }
+  // Moving a directory into its own descendant corrupts the tree.
+  if (fromStats.isDirectory()) {
+    const fromCanon = canonicalizeExisting(fromPath);
+    if (to.parentDir === fromCanon || relativeUnder(fromCanon, to.parentDir) !== null) {
+      throw new ModelPathError("INVALID_PATH", "Cannot move a directory into itself");
+    }
+  }
+  try {
+    renameSync(fromPath, toPath);
+  } catch (error) {
+    throw mapFsError(error);
+  }
+  return { renamed: true };
+}
+
+// Delete: re-lstat the leaf for the authoritative type (don't trust the caller),
+// reject symlinks, and only recurse when it is genuinely a directory.
+function deleteNoFollow(root: string, segments: readonly string[], recursive: boolean): { deleted: true; kind: FsEntryKind } {
+  if (segments.length === 0) {
+    throw new ModelPathError("INVALID_PATH", "Cannot delete the workspace root");
+  }
+  const parent = resolveUnderRoot(root, segments.slice(0, -1));
+  if (!parent.stats.isDirectory()) {
+    throw new ModelPathError("NOT_FOUND", "Path not found");
+  }
+  const leafPath = join(parent.realPath, segments[segments.length - 1]!);
+  const stats = safeLstat(leafPath);
+  if (stats.isSymbolicLink()) {
+    throw new ModelPathError("INVALID_PATH", "Symbolic links are not allowed in filesystem paths");
+  }
+  try {
+    if (stats.isDirectory()) {
+      if (recursive) {
+        rmSync(leafPath, { recursive: true });
+      } else {
+        rmdirSync(leafPath); // ENOTEMPTY → NOT_EMPTY via mapFsError
+      }
+      return { deleted: true, kind: "dir" };
+    }
+    unlinkSync(leafPath);
+    return { deleted: true, kind: stats.isFile() ? "file" : "other" };
+  } catch (error) {
+    throw mapFsError(error);
+  }
+}
+
+function existsLstat(targetPath: string): boolean {
+  try {
+    lstatSync(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function tryCanonicalizeExisting(targetPath: string): string | null {
   try {
     return realpathSync.native(targetPath);
@@ -593,6 +759,16 @@ function mapFsError(error: unknown): ModelPathError {
   }
   if (code === "ELOOP") {
     return new ModelPathError("INVALID_PATH", "Symbolic links are not allowed in filesystem paths");
+  }
+  // Mutation outcomes — actionable, and these messages carry no host path.
+  if (code === "EEXIST") {
+    return new ModelPathError("ALREADY_EXISTS", "Already exists");
+  }
+  if (code === "ENOTEMPTY") {
+    return new ModelPathError("NOT_EMPTY", "Directory is not empty");
+  }
+  if (code === "EINVAL") {
+    return new ModelPathError("INVALID_PATH", "Invalid path");
   }
   if (code === "EACCES" || code === "EPERM") {
     return new ModelPathError("NOT_FOUND", "Path not found");

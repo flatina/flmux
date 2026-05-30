@@ -892,6 +892,14 @@ export class FlmuxWorkbench {
     };
   }
 
+  // Explorer header label: signed-in user (web) or the project dir name (desktop).
+  private explorerUserLabel(): string {
+    const account = this.config.account;
+    if (account) return account.displayName ?? account.name;
+    const dir = this.config.projectDir.replace(/[\\/]+$/, "");
+    return dir.split(/[\\/]+/).filter(Boolean).pop() || "Files";
+  }
+
   private createInnerPanelRenderer(record: WorkspaceRecord, options: CreateComponentOptions): IContentRenderer {
     const descriptor = this.requirePaneDescriptor(String(options.name));
     return descriptor.createRenderer({
@@ -907,7 +915,8 @@ export class FlmuxWorkbench {
           void this.shellModel.pathSet(`/panes/${paneId}/browser/url`, url).catch((error) => {
             console.warn(`failed to propagate browser url change for pane '${paneId}'`, error);
           });
-        }
+        },
+        userLabel: this.explorerUserLabel()
       }
     });
   }

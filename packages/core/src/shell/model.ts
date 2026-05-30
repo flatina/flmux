@@ -528,6 +528,34 @@ class ShellModel implements ShellModelAPI {
       };
     }
 
+    if (op === "create") {
+      return { ok: true, value: await this.fs.create({ path: requiredFsPathArg(args) }) };
+    }
+
+    if (op === "mkdir") {
+      return { ok: true, value: await this.fs.mkdir({ path: requiredFsPathArg(args) }) };
+    }
+
+    if (op === "rename") {
+      return {
+        ok: true,
+        value: await this.fs.rename({
+          from: requiredFsPathArg(args, "from"),
+          to: requiredFsPathArg(args, "to")
+        })
+      };
+    }
+
+    if (op === "delete") {
+      return {
+        ok: true,
+        value: await this.fs.delete({
+          path: requiredFsPathArg(args),
+          recursive: optionalBoolean(args.recursive)
+        })
+      };
+    }
+
     return throwPathError("NOT_CALLABLE", "Path is not callable");
   }
 
@@ -1640,12 +1668,21 @@ function optionalString(value: unknown): string | undefined {
   return value;
 }
 
-function requiredFsPathArg(args: Record<string, unknown>): string {
-  if (typeof args.path !== "string" || args.path.length === 0) {
-    throw new ModelPathError("INVALID_VALUE", "call /fs/* requires path=...");
+function requiredFsPathArg(args: Record<string, unknown>, key = "path"): string {
+  const value = args[key];
+  if (typeof value !== "string" || value.length === 0) {
+    throw new ModelPathError("INVALID_VALUE", `call /fs/* requires ${key}=...`);
   }
 
-  return args.path;
+  return value;
+}
+
+function optionalBoolean(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value !== "boolean") {
+    throw new ModelPathError("INVALID_VALUE", "Expected a boolean value");
+  }
+  return value;
 }
 
 function requiredFsContentArg(args: Record<string, unknown>): string {

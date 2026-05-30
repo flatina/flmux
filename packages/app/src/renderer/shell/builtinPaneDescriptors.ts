@@ -37,7 +37,8 @@ function createBuiltinPaneDescriptors(deps: BuiltinPaneDescriptorDependencies): 
       singletonScope: "workspace",
       createRenderer: ({ runtime }) =>
         new ExplorerPaneRenderer({
-          shellModel: runtime.shellModel
+          shellModel: runtime.shellModel,
+          userLabel: runtime.userLabel
         }),
       lifecycle: {
         createParams: ({ input }) => explorerParams(input.params),

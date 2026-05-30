@@ -14,6 +14,8 @@ export type PathErrorCode =
   | "NOT_CALLABLE"
   | "INVALID_VALUE"
   | "INVALID_PATH"
+  | "ALREADY_EXISTS"
+  | "NOT_EMPTY"
   | "NO_CURRENT_PANE"
   | "NOT_SUPPORTED"
   | "INTERNAL_ERROR";

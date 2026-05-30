@@ -160,6 +160,16 @@ const ROLE_PRESETS: Record<string, RolePreset> = {
   }
 };
 
+/** A role's preset fs grant, so the toml writer can omit preset-derived fields
+ * instead of freezing the template (a frozen `{handle}`/`{name}` goes stale on
+ * a template change → fail-closed → lost workspace). `undefined` for no preset. */
+export function rolePresetFsDefaults(
+  role: string | undefined
+): { dirsRw: readonly string[]; dirsRo: readonly string[]; fsUnconfined: boolean } | undefined {
+  const p = role ? ROLE_PRESETS[role] : undefined;
+  return p ? { dirsRw: p.dirsRw, dirsRo: p.dirsRo, fsUnconfined: p.fsUnconfined } : undefined;
+}
+
 // `name` is the per-user fs path component (`u/<name>`); reject anything that
 // could escape so a hand-edited name can't, and keep it immutable in practice.
 const VALID_USER_NAME_PATTERN = /^[A-Za-z0-9._-]+$/;

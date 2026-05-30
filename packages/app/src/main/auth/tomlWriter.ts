@@ -1,4 +1,4 @@
-import type { FlmuxUser } from "./userStore";
+import { rolePresetFsDefaults, type FlmuxUser } from "./userStore";
 import type { FlmuxIssuedToken } from "./tokenStore";
 
 export function stringifyUsersToml(users: readonly FlmuxUser[]): string {
@@ -34,15 +34,17 @@ export function stringifyUsersToml(users: readonly FlmuxUser[]): string {
         }
       }
     }
-    // fs fields: written when non-default so a setDisplayName rewrite doesn't
-    // silently drop an explicit override and re-derive a broader preset.
-    if (user.fsUnconfined) {
+    // fs fields: persist only genuine overrides (differ from the role preset).
+    // Persisting preset-derived dirs would freeze the template and strand the
+    // user on a later template change; an explicit override is still kept.
+    const preset = rolePresetFsDefaults(user.role);
+    if (user.fsUnconfined && !preset?.fsUnconfined) {
       lines.push(`fs_unconfined = true`);
     }
-    if (user.dirsRw.length > 0) {
+    if (user.dirsRw.length > 0 && !stringArraysEqual(user.dirsRw, preset?.dirsRw)) {
       lines.push(`dirs_rw = [${user.dirsRw.map(tomlString).join(", ")}]`);
     }
-    if (user.dirsRo.length > 0) {
+    if (user.dirsRo.length > 0 && !stringArraysEqual(user.dirsRo, preset?.dirsRo)) {
       lines.push(`dirs_ro = [${user.dirsRo.map(tomlString).join(", ")}]`);
     }
     lines.push("");
@@ -88,6 +90,10 @@ function renderAllowPaneKinds(value: FlmuxUser["allowPaneKinds"]): string {
   }
 
   return `[${value.map(tomlString).join(", ")}]`;
+}
+
+function stringArraysEqual(a: readonly string[], b: readonly string[] | undefined): boolean {
+  return b !== undefined && a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
 function tomlString(value: string): string {

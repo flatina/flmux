@@ -61,6 +61,8 @@ export function launchFlmuxApp(remoteDebuggingPort: number, rootDir?: string): A
     cwd: resolve(import.meta.dir, "..", ".."),
     env: {
       ...process.env,
+      // CDP (/json/list driving below) is CEF-only; default Windows engine is WebView2.
+      BUNITE_ENGINE: "cef",
       BUNITE_REMOTE_DEBUGGING_PORT: String(remoteDebuggingPort),
       FLMUX_DEV_MODE: "1",
       FLMUX_HIDDEN_WINDOW: "1",

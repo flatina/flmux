@@ -454,6 +454,35 @@ body.flmux-has-titlebar .flmux-titlebar-host {
   border-color: var(--fl-widget-border);
 }
 
+/* Empty inner-dockview watermark (shown when a workspace has no panes). */
+.flmux-empty-watermark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+}
+.flmux-empty-watermark__title {
+  font-size: 13px;
+  color: var(--fl-description-foreground);
+}
+.flmux-empty-watermark__add {
+  padding: 6px 14px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid var(--fl-widget-border);
+  color: var(--fl-foreground);
+  font-size: 12px;
+  cursor: pointer;
+}
+.flmux-empty-watermark__add:hover {
+  background: var(--fl-button-hover-background);
+  color: var(--fl-foreground);
+}
+
 .header-action-popup__item--active {
   color: var(--fl-accent-foreground);
   border-color: var(--fl-widget-border);

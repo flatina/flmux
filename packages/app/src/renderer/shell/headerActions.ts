@@ -2,6 +2,8 @@ import type {
   GroupPanelPartInitParameters,
   IHeaderActionsRenderer,
   IGroupHeaderProps,
+  IWatermarkRenderer,
+  WatermarkRendererInitParameters,
   DockviewGroupPanel
 } from "dockview-core";
 import { DefaultTab } from "dockview-core";
@@ -261,6 +263,76 @@ export class NewPaneHeaderAction extends HeaderActionButton implements IHeaderAc
   override dispose() {
     this.closePopup();
     super.dispose();
+  }
+}
+
+/**
+ * Watermark shown by an empty inner dockview (0 groups). dockview renders the
+ * watermark exactly when there are no grid groups, so this doubles as the only
+ * add-pane affordance for an empty workspace (no group header → no inner `+`).
+ */
+export class EmptyWorkspaceWatermark implements IWatermarkRenderer {
+  readonly element: HTMLElement;
+  private popup: HTMLDivElement | null = null;
+  private readonly disposers: Array<() => void> = [];
+
+  constructor(
+    private readonly options: {
+      listKinds: () => PaneKindOption[];
+      onSelect: (kind: string) => void;
+    }
+  ) {
+    this.element = document.createElement("div");
+    this.element.className = "flmux-empty-watermark";
+
+    const title = document.createElement("div");
+    title.className = "flmux-empty-watermark__title";
+    title.textContent = "Empty workspace";
+
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "flmux-empty-watermark__add";
+    add.textContent = "+ Add pane";
+
+    const onClick = (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.togglePopup(add);
+    };
+    add.addEventListener("click", onClick);
+    this.disposers.push(() => add.removeEventListener("click", onClick));
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && (this.element.contains(target) || this.popup?.contains(target))) return;
+      this.closePopup();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    this.disposers.push(() => document.removeEventListener("pointerdown", onPointerDown));
+
+    this.element.append(title, add);
+  }
+
+  init(_params: WatermarkRendererInitParameters): void {
+    // noop
+  }
+
+  private togglePopup(anchor: HTMLElement): void {
+    if (this.popup) {
+      this.closePopup();
+      return;
+    }
+    this.popup = openPaneKindPopup(anchor, this.options.listKinds, this.options.onSelect, () => this.closePopup());
+  }
+
+  private closePopup(): void {
+    this.popup?.remove();
+    this.popup = null;
+  }
+
+  dispose(): void {
+    this.closePopup();
+    for (const dispose of this.disposers) dispose();
   }
 }
 

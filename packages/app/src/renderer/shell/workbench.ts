@@ -39,6 +39,7 @@ import { PaneRegistry, type PaneDescriptor } from "./paneRegistry";
 import { clearPaneHeaderMenu } from "../external/paneTabMenuRegistry";
 import { registerBuiltinPaneDescriptors } from "./builtinPaneDescriptors";
 import {
+  EmptyWorkspaceWatermark,
   NewPaneHeaderAction,
   PaneTabRenderer,
   WorkspaceHeaderActions,
@@ -169,12 +170,11 @@ export class FlmuxWorkbench {
     switch (this.tabstripMode) {
       case "outer-always":
         return true;
-      case "outer-auto": {
-        if (this.workspaces.size >= 2) return true;
-        // Inner prefix only mounts on existing groups — empty workspace falls back to outer.
-        const active = this.activeWorkspaceId ? this.workspaces.get(this.activeWorkspaceId) : null;
-        return (active?.innerApi?.panels?.length ?? 0) === 0;
-      }
+      case "outer-auto":
+        // Hide whenever there's a single workspace, empty or not. An empty
+        // inner dockview shows its watermark (with an add-pane affordance),
+        // so the outer tabstrip no longer needs to be the empty-state fallback.
+        return this.workspaces.size >= 2;
       case "titlebar":
       case "none":
         return false;
@@ -611,6 +611,15 @@ export class FlmuxWorkbench {
       // OverlayRenderContainer: gridview restructure updates CSS, not DOM re-attach (preserves scrollTop).
       defaultRenderer: "always",
       defaultTabComponent: "pane-tab",
+      // Empty inner dockview (0 groups) renders this — also the sole add-pane
+      // affordance for an empty workspace (no group header → no inner `+`).
+      createWatermarkComponent: () =>
+        new EmptyWorkspaceWatermark({
+          listKinds: () => this.listMenuKinds(),
+          onSelect: (kind) => {
+            void this.shellModel.pathCall("/panes/new", { kind, place: "right" });
+          }
+        }),
       createComponent: (options) => this.createInnerPanelRenderer(record, options),
       createTabComponent: (options) =>
         options.name === "pane-tab"

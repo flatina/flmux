@@ -75,13 +75,17 @@ function launchDetachedProcess(
       const command = [
         "Start-Process",
         "-WindowStyle Hidden",
+        `-WorkingDirectory ${quotePowerShell(launch.cwd)}`,
         `-FilePath ${quotePowerShell(launch.command)}`,
         `-ArgumentList @(${launch.args.map((arg) => quotePowerShell(arg)).join(", ")})`
       ].join(" ");
 
+      // detached:false — under Bun on Windows a detached powershell exits without
+      // running the command, so ptyd never spawns. Start-Process makes the daemon
+      // independent regardless; .unref() keeps the launcher non-blocking.
       spawn(powerShell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command], {
         cwd: launch.cwd,
-        detached: true,
+        detached: false,
         stdio: "ignore",
         windowsHide: true,
         env

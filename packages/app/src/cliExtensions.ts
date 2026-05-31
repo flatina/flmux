@@ -54,7 +54,7 @@ export async function loadLocalCliCommandDef(
   }
 
   try {
-    const module = (await import(/* @vite-ignore */ entryUrl)) as CliModule;
+    const module = (await import(entryUrl)) as CliModule;
     const def = module.default;
     if (!isFlmuxExtensionCommand(def)) {
       console.warn(

@@ -77,7 +77,7 @@ test.beforeAll(async () => {
     }
   });
 
-  // Surface server crashes in the test output (vite/build errors etc.).
+  // Surface server crashes in the test output (build errors etc.).
   appProcess.stderr?.on("data", (c: Buffer) => process.stderr.write(`[flmux-server] ${c}`));
 
   handle = { process: appProcess, rootDir, authDir, enrollToken };
@@ -180,8 +180,8 @@ test("passkey enroll → login → authenticated → logout (full flow)", async 
   }
 });
 
-/** Poll /login until the dev server (vite build + bun boot) is serving. The
- * `dev` script runs `vite build` first, which can take 30–60s cold. */
+/** Poll /login until the server (renderer build + bun boot) is serving. The
+ * `dev` script builds extensions + renderer first, which can take a while cold. */
 async function waitForServer(proc: ChildProcess): Promise<void> {
   const deadline = Date.now() + 120_000;
   let exited = false;

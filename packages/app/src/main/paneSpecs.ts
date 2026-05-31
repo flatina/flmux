@@ -208,7 +208,7 @@ function createExtensionPaneSpec(
 }
 
 async function defaultImportServerModule(entryUrl: string): Promise<ServerModule> {
-  return await import(/* @vite-ignore */ entryUrl);
+  return await import(entryUrl);
 }
 
 function optionalStringParam(value: unknown) {

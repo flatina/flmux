@@ -97,5 +97,5 @@ export async function loadLocalExtensionDefinitions(
 }
 
 async function importExtensionModule(entryUrl: string): Promise<ExtensionModule> {
-  return await import(/* @vite-ignore */ entryUrl);
+  return await import(entryUrl);
 }

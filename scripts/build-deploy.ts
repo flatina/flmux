@@ -13,7 +13,7 @@
 //     flmux.{bat,sh}                launcher (sets FLMUX_EXTENSIONS_ROOT)
 //     libBuniteNative.{dll,dylib,so}  bunite native
 //     (win) libBuniteNativeWebView2.dll, WebView2Loader.dll, process_helper.exe
-//     renderer/                     vite output
+//     renderer/                     Bun.build output (HTML entry + CSS graph)
 //     extensions/<name>/dist/       expanded extension dist (sample.* skipped)
 
 import { $ } from "bun";
@@ -134,15 +134,15 @@ if (target === "win") {
   chmodSync(exePath, 0o755);
 }
 
-// 3. Vite renderer
-console.log("\n2. vite renderer");
-await $`bun x vite build`.cwd(appDir);
-const viteOut = join(appDir, "dist/renderer");
-if (!existsSync(viteOut)) {
-  console.error(`vite output not found at ${viteOut}`);
+// 3. Renderer (Bun.build — HTML entry + CSS graph)
+console.log("\n2. renderer");
+await $`bun run build:renderer`.cwd(appDir);
+const rendererOut = join(appDir, "dist/renderer");
+if (!existsSync(rendererOut)) {
+  console.error(`renderer output not found at ${rendererOut}`);
   process.exit(1);
 }
-cpSync(viteOut, join(outDir, "renderer"), { recursive: true });
+cpSync(rendererOut, join(outDir, "renderer"), { recursive: true });
 
 // 4. Native files (web-only: skip bunite native; terminals use built-in Bun.Terminal)
 if (webOnly) {

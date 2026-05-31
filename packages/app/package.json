@@ -6,9 +6,10 @@
   "scripts": {
     "build:ptyd": "bun build src/main/ptyd/daemonMain.ts --outfile dist/ptyd.js --target bun",
     "build:cli": "bun build src/cli.ts --outfile dist/cli.js --target bun",
+    "build:renderer": "rm -rf dist/renderer && bun build src/renderer/index.html --outdir dist/renderer --minify",
     "cli": "bun src/cli.ts",
-    "dev": "cd ../.. && bun run build:extensions && cd packages/app && bunx vite build && bun src/main.ts --dev",
-    "build": "cd ../.. && bun run build:extensions && cd packages/app && bunite-build && bun run build:ptyd && bun run build:cli && bunx vite build",
+    "dev": "cd ../.. && bun run build:extensions && cd packages/app && bun run build:renderer && bun src/main.ts --dev",
+    "build": "cd ../.. && bun run build:extensions && cd packages/app && bunite-build && bun run build:ptyd && bun run build:cli && bun run build:renderer",
     "typecheck": "bun x tsc -p tsconfig.json --noEmit && bun x tsc -p src/renderer/tsconfig.json --noEmit",
     "test:direct": "bun test",
     "test:shell-model": "bun test test/shellModel.test.ts",
@@ -48,7 +49,6 @@
     "@types/bun": "^1.3.12",
     "@types/qrcode-terminal": "^0.12.2",
     "bunite-dev": "^0.0.6",
-    "msgpackr": "^1.11.9",
-    "vite": "^6"
+    "msgpackr": "^1.11.9"
   }
 }

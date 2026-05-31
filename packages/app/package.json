@@ -13,7 +13,7 @@
     "typecheck": "bun x tsc -p tsconfig.json --noEmit && bun x tsc -p src/renderer/tsconfig.json --noEmit",
     "test:direct": "bun test",
     "test:shell-model": "bun test test/shellModel.test.ts",
-    "test:smoke": "bun test ./test/appSmoke.smoke.ts",
+    "test:smoke:cdp": "bun test ./test/appSmoke.cdp.smoke.ts",
     "test:harness-smoke": "bun test ./test/harnessSmoke.smoke.ts",
     "test:browser": "playwright test"
   },

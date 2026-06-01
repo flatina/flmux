@@ -282,6 +282,8 @@ export class TextEditorPaneRenderer implements IContentRenderer {
       }
       this.savedContent = content;
       this.dirty = this.view.state.doc.toString() !== this.savedContent;
+      // refreshBanner() skips while saving — clear it before refreshing (finally also resets).
+      this.saving = false;
       this.refreshBanner();
     } catch (error) {
       if (this.disposed || token !== this.loadToken) return;

@@ -1,5 +1,6 @@
-import { mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
+import { compileIgnore } from "./ignore";
 import type { ExtensionManifest } from "./manifest";
 import { validateExtensionDirectory } from "./validate";
 
@@ -18,8 +19,9 @@ interface EntrypointSpec {
   sourceRelative: string;
 }
 
+const SHIP_IGNORE_FILE = ".flmux-ext-ignore";
 const SKIP_DIRS = new Set(["node_modules", "dist", "dist.tmp"]);
-const SKIP_ROOT_FILES = new Set(["manifest.json", "package.json", "tsconfig.json"]);
+const SKIP_ROOT_FILES = new Set(["manifest.json", "package.json", "tsconfig.json", SHIP_IGNORE_FILE]);
 
 /**
  * Build an extension directory into `<extensionDir>/dist/`.
@@ -204,14 +206,25 @@ async function bundleEntrypoint(
 }
 
 async function copyStaticAssets(sourceDir: string, tmpDir: string, builtFiles: string[]): Promise<void> {
-  await copyStaticAssetsRecursive(sourceDir, tmpDir, builtFiles, sourceDir);
+  await copyStaticAssetsRecursive(sourceDir, tmpDir, builtFiles, sourceDir, await loadShipIgnore(sourceDir));
+}
+
+// Author-controlled ship-exclusion (`.flmux-ext-ignore`, gitignore-style subset).
+// Absent → null (copy everything, as before — no regression).
+async function loadShipIgnore(rootDir: string): Promise<((relPath: string, isDir: boolean) => boolean) | null> {
+  try {
+    return compileIgnore(await readFile(join(rootDir, SHIP_IGNORE_FILE), "utf8"));
+  } catch {
+    return null;
+  }
 }
 
 async function copyStaticAssetsRecursive(
   sourceDir: string,
   tmpDir: string,
   builtFiles: string[],
-  rootDir: string
+  rootDir: string,
+  ignore: ((relPath: string, isDir: boolean) => boolean) | null
 ): Promise<void> {
   const entries = await readdir(sourceDir, { withFileTypes: true, encoding: "utf8" });
   for (const entry of entries) {
@@ -219,14 +232,18 @@ async function copyStaticAssetsRecursive(
       continue;
     }
     // Root-level JSON/config files aren't copied — manifest.json is rewritten
-    // separately, and package.json/tsconfig.json are dev-only.
+    // separately, and package.json/tsconfig.json (+ the ignore file) are dev-only.
     if (sourceDir === rootDir && SKIP_ROOT_FILES.has(entry.name)) {
       continue;
     }
 
     const sourcePath = join(sourceDir, entry.name);
+    // Author opt-out: skip the entry (and, for a directory, its whole subtree).
+    if (ignore?.(relative(rootDir, sourcePath), entry.isDirectory())) {
+      continue;
+    }
     if (entry.isDirectory()) {
-      await copyStaticAssetsRecursive(sourcePath, tmpDir, builtFiles, rootDir);
+      await copyStaticAssetsRecursive(sourcePath, tmpDir, builtFiles, rootDir, ignore);
       continue;
     }
 

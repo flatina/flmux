@@ -31,7 +31,10 @@ const SKIP_ROOT_FILES = new Set(["manifest.json", "package.json", "tsconfig.json
  * - Writes to `dist.tmp/` then renames atomically so a failed rebuild leaves
  *   the previous `dist/` intact.
  */
-export async function buildExtensionDirectory(extensionDir: string): Promise<ExtensionBuildResult> {
+export async function buildExtensionDirectory(
+  extensionDir: string,
+  options: { minify?: boolean } = {}
+): Promise<ExtensionBuildResult> {
   const resolvedExtensionDir = resolve(extensionDir);
   const validation = await validateExtensionDirectory(resolvedExtensionDir);
   const outDir = join(resolvedExtensionDir, "dist");
@@ -81,7 +84,7 @@ export async function buildExtensionDirectory(extensionDir: string): Promise<Ext
     await copyStaticAssets(resolvedExtensionDir, tmpDir, builtFiles);
 
     for (const entry of entrypoints) {
-      const bundleResult = await bundleEntrypoint(entry, tmpDir);
+      const bundleResult = await bundleEntrypoint(entry, tmpDir, options.minify ?? false);
       if (!bundleResult.ok) {
         errors.push(...bundleResult.errors);
         continue;
@@ -151,7 +154,8 @@ export function formatExtensionBuildResult(result: ExtensionBuildResult) {
 
 async function bundleEntrypoint(
   entry: EntrypointSpec,
-  tmpDir: string
+  tmpDir: string,
+  minify: boolean
 ): Promise<{ ok: true; builtFiles: string[] } | { ok: false; errors: string[] }> {
   const outPath = join(tmpDir, replaceTsExtension(stripRelativePrefix(entry.sourceRelative)));
   await mkdir(dirname(outPath), { recursive: true });
@@ -168,8 +172,9 @@ async function bundleEntrypoint(
     entrypoints: [entry.sourcePath],
     target,
     format: "esm",
-    // Keep outputs readable for dev; pack/size pressure doesn't apply here.
-    minify: false,
+    // Dev builds stay readable; production (deploy / --minify) mangles + dead-codes.
+    minify,
+    // sourcemap stays off even when minified — shipping one would undo the minify.
     sourcemap: "none"
   });
 

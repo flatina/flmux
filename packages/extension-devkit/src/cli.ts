@@ -17,8 +17,11 @@ if (command === "validate") {
 }
 
 if (command === "build") {
-  const targets = resolveValidateTargets(args);
-  const results = await Promise.all(targets.map(async (target) => await buildExtensionDirectory(target)));
+  const { targets, minify } = parseBuildArgs(args);
+  const resolvedTargets = resolveValidateTargets(targets);
+  const results = await Promise.all(
+    resolvedTargets.map(async (target) => await buildExtensionDirectory(target, { minify }))
+  );
 
   for (const result of results) {
     console.log(formatExtensionBuildResult(result));
@@ -49,6 +52,19 @@ if (command) {
 printUsage();
 process.exit(0);
 
+function parseBuildArgs(rawArgs: string[]): { targets: string[]; minify: boolean } {
+  const targets: string[] = [];
+  let minify = false;
+  for (const token of rawArgs) {
+    if (token === "--minify" || token === "--production") {
+      minify = true;
+      continue;
+    }
+    targets.push(token);
+  }
+  return { targets, minify };
+}
+
 function parsePackArgs(rawArgs: string[]): { targets: string[]; outDir: string | undefined } {
   const targets: string[] = [];
   let outDir: string | undefined;
@@ -71,7 +87,7 @@ function printUsage() {
     [
       "Usage:",
       "  flmux-ext validate [extension-dir ...]",
-      "  flmux-ext build [extension-dir ...]",
+      "  flmux-ext build [--minify] [extension-dir ...]",
       "  flmux-ext pack [--out <dir>] [extension-dir ...]",
       "",
       "Defaults to the current working directory when no path is provided.",

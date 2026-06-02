@@ -68,6 +68,36 @@ export default defineExtension({
 
 Renderer-only extensions (no `pathMount`, only manifest-level `defaultTitle`) can skip `server.ts` entirely.
 
+## HTTP routes
+
+A server entry can serve dynamic HTTP at `/api/ext/<extId>/<path>` — for external packages or environments that require a real same-origin HTTP endpoint (use cap/RPC for everything security-sensitive). flmux owns the security envelope (auth, rate-limit, CORS, header filtering, error scrubbing); your handler only computes a body.
+
+```ts
+import { defineExtensionServer } from "@flmux/extension-api";
+import { createHmac, randomBytes } from "node:crypto";
+
+export default defineExtensionServer({
+  httpRoutes: [{
+    method: "GET",
+    path: "/token",
+    auth: "public", // "public" is GET-only; "session" adds auth + entitlement
+    handler: () => {
+      const secret = process.env.MY_EXT_SECRET ?? ""; // or read from ctx.dataDir
+      if (!secret) return { status: 503, body: "secret not set" };
+      const nonce = randomBytes(8).toString("hex");
+      const expiry = Math.floor(Date.now() / 1000) + 7 * 86400;
+      const hmac = createHmac("sha256", Buffer.from(secret, "hex")).update(`${nonce}:${expiry}`).digest("hex");
+      return `${nonce}:${expiry}:${hmac}`; // bare string ⇒ text/plain body
+    }
+  }]
+});
+```
+
+- **`auth`** — `"session"` runs behind flmux auth + the per-user extension entitlement (`ctx.userId` is the caller; `null` on public, `"local"` on desktop). `"public"` is unauthenticated and GET-only.
+- **Return** — `ExtensionHttpResponse` (`{ status?, headers?, body? }`) or a bare `string`/`Uint8Array`/`ArrayBuffer` (content-type defaults to `text/plain`).
+- **flmux owns CORS** — you cannot set `Access-Control-Allow-Origin` (responses stay same-origin), `set-cookie`, or CSP; only a small content-type/caching header allow-list passes through. `ctx.request.header()` redacts `cookie`/`authorization`.
+- Read your own config/secret from `ctx.dataDir`.
+
 ## Pane context
 
 Every pane receives `ExtensionPaneContext` on mount:

@@ -72,8 +72,54 @@ export interface ExtensionServerPaneInstance {
   dispose?(): void;
 }
 
+// ── HTTP routes (server-entry only) ──
+// Serve a dynamic HTTP response at `/api/ext/<extId><path>`. flmux owns the
+// security envelope (auth gate, CORS, rate-limit, header filtering, error
+// scrubbing); the handler only computes a body. For external packages that
+// require a real same-origin HTTP endpoint — security-sensitive comms use cap/RPC.
+
+export type ExtensionHttpMethod = "GET" | "POST";
+
+export interface ExtensionHttpRequest {
+  method: ExtensionHttpMethod;
+  path: string;
+  query: URLSearchParams;
+  /** `cookie`/`authorization` are redacted (never leak the session token). */
+  header(name: string): string | null;
+  arrayBuffer(): Promise<ArrayBuffer>;
+  text(): Promise<string>;
+  json(): Promise<unknown>;
+}
+
+export interface ExtensionHttpResponse {
+  status?: number;
+  /** Filtered to a safe allow-list; `access-control-*`/`set-cookie`/CSP are
+   *  dropped — flmux owns CORS so responses stay same-origin. */
+  headers?: Record<string, string>;
+  body?: string | Uint8Array | ArrayBuffer;
+}
+
+export interface ExtensionHttpRouteContext {
+  dataDir: string;
+  /** User name on `session` routes (`"local"` on desktop); `null` on `public`. */
+  userId: string | null;
+  request: ExtensionHttpRequest;
+}
+
+/** Bare string/bytes ⇒ `{ body }` with content-type `text/plain`. */
+export type ExtensionHttpReturn = ExtensionHttpResponse | string | Uint8Array | ArrayBuffer;
+
+export interface ExtensionHttpRoute {
+  method: ExtensionHttpMethod;
+  path: string; // leading "/", exact-match
+  /** `"public"` is GET-only (unauthenticated); `"session"` adds auth + entitlement. */
+  auth: "public" | "session";
+  handler(ctx: ExtensionHttpRouteContext): ExtensionHttpReturn | Promise<ExtensionHttpReturn>;
+}
+
 export interface ExtensionServerDefinition {
   panes?: ExtensionPaneSpec[];
+  httpRoutes?: ExtensionHttpRoute[];
   onInit?(ctx: ExtensionServerInitContext): void | Promise<void>;
   onSession?(ctx: ExtensionServerSessionContext): void | Promise<void>;
   onPaneConnected?(

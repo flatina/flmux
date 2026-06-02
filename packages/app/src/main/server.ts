@@ -12,7 +12,9 @@ import type {
 } from "../shared/rendererBridge";
 import paneSvg from "./assets/pane.svg" with { type: "text" };
 import folderSvg from "./assets/folder.svg" with { type: "text" };
+import type { ExtensionHttpRequest, ExtensionHttpResponse, ExtensionHttpReturn } from "@flmux/extension-api";
 import type { DiscoveredLocalExtension } from "./localExtensions";
+import type { ResolvedExtHttpRoute } from "./extHttpRoutes";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
 import type { FlmuxAuthorizationContext, FlmuxWebModeAuthorizer } from "./webModeAuth";
 import type { WebauthnAuthService } from "./auth/webauthnService";
@@ -84,6 +86,94 @@ function rateLimitUserKey(request: Request, authorizer: FlmuxWebModeAuthorizer):
   return name ? `u:${name}` : null;
 }
 
+// ── Extension HTTP route surface (served at /api/ext/<extId><path>) ──
+// flmux owns the security envelope (auth, CORS, header filtering, error
+// scrubbing); the extension handler only computes a body. See internal docs.
+
+const EXT_ALLOWED_RESPONSE_HEADERS = new Set([
+  "content-type",
+  "content-disposition",
+  "cache-control",
+  "etag",
+  "last-modified",
+  "expires",
+  "content-language",
+  "vary"
+]);
+
+interface ExtRouteDeps {
+  authorizer?: FlmuxWebModeAuthorizer;
+  isExtensionEnabled?(extId: string): boolean;
+  canUseExtension?(userId: string, extId: string): boolean;
+}
+
+type ElysiaSet = { status?: number | string; headers?: unknown } & Record<string, unknown>;
+
+async function serveExtRoute(
+  route: ResolvedExtHttpRoute,
+  request: Request,
+  set: ElysiaSet,
+  deps: ExtRouteDeps
+): Promise<Response | string> {
+  if (deps.isExtensionEnabled && !deps.isExtensionEnabled(route.extId)) {
+    set.status = 404;
+    return "Not Found";
+  }
+  let userId: string | null = null;
+  if (route.auth === "session") {
+    const auth = authorizeRequest(request, set, deps.authorizer);
+    if (!auth.ok) return "Unauthorized";
+    userId = auth.context?.user?.name ?? (deps.authorizer ? null : "local");
+    if (deps.authorizer && deps.canUseExtension && (!userId || !deps.canUseExtension(userId, route.extId))) {
+      set.status = 403;
+      return "Forbidden";
+    }
+  }
+  try {
+    const request_ = buildExtHttpRequest(request, route.path);
+    return finalizeExtHttpResponse(await route.handler({ dataDir: route.dataDir, userId, request: request_ }));
+  } catch (err) {
+    console.warn(`[flmux] ext route ${route.extId} ${route.method} ${route.path} threw:`, err);
+    set.status = 500;
+    return "Internal Server Error";
+  }
+}
+
+function buildExtHttpRequest(request: Request, routePath: string): ExtensionHttpRequest {
+  return {
+    method: request.method.toUpperCase() === "POST" ? "POST" : "GET",
+    path: routePath,
+    query: new URL(request.url).searchParams,
+    header(name) {
+      const lower = name.toLowerCase();
+      if (lower === "cookie" || lower === "authorization") return null;
+      return request.headers.get(lower);
+    },
+    arrayBuffer: () => request.arrayBuffer(),
+    text: () => request.text(),
+    json: () => request.json()
+  };
+}
+
+// Bare body → { body }; ext headers filtered to a safe allow-list (drops
+// access-control-*/set-cookie/CSP); nosniff + restrictive CSP forced so a
+// response can never be active same-origin content. ACAO is never emitted.
+function finalizeExtHttpResponse(ret: ExtensionHttpReturn): Response {
+  const r: ExtensionHttpResponse =
+    typeof ret === "string" || ret instanceof Uint8Array || ret instanceof ArrayBuffer ? { body: ret } : ret;
+  const headers: Record<string, string> = {};
+  for (const [key, value] of Object.entries(r.headers ?? {})) {
+    const name = key.toLowerCase();
+    if (!EXT_ALLOWED_RESPONSE_HEADERS.has(name)) continue;
+    if (/[\r\n]/.test(value)) throw new Error("illegal header value");
+    headers[name] = value;
+  }
+  if (!headers["content-type"]) headers["content-type"] = "text/plain; charset=utf-8";
+  headers["x-content-type-options"] = "nosniff";
+  headers["content-security-policy"] = "default-src 'none'";
+  return new Response((r.body ?? "") as BodyInit, { status: r.status ?? 200, headers });
+}
+
 export function startFlmuxServer(options: {
   rendererDir: string;
   /** Request-scoped router resolver. Desktop returns its single authority
@@ -108,6 +198,12 @@ export function startFlmuxServer(options: {
   /** Passkey auth service (web mode). Owns `/api/auth/*`, mints sessions, and
    *  tracks live `/rpc` connections by tokenId for logout/revoke close. */
   webauthn?: WebauthnAuthService;
+  /** Extension-declared HTTP routes, resolved with their extId + dataDir. */
+  extHttpRoutes?: ResolvedExtHttpRoute[];
+  /** Request-time liveness for a route's extension (onInit failure disables it). */
+  isExtensionEnabled?(extId: string): boolean;
+  /** Web-mode per-user entitlement for an extension (mirrors cap serving). */
+  canUseExtension?(userId: string, extId: string): boolean;
 }): FlmuxServerHandle {
   const hostname = "127.0.0.1";
   const appName = options.appName ?? "flmux";
@@ -286,8 +382,20 @@ export function startFlmuxServer(options: {
       }
 
       return handleInternalStartPageRequest(request);
-    })
-    .all("*", ({ request, set }) => {
+    });
+
+  // Extension-declared HTTP routes: concrete paths registered before the
+  // catch-all (so they win) and after the rate limiter (so they're limited).
+  for (const route of options.extHttpRoutes ?? []) {
+    const fullPath = `/api/ext/${route.extId}${route.path}`;
+    if (route.method === "GET") {
+      app.get(fullPath, ({ request, set }) => serveExtRoute(route, request, set, options));
+    } else {
+      app.post(fullPath, ({ request, set }) => serveExtRoute(route, request, set, options));
+    }
+  }
+
+  app.all("*", ({ request, set }) => {
       const auth = authorizeRequest(request, set, options.authorizer);
       if (!auth.ok) {
         // Unauthenticated top-level navigation → login page (a human with no

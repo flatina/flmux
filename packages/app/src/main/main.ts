@@ -51,6 +51,7 @@ import {
   resolveConfiguredLocalExtensionsRootDir,
   createLocalExtensionLoadEntries
 } from "./localExtensions";
+import { collectExtHttpRoutes } from "./extHttpRoutes";
 import type {
   ExtensionServerDefinition,
   ExtensionServerPaneInstance,
@@ -240,6 +241,11 @@ for (const ext of localExtensions) {
     console.warn(`[flmux] failed to load server entry for extension '${ext.id}':`, err);
   }
 }
+
+// Extension HTTP routes (served at /api/ext/<extId>/<path>). Collected eagerly;
+// a route whose extension is later dropped (onInit failure) is disabled at
+// request time via the server's isExtensionEnabled gate.
+const extHttpRoutes = collectExtHttpRoutes(extensionServers, resolveExtensionDataDir);
 
 // Per-session ext serve handles + dispose hooks — collected in bindMintedSession,
 // torn down by MintedSession.dispose on conn.onClose.
@@ -1014,6 +1020,9 @@ const server = startFlmuxServer({
   appName,
   resolveShellModelRouter: resolveShellModelRouterForRequest,
   localExtensions,
+  extHttpRoutes,
+  isExtensionEnabled: (extId) => extensionServers.has(extId),
+  canUseExtension: userCanUseExtension,
   port: portResolution.port,
   publicOrigin: process.env.FLMUX_PUBLIC_ORIGIN,
   saveSession: desktopAuthority

@@ -150,7 +150,7 @@ describe("cli tokens", () => {
     const authDir = await createTempAuthDir();
     await expect(
       runTokensCli(["bootstrap", "--name", 'admin\n[[users]]\nname = "evil"', "--auth-dir", authDir])
-    ).rejects.toThrow(/control characters/);
+    ).rejects.toThrow(/path-safe key/);
 
     await runTokensCli(["bootstrap", "--auth-dir", authDir]);
     await expect(

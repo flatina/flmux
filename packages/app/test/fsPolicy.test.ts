@@ -5,14 +5,14 @@ import { join } from "node:path";
 import { createFsPolicyResolver } from "../src/main/auth/fsPolicy";
 import type { FlmuxUser } from "../src/main/auth/userStore";
 
-const OWN = "{flmux_users}/u/{handle}";
+const OWN = "{flmux_users}/u/{name}";
 const SHARED_SKILLS = "{flmux_users}/shared_skills";
 const SHARED_RW = "{flmux_users}/shared_rw";
 
 function mkUser(over: Partial<FlmuxUser>): FlmuxUser {
   return {
-    name: "u",
-    handle: "aB3-_xyz",
+    name: "aB3-_xyz",
+    handle: "webauthn-id",
     displayName: undefined,
     role: undefined,
     allowPaneKinds: "*",
@@ -41,11 +41,10 @@ describe("fsPolicy resolver", () => {
     expect(byVirtual).toEqual({ "/w/u/aB3-_xyz": "rw", "/w/shared_rw": "rw", "/w/shared_skills": "ro" });
   });
 
-  it("confined user without a handle → no fs (fail-closed)", () => {
-    expect(resolver().resolve(mkUser({ handle: undefined, dirsRw: [OWN, SHARED_RW] }))).toEqual({
-      unconfined: false,
-      binds: []
-    });
+  it("drops a template with an unresolved placeholder (fail-closed)", () => {
+    // fs key migrated handle→name; a stale `{handle}` template must not resolve.
+    const p = resolver().resolve(mkUser({ dirsRw: ["{flmux_users}/u/{handle}", OWN] }));
+    expect(p.binds.map((b) => b.virtual)).toEqual(["/w/u/aB3-_xyz"]);
   });
 
   it("rejects entries that escape the base", () => {

@@ -13,6 +13,7 @@ import {
   rmdirSync,
   unlinkSync,
   writeSync,
+  type Dirent,
   type Stats
 } from "node:fs";
 import { randomBytes } from "node:crypto";
@@ -226,6 +227,14 @@ class NodeFsBackend implements FsBackend {
     return renameNoFollow(src.root, src.segments, dst.segments);
   }
 
+  // Source needs read only (ro bind ok); dest needs rw. Cross-bind allowed —
+  // unlike rename, copying ro→own-rw is a legitimate user action.
+  copy({ from, to }: { from: string; to: string }) {
+    const src = this.resolveReadableRoot(from);
+    const dst = this.resolveWritable(to);
+    return copyNoFollow(src.root, src.segments, dst.root, dst.segments);
+  }
+
   // Resolve to {bind-real-root | projectRoot, rel segments} with the rw gate.
   // `root` also serves as the bind identity for cross-bind checks. Empty
   // segments (= the bind mount itself) are left for callers to reject per op.
@@ -240,6 +249,19 @@ class NodeFsBackend implements FsBackend {
     }
     if (matched.mode !== "rw") {
       throw new ModelPathError("NOT_WRITABLE", "Path is not writable");
+    }
+    return { root: matched.realPath, segments: parsed.segments.slice(matched.virtualSegments.length) };
+  }
+
+  // Like resolveWritable but no rw gate — read is allowed on ro and rw binds.
+  private resolveReadableRoot(inputPath: string): { root: string; segments: string[] } {
+    if (this.unconfined) {
+      return { root: this.projectRoot, segments: parseUnconfinedPath(inputPath).segments };
+    }
+    const parsed = parseVirtualPath(inputPath, { rejectNativeAbsolute: true });
+    const matched = this.matchBind(parsed.normalized);
+    if (!matched) {
+      throw new ModelPathError("NOT_FOUND", "Path not found");
     }
     return { root: matched.realPath, segments: parsed.segments.slice(matched.virtualSegments.length) };
   }
@@ -628,6 +650,101 @@ function renameNoFollow(
     throw mapFsError(error);
   }
   return { renamed: true };
+}
+
+// Recursive copy: source resolved no-follow (symlinks rejected), dest no-clobber.
+// Cross-root allowed (rw gate already applied to dest by the caller).
+function copyNoFollow(
+  srcRoot: string,
+  srcSegments: readonly string[],
+  dstRoot: string,
+  dstSegments: readonly string[]
+): { copied: true; kind: FsEntryKind } {
+  if (srcSegments.length === 0) {
+    throw new ModelPathError("INVALID_PATH", "Cannot copy the workspace root");
+  }
+  const source = resolveUnderRoot(srcRoot, srcSegments);
+  const { parentDir, leaf } = resolveParentForLeaf(dstRoot, dstSegments);
+  const destPath = join(parentDir, leaf);
+  if (existsLstat(destPath)) {
+    throw new ModelPathError("ALREADY_EXISTS", "Destination already exists");
+  }
+  if (source.stats.isDirectory()) {
+    if (parentDir === source.realPath || relativeUnder(source.realPath, parentDir) !== null) {
+      throw new ModelPathError("INVALID_PATH", "Cannot copy a directory into itself");
+    }
+    try {
+      copyTreeNoFollow(source.realPath, destPath);
+    } catch (error) {
+      // Roll back the partial tree (we created destPath; no-clobber guaranteed it was absent).
+      rmSync(destPath, { recursive: true, force: true });
+      throw error;
+    }
+    return { copied: true, kind: "dir" };
+  }
+  if (!source.stats.isFile()) {
+    throw new ModelPathError("INVALID_PATH", "Path is not a file");
+  }
+  copyFileNoFollow(source.realPath, destPath);
+  return { copied: true, kind: "file" };
+}
+
+// O_NOFOLLOW on both ends (parity with read/write): refuses a source or dest
+// leaf swapped to a symlink, O_EXCL keeps the no-clobber guarantee.
+function copyFileNoFollow(srcReal: string, destPath: string): void {
+  const srcFd = openFileNoFollow(srcReal);
+  let dstFd: number;
+  try {
+    dstFd = openSync(destPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | O_NOFOLLOW, 0o644);
+  } catch (error) {
+    closeSync(srcFd);
+    throw mapFsError(error);
+  }
+  try {
+    const buf = Buffer.allocUnsafe(65536);
+    while (true) {
+      const read = readSync(srcFd, buf, 0, buf.length, null);
+      if (read <= 0) break;
+      let off = 0;
+      while (off < read) off += writeSync(dstFd, buf, off, read - off);
+    }
+  } catch (error) {
+    closeSync(srcFd);
+    closeSync(dstFd);
+    safeUnlink(destPath);
+    throw mapFsError(error);
+  }
+  closeSync(srcFd);
+  closeSync(dstFd);
+}
+
+// `srcDir` is canonical; each child is lstat'd no-follow and symlinks are rejected
+// (consistent with the rest of the backend). "other" types are skipped.
+function copyTreeNoFollow(srcDir: string, destDir: string): void {
+  try {
+    mkdirSync(destDir);
+  } catch (error) {
+    throw mapFsError(error);
+  }
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(srcDir, { withFileTypes: true });
+  } catch (error) {
+    throw mapFsError(error);
+  }
+  for (const entry of entries) {
+    const childSrc = join(srcDir, entry.name);
+    const stats = safeLstat(childSrc);
+    if (stats.isSymbolicLink()) {
+      throw new ModelPathError("INVALID_PATH", "Symbolic links are not allowed in filesystem paths");
+    }
+    const childDest = join(destDir, entry.name);
+    if (stats.isDirectory()) {
+      copyTreeNoFollow(childSrc, childDest);
+    } else if (stats.isFile()) {
+      copyFileNoFollow(childSrc, childDest);
+    }
+  }
 }
 
 // Delete: re-lstat the leaf for the authoritative type (don't trust the caller),

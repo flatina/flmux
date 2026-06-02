@@ -556,6 +556,16 @@ class ShellModel implements ShellModelAPI {
       };
     }
 
+    if (op === "copy") {
+      return {
+        ok: true,
+        value: await this.fs.copy({
+          from: requiredFsPathArg(args, "from"),
+          to: requiredFsPathArg(args, "to")
+        })
+      };
+    }
+
     return throwPathError("NOT_CALLABLE", "Path is not callable");
   }
 

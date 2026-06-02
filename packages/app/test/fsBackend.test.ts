@@ -107,13 +107,20 @@ describe("/fs ShellModelAPI backend", () => {
     });
   });
 
-  it("does not expose write through /fs, including rw binds", async () => {
+  it("exposes write as a rw-gated overwrite through /fs", async () => {
     const { model } = confinedFixture();
 
     expect(await model.pathCall("/fs/write", { path: "/w/rw/rw.txt", content: "x" })).toEqual({
+      ok: true,
+      value: { bytesWritten: 1 }
+    });
+    expect(await model.pathCall("/fs/read", { path: "/w/rw/rw.txt" })).toEqual({
+      ok: true,
+      value: { content: "x", truncated: false }
+    });
+    expect(await model.pathCall("/fs/write", { path: "/w/ro/ro.txt", content: "x" })).toMatchObject({
       ok: false,
-      code: "NOT_CALLABLE",
-      error: "Path is not callable"
+      code: "NOT_WRITABLE"
     });
   });
 
@@ -179,6 +186,59 @@ describe("/fs ShellModelAPI backend", () => {
     const model = new TestShellModelHost().createModel();
 
     expect(await model.pathCall("/fs/list", { path: "/" })).toMatchObject({ ok: false, code: "NOT_FOUND" });
+  });
+
+  it("copies files and trees, allows cross-bind ro→rw, and enforces no-clobber", async () => {
+    const { model, rw } = confinedFixture();
+
+    // ro → rw (cross-bind copy is allowed; rename is not).
+    expect(await model.pathCall("/fs/copy", { from: "/w/ro/ro.txt", to: "/w/rw/copied.txt" })).toEqual({
+      ok: true,
+      value: { copied: true, kind: "file" }
+    });
+    expect(await model.pathCall("/fs/read", { path: "/w/rw/copied.txt" })).toEqual({
+      ok: true,
+      value: { content: "readonly", truncated: false }
+    });
+
+    // No-clobber.
+    expect(await model.pathCall("/fs/copy", { from: "/w/rw/rw.txt", to: "/w/rw/copied.txt" })).toMatchObject({
+      ok: false,
+      code: "ALREADY_EXISTS"
+    });
+
+    // Recursive dir copy.
+    expect(await model.pathCall("/fs/copy", { from: "/w/rw/nested", to: "/w/rw/nested-copy" })).toEqual({
+      ok: true,
+      value: { copied: true, kind: "dir" }
+    });
+    expect(await model.pathCall("/fs/read", { path: "/w/rw/nested-copy/note.txt" })).toEqual({
+      ok: true,
+      value: { content: "nested note", truncated: false }
+    });
+
+    // Dest must be writable.
+    expect(await model.pathCall("/fs/copy", { from: "/w/rw/rw.txt", to: "/w/ro/x.txt" })).toMatchObject({
+      ok: false,
+      code: "NOT_WRITABLE"
+    });
+
+    // No copy into own descendant.
+    expect(await model.pathCall("/fs/copy", { from: "/w/rw/nested", to: "/w/rw/nested/self" })).toMatchObject({
+      ok: false,
+      code: "INVALID_PATH"
+    });
+
+    // Symlink in the source tree is rejected, and the partial dest is rolled back.
+    symlinkSync(rw, join(rw, "nested", "link"), "junction");
+    expect(await model.pathCall("/fs/copy", { from: "/w/rw/nested", to: "/w/rw/nested-copy-2" })).toMatchObject({
+      ok: false,
+      code: "INVALID_PATH"
+    });
+    expect(await model.pathCall("/fs/list", { path: "/w/rw/nested-copy-2" })).toMatchObject({
+      ok: false,
+      code: "NOT_FOUND"
+    });
   });
 
   it("trims a trailing incomplete UTF-8 sequence on truncated read", async () => {

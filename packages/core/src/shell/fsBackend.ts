@@ -45,6 +45,11 @@ export interface FsDeleteResult {
   kind: FsEntryKind;
 }
 
+export interface FsCopyResult {
+  copied: true;
+  kind: FsEntryKind;
+}
+
 export interface FsBackend {
   list(input: { path: string }): Awaitable<FsListResult>;
   read(input: { path: string; maxBytes?: number }): Awaitable<FsReadResult>;
@@ -55,4 +60,6 @@ export interface FsBackend {
   mkdir(input: { path: string }): Awaitable<FsMkdirResult>;
   rename(input: { from: string; to: string }): Awaitable<FsRenameResult>;
   delete(input: { path: string; recursive?: boolean }): Awaitable<FsDeleteResult>;
+  /** Recursive copy. Source needs read access; dest needs rw + no-clobber. Cross-bind allowed. */
+  copy(input: { from: string; to: string }): Awaitable<FsCopyResult>;
 }

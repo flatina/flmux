@@ -25,6 +25,8 @@ export interface ExplorerControlOptions {
   onCreateFolder?(parentVirtual: string, name: string): Promise<void>;
   onRename?(virtual: string, newName: string): Promise<void>;
   onDelete?(virtual: string, isDir: boolean): Promise<void>;
+  /** Paste a clipboard entry into `toParent` as `name`; `cut` = move, `copy` = copy. */
+  onPaste?(args: { from: string; isDir: boolean; toParent: string; name: string; mode: "copy" | "cut" }): Promise<void>;
   initialExpanded?: readonly string[];
   className?: string;
   /** Header label (signed-in user / project name). */
@@ -276,6 +278,9 @@ export function mountExplorerControl(
   let editSettled = false;
   let opInFlight = false;
   let closeMenu: (() => void) | null = null;
+  // File clipboard is per-control: a virtual path is meaningful only under this
+  // control's root/binds, so it must not be shared across explorer instances.
+  let clipboard: { path: string; isDir: boolean; mode: "copy" | "cut" } | null = null;
 
   // Single action set shared by header buttons + context menu. Target is an
   // explicit captured arg (not live selection) so a menu opened on one row
@@ -290,6 +295,9 @@ export function mountExplorerControl(
     newFolder: (target: string | null) => beginCreate("createFolder", target),
     rename: (path: string) => beginRename(path),
     delete: (path: string) => confirmAndDelete(path),
+    copy: (path: string) => setClipboard(path, "copy"),
+    cut: (path: string) => setClipboard(path, "cut"),
+    paste: (target: string | null) => void performPaste(target),
     copyPath: (path: string) => {
       navigator.clipboard?.writeText(path).catch(() => showBanner("Copy to clipboard failed"));
     }
@@ -348,6 +356,19 @@ export function mountExplorerControl(
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (disposed || editing) return;
+    if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+      const key = event.key.toLowerCase();
+      if (key === "v") {
+        event.preventDefault();
+        actions.paste(selectedPath);
+        return;
+      }
+      if ((key === "c" || key === "x") && selectedPath) {
+        event.preventDefault();
+        (key === "c" ? actions.copy : actions.cut)(selectedPath);
+        return;
+      }
+    }
     switch (event.key) {
       case "ArrowDown":
         event.preventDefault();
@@ -557,6 +578,64 @@ export function mountExplorerControl(
     }
   }
 
+  function setClipboard(path: string, mode: "copy" | "cut"): void {
+    const node = nodes.get(path);
+    if (!node) return;
+    clipboard = { path, isDir: node.entry.kind === "dir", mode };
+  }
+
+  async function performPaste(target: string | null): Promise<void> {
+    if (!clipboard || editing || opInFlight || disposed) return;
+    const source = clipboard;
+    if (!nodes.has(source.path)) {
+      clipboard = null;
+      return;
+    }
+    const toParent = createParent(target);
+    if (source.isDir && (toParent === source.path || pathIsUnder(source.path, toParent))) {
+      showBanner("Cannot paste a folder into itself");
+      return;
+    }
+    const base = baseName(source.path);
+    const srcParent = nodes.get(source.path)?.parentPath ?? displayRootPath;
+    if (source.mode === "cut" && srcParent === toParent) {
+      clipboard = null;
+      return;
+    }
+    opInFlight = true;
+    clearBanner();
+    try {
+      // Copy auto-suffixes on clash; load the target so the check sees on-disk entries.
+      if (source.mode === "copy") await loadDir(toParent);
+      const name = source.mode === "copy" ? uniqueChildName(toParent, base) : base;
+      await options.onPaste?.({ from: source.path, isDir: source.isDir, toParent, name, mode: source.mode });
+      if (source.mode === "cut") {
+        pruneSubtree(source.path);
+        clipboard = null;
+      }
+      if (toParent !== displayRootPath) expanded.add(toParent);
+      await refresh(toParent);
+      // Cut moved the entry out of srcParent — refresh it so the stale child row drops.
+      if (source.mode === "cut" && srcParent !== displayRootPath) await refresh(srcParent);
+    } catch (error) {
+      showBanner(mutationMessage(error));
+    } finally {
+      opInFlight = false;
+    }
+  }
+
+  function uniqueChildName(parentPath: string, base: string): string {
+    const existing = new Set((nodes.get(parentPath)?.children ?? []).map((entry) => entry.name.toLowerCase()));
+    if (!existing.has(base.toLowerCase())) return base;
+    const dot = base.lastIndexOf(".");
+    const stem = dot > 0 ? base.slice(0, dot) : base;
+    const ext = dot > 0 ? base.slice(dot) : "";
+    for (let i = 1; ; i++) {
+      const candidate = i === 1 ? `${stem} copy${ext}` : `${stem} copy ${i}${ext}`;
+      if (!existing.has(candidate.toLowerCase())) return candidate;
+    }
+  }
+
 
   function openContextMenu(x: number, y: number, target: string | null): void {
     closeMenu?.();
@@ -568,6 +647,10 @@ export function mountExplorerControl(
       "sep",
       { label: "Rename", disabled: !hasTarget, run: () => target && actions.rename(target) },
       { label: "Delete", disabled: !hasTarget, run: () => target && void actions.delete(target) },
+      "sep",
+      { label: "Copy", disabled: !hasTarget, run: () => target && actions.copy(target) },
+      { label: "Cut", disabled: !hasTarget, run: () => target && actions.cut(target) },
+      { label: "Paste", disabled: !clipboard, run: () => actions.paste(target) },
       "sep",
       { label: "Copy Path", disabled: !hasTarget, run: () => target && actions.copyPath(target) }
     ];
@@ -1068,6 +1151,16 @@ function joinPath(parent: string, name: string): string {
   if (parent === "/") return `/${name}`;
   const trimmed = parent.replace(/[\\/]+$/, "");
   return trimmed ? `${trimmed}/${name}` : name;
+}
+
+function baseName(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/, "");
+  const idx = trimmed.lastIndexOf("/");
+  return idx < 0 ? trimmed : trimmed.slice(idx + 1);
+}
+
+function pathIsUnder(ancestor: string, candidate: string): boolean {
+  return candidate === ancestor || candidate.startsWith(`${ancestor.replace(/[\\/]+$/, "")}/`);
 }
 
 function rootLabel(path: string): string {

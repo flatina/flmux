@@ -79,7 +79,9 @@ export class ExplorerPaneRenderer implements IContentRenderer {
       onCreateFile: (parent, name) => this.fsCall("/fs/create", { path: joinVirtual(parent, name) }),
       onCreateFolder: (parent, name) => this.fsCall("/fs/mkdir", { path: joinVirtual(parent, name) }),
       onRename: (path, newName) => this.fsCall("/fs/rename", { from: path, to: joinVirtual(parentOf(path), newName) }),
-      onDelete: (path, isDir) => this.fsCall("/fs/delete", { path, recursive: isDir })
+      onDelete: (path, isDir) => this.fsCall("/fs/delete", { path, recursive: isDir }),
+      onPaste: ({ from, toParent, name, mode }) =>
+        this.fsCall(mode === "copy" ? "/fs/copy" : "/fs/rename", { from, to: joinVirtual(toParent, name) })
     });
   }
 

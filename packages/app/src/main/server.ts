@@ -42,6 +42,10 @@ const WS_MAX_PAYLOAD_BYTES = 4 * 1024 * 1024;
 const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
 const RATE_LIMIT_WINDOW_MS = Number(process.env.FLMUX_RATELIMIT_WINDOW_MS) || 60_000;
 const RATE_LIMIT_MAX = Number(process.env.FLMUX_RATELIMIT_MAX) || 600;
+// WS keepalive: periodic server→client ping keeps idle connections alive under a
+// reverse proxy's idle timeout; idleTimeout is the dead-peer backstop (no pong → close).
+const WS_PING_INTERVAL_MS = Number(process.env.FLMUX_WS_PING_INTERVAL_MS) || 25_000;
+const WS_IDLE_TIMEOUT_SECONDS = Number(process.env.FLMUX_WS_IDLE_TIMEOUT_SECONDS) || 120;
 
 // Per-IP request-rate limit key. Trust is derived from the socket origin, not a
 // flag: X-Forwarded-For is honored only when the connection actually arrives from
@@ -107,7 +111,9 @@ export function startFlmuxServer(options: {
 }): FlmuxServerHandle {
   const hostname = "127.0.0.1";
   const appName = options.appName ?? "flmux";
-  const app = new Elysia({ websocket: { maxPayloadLength: WS_MAX_PAYLOAD_BYTES } })
+  const app = new Elysia({
+    websocket: { maxPayloadLength: WS_MAX_PAYLOAD_BYTES, idleTimeout: WS_IDLE_TIMEOUT_SECONDS }
+  })
     // generator runs before skip (skip takes 2 params): an unresolvable "" key
     // is produced then skipped, never bucketed shared. Desktop (no authorizer) skips.
     .use(
@@ -327,6 +333,8 @@ export function startFlmuxServer(options: {
     const wsToConn = new WeakMap<object, Connection>();
     // Per-socket unregister fn for the tokenId→connection live registry.
     const wsToUntrack = new WeakMap<object, () => void>();
+    // Per-socket keepalive ping timer (cleared on close).
+    const wsToPing = new WeakMap<object, ReturnType<typeof setInterval>>();
     app.ws("/rpc", {
       beforeHandle({ request, set }) {
         const auth = authorizeRequest(request, set, options.authorizer);
@@ -377,6 +385,14 @@ export function startFlmuxServer(options: {
           );
         }
         onConn(conn, auth.context);
+        const pingTimer = setInterval(() => {
+          try {
+            (raw as { ping?(): void }).ping?.();
+          } catch {
+            /* socket already gone */
+          }
+        }, WS_PING_INTERVAL_MS);
+        wsToPing.set(raw, pingTimer);
       },
       message(ws, message) {
         const recv = wsToReceive.get(ws.raw as object);
@@ -398,6 +414,11 @@ export function startFlmuxServer(options: {
         wsToReceive.delete(raw);
         wsToUntrack.get(raw)?.();
         wsToUntrack.delete(raw);
+        const pingTimer = wsToPing.get(raw);
+        if (pingTimer) {
+          clearInterval(pingTimer);
+          wsToPing.delete(raw);
+        }
         if (conn) {
           try { conn.shutdown("ws_close"); } catch { /* swallow */ }
         }

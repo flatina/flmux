@@ -81,6 +81,25 @@ describe("ExplorerControl", () => {
     ]);
   });
 
+  it("descends a single-folder root when collapseSingleFolderRoot is set", async () => {
+    const calls: string[] = [];
+    const control = mountExplorerControl(document.createElement("div"), {
+      root: "/",
+      extensions: [".ts"],
+      collapseSingleFolderRoot: true,
+      listDir: async (path) => {
+        calls.push(path);
+        return { entries: fixture[path] ?? [] };
+      }
+    });
+
+    await flushDom();
+    // After filtering, root has a single visible dir (`src`) → display root descends into it.
+    expect(calls).toEqual(["/", "/src"]);
+    expect(pathExists(control.element, "/src")).toBe(false);
+    expect(pathExists(control.element, "/src/index.ts")).toBe(true);
+  });
+
   it("survives a listDir rejection without crashing", async () => {
     const host = document.createElement("div");
     const control = mountExplorerControl(host, {

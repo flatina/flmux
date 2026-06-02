@@ -18,6 +18,8 @@ export interface ExplorerControlOptions {
   filter?: (entry: ExplorerEntry) => boolean;
   onActivate?(event: ExplorerActivateEvent): void;
   onSelect?(event: ExplorerActivateEvent | null): void;
+  /** Auto-descend the display root through a chain of single-child folders. */
+  collapseSingleFolderRoot?: boolean;
   /** Mutation callbacks (single impl in the pane). Throw on failure → banner. */
   onCreateFile?(parentVirtual: string, name: string): Promise<void>;
   onCreateFolder?(parentVirtual: string, name: string): Promise<void>;
@@ -836,6 +838,7 @@ export function mountExplorerControl(
   }
 
   function advanceDisplayRoot(): void {
+    if (!options.collapseSingleFolderRoot) return;
     while (true) {
       const node = nodes.get(displayRootPath);
       if (!node?.children) return;

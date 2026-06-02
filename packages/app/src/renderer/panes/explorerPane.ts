@@ -55,6 +55,7 @@ export class ExplorerPaneRenderer implements IContentRenderer {
     this.control = mountExplorerControl(this.element, {
       root,
       userLabel: this.deps.userLabel,
+      collapseSingleFolderRoot: true,
       listDir: async (path) => {
         const result = await this.deps.shellModel.pathCall("/fs/list", { path }, { sourcePaneId: this.paneId });
         if (!result.ok) {

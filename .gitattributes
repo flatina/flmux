@@ -20,6 +20,7 @@
 # Shell scripts — LF
 *.sh       text eol=lf
 *.bash     text eol=lf
+.githooks/* text eol=lf
 
 # Windows scripts — CRLF
 *.bat      text eol=crlf

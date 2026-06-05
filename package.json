@@ -11,6 +11,7 @@
     "extensions/scratchpad"
   ],
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks",
     "build:extensions": "bun scripts/dev-extensions.ts build",
     "pack:extensions": "bun scripts/pack-extensions.ts",
     "build": "bun run --filter @flmux/app build",

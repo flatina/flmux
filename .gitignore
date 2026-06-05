@@ -1,5 +1,5 @@
 .tmp/
-.flmux/
+.flmux*/
 internal-notes/
 .deploy/
 dist/

@@ -9,7 +9,7 @@ import type { Connection } from "bunite-core/rpc";
 import type { PathCallerContext, SequencedShellCoreEvent, ShellModelAPI } from "@flmux/core/shell";
 import { ModelPathError } from "@flmux/core/shell";
 import { flmuxBridgeCap, type FlmuxRendererBootstrapConfig, type FlmuxSessionSaveLayouts } from "../shared/rendererBridge";
-import { resolveWorkspaceTabstripMode } from "../shared/workspaceTabstrip";
+import { resolveWorkspaceTabstripMode } from "../shared/runtimeMode";
 import { createSessionImpl } from "./sessionImpl";
 import { createBridgeImpl, type MintedSession } from "./bridgeImpl";
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";

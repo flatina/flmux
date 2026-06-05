@@ -10,8 +10,7 @@ import type {
   ShellPaneRecordSnapshot,
   WorkspaceStatusSnapshot
 } from "@flmux/core/shell/types";
-import type { FlmuxRuntimeMode } from "./runtimeMode";
-import type { WorkspaceTabstripMode } from "./workspaceTabstrip";
+import type { FlmuxRuntimeMode, WorkspaceTabstripMode } from "./runtimeMode";
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
 
 export interface FlmuxShellSnapshot {

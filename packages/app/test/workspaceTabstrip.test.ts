@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { resolveWorkspaceTabstripMode } from "../src/shared/workspaceTabstrip";
+import { resolveWorkspaceTabstripMode } from "../src/shared/runtimeMode";
 
 describe("resolveWorkspaceTabstripMode", () => {
   it("web → outer-auto", () => {

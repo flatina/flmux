@@ -52,8 +52,7 @@ import type {
   FlmuxSessionSaveLayouts,
   FlmuxSessionBootstrapResponse
 } from "../../shared/rendererBridge";
-import { getFlmuxRendererLifecyclePolicy } from "../../shared/runtimeMode";
-import type { WorkspaceTabstripMode } from "../../shared/workspaceTabstrip";
+import type { WorkspaceTabstripMode } from "../../shared/runtimeMode";
 import { FlmuxTitlebar, type FlmuxTitlebarWorkspace } from "./titlebar";
 import { resolveTerminalCwdFromRoot } from "@flmux/core/terminal/path";
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
@@ -68,6 +67,15 @@ type PendingPane = {
   params: Record<string, unknown> | undefined;
 };
 
+type PaneAddedPayload = {
+  paneId: string;
+  workspaceId: string;
+  snapshot: ShellPaneRecordSnapshot;
+  params: Record<string, unknown> | undefined;
+  place?: "within" | "left" | "right" | "above" | "below";
+  referencePaneId?: string;
+};
+
 type WorkspaceRecord = {
   id: string;
   bus: WorkspaceBus;
@@ -78,6 +86,8 @@ type WorkspaceRecord = {
   innerResizeObserver: ResizeObserver | null;
   pendingInnerLayout: SerializedDockview | null;
   pendingPanes: PendingPane[] | null;
+  /** Pane events that arrived while the mount was deferred — replayed in order after it. */
+  pendingPaneEvents: Array<() => void> | null;
   edgeGroups: Map<PaneEdgeGroup, DockviewGroupPanelApi>;
   paneEdge: Map<string, PaneEdgeGroup>;
 };
@@ -102,7 +112,6 @@ function isPaneKindAllowed(
 
 export class FlmuxWorkbench {
   readonly shellModel: ShellModelAPI;
-  private readonly lifecyclePolicy: ReturnType<typeof getFlmuxRendererLifecyclePolicy>;
 
   private readonly shellEl = document.querySelector<HTMLElement>(".dockview-shell")!;
   private readonly browserPanelTemplate = document.getElementById("browser-panel-tpl") as HTMLTemplateElement;
@@ -137,7 +146,6 @@ export class FlmuxWorkbench {
     private readonly config: FlmuxRendererBootstrapConfig,
     private readonly session: SessionCap
   ) {
-    this.lifecyclePolicy = getFlmuxRendererLifecyclePolicy(config.mode);
     this.tabstripMode = config.workspaceTabstrip;
     this.appTitle = config.appName;
     registerBuiltinPaneDescriptors(this.paneRegistry, {
@@ -247,13 +255,11 @@ export class FlmuxWorkbench {
     this.updateDocumentTitle();
     setupDropIndicatorMasks();
 
-    if (this.lifecyclePolicy.persistSession) {
-      this.sessionPersistenceEnabled = true;
-      window.addEventListener("pagehide", () => {
-        if (this.sessionPersistenceSuppressed) return;
-        this.saveLayoutsViaBeacon(this.serializeSessionLayouts());
-      });
-    }
+    this.sessionPersistenceEnabled = true;
+    window.addEventListener("pagehide", () => {
+      if (this.sessionPersistenceSuppressed) return;
+      this.saveLayoutsViaBeacon(this.serializeSessionLayouts());
+    });
   }
 
   // ── Bootstrap ──
@@ -422,17 +428,25 @@ export class FlmuxWorkbench {
     this.updateDocumentTitle();
   }
 
-  private applyPaneAdded(payload: {
-    paneId: string;
-    workspaceId: string;
-    snapshot: ShellPaneRecordSnapshot;
-    params: Record<string, unknown> | undefined;
-    place?: "within" | "left" | "right" | "above" | "below";
-    referencePaneId?: string;
-  }) {
+  // Pane events for a workspace whose mount is still deferred are queued in
+  // arrival order and replayed after it — applied directly they would be wiped
+  // or duplicated by the upcoming fromJSON / pendingPanes mount (or silently
+  // dropped, resurrecting removed panes on replay).
+  private deferPaneEvent(record: WorkspaceRecord, replay: () => void): boolean {
+    if (!record.pendingInnerLayout && !record.pendingPanes) {
+      return false;
+    }
+    (record.pendingPaneEvents ??= []).push(replay);
+    return true;
+  }
+
+  private applyPaneAdded(payload: PaneAddedPayload) {
     const record = this.workspaces.get(payload.workspaceId);
     // Drop silently if outer panel hasn't materialized yet — pane re-mounts later.
     if (!record?.innerApi) {
+      return;
+    }
+    if (this.deferPaneEvent(record, () => this.applyPaneAdded(payload))) {
       return;
     }
     if (record.innerApi.getPanel(payload.paneId)) {
@@ -493,12 +507,29 @@ export class FlmuxWorkbench {
     if (!record.innerApi) return;
     for (const pos of ["left", "right", "top", "bottom"] as const) {
       const api = record.innerApi.getEdgeGroup(pos);
-      if (api) record.edgeGroups.set(pos, api);
+      if (api) this.trackEdgeGroup(record, pos, api);
     }
     for (const [paneId, state] of Object.entries(layout.panels ?? {})) {
       const edge = state.contentComponent ? this.paneRegistry.get(state.contentComponent)?.edgeGroup : undefined;
       if (edge) record.paneEdge.set(paneId, edge);
     }
+  }
+
+  // Register an edge group + persist its sash resizes: edge sashes live in the
+  // shell splitview, not the grid, so they never fire onDidLayoutChange.
+  private trackEdgeGroup(record: WorkspaceRecord, edge: PaneEdgeGroup, api: DockviewGroupPanelApi) {
+    if (record.edgeGroups.get(edge) === api) return;
+    record.edgeGroups.set(edge, api);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    api.onDidDimensionsChange(() => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        // Stale after detach/re-mount — the current instance owns persistence.
+        if (!record.innerApi || record.edgeGroups.get(edge) !== api) return;
+        this.pushLayout();
+      }, 300);
+    });
   }
 
   private addPaneToEdgeGroup(
@@ -518,7 +549,7 @@ export class FlmuxWorkbench {
         ...(d?.initialSize !== undefined ? { initialSize: d.initialSize } : {})
       });
     }
-    record.edgeGroups.set(edge, edgeApi);
+    this.trackEdgeGroup(record, edge, edgeApi);
     record.paneEdge.set(pane.id, edge);
     innerApi.addPanel({
       id: pane.id,
@@ -546,6 +577,9 @@ export class FlmuxWorkbench {
 
   private applyPaneRemoved(payload: { paneId: string; workspaceId: string }) {
     const record = this.workspaces.get(payload.workspaceId);
+    if (record && this.deferPaneEvent(record, () => this.applyPaneRemoved(payload))) {
+      return;
+    }
     record?.innerApi?.getPanel(payload.paneId)?.api.close();
     this.paneIdToKind.delete(payload.paneId);
     clearPaneHeaderMenu(payload.paneId);
@@ -573,6 +607,9 @@ export class FlmuxWorkbench {
 
   private applyPaneTitleChanged(payload: { paneId: string; workspaceId: string; title: string }) {
     const record = this.workspaces.get(payload.workspaceId);
+    if (record && this.deferPaneEvent(record, () => this.applyPaneTitleChanged(payload))) {
+      return;
+    }
     record?.innerApi?.getPanel(payload.paneId)?.api.setTitle(payload.title);
   }
 
@@ -582,6 +619,9 @@ export class FlmuxWorkbench {
     params: Record<string, unknown> | undefined;
   }) {
     const record = this.workspaces.get(payload.workspaceId);
+    if (record && this.deferPaneEvent(record, () => this.applyPaneParamsChanged(payload))) {
+      return;
+    }
     record?.innerApi?.getPanel(payload.paneId)?.api.updateParameters(payload.params ?? {});
   }
 
@@ -591,6 +631,9 @@ export class FlmuxWorkbench {
     }
     const record = this.workspaces.get(payload.workspaceId);
     if (!record) return;
+    if (this.deferPaneEvent(record, () => this.applyPaneActiveChanged(payload))) {
+      return;
+    }
     const edge = record.paneEdge.get(payload.paneId);
     if (edge) {
       const edgeApi = record.edgeGroups.get(edge);
@@ -665,6 +708,8 @@ export class FlmuxWorkbench {
       const height = host.clientHeight;
       if (record.innerApi && width > 0 && height > 0) {
         record.innerApi.layout(width, height, true);
+        // Retries a mount deferred for lack of real dims; no-op once mounted.
+        this.mountPendingInner(record);
       }
     };
 
@@ -677,6 +722,21 @@ export class FlmuxWorkbench {
     if (!record.innerApi) {
       return;
     }
+    if (!record.pendingInnerLayout && !record.pendingPanes) {
+      return;
+    }
+    // Mounting resolves sizes against the component's current dims — at 0×0
+    // (host not laid out yet) edge-group widths clamp to their minimums and,
+    // on the fromJSON path, the clamped value then overwrites the saved
+    // expanded size. Defer until layoutInner has fed real dims.
+    const h = record.innerHost;
+    if (!h || h.clientWidth === 0 || h.clientHeight === 0) {
+      return;
+    }
+    // Feed the host dims explicitly — the attach-time call arrives before
+    // layoutInner, so the component's internal size may still be 0×0 even
+    // though the host element is laid out.
+    record.innerApi.layout(h.clientWidth, h.clientHeight, true);
     const priorApplying = this.applyingCoreState;
     this.applyingCoreState = true;
     try {
@@ -702,7 +762,10 @@ export class FlmuxWorkbench {
           }
         }
         record.pendingInnerLayout = null;
-      } else if (record.pendingPanes) {
+      }
+      // Not else-if: panes queued while the layout mount was deferred
+      // (applyPaneAdded) mount right after fromJSON.
+      if (record.pendingPanes) {
         const innerApi = record.innerApi;
         let firstPanelId: string | null = null;
         for (const pane of record.pendingPanes) {
@@ -734,6 +797,15 @@ export class FlmuxWorkbench {
         }
         record.pendingPanes = null;
       }
+      // Replay pane events queued during the deferral — normal path now
+      // (pending state cleared), so placement and dedupe apply as usual.
+      const queued = record.pendingPaneEvents;
+      record.pendingPaneEvents = null;
+      if (queued) {
+        for (const replay of queued) {
+          replay();
+        }
+      }
     } finally {
       this.applyingCoreState = priorApplying;
     }
@@ -747,6 +819,7 @@ export class FlmuxWorkbench {
     record.innerApi = null;
     record.innerHost = null;
     record.outerPanelApi = null;
+    record.edgeGroups.clear();
   }
 
   getWorkspaceForOuterPanel(panelId: string): WorkspaceRecord | null {
@@ -995,6 +1068,7 @@ export class FlmuxWorkbench {
       innerResizeObserver: null,
       pendingInnerLayout: null,
       pendingPanes: null,
+      pendingPaneEvents: null,
       edgeGroups: new Map(),
       paneEdge: new Map()
     };
@@ -1007,7 +1081,12 @@ export class FlmuxWorkbench {
   private serializeSessionLayouts(): FlmuxSessionSaveLayouts {
     const innerLayouts: Record<string, unknown | null> = {};
     for (const [workspaceId, record] of this.workspaces) {
-      innerLayouts[workspaceId] = record.innerApi ? record.innerApi.toJSON() : null;
+      // A still-deferred mount (host never laid out, e.g. background workspace)
+      // holds its state in pendingInnerLayout/pendingPanes — serializing the
+      // empty dockview instead would wipe the saved layout (an empty-grid save
+      // would also shadow the snapshot-pane fallback on the next bootstrap).
+      innerLayouts[workspaceId] = record.pendingInnerLayout
+        ?? (record.pendingPanes ? null : record.innerApi ? record.innerApi.toJSON() : null);
     }
     return {
       outerLayout: this.outerApi?.toJSON() ?? null,

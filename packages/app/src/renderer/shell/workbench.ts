@@ -762,6 +762,24 @@ export class FlmuxWorkbench {
           }
           record.innerApi.fromJSON(record.pendingInnerLayout);
           this.rehydrateEdgeGroupsFromLayout(record, layout);
+          // A stale saved layout can carry groups whose panes no longer exist —
+          // dockview restores them as empty groups that render ghost watermark
+          // columns. Sweep them; an empty edge group goes through removeEdgeGroup
+          // (mirrors applyPaneRemoved's last-pane cleanup; removeGroup no-ops on
+          // structural groups).
+          const edgePositionByGroupId = new Map(
+            [...record.edgeGroups.entries()].map(([position, api]) => [api.id, position] as const)
+          );
+          for (const group of [...record.innerApi.groups]) {
+            if (group.panels.length > 0) continue;
+            const edge = edgePositionByGroupId.get(group.id);
+            if (edge) {
+              record.innerApi.removeEdgeGroup(edge);
+              record.edgeGroups.delete(edge);
+            } else {
+              record.innerApi.removeGroup(group);
+            }
+          }
         } catch (error) {
           console.warn(`failed to restore workspace '${record.id}' inner layout; falling back to reset`, error);
           this.disposingWorkspace.add(record.id);

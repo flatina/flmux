@@ -66,7 +66,8 @@ function value<T>(result: PathCallResult): T {
 
 describe("/fs ShellModelAPI backend", () => {
   it("lists synthetic roots and reads/stats files from ro and rw binds", async () => {
-    const { model } = confinedFixture();
+    const { model, rw } = confinedFixture();
+    writeFileSync(join(rw, "a.txt"), "x");
 
     expect(value<{ entries: Array<{ name: string; kind: string }> }>(await model.pathCall("/fs/list", { path: "/" }))).toEqual({
       entries: [{ name: "w", kind: "dir" }]
@@ -92,8 +93,10 @@ describe("/fs ShellModelAPI backend", () => {
     const listed = value<{ entries: Array<{ name: string; kind: string; size?: number; mtimeMs?: number }> }>(
       await model.pathCall("/fs/list", { path: "/w/rw" })
     );
+    // Dirs first, then files by name ("a.txt" < "nested" alphabetically).
     expect(listed.entries).toEqual([
       { name: "nested", kind: "dir", mtimeMs: expect.any(Number) },
+      { name: "a.txt", kind: "file", size: 1, mtimeMs: expect.any(Number) },
       { name: "rw.txt", kind: "file", size: 9, mtimeMs: expect.any(Number) }
     ]);
 

@@ -443,7 +443,7 @@ function listDirectory(dirPath: string): FsListEntry[] {
           return [];
         }
       })
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => Number(b.kind === "dir") - Number(a.kind === "dir") || a.name.localeCompare(b.name));
   } catch (error) {
     throw mapFsError(error);
   }

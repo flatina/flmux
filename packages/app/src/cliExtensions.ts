@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import type { CommandDef } from "citty";
 import { resolveInstallLayout } from "./main/flmuxPaths";
+import { createExtensionConfigLoader } from "./main/extConfig";
 import {
   FLMUX_EXTENSION_COMMAND,
   type FlmuxExtensionCliContext,
@@ -109,8 +110,28 @@ function wrapAsCommandDef(
       if (!dataDir) {
         throw new Error(`[flmux] extension '${extensionId}' is not registered — refusing to run CLI`);
       }
-      const ctx: FlmuxExtensionCliContext = { dataDir };
-      await def.run(input.args, ctx, input.rawArgs);
+      // Dispose after run: a watch-backed store would otherwise keep the
+      // event loop alive and hang the (short-lived) CLI process.
+      const configDisposers: Array<() => void> = [];
+      const ctx: FlmuxExtensionCliContext = {
+        dataDir,
+        loadConfig: createExtensionConfigLoader({
+          extId: extensionId,
+          dataDir,
+          registerDispose: (fn) => configDisposers.push(fn)
+        })
+      };
+      try {
+        await def.run(input.args, ctx, input.rawArgs);
+      } finally {
+        for (const dispose of configDisposers) {
+          try {
+            dispose();
+          } catch {
+            /* best-effort */
+          }
+        }
+      }
     }
   } as CommandDef;
 }

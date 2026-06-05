@@ -1,9 +1,14 @@
 import type { CapDef, ClientOf, ImplOf } from "bunite-core/rpc";
 import type { ShellClient } from "./shell";
 import type { ExtensionPaneSpec } from "./pane";
+import type { ExtensionConfig, ExtensionConfigBuilder } from "./config";
 
 export interface ExtensionServerInitContext {
   dataDir: string;
+  /** Build a layered config store (host-provided confkit; see config.ts).
+   * Relative file paths resolve against `dataDir`; watcher lifecycle is owned
+   * by the host. Call once in `onInit` and share via closure. */
+  loadConfig<T>(build: (builder: ExtensionConfigBuilder<T>) => void): Promise<ExtensionConfig<T>>;
 }
 
 /** A directory the host grants this session, to mount at `virtual` (a `/w`-rooted

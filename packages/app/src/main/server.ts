@@ -42,12 +42,11 @@ let webAllowedOrigins: ReadonlySet<string> | null = null;
 
 const WS_MAX_PAYLOAD_BYTES = 4 * 1024 * 1024;
 const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
-const RATE_LIMIT_WINDOW_MS = Number(process.env.FLMUX_RATELIMIT_WINDOW_MS) || 60_000;
-const RATE_LIMIT_MAX = Number(process.env.FLMUX_RATELIMIT_MAX) || 600;
-// WS keepalive: periodic server→client ping keeps idle connections alive under a
-// reverse proxy's idle timeout; idleTimeout is the dead-peer backstop (no pong → close).
-const WS_PING_INTERVAL_MS = Number(process.env.FLMUX_WS_PING_INTERVAL_MS) || 25_000;
-const WS_IDLE_TIMEOUT_SECONDS = Number(process.env.FLMUX_WS_IDLE_TIMEOUT_SECONDS) || 120;
+
+function parseTrustedProxies(raw: string | undefined): ReadonlySet<string> {
+  if (raw) return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
+  return new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
+}
 
 // Per-IP request-rate limit key. Trust is derived from the socket origin, not a
 // flag: X-Forwarded-For is honored only when the connection actually arrives from
@@ -56,19 +55,16 @@ const WS_IDLE_TIMEOUT_SECONDS = Number(process.env.FLMUX_WS_IDLE_TIMEOUT_SECONDS
 // client IP; client-forged XFF is dropped), so the real IP is used. Direct clients
 // are keyed by their socket IP. A trusted-origin connection with no XFF returns ""
 // → skipped, never bucketed under loopback (which would share one key across all
-// clients = DoS). FLMUX_TRUSTED_PROXIES (comma list) overrides for a non-colocated
-// proxy.
-const TRUSTED_PROXIES = parseTrustedProxies(process.env.FLMUX_TRUSTED_PROXIES);
-
-function parseTrustedProxies(raw: string | undefined): ReadonlySet<string> {
-  if (raw) return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
-  return new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
-}
-
-function rateLimitKey(request: Request, server: { requestIP(req: Request): { address: string } | null } | null): string {
+// clients = DoS). The `trustedProxies` option (comma list) overrides for a
+// non-colocated proxy.
+function rateLimitKey(
+  request: Request,
+  server: { requestIP(req: Request): { address: string } | null } | null,
+  trustedProxies: ReadonlySet<string>
+): string {
   const socketIP = server?.requestIP(request)?.address;
   if (!socketIP) return "";
-  if (TRUSTED_PROXIES.has(socketIP)) {
+  if (trustedProxies.has(socketIP)) {
     return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "";
   }
   return socketIP;
@@ -204,22 +200,31 @@ export function startFlmuxServer(options: {
   isExtensionEnabled?(extId: string): boolean;
   /** Web-mode per-user entitlement for an extension (mirrors cap serving). */
   canUseExtension?(userId: string, extId: string): boolean;
+  rateLimit?: { max: number; windowMs: number };
+  /** WS keepalive: periodic server→client ping keeps idle connections alive under
+   * a reverse proxy's idle timeout; idleTimeout is the dead-peer backstop. */
+  wsKeepalive?: { pingIntervalMs: number; idleTimeoutSeconds: number };
+  /** Comma list of trusted proxy socket IPs (see rateLimitKey); default loopback. */
+  trustedProxies?: string;
 }): FlmuxServerHandle {
   const hostname = "127.0.0.1";
   const appName = options.appName ?? "flmux";
+  const rateLimitConfig = options.rateLimit ?? { max: 600, windowMs: 60_000 };
+  const wsKeepalive = options.wsKeepalive ?? { pingIntervalMs: 25_000, idleTimeoutSeconds: 120 };
+  const trustedProxies = parseTrustedProxies(options.trustedProxies);
   const app = new Elysia({
-    websocket: { maxPayloadLength: WS_MAX_PAYLOAD_BYTES, idleTimeout: WS_IDLE_TIMEOUT_SECONDS }
+    websocket: { maxPayloadLength: WS_MAX_PAYLOAD_BYTES, idleTimeout: wsKeepalive.idleTimeoutSeconds }
   })
     // generator runs before skip (skip takes 2 params): an unresolvable "" key
     // is produced then skipped, never bucketed shared. Desktop (no authorizer) skips.
     .use(
       rateLimit({
         scoping: "global",
-        duration: RATE_LIMIT_WINDOW_MS,
-        max: RATE_LIMIT_MAX,
+        duration: rateLimitConfig.windowMs,
+        max: rateLimitConfig.max,
         generator: (request, server) => {
           const userKey = options.authorizer ? rateLimitUserKey(request, options.authorizer) : null;
-          return userKey ?? rateLimitKey(request, server);
+          return userKey ?? rateLimitKey(request, server, trustedProxies);
         },
         skip: (_request, key) => !options.authorizer || !key
       })
@@ -499,7 +504,7 @@ export function startFlmuxServer(options: {
           } catch {
             /* socket already gone */
           }
-        }, WS_PING_INTERVAL_MS);
+        }, wsKeepalive.pingIntervalMs);
         wsToPing.set(raw, pingTimer);
       },
       message(ws, message) {

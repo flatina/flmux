@@ -37,9 +37,9 @@ import { createFsPolicyResolver } from "./auth/fsPolicy";
 import { createFsPathMapper } from "./fsBackend";
 import { generateToken } from "./auth/tokenFormat";
 import type { ExtensionFsBind, ExtensionFsPolicy } from "@flmux/extension-api";
-import { resolveFlmuxServerPort } from "./auth/serverConfig";
-import { resolveFlmuxAppTitle, resolveFlmuxAppName } from "./appConfig";
-import { resolveFlmuxRuntimeMode } from "./runtimeMode";
+import { loadFlmuxBootConfig } from "./flmuxConfig";
+import { createExtensionConfigLoader } from "./extConfig";
+import { resolveFlmuxRuntimeMode, resolveFlmuxDevMode, resolveFlmuxHiddenWindow } from "./runtimeMode";
 import { resolveFlmuxRootDir, resolveFlmuxPaths, resolveInstallLayout } from "./flmuxPaths";
 import { ensureFlmuxCliShim, ensureExtensionCliShims } from "./cliShim";
 import { FLMUX_APP_VERSION } from "../version";
@@ -71,18 +71,7 @@ type ShellAuthority = Pick<
 
 const runtimeMode = resolveFlmuxRuntimeMode();
 const devAuthAs = readDevAuthAsFlag(Bun.argv);
-// `--dev-auth-as` fabricates an all-permissive user for every request — it must
-// never activate on a public deployment. Honor it only in explicit dev mode
-// (`--dev` flag or preset `FLMUX_DEV_MODE=1`); fail closed otherwise so a stray
-// flag in production refuses to boot rather than silently opening the door.
-const devModeRequested = process.env.FLMUX_DEV_MODE === "1" || Bun.argv.includes("--dev");
-if (devAuthAs && !devModeRequested) {
-  console.error("[flmux] FATAL: --dev-auth-as requires dev mode (--dev or FLMUX_DEV_MODE=1); refusing to start.");
-  process.exit(1);
-}
 process.env.BUNITE_REMOTE_DEBUGGING_PORT ??= "9227";
-process.env.FLMUX_DEV_MODE ??= devModeRequested ? "1" : "";
-const hiddenWindow = process.env.FLMUX_HIDDEN_WINDOW === "1";
 
 process.on("uncaughtException", (err) => {
   console.error("[flmux] uncaughtException (survived):", err);
@@ -120,6 +109,22 @@ const { isDeployLayout, baseDir, installRoot } = resolveInstallLayout();
 const rendererDir = isDeployLayout ? resolve(baseDir, "renderer") : resolve(baseDir, "../dist/renderer");
 const flmuxPaths = resolveFlmuxPaths(resolveFlmuxRootDir(installRoot));
 const projectDir = flmuxPaths.rootDir;
+
+// Single confkit load: defaults < app.toml < FLMUX_* env < CLI flags.
+const bootConfig = await loadFlmuxBootConfig({ appConfigFile: flmuxPaths.appConfigFile });
+// `--dev-auth-as` fabricates an all-permissive user for every request — it must
+// never activate on a public deployment. Honor it only in explicit dev mode
+// (`--dev` flag or preset `FLMUX_DEV_MODE=1`); fail closed otherwise so a stray
+// flag in production refuses to boot rather than silently opening the door.
+const devMode = resolveFlmuxDevMode();
+if (devAuthAs && !devMode) {
+  console.error("[flmux] FATAL: --dev-auth-as requires dev mode (--dev or FLMUX_DEV_MODE=1); refusing to start.");
+  process.exit(1);
+}
+// Unconditional (not ??=): children and the `=== "1"` readers (ptyd launch)
+// mirror the *resolved* dev flag, not the raw env form.
+process.env.FLMUX_DEV_MODE = devMode ? "1" : "";
+const hiddenWindow = resolveFlmuxHiddenWindow();
 const defaultExtensionsRoot = isDeployLayout ? resolve(baseDir, "extensions") : resolve(baseDir, "../../../extensions");
 const localExtensionsRootDir = resolveConfiguredLocalExtensionsRootDir(defaultExtensionsRoot);
 
@@ -163,9 +168,8 @@ const app =
     : null;
 if (app) await app.ready;
 
-const clientGraceEnvMs = Number.parseInt(process.env.FLMUX_CLIENT_GRACE_MS ?? "", 10);
 const clientRegistry = new ClientRegistry(
-  Number.isFinite(clientGraceEnvMs) && clientGraceEnvMs > 0 ? { graceMs: clientGraceEnvMs } : undefined
+  bootConfig.grace.clientMs !== undefined ? { graceMs: bootConfig.grace.clientMs } : undefined
 );
 const terminalService = createTerminalService();
 const sessionStore = runtimeMode === "desktop" ? createSessionStore({ filePath: flmuxPaths.desktopSessionFile }) : null;
@@ -211,6 +215,8 @@ if (shimResult.ok && shimResult.entry && shimResult.bunCommand) {
 // Extension server entries: imported once, registered per (paneId, clientId) subscription.
 const extensionServers = new Map<string, ExtensionServerDefinition>();
 const extensionServerInits = new Map<string, Promise<void>>();
+// Watchers opened via onInit ctx.loadConfig — host-owned, closed at shutdown.
+const extensionConfigDisposers: Array<() => void> = [];
 for (const ext of localExtensions) {
   if (!ext.serverEntryRelativePath) continue;
   try {
@@ -228,11 +234,29 @@ for (const ext of localExtensions) {
         continue;
       }
       const initPromise = (async () => {
+        // Collected locally first: a failed onInit must release its own
+        // watchers immediately, not hold them until shutdown.
+        const extDisposers: Array<() => void> = [];
         try {
-          await def.onInit!({ dataDir });
+          await def.onInit!({
+            dataDir,
+            loadConfig: createExtensionConfigLoader({
+              extId: ext.id,
+              dataDir,
+              registerDispose: (fn) => extDisposers.push(fn)
+            })
+          });
+          extensionConfigDisposers.push(...extDisposers);
         } catch (err) {
           console.warn(`[flmux] extension '${ext.id}' onInit failed; server entry disabled:`, err);
           extensionServers.delete(ext.id);
+          for (const dispose of extDisposers) {
+            try {
+              dispose();
+            } catch {
+              /* best-effort */
+            }
+          }
         }
       })();
       extensionServerInits.set(ext.id, initPromise);
@@ -522,7 +546,7 @@ const webauthnService =
         authorizer: webModeAuthorizer,
         webauthnFile: flmuxPaths.webauthnFile,
         tokensFile: flmuxPaths.tokensFile,
-        publicOrigin: process.env.FLMUX_PUBLIC_ORIGIN
+        publicOrigin: bootConfig.server.publicOrigin
       })
     : null;
 if (devAuthAs && runtimeMode === "web") {
@@ -531,7 +555,8 @@ if (devAuthAs && runtimeMode === "web") {
   console.warn(`[flmux] --dev-auth-as has no effect in ${runtimeMode} mode; ignored`);
 }
 
-const appName = resolveFlmuxAppName(flmuxPaths.appConfigFile) ?? "flmux";
+const appName = bootConfig.app.name ?? "flmux";
+const initialAppTitle = bootConfig.app.title ?? appName;
 
 const desktopAuthority: DesktopShellAuthority | null =
   runtimeMode === "desktop" && sessionStore
@@ -539,7 +564,7 @@ const desktopAuthority: DesktopShellAuthority | null =
         projectDir,
         runtimeLabel: "desktop local-http preload ok",
         appVersion: FLMUX_APP_VERSION,
-        initialAppTitle: resolveFlmuxAppTitle(flmuxPaths.appConfigFile) ?? appName,
+        initialAppTitle,
         terminalService,
         sessionStore,
         clientRegistry,
@@ -559,10 +584,11 @@ const userAuthorityRegistry: WebModeUserAuthorityRegistry | null =
     ? createWebModeUserAuthorityRegistry({
         projectDir,
         appVersion: FLMUX_APP_VERSION,
-        initialAppTitle: resolveFlmuxAppTitle(flmuxPaths.appConfigFile) ?? appName,
+        initialAppTitle,
         terminalService,
         clientRegistry,
         localExtensions,
+        limits: { maxPanes: bootConfig.limits.maxPanesPerUser, maxTerminals: bootConfig.limits.maxTerminalsPerUser },
         getOrigin: () => serverOrigin,
         onAuthorityCreated: (userId, authority) => {
           trackPaneLifecycle(authority);
@@ -613,9 +639,7 @@ const userAuthorityRegistry: WebModeUserAuthorityRegistry | null =
  * policy, piggybacking on the existing `rebootstrap-required` path.
  * Intentionally NOT implemented as a synthetic shellCore.event — that
  * would muddy the "events describe shell state" contract from B1b. */
-const authorityGraceEnvMs = Number.parseInt(process.env.FLMUX_AUTHORITY_EVICTION_GRACE_MS ?? "", 10);
-const AUTHORITY_EVICTION_GRACE_MS =
-  Number.isFinite(authorityGraceEnvMs) && authorityGraceEnvMs > 0 ? authorityGraceEnvMs : 5 * 60 * 1000;
+const AUTHORITY_EVICTION_GRACE_MS = bootConfig.grace.authorityEvictionMs ?? 5 * 60 * 1000;
 const pendingAuthorityEvictionByUser = new Map<string, ReturnType<typeof setTimeout>>();
 
 function countUserClients(userId: string): number {
@@ -664,7 +688,7 @@ const viewIdToClientId = new Map<number, string>();
 // Web-only: records which user owns each minted clientId so WS
 // register + shellModel.path.* calls route to the right authority.
 const clientIdToUserId = new Map<string, string>();
-const MAX_SESSIONS_PER_USER = Number(process.env.FLMUX_MAX_SESSIONS_PER_USER) || 25;
+const MAX_SESSIONS_PER_USER = bootConfig.limits.maxSessionsPerUser;
 // Terminal event routing index: paneId → owning authority. Replaces the
 // naive fan-out-to-every-authority pattern so terminal events apply to
 // exactly the authority that owns the pane, not every authority whose
@@ -899,7 +923,7 @@ function buildShellConfig(authContext: FlmuxAuthorizationContext | null): FlmuxR
     projectDir,
     // Web: relative URLs so ext modules load via the page origin (proxy/Funnel), not the internal bind.
     localExtensions: createLocalExtensionLoadEntries(localExtensions, runtimeMode === "web" ? "" : serverOrigin),
-    devMode: process.env.FLMUX_DEV_MODE === "1",
+    devMode,
     workspaceTabstrip: resolveWorkspaceTabstripMode({ runtimeMode, platform: process.platform }),
     account,
     allowedPaneKinds
@@ -1011,10 +1035,6 @@ async function bindMintedSession(opts: {
 
 let nextWebViewId = 1_000_000;
 
-const portResolution = resolveFlmuxServerPort({
-  configFile: flmuxPaths.appConfigFile
-});
-
 const server = startFlmuxServer({
   rendererDir,
   appName,
@@ -1023,8 +1043,11 @@ const server = startFlmuxServer({
   extHttpRoutes,
   isExtensionEnabled: (extId) => extensionServers.has(extId),
   canUseExtension: userCanUseExtension,
-  port: portResolution.port,
-  publicOrigin: process.env.FLMUX_PUBLIC_ORIGIN,
+  port: bootConfig.server.port,
+  publicOrigin: bootConfig.server.publicOrigin,
+  rateLimit: bootConfig.server.rateLimit,
+  wsKeepalive: bootConfig.server.ws,
+  trustedProxies: bootConfig.server.trustedProxies,
   saveSession: desktopAuthority
     ? (_context, layouts) => desktopAuthority.persistSession(layouts)
     : userAuthorityRegistry
@@ -1059,7 +1082,7 @@ if (desktopAuthority) {
 
 console.log(
   `[flmux] ${runtimeMode} mode server listening at ${server.origin}` +
-    (portResolution.source !== "default" ? ` (port from ${portResolution.source})` : "")
+    (bootConfig.server.portSource !== "default" ? ` (port from ${bootConfig.server.portSource})` : "")
 );
 if (webModeAuthPaths) {
   console.log(`[flmux] auth dir: ${webModeAuthPaths.authDir}`);
@@ -1086,6 +1109,13 @@ async function stopRuntime() {
     }
   } catch {
     /* best-effort */
+  }
+  for (const dispose of extensionConfigDisposers) {
+    try {
+      dispose();
+    } catch {
+      /* best-effort */
+    }
   }
   webauthnService?.dispose();
   terminalService.dispose?.();

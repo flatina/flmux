@@ -37,6 +37,8 @@ interface WebModeUserAuthorityRegistryOptions {
   /** Builds the per-user `/fs/*` policy at authority creation. */
   fsPolicyResolver?: FsPolicyResolver;
   resolveUserByName?(userId: string): FlmuxUser | null;
+  /** Per-user pane/terminal caps; forwarded to each authority's ShellCore. */
+  limits?: { maxPanes: number; maxTerminals: number };
 }
 
 export interface WebModeUserAuthorityRegistry {
@@ -89,7 +91,8 @@ export function createWebModeUserAuthorityRegistry(
       userId,
       paneKindGuard: options.makePaneKindGuard?.(userId),
       fsPolicyResolver: options.fsPolicyResolver,
-      resolveUserByName: options.resolveUserByName
+      resolveUserByName: options.resolveUserByName,
+      limits: options.limits
     });
     authorities.set(userId, authority);
     // Subscribe BEFORE start() so any pane.added emitted during session

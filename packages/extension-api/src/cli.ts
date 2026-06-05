@@ -1,4 +1,5 @@
 import type { ArgsDef, CommandDef, ParsedArgs } from "citty";
+import type { ExtensionConfig, ExtensionConfigBuilder } from "./config";
 import type {
   ShellClient,
   ShellPathCallResult,
@@ -17,6 +18,10 @@ export type { ArgsDef, CommandDef, SubCommandsDef } from "citty";
 export interface FlmuxExtensionCliContext {
   /** Per-extension data dir — `<rootDir>/.flmux/ext/<extId>/`, mkdir'd. */
   readonly dataDir: string;
+  /** Same contract as the server entry's `onInit` (see config.ts). The store
+   * lives for this command invocation only — flmux disposes it after `run`,
+   * so `watch` has no effect worth using here. */
+  loadConfig<T>(build: (builder: ExtensionConfigBuilder<T>) => void): Promise<ExtensionConfig<T>>;
 }
 
 /** Marker symbol identifying a flmux-wrapped CLI command vs a raw citty

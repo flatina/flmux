@@ -56,7 +56,9 @@ describe("cli extension registration", () => {
     const calls: unknown[] = [];
     (globalThis as unknown as { __flmuxCliCtxRecord?: unknown[] }).__flmuxCliCtxRecord = calls;
     await def?.run?.({ args: { _: [] }, rawArgs: [], cmd: def, data: undefined } as never);
-    expect(calls).toEqual([{ dataDir: "C:\\flmux\\.flmux\\ext\\sample.cowsay" }]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ dataDir: "C:\\flmux\\.flmux\\ext\\sample.cowsay" });
+    expect(typeof (calls[0] as { loadConfig?: unknown }).loadConfig).toBe("function");
   });
 
   it("propagates ctx.dataDir recursively into nested subCommands", async () => {
@@ -73,7 +75,8 @@ describe("cli extension registration", () => {
     const deeper = subs?.nested.subCommands?.deeper;
     expect(deeper).toBeTruthy();
     await deeper?.run({ args: { _: [] }, rawArgs: [], cmd: deeper, data: undefined } as never);
-    expect(calls).toEqual([{ dataDir: "C:\\flmux\\.flmux\\ext\\sample.cowsay" }]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ dataDir: "C:\\flmux\\.flmux\\ext\\sample.cowsay" });
   });
 
   it("refuses to run when extId is unknown to the resolver", async () => {

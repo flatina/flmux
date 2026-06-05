@@ -27,6 +27,7 @@
     "@codemirror/state": "^6.6.0",
     "@codemirror/theme-one-dark": "^6.1.0",
     "@codemirror/view": "^6.43.0",
+    "@flatina/confkit": "^0.1.0",
     "@flmux/core": "workspace:*",
     "@flmux/extension-api": "workspace:*",
     "@simplewebauthn/server": "^13",

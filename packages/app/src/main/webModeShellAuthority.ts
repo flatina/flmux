@@ -62,6 +62,8 @@ export async function createWebModeShellAuthority(options: {
   userId?: string;
   /** Per-user pane-kind role gate; forwarded to ShellCore. */
   paneKindGuard?: (kind: string) => void;
+  /** Per-user pane/terminal caps; defaults 200/50. */
+  limits?: { maxPanes: number; maxTerminals: number };
   /** Per-user filesystem policy source for `/fs/*`. Missing user/policy fails closed. */
   fsPolicyResolver?: FsPolicyResolver;
   resolveUserByName?: (userId: string) => FlmuxUser | null;
@@ -88,8 +90,8 @@ export async function createWebModeShellAuthority(options: {
     // replaces this with per-client (browser) slots.
     defaultSlotKey: "server",
     authorityUserId: options.userId,
-    maxPanes: Number(process.env.FLMUX_MAX_PANES_PER_USER) || 200,
-    maxTerminals: Number(process.env.FLMUX_MAX_TERMINALS_PER_USER) || 50,
+    maxPanes: options.limits?.maxPanes ?? 200,
+    maxTerminals: options.limits?.maxTerminals ?? 50,
     paneKindGuard: options.paneKindGuard
   });
   const fsPolicy =

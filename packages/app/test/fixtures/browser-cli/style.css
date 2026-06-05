@@ -1,14 +1,28 @@
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 body {
   margin: 0;
   padding: 1.5rem;
-  font: 14px/1.5 system-ui, sans-serif;
+  font:
+    14px / 1.5 system-ui,
+    sans-serif;
   background: #0f141b;
   color: #e8edf2;
 }
-h1 { font-size: 20px; margin: 0 0 12px; }
-h2 { font-size: 16px; margin: 24px 0 8px; color: #ffb45e; }
-nav a { color: #7fd1b9; margin-right: 12px; }
+h1 {
+  font-size: 20px;
+  margin: 0 0 12px;
+}
+h2 {
+  font-size: 16px;
+  margin: 24px 0 8px;
+  color: #ffb45e;
+}
+nav a {
+  color: #7fd1b9;
+  margin-right: 12px;
+}
 section {
   padding: 12px;
   margin-bottom: 12px;
@@ -16,8 +30,15 @@ section {
   border: 1px solid #2a3340;
   border-radius: 8px;
 }
-label { display: block; margin: 8px 0 4px; color: #9db0c3; }
-input, select, textarea, button {
+label {
+  display: block;
+  margin: 8px 0 4px;
+  color: #9db0c3;
+}
+input,
+select,
+textarea,
+button {
   font: inherit;
   padding: 6px 10px;
   border-radius: 6px;
@@ -25,11 +46,31 @@ input, select, textarea, button {
   background: #131a23;
   color: #e8edf2;
 }
-button { background: #ffb45e; color: #0f141b; font-weight: 700; cursor: pointer; }
-button:disabled { opacity: 0.4; cursor: not-allowed; }
-button.ghost { background: transparent; color: #e8edf2; border-color: #3a4555; font-weight: normal; }
-.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.hidden { display: none; }
+button {
+  background: #ffb45e;
+  color: #0f141b;
+  font-weight: 700;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+button.ghost {
+  background: transparent;
+  color: #e8edf2;
+  border-color: #3a4555;
+  font-weight: normal;
+}
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.hidden {
+  display: none;
+}
 .scroll-box {
   height: 120px;
   overflow-y: auto;
@@ -37,8 +78,23 @@ button.ghost { background: transparent; color: #e8edf2; border-color: #3a4555; f
   padding: 8px;
   background: #0c1118;
 }
-.scroll-box .item { padding: 6px; border-bottom: 1px solid #232c3a; }
-[data-out] { font-family: ui-monospace, Consolas, monospace; color: #7fd1b9; }
-.hover-target { padding: 12px; background: #2a3340; transition: background 0.1s; }
-.hover-target:hover { background: #4a5566; }
-.highlight-me { padding: 8px; background: #2a3340; }
+.scroll-box .item {
+  padding: 6px;
+  border-bottom: 1px solid #232c3a;
+}
+[data-out] {
+  font-family: ui-monospace, Consolas, monospace;
+  color: #7fd1b9;
+}
+.hover-target {
+  padding: 12px;
+  background: #2a3340;
+  transition: background 0.1s;
+}
+.hover-target:hover {
+  background: #4a5566;
+}
+.highlight-me {
+  padding: 8px;
+  background: #2a3340;
+}

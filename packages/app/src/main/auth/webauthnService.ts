@@ -92,7 +92,11 @@ export function createWebauthnAuthService(options: {
     if (!set) return;
     liveByToken.delete(tokenId);
     for (const close of set) {
-      try { close(); } catch { /* swallow */ }
+      try {
+        close();
+      } catch {
+        /* swallow */
+      }
     }
   }
 
@@ -110,7 +114,10 @@ export function createWebauthnAuthService(options: {
   /** Authz for credential registration: a still-valid enrollment token (in
    * its own namespace) OR an existing session cookie. Returns the bound user
    * name plus, when present, the enrollment tokenId to consume on success. */
-  function resolveRegisterAuthz(request: Request, bodyToken: string | undefined): {
+  function resolveRegisterAuthz(
+    request: Request,
+    bodyToken: string | undefined
+  ): {
     user: string;
     enrollmentTokenId?: string;
   } | null {
@@ -295,10 +302,7 @@ export function createWebauthnAuthService(options: {
         expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString()
       });
 
-      return json(
-        { ok: true },
-        { headers: { "set-cookie": serializeSessionCookie(minted.value, secure) } }
-      );
+      return json({ ok: true }, { headers: { "set-cookie": serializeSessionCookie(minted.value, secure) } });
     },
 
     async handleLogout(request) {

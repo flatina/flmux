@@ -7,8 +7,6 @@
 // it — which is why this only surfaced in the deployed binary.)
 import "reflect-metadata";
 
-export {};
-
 const mode = process.env.FLMUX_INTERNAL_MODE;
 
 if (mode === "ptyd") {

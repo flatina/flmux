@@ -193,7 +193,6 @@ test("C2 tab refresh reuses clientId + preserves slot state (B2P3)", async ({ br
     expect(clientIdAfter).toBe(clientIdBefore);
     // Slot state survives reload — same clientId re-binds to the existing slot.
     await expect(page).toHaveTitle(/Continuity/, { timeout: 10_000 });
-
   } finally {
     await context.close();
   }
@@ -407,11 +406,9 @@ test("C8 cross-user resumeSession spoof falls through to fresh mint", async ({ b
     "utf8"
   );
 
-  const issueProc = spawn(
-    "bun",
-    ["src/cli.ts", "tokens", "issue", "--user", "alice", "--auth-dir", handle.authDir],
-    { cwd: APP_DIR }
-  );
+  const issueProc = spawn("bun", ["src/cli.ts", "tokens", "issue", "--user", "alice", "--auth-dir", handle.authDir], {
+    cwd: APP_DIR
+  });
   const { token: aliceToken } = JSON.parse(await collectOutput(issueProc)) as { token: string };
 
   const adminContext = await browser.newContext();
@@ -419,7 +416,9 @@ test("C8 cross-user resumeSession spoof falls through to fresh mint", async ({ b
   try {
     const adminPage = await adminContext.newPage();
     await gotoAuthed(adminContext, adminPage, handle.origin, handle.token);
-    await expect(adminPage.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
+    await expect(adminPage.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({
+      timeout: 20_000
+    });
     const adminSession = (await adminContext.cookies(handle.origin)).find((c) => c.name === "flmux-session")!.value;
     expect(adminSession).toMatch(/^web_/);
 
@@ -430,7 +429,9 @@ test("C8 cross-user resumeSession spoof falls through to fresh mint", async ({ b
 
     const alicePage = await aliceContext.newPage();
     await gotoAuthed(aliceContext, alicePage, handle.origin, aliceToken);
-    await expect(alicePage.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({ timeout: 20_000 });
+    await expect(alicePage.locator('.workspace-panel[data-workspace-id="workspace.1"]')).toBeVisible({
+      timeout: 20_000
+    });
 
     const aliceSession = (await aliceContext.cookies(handle.origin)).find((c) => c.name === "flmux-session")!.value;
     expect(aliceSession).toMatch(/^web_/);
@@ -646,7 +647,11 @@ async function readHistory(origin: string, cookieHeader: string, clientId: strin
   const res = await fetch(`${origin}/api/model/path/call`, {
     method: "POST",
     headers: { "content-type": "application/json", cookie: cookieHeader },
-    body: JSON.stringify({ authorityClientId: clientId, path: `/panes/${paneId}/terminal/history`, args: { maxBytes: 4096 } })
+    body: JSON.stringify({
+      authorityClientId: clientId,
+      path: `/panes/${paneId}/terminal/history`,
+      args: { maxBytes: 4096 }
+    })
   });
   const body = (await res.json()) as { result: { ok: true; value: { data: string } } };
   return body.result.value.data;

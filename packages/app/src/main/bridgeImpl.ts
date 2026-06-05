@@ -25,7 +25,11 @@ export function createBridgeImpl(deps: BridgeImplDeps): FlmuxBridgeCapImpl {
     // can't both run their mint side-effects (bindClientTransport / serve
     // ext caps) before the `active` guard fires.
     while (inflight) {
-      try { await inflight; } catch { /* swallow — next caller re-checks `active` */ }
+      try {
+        await inflight;
+      } catch {
+        /* swallow — next caller re-checks `active` */
+      }
     }
     if (active) throw new Error("bridge: session already established on this connection");
     const promise = (async () => {
@@ -48,13 +52,14 @@ export function createBridgeImpl(deps: BridgeImplDeps): FlmuxBridgeCapImpl {
     }
     const exported = ctx.exportCap(sessionCap, minted.sessionImpl);
     active = true;
-    deps.connection.onClose(() => { minted.dispose(); });
+    deps.connection.onClose(() => {
+      minted.dispose();
+    });
     return exported;
   }
 
   return {
-    createSession: (_args, ctx) =>
-      withSerialBind(async (callCtx) => bind(await deps.mintSession(), callCtx), ctx),
+    createSession: (_args, ctx) => withSerialBind(async (callCtx) => bind(await deps.mintSession(), callCtx), ctx),
 
     resumeSession: ({ resumeToken }, ctx) =>
       withSerialBind(async (callCtx) => {

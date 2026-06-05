@@ -1081,9 +1081,7 @@ class ShellModel implements ShellModelAPI {
       return {
         ok: true,
         found: true,
-        entries: clients.map((entry) =>
-          objectEntry(entry.clientId, `/status/clients/${entry.clientId}`)
-        )
+        entries: clients.map((entry) => objectEntry(entry.clientId, `/status/clients/${entry.clientId}`))
       };
     }
 
@@ -1100,10 +1098,7 @@ class ShellModel implements ShellModelAPI {
           leafEntry("clientId", `/status/clients/${client.clientId}/clientId`),
           leafEntry("userId", `/status/clients/${client.clientId}/userId`),
           leafEntry("activeWorkspaceId", `/status/clients/${client.clientId}/activeWorkspaceId`),
-          leafEntry(
-            "activePaneIdByWorkspace",
-            `/status/clients/${client.clientId}/activePaneIdByWorkspace`
-          ),
+          leafEntry("activePaneIdByWorkspace", `/status/clients/${client.clientId}/activePaneIdByWorkspace`),
           objectEntry("currentWorkspace", `/status/clients/${client.clientId}/currentWorkspace`)
         ]
       };
@@ -1428,9 +1423,7 @@ class ShellModel implements ShellModelAPI {
     caller: PathCallerContext
   ): Promise<ShellPaneRecordSnapshot | undefined> {
     if (paneSegment === "current") {
-      const activePaneId = await this.host.getCurrentPaneId(
-        caller.slotKey ? { slotKey: caller.slotKey } : undefined
-      );
+      const activePaneId = await this.host.getCurrentPaneId(caller.slotKey ? { slotKey: caller.slotKey } : undefined);
       if (!activePaneId) {
         throw new ModelPathError("NO_CURRENT_PANE", "No active pane is available");
       }
@@ -1787,11 +1780,7 @@ function actionEntry(name: string, path: string): ShellPathEntry {
 
 function isAppStatusKey(value: string): value is keyof AppStatusSnapshot {
   return (
-    value === "title" ||
-    value === "origin" ||
-    value === "runtimeLabel" ||
-    value === "version" ||
-    value === "cefCdpPort"
+    value === "title" || value === "origin" || value === "runtimeLabel" || value === "version" || value === "cefCdpPort"
   );
 }
 

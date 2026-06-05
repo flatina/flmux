@@ -44,7 +44,13 @@ const WS_MAX_PAYLOAD_BYTES = 4 * 1024 * 1024;
 const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
 
 function parseTrustedProxies(raw: string | undefined): ReadonlySet<string> {
-  if (raw) return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
+  if (raw)
+    return new Set(
+      raw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    );
   return new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 }
 
@@ -247,9 +253,7 @@ export function startFlmuxServer(options: {
     .post("/api/auth/passkey/authenticate/verify", ({ request }) =>
       options.webauthn ? options.webauthn.handleAuthenticateVerify(request) : notFound()
     )
-    .post("/api/auth/logout", ({ request }) =>
-      options.webauthn ? options.webauthn.handleLogout(request) : notFound()
-    )
+    .post("/api/auth/logout", ({ request }) => (options.webauthn ? options.webauthn.handleLogout(request) : notFound()))
     .get("/api/clients", async ({ request, set }) => {
       const auth = authorizeRequest(request, set, options.authorizer);
       if (!auth.ok) {
@@ -401,44 +405,44 @@ export function startFlmuxServer(options: {
   }
 
   app.all("*", ({ request, set }) => {
-      const auth = authorizeRequest(request, set, options.authorizer);
-      if (!auth.ok) {
-        // Unauthenticated top-level navigation → login page (a human with no
-        // session). Non-navigation (XHR/asset) keeps the 401 so callers see
-        // the failure rather than an HTML body.
-        if (options.webauthn && isNavigationRequest(request)) {
-          set.status = 302;
-          setHeader(set, "location", "/login");
-          return "";
-        }
-        return "Unauthorized";
+    const auth = authorizeRequest(request, set, options.authorizer);
+    if (!auth.ok) {
+      // Unauthenticated top-level navigation → login page (a human with no
+      // session). Non-navigation (XHR/asset) keeps the 401 so callers see
+      // the failure rather than an HTML body.
+      if (options.webauthn && isNavigationRequest(request)) {
+        set.status = 302;
+        setHeader(set, "location", "/login");
+        return "";
       }
+      return "Unauthorized";
+    }
 
-      const pathname = decodeURIComponent(new URL(request.url).pathname);
-      const extensionRuntimeResponse = maybeHandleLocalExtensionRuntimeRequest(
-        pathname,
-        set,
-        options.localExtensions ?? []
-      );
-      if (extensionRuntimeResponse) {
-        return extensionRuntimeResponse;
-      }
+    const pathname = decodeURIComponent(new URL(request.url).pathname);
+    const extensionRuntimeResponse = maybeHandleLocalExtensionRuntimeRequest(
+      pathname,
+      set,
+      options.localExtensions ?? []
+    );
+    if (extensionRuntimeResponse) {
+      return extensionRuntimeResponse;
+    }
 
-      const resolved = resolveRendererPath(options.rendererDir, pathname);
-      if (!resolved) {
-        set.status = 404;
-        return "Not Found";
-      }
+    const resolved = resolveRendererPath(options.rendererDir, pathname);
+    if (!resolved) {
+      set.status = 404;
+      return "Not Found";
+    }
 
-      const contentType = MIME_TYPES[extname(resolved)] ?? "application/octet-stream";
-      const headers: Record<string, string> = { "content-type": contentType };
-      if (contentType.startsWith("text/html")) {
-        // Workbench must never be framed by another origin (clickjacking).
-        headers["content-security-policy"] = "frame-ancestors 'none'";
-        headers["x-frame-options"] = "DENY";
-      }
-      return new Response(Bun.file(resolved), { headers });
-    });
+    const contentType = MIME_TYPES[extname(resolved)] ?? "application/octet-stream";
+    const headers: Record<string, string> = { "content-type": contentType };
+    if (contentType.startsWith("text/html")) {
+      // Workbench must never be framed by another origin (clickjacking).
+      headers["content-security-policy"] = "frame-ancestors 'none'";
+      headers["x-frame-options"] = "DENY";
+    }
+    return new Response(Bun.file(resolved), { headers });
+  });
 
   if (options.onRpcConnection) {
     const onConn = options.onRpcConnection;
@@ -533,7 +537,11 @@ export function startFlmuxServer(options: {
           wsToPing.delete(raw);
         }
         if (conn) {
-          try { conn.shutdown("ws_close"); } catch { /* swallow */ }
+          try {
+            conn.shutdown("ws_close");
+          } catch {
+            /* swallow */
+          }
         }
       }
     });

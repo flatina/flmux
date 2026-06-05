@@ -53,7 +53,9 @@ if (page === "forms") {
     $("#" + id)?.addEventListener("change", snapshot);
     $("#" + id)?.addEventListener("input", snapshot);
   });
-  document.querySelectorAll('input[name="role"]').forEach((el) => el.addEventListener("change", snapshot));
+  document.querySelectorAll('input[name="role"]').forEach((el) => {
+    el.addEventListener("change", snapshot);
+  });
   snapshot();
 }
 
@@ -77,6 +79,8 @@ if (page === "console") {
   $("#emit-warn")?.addEventListener("click", () => console.warn("warn message"));
   $("#emit-error")?.addEventListener("click", () => console.error("error message"));
   $("#throw-uncaught")?.addEventListener("click", () => {
-    setTimeout(() => { throw new Error("uncaught test error"); }, 0);
+    setTimeout(() => {
+      throw new Error("uncaught test error");
+    }, 0);
   });
 }

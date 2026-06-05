@@ -168,11 +168,9 @@ export interface ChallengeStore {
  * Per-IP rate limiting alone is insufficient — an unauthenticated options
  * endpoint could allocate up to RATE_LIMIT_MAX challenges per IP per window
  * (memory DoS). Cap + sweep bounds the footprint. */
-export function createChallengeStore(options: {
-  ttlMs?: number;
-  maxEntries?: number;
-  sweepMs?: number;
-} = {}): ChallengeStore & { dispose(): void } {
+export function createChallengeStore(
+  options: { ttlMs?: number; maxEntries?: number; sweepMs?: number } = {}
+): ChallengeStore & { dispose(): void } {
   const ttlMs = options.ttlMs ?? 5 * 60_000;
   const maxEntries = options.maxEntries ?? 5_000;
   const sweepMs = options.sweepMs ?? 60_000;

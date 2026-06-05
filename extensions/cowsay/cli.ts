@@ -1,4 +1,10 @@
-import { commonArgs, createFlmuxClient, defineExtensionCommand, printJson, toFlmuxCliFlags } from "@flmux/extension-api/cli";
+import {
+  commonArgs,
+  createFlmuxClient,
+  defineExtensionCommand,
+  printJson,
+  toFlmuxCliFlags
+} from "@flmux/extension-api/cli";
 
 export default defineExtensionCommand({
   meta: {

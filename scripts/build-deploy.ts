@@ -17,7 +17,17 @@
 //     extensions/<name>/dist/       expanded extension dist (sample.* skipped)
 
 import { $ } from "bun";
-import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 type Target = "win" | "mac" | "linux" | "linux-arm64";
@@ -80,10 +90,14 @@ function webLauncher(): string {
 
 function hostTarget(): Target {
   switch (process.platform) {
-    case "win32": return "win";
-    case "darwin": return "mac";
-    case "linux": return "linux";
-    default: throw new Error(`Unsupported host: ${process.platform}`);
+    case "win32":
+      return "win";
+    case "darwin":
+      return "mac";
+    case "linux":
+      return "linux";
+    default:
+      throw new Error(`Unsupported host: ${process.platform}`);
   }
 }
 
@@ -100,9 +114,8 @@ const webOnly = args.includes("--web");
 const outArgIdx = args.indexOf("--out");
 const repoRoot = resolve(dirname(Bun.main), "..");
 const appDir = join(repoRoot, "packages/app");
-const outDir = outArgIdx > -1 && args[outArgIdx + 1]
-  ? resolve(args[outArgIdx + 1]!)
-  : join(repoRoot, `dist/deploy-${target}`);
+const outDir =
+  outArgIdx > -1 && args[outArgIdx + 1] ? resolve(args[outArgIdx + 1]!) : join(repoRoot, `dist/deploy-${target}`);
 
 if (existsSync(outDir)) rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
@@ -117,15 +130,21 @@ const nativeDir = webOnly ? null : await ensureNativePackage(spec.nativePkg);
 // 2. Compile entrypoint → exe
 console.log(`1. compile entrypoint → ${spec.exeName}`);
 const exePath = join(outDir, spec.exeName);
-await $`bun build src/entrypoint.ts --compile --minify --define __FLMUX_COMPILED__=true --target=${spec.bunTarget} --outfile ${exePath}`.cwd(appDir);
+await $`bun build src/entrypoint.ts --compile --minify --define __FLMUX_COMPILED__=true --target=${spec.bunTarget} --outfile ${exePath}`.cwd(
+  appDir
+);
 
 if (target === "win") {
   // CUI → GUI (suppress console on launch)
   const pe = readFileSync(exePath);
-  if (pe[0] === 0x4D && pe[1] === 0x5A) {
+  if (pe[0] === 0x4d && pe[1] === 0x5a) {
     const peOffset = pe.readUInt32LE(0x3c);
-    if (peOffset + 0x5e <= pe.length && pe[peOffset] === 0x50 && pe[peOffset + 1] === 0x45
-      && pe.readUInt16LE(peOffset + 0x5c) === 3) {
+    if (
+      peOffset + 0x5e <= pe.length &&
+      pe[peOffset] === 0x50 &&
+      pe[peOffset + 1] === 0x45 &&
+      pe.readUInt16LE(peOffset + 0x5c) === 3
+    ) {
       pe.writeUInt16LE(2, peOffset + 0x5c);
       writeFileSync(exePath, pe);
     }

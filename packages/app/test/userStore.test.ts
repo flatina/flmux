@@ -45,7 +45,9 @@ describe("userStore role presets + handle", () => {
   });
 
   it("invalid handle charset → throws", () => {
-    expect(() => storeWith(`[[users]]\nname="b"\nrole="user"\nhandle="../etc"\n`).getUser("b")).toThrow(/invalid handle/);
+    expect(() => storeWith(`[[users]]\nname="b"\nrole="user"\nhandle="../etc"\n`).getUser("b")).toThrow(
+      /invalid handle/
+    );
   });
 
   it("duplicate handle → throws", () => {

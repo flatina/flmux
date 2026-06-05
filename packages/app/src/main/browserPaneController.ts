@@ -49,7 +49,7 @@ export function createBrowserPaneController(): AuthorityBrowserPaneController {
     op: BrowserPaneCallable,
     args: Record<string, unknown>
   ): Promise<{ value: unknown }> {
-    if (agentSurface && agentSurface.handles(op)) {
+    if (agentSurface?.handles(op)) {
       return await agentSurface.call(paneId, op, args);
     }
     const cap = await getCap();

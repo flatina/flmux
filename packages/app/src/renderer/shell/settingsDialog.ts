@@ -50,7 +50,6 @@ class SettingsDialog {
   private readonly nav = document.createElement("div");
   private readonly body = document.createElement("div");
   private readonly sections: SettingsSection[];
-  private activeId: SectionId = "appearance";
 
   private readonly onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
@@ -133,7 +132,6 @@ class SettingsDialog {
   }
 
   private select(sectionId: SectionId): void {
-    this.activeId = sectionId;
     for (const item of this.nav.querySelectorAll<HTMLElement>(".settings-dialog__nav-item")) {
       item.classList.toggle("settings-dialog__nav-item--active", item.dataset.section === sectionId);
     }
@@ -227,9 +225,11 @@ class SettingsDialog {
         credentials: "same-origin",
         body: JSON.stringify({ displayName: value })
       });
-      const payload = (await response.json().catch(() => null)) as
-        | { ok: boolean; result?: { displayName?: string }; error?: string }
-        | null;
+      const payload = (await response.json().catch(() => null)) as {
+        ok: boolean;
+        result?: { displayName?: string };
+        error?: string;
+      } | null;
       if (!response.ok || !payload?.ok) {
         throw new Error(payload?.error ?? `Save failed (${response.status})`);
       }

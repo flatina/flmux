@@ -184,9 +184,7 @@ class NodeFsBackend implements FsBackend {
   }
 
   read(input: { path: string; maxBytes?: number }) {
-    const target = this.unconfined
-      ? this.resolveUnconfined(input.path)
-      : this.resolveConfined(input.path);
+    const target = this.unconfined ? this.resolveUnconfined(input.path) : this.resolveConfined(input.path);
     if (!target.stats.isFile()) {
       throw new ModelPathError("INVALID_PATH", "Path is not a file");
     }
@@ -281,7 +279,9 @@ class NodeFsBackend implements FsBackend {
       throw new ModelPathError("NOT_FOUND", "Path not found");
     }
 
-    return toStatResult(resolveUnderRoot(matched.realPath, parsed.segments.slice(matched.virtualSegments.length)).stats);
+    return toStatResult(
+      resolveUnderRoot(matched.realPath, parsed.segments.slice(matched.virtualSegments.length)).stats
+    );
   }
 
   private resolveConfined(inputPath: string): ResolvedRealPath {
@@ -474,11 +474,7 @@ function readUtf8File(filePath: string, maxBytes: number | undefined) {
 }
 
 // TOCTOU on ancestor swap is the same residual class as the read path (Node lacks openat).
-function writeAtomicNoFollow(
-  root: string,
-  segments: readonly string[],
-  buf: Buffer
-): { bytesWritten: number } {
+function writeAtomicNoFollow(root: string, segments: readonly string[], buf: Buffer): { bytesWritten: number } {
   if (segments.length === 0) {
     throw new ModelPathError("INVALID_PATH", "Path is not a file");
   }
@@ -515,11 +511,7 @@ function writeAtomicNoFollow(
   let fd: number;
   try {
     // O_NOFOLLOW is 0 on Windows; O_EXCL carries the fresh-create guarantee on both platforms.
-    fd = openSync(
-      tmpPath,
-      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | O_NOFOLLOW,
-      0o644
-    );
+    fd = openSync(tmpPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | O_NOFOLLOW, 0o644);
   } catch (error) {
     throw mapFsError(error);
   }
@@ -749,7 +741,11 @@ function copyTreeNoFollow(srcDir: string, destDir: string): void {
 
 // Delete: re-lstat the leaf for the authoritative type (don't trust the caller),
 // reject symlinks, and only recurse when it is genuinely a directory.
-function deleteNoFollow(root: string, segments: readonly string[], recursive: boolean): { deleted: true; kind: FsEntryKind } {
+function deleteNoFollow(
+  root: string,
+  segments: readonly string[],
+  recursive: boolean
+): { deleted: true; kind: FsEntryKind } {
   if (segments.length === 0) {
     throw new ModelPathError("INVALID_PATH", "Cannot delete the workspace root");
   }
@@ -798,8 +794,8 @@ function tryCanonicalizeExisting(targetPath: string): string | null {
 function trimIncompleteUtf8(buf: Buffer): Buffer {
   for (let look = 1; look <= Math.min(4, buf.length); look++) {
     const b = buf[buf.length - look]!;
-    if ((b & 0x80) === 0) return buf;              // ASCII → complete
-    if ((b & 0xc0) === 0x80) continue;             // continuation → keep walking back
+    if ((b & 0x80) === 0) return buf; // ASCII → complete
+    if ((b & 0xc0) === 0x80) continue; // continuation → keep walking back
     const expected = (b & 0xe0) === 0xc0 ? 2 : (b & 0xf0) === 0xe0 ? 3 : (b & 0xf8) === 0xf0 ? 4 : 1;
     return look === expected ? buf : buf.subarray(0, buf.length - look);
   }
@@ -847,7 +843,12 @@ function firstVirtualChild(parent: string, childPath: string): string | null {
   if (!childPath.startsWith(`${parent}/`)) {
     return null;
   }
-  return childPath.slice(parent.length + 1).split("/").filter(Boolean)[0] ?? null;
+  return (
+    childPath
+      .slice(parent.length + 1)
+      .split("/")
+      .filter(Boolean)[0] ?? null
+  );
 }
 
 function canonicalizeExisting(targetPath: string): string {

@@ -71,10 +71,7 @@
 }
 
 .counter-card code {
-  font-family:
-    ui-monospace,
-    "SFMono-Regular",
-    monospace;
+  font-family: ui-monospace, "SFMono-Regular", monospace;
 }
 
 .counter-value {

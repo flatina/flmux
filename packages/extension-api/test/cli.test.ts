@@ -83,10 +83,11 @@ describe("resolveColumnFillPlacement", () => {
     );
     expect(after2).toEqual({ place: "right" });
 
-    const after1 = await resolveColumnFillPlacement(
-      makeClient({ "pane.plot.1": { kind: "plot.trend" } }),
-      { workspaceId: "ws.1", isTargetKind: isPlot, maxRowsPerColumn: 2 }
-    );
+    const after1 = await resolveColumnFillPlacement(makeClient({ "pane.plot.1": { kind: "plot.trend" } }), {
+      workspaceId: "ws.1",
+      isTargetKind: isPlot,
+      maxRowsPerColumn: 2
+    });
     expect(after1).toEqual({ place: "below", referencePaneId: "pane.plot.1" });
   });
 

@@ -6,7 +6,11 @@ import { createPaneBrowserCapImpl } from "./panes/browserPaneRegistry";
 import { FlmuxWorkbench } from "./shell/workbench";
 import { setupTheme } from "./theme";
 
-declare global { interface Window { __bunite?: BuniteWebGlobal } }
+declare global {
+  interface Window {
+    __bunite?: BuniteWebGlobal;
+  }
+}
 
 const SESSION_COOKIE = "flmux-session";
 

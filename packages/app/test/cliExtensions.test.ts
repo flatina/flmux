@@ -31,7 +31,9 @@ describe("cli extension registration", () => {
   it("loads the extension's default-exported defineExtensionCommand and wraps it as a CommandDef", async () => {
     const rootDir = await createCliExtensionFixture();
     const [command] = await discoverLocalCliCommands(rootDir);
-    const def = await loadLocalCliCommandDef(command!, { resolveExtensionDataDir: () => "C:\\flmux\\.flmux\\ext\\sample.cowsay" });
+    const def = await loadLocalCliCommandDef(command!, {
+      resolveExtensionDataDir: () => "C:\\flmux\\.flmux\\ext\\sample.cowsay"
+    });
 
     expect(def).toBeTruthy();
     const rawMeta = def?.meta;
@@ -223,7 +225,7 @@ async function createCliExtensionFixture(
         ].join("\n")
       : options.recordCtxInSub
         ? [
-            "const MARK = Symbol.for(\"flmux.extensionCommand\");",
+            'const MARK = Symbol.for("flmux.extensionCommand");',
             "export default {",
             "  [MARK]: true,",
             '  meta: { name: "cowsay", description: "Open a cowsay pane" },',

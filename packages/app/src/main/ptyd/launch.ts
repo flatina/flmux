@@ -66,8 +66,7 @@ function launchDetachedProcess(
   env: Record<string, string | undefined>
 ) {
   // Skip PS wrapper when args is empty (compiled self-dispatch — GUI exe, no console).
-  const shouldHideViaPowerShell =
-    process.platform === "win32" && !isDevLikeProcess() && launch.args.length > 0;
+  const shouldHideViaPowerShell = process.platform === "win32" && !isDevLikeProcess() && launch.args.length > 0;
   if (shouldHideViaPowerShell) {
     const powerShell =
       Bun.which("pwsh.exe") ?? Bun.which("pwsh") ?? Bun.which("powershell.exe") ?? Bun.which("powershell");

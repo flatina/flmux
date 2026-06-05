@@ -68,13 +68,8 @@ export interface BuniteWebviewAutomationElement extends HTMLElement {
 
   // Stage F
   getNavigationState(): Promise<BrowserPaneNavigationState>;
-  accessibilitySnapshot(opts?: {
-    interestingOnly?: boolean;
-  }): Promise<BrowserPaneAccessibilitySnapshotResult>;
-  getBoundingRect(
-    selector: string,
-    opts?: { frameId?: string }
-  ): Promise<BrowserPaneBoundingRectResult>;
+  accessibilitySnapshot(opts?: { interestingOnly?: boolean }): Promise<BrowserPaneAccessibilitySnapshotResult>;
+  getBoundingRect(selector: string, opts?: { frameId?: string }): Promise<BrowserPaneBoundingRectResult>;
   listFrames(): Promise<BrowserPaneListFramesResult>;
   setDownloadPolicy(policy: BrowserPaneDownloadPolicy, downloadDir?: string): Promise<void>;
   waitForDownload(opts?: { timeoutMs?: number }): Promise<BrowserPaneWaitForDownloadResult>;
@@ -137,9 +132,7 @@ type SurfaceCapProxy = {
     bounds: { x: number; y: number; width: number; height: number };
   }): Promise<{ ok: true } | { ok: false; code: string; message: string }>;
   dialogs(args: { surfaceId: number }): AsyncIterable<BrowserPaneDialogEvent> & { cancel?: () => void };
-  consoleEvents(args: {
-    surfaceId: number;
-  }): AsyncIterable<BrowserPaneConsoleEntry> & { cancel?: () => void };
+  consoleEvents(args: { surfaceId: number }): AsyncIterable<BrowserPaneConsoleEntry> & { cancel?: () => void };
 };
 
 let surfaceCapPromise: Promise<SurfaceCapProxy> | null = null;
@@ -196,8 +189,7 @@ export function createPaneBrowserCapImpl(): PaneBrowserCapImpl {
     respondToDialog: ({ paneId, requestId, accept, promptText }) =>
       requireElement(paneId).respondToDialog(requestId, accept, promptText),
     setDialogTimeout: ({ paneId, ms }) => requireElement(paneId).setDialogTimeout(ms),
-    waitForSelector: ({ paneId, selector, timeoutMs }) =>
-      requireElement(paneId).waitForSelector(selector, timeoutMs),
+    waitForSelector: ({ paneId, selector, timeoutMs }) => requireElement(paneId).waitForSelector(selector, timeoutMs),
     waitForFunction: ({ paneId, expression, timeoutMs, pollIntervalMs }) =>
       requireElement(paneId).waitForFunction(expression, { timeoutMs, pollIntervalMs }),
     getConsoleBuffer: ({ paneId, clear }) => requireElement(paneId).getConsoleBuffer({ clear }),
@@ -220,7 +212,7 @@ export function createPaneBrowserCapImpl(): PaneBrowserCapImpl {
             const sid = await requireSurfaceId(paneId);
             const surface = await getRuntimeSurface();
             bridgeBuniteStream(signal, surface.dialogs({ surfaceId: sid }), emit);
-          } catch (err) {
+          } catch {
             signal.dispatchEvent(new Event("abort"));
           }
         })();
@@ -232,7 +224,7 @@ export function createPaneBrowserCapImpl(): PaneBrowserCapImpl {
             const sid = await requireSurfaceId(paneId);
             const surface = await getRuntimeSurface();
             bridgeBuniteStream(signal, surface.consoleEvents({ surfaceId: sid }), emit);
-          } catch (err) {
+          } catch {
             signal.dispatchEvent(new Event("abort"));
           }
         })();
@@ -242,13 +234,11 @@ export function createPaneBrowserCapImpl(): PaneBrowserCapImpl {
     getNavigationState: ({ paneId }) => requireElement(paneId).getNavigationState(),
     accessibilitySnapshot: ({ paneId, interestingOnly }) =>
       requireElement(paneId).accessibilitySnapshot({ interestingOnly }),
-    getBoundingRect: ({ paneId, selector, frameId }) =>
-      requireElement(paneId).getBoundingRect(selector, { frameId }),
+    getBoundingRect: ({ paneId, selector, frameId }) => requireElement(paneId).getBoundingRect(selector, { frameId }),
     listFrames: ({ paneId }) => requireElement(paneId).listFrames(),
     setDownloadPolicy: ({ paneId, policy, downloadDir }) =>
       requireElement(paneId).setDownloadPolicy(policy, downloadDir),
-    waitForDownload: ({ paneId, timeoutMs }) =>
-      requireElement(paneId).waitForDownload({ timeoutMs }),
+    waitForDownload: ({ paneId, timeoutMs }) => requireElement(paneId).waitForDownload({ timeoutMs }),
     acceptPopup: async ({ newSurfaceId, bounds }) => {
       // Element's `<bunite-webview adopt-popup-id=...>` attribute is the normal
       // path. RPC-invoked acceptPopup is for non-element callers; we route via
@@ -260,29 +250,22 @@ export function createPaneBrowserCapImpl(): PaneBrowserCapImpl {
     dismissPopup: ({ paneId, newSurfaceId }) => requireElement(paneId).dismissPopup(newSurfaceId),
     extendPopupTimeout: ({ paneId, newSurfaceId, gracePeriodMs }) =>
       requireElement(paneId).extendAdoptionTimeout(newSurfaceId, gracePeriodMs),
-    resolveAndClick: ({ paneId, selector, ...opts }) =>
-      requireElement(paneId).resolveAndClick(selector, opts),
+    resolveAndClick: ({ paneId, selector, ...opts }) => requireElement(paneId).resolveAndClick(selector, opts),
 
     // Stage F — streams (DOM event re-dispatched by element)
     surfaceEvents: ({ paneId }) =>
       Stream.from<BrowserPaneSurfaceEvent>((emit, signal) => {
         const el = requireElement(paneId);
-        const handler = (e: Event) =>
-          emit((e as CustomEvent<BrowserPaneSurfaceEvent>).detail);
+        const handler = (e: Event) => emit((e as CustomEvent<BrowserPaneSurfaceEvent>).detail);
         el.addEventListener("surface-event", handler);
-        signal.addEventListener("abort", () =>
-          el.removeEventListener("surface-event", handler)
-        );
+        signal.addEventListener("abort", () => el.removeEventListener("surface-event", handler));
       }),
     downloadEvents: ({ paneId }) =>
       Stream.from<BrowserPaneDownloadEvent>((emit, signal) => {
         const el = requireElement(paneId);
-        const handler = (e: Event) =>
-          emit((e as CustomEvent<BrowserPaneDownloadEvent>).detail);
+        const handler = (e: Event) => emit((e as CustomEvent<BrowserPaneDownloadEvent>).detail);
         el.addEventListener("download-event", handler);
-        signal.addEventListener("abort", () =>
-          el.removeEventListener("download-event", handler)
-        );
+        signal.addEventListener("abort", () => el.removeEventListener("download-event", handler));
       })
   };
 }

@@ -5,15 +5,57 @@
 const MAX_LENGTH = 48;
 
 const ADJECTIVES = [
-  "brave", "calm", "clever", "cosmic", "eager", "fancy", "fire", "gentle",
-  "happy", "jolly", "keen", "lucky", "mellow", "nimble", "quiet", "rapid",
-  "sleepy", "snowy", "solar", "spry", "sunny", "swift", "vivid", "witty"
+  "brave",
+  "calm",
+  "clever",
+  "cosmic",
+  "eager",
+  "fancy",
+  "fire",
+  "gentle",
+  "happy",
+  "jolly",
+  "keen",
+  "lucky",
+  "mellow",
+  "nimble",
+  "quiet",
+  "rapid",
+  "sleepy",
+  "snowy",
+  "solar",
+  "spry",
+  "sunny",
+  "swift",
+  "vivid",
+  "witty"
 ] as const;
 
 const NOUNS = [
-  "badger", "cedar", "comet", "cow", "ember", "falcon", "fox", "harbor",
-  "heron", "lynx", "maple", "meadow", "otter", "pebble", "quartz", "raven",
-  "river", "spark", "sparrow", "thistle", "tiger", "willow", "wolf", "zephyr"
+  "badger",
+  "cedar",
+  "comet",
+  "cow",
+  "ember",
+  "falcon",
+  "fox",
+  "harbor",
+  "heron",
+  "lynx",
+  "maple",
+  "meadow",
+  "otter",
+  "pebble",
+  "quartz",
+  "raven",
+  "river",
+  "spark",
+  "sparrow",
+  "thistle",
+  "tiger",
+  "willow",
+  "wolf",
+  "zephyr"
 ] as const;
 
 /** Random `adjective-noun` label, e.g. `sleepy-cow`. */

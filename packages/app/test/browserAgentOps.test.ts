@@ -11,7 +11,11 @@ interface CapMock {
   calls: Array<{ op: string; args: unknown }>;
   setNavigationState(next: { lastLoadEpoch: number; isLoading: boolean; currentUrl: string }): void;
   setEvaluate(handler: (script: string, frameId?: string) => unknown): void;
-  setBoundingRect(handler: (selector: string) => { rect: { x: number; y: number; width: number; height: number }; visible: boolean } | null): void;
+  setBoundingRect(
+    handler: (
+      selector: string
+    ) => { rect: { x: number; y: number; width: number; height: number }; visible: boolean } | null
+  ): void;
   setWaitForSelector(handler: (selector: string) => { ok: boolean }): void;
 }
 

@@ -70,9 +70,7 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
   if (!id) {
     errors.push("Manifest field 'id' must be a non-empty string");
   } else if (!isValidExtensionId(id)) {
-    errors.push(
-      "Manifest field 'id' must contain only ASCII letters, digits, '.', '_', '-' and not be '.' or '..'"
-    );
+    errors.push("Manifest field 'id' must contain only ASCII letters, digits, '.', '_', '-' and not be '.' or '..'");
   }
   if (!name) {
     errors.push("Manifest field 'name' must be a non-empty string");
@@ -294,7 +292,13 @@ function validateManifestPanes(value: unknown) {
       errors.push(`Manifest field 'panes[${index}].singletonScope' must be 'workspace' or 'app' when provided`);
       return;
     }
-    if (edgeGroup !== undefined && edgeGroup !== "left" && edgeGroup !== "right" && edgeGroup !== "top" && edgeGroup !== "bottom") {
+    if (
+      edgeGroup !== undefined &&
+      edgeGroup !== "left" &&
+      edgeGroup !== "right" &&
+      edgeGroup !== "top" &&
+      edgeGroup !== "bottom"
+    ) {
       errors.push(`Manifest field 'panes[${index}].edgeGroup' must be 'left'|'right'|'top'|'bottom' when provided`);
       return;
     }

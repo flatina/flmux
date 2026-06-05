@@ -114,7 +114,11 @@ describe("passkey auth server surface", () => {
         body: JSON.stringify({ token: enroll.token })
       });
       expect(ok.status).toBe(200);
-      const body = (await ok.json()) as { challenge?: string; user?: { id?: string }; authenticatorSelection?: { residentKey?: string; userVerification?: string } };
+      const body = (await ok.json()) as {
+        challenge?: string;
+        user?: { id?: string };
+        authenticatorSelection?: { residentKey?: string; userVerification?: string };
+      };
       expect(typeof body.challenge).toBe("string");
       // Stable handle as user.id, not the username (invariant #4).
       expect(typeof body.user?.id).toBe("string");

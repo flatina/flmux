@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { EditorState, type TransactionSpec } from "@codemirror/state";
+import type { EditorState, TransactionSpec } from "@codemirror/state";
 import type { ShellModelAPI } from "@flmux/core/shell/types";
 import {
   TextEditorPaneRenderer,

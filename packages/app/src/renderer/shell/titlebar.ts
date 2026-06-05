@@ -1,5 +1,5 @@
 import type { ClientOf } from "bunite-core/rpc";
-import { BrowserWindowCap as BrowserWindowCapDef } from "bunite-core/rpc";
+import type { BrowserWindowCap as BrowserWindowCapDef } from "bunite-core/rpc";
 import { openPaneKindPopup, type PaneKindOption } from "./headerActions";
 import { getThemePreference, setThemePreference, type ThemePreference } from "../theme";
 
@@ -97,15 +97,36 @@ export class FlmuxTitlebar {
 
     this.element.append(appLabel, this.tabsHost, this.menusHost, this.controlsHost);
 
-    this.themeBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); this.toggleThemePopup(); });
-    this.newWsBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); this.handlers.onNewWorkspace(); });
+    this.themeBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.toggleThemePopup();
+    });
+    this.newWsBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.handlers.onNewWorkspace();
+    });
     this.resetBtn.addEventListener("click", (e) => {
-      e.preventDefault(); e.stopPropagation();
+      e.preventDefault();
+      e.stopPropagation();
       if (this.activeWorkspaceId) this.handlers.onResetWorkspace(this.activeWorkspaceId);
     });
-    this.minBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); void this.ensureWin().then(w => w.minimize()); });
-    this.maxBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); void this.ensureWin().then(w => w.toggleMaximize()); });
-    this.closeBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); void this.ensureWin().then(w => w.close()); });
+    this.minBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      void this.ensureWin().then((w) => w.minimize());
+    });
+    this.maxBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      void this.ensureWin().then((w) => w.toggleMaximize());
+    });
+    this.closeBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      void this.ensureWin().then((w) => w.close());
+    });
 
     document.addEventListener("pointerdown", this.onDocPointerDown);
     document.addEventListener("flmux-theme-change", this.onThemeChange);
@@ -145,7 +166,8 @@ export class FlmuxTitlebar {
       hamburger.textContent = "≡";
       hamburger.title = "New pane in this workspace";
       hamburger.addEventListener("click", (e) => {
-        e.preventDefault(); e.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
         this.openAddPanePopup(hamburger, ws.id);
       });
 
@@ -153,7 +175,8 @@ export class FlmuxTitlebar {
       title.className = "flmux-titlebar__tab-title";
       title.textContent = ws.title;
       title.addEventListener("click", (e) => {
-        e.preventDefault(); e.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
         this.handlers.onActivateWorkspace(ws.id);
       });
 
@@ -163,7 +186,8 @@ export class FlmuxTitlebar {
       close.textContent = "✕";
       close.title = "Close workspace";
       close.addEventListener("click", (e) => {
-        e.preventDefault(); e.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
         this.handlers.onCloseWorkspace(ws.id);
       });
 
@@ -193,20 +217,26 @@ export class FlmuxTitlebar {
     const load = (async () => {
       const host = (window as unknown as { host?: { runtime(): Promise<unknown> } }).host;
       if (!host?.runtime) throw new Error("bunite preload host missing — frameless titlebar requires desktop preload");
-      const runtime = await host.runtime() as { window(): Promise<{ current(): Promise<WindowCap> }> };
+      const runtime = (await host.runtime()) as { window(): Promise<{ current(): Promise<WindowCap> }> };
       const winCap = await runtime.window();
       this.win = await winCap.current();
       this.startStateWatch();
       return this.win!;
     })();
     this.winLoad = load;
-    load.catch(() => { if (this.winLoad === load) this.winLoad = null; });
+    load.catch(() => {
+      if (this.winLoad === load) this.winLoad = null;
+    });
     return load;
   }
 
   private startStateWatch() {
     if (!this.win || this.disposed) return;
-    const stream = this.win.stateWatch() as AsyncIterable<{ maximized: boolean; minimized: boolean; focused: boolean }> & { cancel?(): void };
+    const stream = this.win.stateWatch() as AsyncIterable<{
+      maximized: boolean;
+      minimized: boolean;
+      focused: boolean;
+    }> & { cancel?(): void };
     this.stateStream = stream;
     void (async () => {
       try {
@@ -242,7 +272,8 @@ export class FlmuxTitlebar {
       if (option.preference === current) item.classList.add("header-action-popup__item--active");
       item.textContent = `${THEME_GLYPH[option.preference]}  ${option.label}`;
       item.addEventListener("click", (e) => {
-        e.preventDefault(); e.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
         this.closeThemePopup();
         setThemePreference(option.preference);
         this.syncThemeButton();
@@ -278,4 +309,3 @@ export class FlmuxTitlebar {
     this.element.remove();
   }
 }
-

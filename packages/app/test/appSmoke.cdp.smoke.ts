@@ -20,9 +20,13 @@ describe("flmux app smoke", () => {
   // killed app, but `bun test`'s Job Object tears it down — a topology absent in
   // the compiled exe (verified to adopt) and on POSIX (setsid survives). Backend
   // adoption is unit-covered in ptydBackend.test.ts; this canary runs on POSIX.
-  it.skipIf(process.platform === "win32")("reattaches surviving terminal runtimes after flmux restart", async () => {
-    await runTerminalRestartAdoptSmokeScenario(appHandles);
-  }, 90_000);
+  it.skipIf(process.platform === "win32")(
+    "reattaches surviving terminal runtimes after flmux restart",
+    async () => {
+      await runTerminalRestartAdoptSmokeScenario(appHandles);
+    },
+    90_000
+  );
 
   it("recreates restored terminal runtimes when no surviving daemon can be adopted", async () => {
     await runTerminalRestartRecreateSmokeScenario(appHandles);

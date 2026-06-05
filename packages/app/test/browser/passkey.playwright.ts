@@ -127,7 +127,9 @@ test("passkey enroll → login → authenticated → logout (full flow)", async 
 
     const cookies = await context.cookies(ORIGIN);
     const session = cookies.find((c) => c.name === "flmux_web_token");
-    console.log(`[step2 login] session cookie present = ${Boolean(session)} value-prefix = ${session?.value.slice(0, 8)}`);
+    console.log(
+      `[step2 login] session cookie present = ${Boolean(session)} value-prefix = ${session?.value.slice(0, 8)}`
+    );
     expect(session, "flmux_web_token session cookie must be set after login").toBeTruthy();
     expect(session!.value.length).toBeGreaterThan(0);
 
@@ -160,7 +162,9 @@ test("passkey enroll → login → authenticated → logout (full flow)", async 
       method: "POST",
       headers: { cookie: cookieHeader }
     });
-    console.log(`[step4 logout] POST /api/auth/logout → ${logoutRes.status} set-cookie=${logoutRes.headers.get("set-cookie")}`);
+    console.log(
+      `[step4 logout] POST /api/auth/logout → ${logoutRes.status} set-cookie=${logoutRes.headers.get("set-cookie")}`
+    );
     expect(logoutRes.status).toBe(200);
 
     // The logout response clears the cookie via Set-Cookie Max-Age=0; apply it

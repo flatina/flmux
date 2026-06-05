@@ -1,13 +1,6 @@
 import type { ExtensionPaneContext, ExtensionPaneInstance } from "@flmux/extension-api";
 import { defineExtension, definePaneRenderer } from "@flmux/extension-api";
-import {
-  type OutputMode,
-  ensureStylesheet,
-  formatTime,
-  formatValue,
-  parser,
-  unwrapValue
-} from "./helpers";
+import { type OutputMode, ensureStylesheet, formatTime, formatValue, parser, unwrapValue } from "./helpers";
 
 type LogKind = "input" | "result" | "error" | "event" | "system";
 

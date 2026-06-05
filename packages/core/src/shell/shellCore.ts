@@ -22,7 +22,6 @@ import {
   SHELL_CORE_EVENT_SCOPES,
   type ActiveStateSlot,
   type AppStatusSnapshot,
-  type Awaitable,
   type NewPaneInput,
   type ScopedPropertyTarget,
   type SequencedShellCoreEvent,
@@ -1116,7 +1115,6 @@ export class ShellCore implements ShellModelHost {
     const lastActive = this.paneLastActive.get(paneId);
     return lastActive ? { ...snapshot, lastActive } : snapshot;
   }
-
 
   private createWorkspaceRecord(id: string, title: string) {
     const existing = this.workspaces.get(id);

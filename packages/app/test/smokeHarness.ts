@@ -158,7 +158,7 @@ async function runCliJson<T>(
 export function parseTrailingJson<T>(stdout: string): T {
   const lines = stdout.split("\n");
   for (let i = lines.length - 1; i >= 0; i--) {
-    if (/^[\{\[]/.test(lines[i])) {
+    if (/^[{[]/.test(lines[i])) {
       return JSON.parse(lines.slice(i).join("\n")) as T;
     }
   }

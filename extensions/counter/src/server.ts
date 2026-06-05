@@ -48,10 +48,11 @@ export default defineExtensionServer({
         broadcast();
         return { count };
       },
-      changed: () => Stream.from<CountChangedEvent>((emit, signal) => {
-        subscribers.add(emit);
-        signal.addEventListener("abort", () => subscribers.delete(emit));
-      })
+      changed: () =>
+        Stream.from<CountChangedEvent>((emit, signal) => {
+          subscribers.add(emit);
+          signal.addEventListener("abort", () => subscribers.delete(emit));
+        })
     };
     ctx.serve(counterCap, impl);
   }

@@ -242,10 +242,7 @@ const EXPLORER_CSS = `
 }
 `;
 
-export function mountExplorerControl(
-  container: HTMLElement,
-  options: ExplorerControlOptions
-): ExplorerControlInstance {
+export function mountExplorerControl(container: HTMLElement, options: ExplorerControlOptions): ExplorerControlInstance {
   ensureStylesheet(STYLESHEET_ID, EXPLORER_CSS);
 
   const rootPath = options.root || "/";
@@ -437,7 +434,6 @@ export function mountExplorerControl(
     }
   };
 
-
   function buildHeader(): { header: HTMLElement } {
     const head = document.createElement("div");
     head.className = "flmux-explorer__header";
@@ -464,7 +460,6 @@ export function mountExplorerControl(
     }
     return { header: head };
   }
-
 
   function createParent(target: string | null): string {
     if (!target) return displayRootPath;
@@ -636,7 +631,6 @@ export function mountExplorerControl(
     }
   }
 
-
   function openContextMenu(x: number, y: number, target: string | null): void {
     closeMenu?.();
     const node = target ? nodes.get(target) : null;
@@ -745,7 +739,6 @@ export function mountExplorerControl(
     });
   }
 
-
   function showBanner(message: string): void {
     banner.textContent = message;
     banner.hidden = false;
@@ -754,7 +747,6 @@ export function mountExplorerControl(
     banner.hidden = true;
     banner.textContent = "";
   }
-
 
   async function refresh(path?: string): Promise<void> {
     if (disposed) return;

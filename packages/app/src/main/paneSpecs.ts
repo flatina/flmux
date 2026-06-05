@@ -7,11 +7,7 @@ import {
   type PaneSpec
 } from "@flmux/core/shell";
 import { AGENT_OPS } from "./browserAgentSurface";
-import type {
-  ExtensionManifestPane,
-  ExtensionPaneSpec,
-  ExtensionServerDefinition
-} from "@flmux/extension-api";
+import type { ExtensionManifestPane, ExtensionPaneSpec, ExtensionServerDefinition } from "@flmux/extension-api";
 import { resolveTerminalCwdFromRoot } from "@flmux/core/terminal/path";
 import {
   adaptExtensionLifecycle,
@@ -153,18 +149,12 @@ async function loadExtensionPaneSpecs(
       byKind.set(spec.kind, spec);
     }
   } catch (error) {
-    console.warn(
-      `[flmux] failed to load server entry for extension '${extension.id}' — pane specs unavailable`,
-      error
-    );
+    console.warn(`[flmux] failed to load server entry for extension '${extension.id}' — pane specs unavailable`, error);
   }
   return byKind;
 }
 
-function createExtensionPaneSpec(
-  manifestPane: ExtensionManifestPane,
-  spec: ExtensionPaneSpec | undefined
-): PaneSpec {
+function createExtensionPaneSpec(manifestPane: ExtensionManifestPane, spec: ExtensionPaneSpec | undefined): PaneSpec {
   const defaultTitle = manifestPane.defaultTitle;
   // edgeGroup implies workspace singleton — explicit singletonScope still wins.
   const singletonScope = manifestPane.singletonScope ?? (manifestPane.edgeGroup ? "workspace" : undefined);
@@ -231,5 +221,10 @@ function textEditorTitle(path: string) {
   if (!path) return "Text Editor";
   // Split on both separators — desktop unconfined accepts native Windows paths.
   const trimmed = path.replace(/[\\/]+$/, "");
-  return trimmed.split(/[\\/]+/).filter(Boolean).pop() || "Text Editor";
+  return (
+    trimmed
+      .split(/[\\/]+/)
+      .filter(Boolean)
+      .pop() || "Text Editor"
+  );
 }

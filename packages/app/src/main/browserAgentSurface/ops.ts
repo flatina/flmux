@@ -2,7 +2,7 @@ import { ModelPathError } from "@flmux/core/shell";
 import type { PaneBrowserCap, BrowserPaneSurfaceEvent } from "../../shared/rendererBridge";
 import type { PaneState } from "./paneState";
 import { parseTarget, resolveTarget, type Target } from "./targetResolver";
-import { type RefRegistrationInput, type RefSignature } from "./refRegistry";
+import type { RefRegistrationInput, RefSignature } from "./refRegistry";
 
 const DEFAULT_WAIT_MS = 30_000;
 
@@ -38,12 +38,7 @@ function center(rect: { x: number; y: number; width: number; height: number }) {
   return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
 }
 
-async function evalOk<T = unknown>(
-  cap: PaneBrowserCap,
-  paneId: string,
-  script: string,
-  frameId?: string
-): Promise<T> {
+async function evalOk<T = unknown>(cap: PaneBrowserCap, paneId: string, script: string, frameId?: string): Promise<T> {
   const r = await cap.evaluate({ paneId, script, frameId });
   if (!r.ok) throw new ModelPathError("INVALID_VALUE", `evaluate: ${r.code}: ${r.message}`);
   return r.value as T;
@@ -200,7 +195,12 @@ async function resolveCoord(
   const resolved = await resolveTarget(cap, paneId, state.refRegistry, nav.lastLoadEpoch, target);
   if ("type" in resolved && resolved.type === "coord") return { x: resolved.x, y: resolved.y };
   const c = center((resolved as { rect: { x: number; y: number; width: number; height: number } }).rect);
-  return { x: c.x, y: c.y, selector: (resolved as { selector?: string }).selector, frameId: (resolved as { frameId?: string }).frameId };
+  return {
+    x: c.x,
+    y: c.y,
+    selector: (resolved as { selector?: string }).selector,
+    frameId: (resolved as { frameId?: string }).frameId
+  };
 }
 
 function rejectFrameInput(resolved: { frameId?: string }) {
@@ -388,7 +388,15 @@ export async function getText(
   state: PaneState,
   args: Record<string, unknown>
 ): Promise<{ value: unknown }> {
-  return { value: await readWithTarget(cap, paneId, state, args, (sel) => `(document.querySelector(${sel})?.innerText) ?? null`) };
+  return {
+    value: await readWithTarget(
+      cap,
+      paneId,
+      state,
+      args,
+      (sel) => `(document.querySelector(${sel})?.innerText) ?? null`
+    )
+  };
 }
 
 export async function getHtml(
@@ -397,7 +405,15 @@ export async function getHtml(
   state: PaneState,
   args: Record<string, unknown>
 ): Promise<{ value: unknown }> {
-  return { value: await readWithTarget(cap, paneId, state, args, (sel) => `(document.querySelector(${sel})?.outerHTML) ?? null`) };
+  return {
+    value: await readWithTarget(
+      cap,
+      paneId,
+      state,
+      args,
+      (sel) => `(document.querySelector(${sel})?.outerHTML) ?? null`
+    )
+  };
 }
 
 export async function getValue(
@@ -406,7 +422,15 @@ export async function getValue(
   state: PaneState,
   args: Record<string, unknown>
 ): Promise<{ value: unknown }> {
-  return { value: await readWithTarget(cap, paneId, state, args, (sel) => `(() => { const el = document.querySelector(${sel}); return el ? (el.value ?? null) : null; })()`) };
+  return {
+    value: await readWithTarget(
+      cap,
+      paneId,
+      state,
+      args,
+      (sel) => `(() => { const el = document.querySelector(${sel}); return el ? (el.value ?? null) : null; })()`
+    )
+  };
 }
 
 export async function getAttr(
@@ -417,7 +441,16 @@ export async function getAttr(
 ): Promise<{ value: unknown }> {
   const name = expectString(args, "name");
   const nameLit = JSON.stringify(name);
-  return { value: await readWithTarget(cap, paneId, state, args, (sel) => `(() => { const el = document.querySelector(${sel}); return el ? el.getAttribute(${nameLit}) : null; })()`) };
+  return {
+    value: await readWithTarget(
+      cap,
+      paneId,
+      state,
+      args,
+      (sel) =>
+        `(() => { const el = document.querySelector(${sel}); return el ? el.getAttribute(${nameLit}) : null; })()`
+    )
+  };
 }
 
 export async function getBox(
@@ -486,7 +519,16 @@ export async function isEnabled(
   state: PaneState,
   args: Record<string, unknown>
 ): Promise<{ value: unknown }> {
-  return { value: await readWithTarget(cap, paneId, state, args, (sel) => `(() => { const el = document.querySelector(${sel}); return el ? !el.matches('[disabled], [aria-disabled="true"]') : false; })()`) };
+  return {
+    value: await readWithTarget(
+      cap,
+      paneId,
+      state,
+      args,
+      (sel) =>
+        `(() => { const el = document.querySelector(${sel}); return el ? !el.matches('[disabled], [aria-disabled="true"]') : false; })()`
+    )
+  };
 }
 
 export async function isChecked(
@@ -495,7 +537,16 @@ export async function isChecked(
   state: PaneState,
   args: Record<string, unknown>
 ): Promise<{ value: unknown }> {
-  return { value: await readWithTarget(cap, paneId, state, args, (sel) => `(() => { const el = document.querySelector(${sel}); if (!el) return false; if ('checked' in el) return !!el.checked; return el.getAttribute('aria-checked') === 'true'; })()`) };
+  return {
+    value: await readWithTarget(
+      cap,
+      paneId,
+      state,
+      args,
+      (sel) =>
+        `(() => { const el = document.querySelector(${sel}); if (!el) return false; if ('checked' in el) return !!el.checked; return el.getAttribute('aria-checked') === 'true'; })()`
+    )
+  };
 }
 
 // ---------- wait.* ----------
@@ -532,7 +583,7 @@ export async function wait(
   if (variant === "load" || variant === "url" || variant === "navigate") {
     const nav = await cap.getNavigationState({ paneId });
     const beforeEpoch = nav.lastLoadEpoch;
-    const urlGlob = variant === "url" ? arg ?? null : null;
+    const urlGlob = variant === "url" ? (arg ?? null) : null;
     // Pre-check: if `wait url` is called with the page already on the target
     // URL and not currently loading, satisfy immediately. Equivalent guard
     // for `wait load` would block forever otherwise — caller usually pairs it
@@ -551,7 +602,7 @@ export async function wait(
           if (!globMatch(e.url, urlGlob)) return;
         }
         cleanup();
-        resolve({ value: { matched: true, url: ("url" in e ? e.url : undefined) } });
+        resolve({ value: { matched: true, url: "url" in e ? e.url : undefined } });
       });
       const timer = setTimeout(() => {
         cleanup();
@@ -562,7 +613,12 @@ export async function wait(
         clearTimeout(timer);
         state.pendingWaiters.delete(id);
       };
-      state.pendingWaiters.set(id, { cancel: (reason) => { cleanup(); reject(new ModelPathError("INVALID_VALUE", `wait cancelled: ${reason}`)); } });
+      state.pendingWaiters.set(id, {
+        cancel: (reason) => {
+          cleanup();
+          reject(new ModelPathError("INVALID_VALUE", `wait cancelled: ${reason}`));
+        }
+      });
     });
   }
   if (variant === "idle") {
@@ -805,34 +861,63 @@ export async function dispatchAgentOp(
   args: Record<string, unknown>
 ): Promise<{ value: unknown }> {
   switch (op) {
-    case "snapshot": return snapshot(cap, paneId, state, args);
-    case "find": return find(cap, paneId, state, args);
-    case "click": return click(cap, paneId, state, args);
-    case "dblclick": return dblclick(cap, paneId, state, args);
-    case "hover": return hover(cap, paneId, state, args);
-    case "focus": return focus(cap, paneId, state, args);
-    case "fill": return fill(cap, paneId, state, args);
-    case "scrollTo": return scrollTo(cap, paneId, state, args);
-    case "getText": return getText(cap, paneId, state, args);
-    case "getHtml": return getHtml(cap, paneId, state, args);
-    case "getValue": return getValue(cap, paneId, state, args);
-    case "getAttr": return getAttr(cap, paneId, state, args);
-    case "getBox": return getBox(cap, paneId, state, args);
-    case "getCount": return getCount(cap, paneId, state, args);
-    case "getUrl": return getUrl(cap, paneId, state, args);
-    case "getTitle": return getTitle(cap, paneId, state, args);
-    case "isVisible": return isVisible(cap, paneId, state, args);
-    case "isEnabled": return isEnabled(cap, paneId, state, args);
-    case "isChecked": return isChecked(cap, paneId, state, args);
-    case "wait": return wait(cap, paneId, state, args);
-    case "check": return check(cap, paneId, state, args);
-    case "uncheck": return uncheck(cap, paneId, state, args);
-    case "select": return select(cap, paneId, state, args);
-    case "highlight": return highlight(cap, paneId, state, args);
-    case "dialogAccept": return dialogAccept(cap, paneId, state, args);
-    case "dialogDismiss": return dialogDismiss(cap, paneId, state, args);
-    case "consoleList": return consoleList(cap, paneId, state, args);
-    case "errorsList": return errorsList(cap, paneId, state, args);
-    default: throw new ModelPathError("INVALID_VALUE", `unknown agent op '${op}'`);
+    case "snapshot":
+      return snapshot(cap, paneId, state, args);
+    case "find":
+      return find(cap, paneId, state, args);
+    case "click":
+      return click(cap, paneId, state, args);
+    case "dblclick":
+      return dblclick(cap, paneId, state, args);
+    case "hover":
+      return hover(cap, paneId, state, args);
+    case "focus":
+      return focus(cap, paneId, state, args);
+    case "fill":
+      return fill(cap, paneId, state, args);
+    case "scrollTo":
+      return scrollTo(cap, paneId, state, args);
+    case "getText":
+      return getText(cap, paneId, state, args);
+    case "getHtml":
+      return getHtml(cap, paneId, state, args);
+    case "getValue":
+      return getValue(cap, paneId, state, args);
+    case "getAttr":
+      return getAttr(cap, paneId, state, args);
+    case "getBox":
+      return getBox(cap, paneId, state, args);
+    case "getCount":
+      return getCount(cap, paneId, state, args);
+    case "getUrl":
+      return getUrl(cap, paneId, state, args);
+    case "getTitle":
+      return getTitle(cap, paneId, state, args);
+    case "isVisible":
+      return isVisible(cap, paneId, state, args);
+    case "isEnabled":
+      return isEnabled(cap, paneId, state, args);
+    case "isChecked":
+      return isChecked(cap, paneId, state, args);
+    case "wait":
+      return wait(cap, paneId, state, args);
+    case "check":
+      return check(cap, paneId, state, args);
+    case "uncheck":
+      return uncheck(cap, paneId, state, args);
+    case "select":
+      return select(cap, paneId, state, args);
+    case "highlight":
+      return highlight(cap, paneId, state, args);
+    case "dialogAccept":
+      return dialogAccept(cap, paneId, state, args);
+    case "dialogDismiss":
+      return dialogDismiss(cap, paneId, state, args);
+    case "consoleList":
+      return consoleList(cap, paneId, state, args);
+    case "errorsList":
+      return errorsList(cap, paneId, state, args);
+    default:
+      throw new ModelPathError("INVALID_VALUE", `unknown agent op '${op}'`);
   }
 }

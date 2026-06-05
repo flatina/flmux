@@ -12,7 +12,6 @@ import type { FlmuxRendererBootstrapConfig } from "../../shared/rendererBridge";
 import { getPaneHeaderMenu } from "../external/paneTabMenuRegistry";
 import { logout, openSettingsDialog } from "./settingsDialog";
 
-
 type Disposer = () => void;
 
 class HeaderActionButton {
@@ -110,9 +109,7 @@ export class WorkspaceHeaderActions implements IHeaderActionsRenderer {
 
     const account = this.config.mode === "web" ? this.config.account : undefined;
     if (account) {
-      addItem(`👤  ${account.displayName ?? account.name}`, () =>
-        openSettingsDialog(this.config, "account")
-      );
+      addItem(`👤  ${account.displayName ?? account.name}`, () => openSettingsDialog(this.config, "account"));
     }
     addItem("⚙  Settings…", () => openSettingsDialog(this.config, "appearance"));
 
@@ -246,11 +243,8 @@ export class NewPaneHeaderAction extends HeaderActionButton implements IHeaderAc
     if (this.popup) {
       this.closePopup();
     } else {
-      this.popup = openPaneKindPopup(
-        this.button,
-        this.options.listKinds,
-        this.options.onSelect,
-        () => this.closePopup()
+      this.popup = openPaneKindPopup(this.button, this.options.listKinds, this.options.onSelect, () =>
+        this.closePopup()
       );
     }
   }

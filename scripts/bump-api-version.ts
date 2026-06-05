@@ -21,10 +21,7 @@ if (!Number.isFinite(target) || target <= 0) {
   process.exit(2);
 }
 
-const hostConstantFiles = [
-  "packages/extension-api/src/manifest.ts",
-  "packages/extension-devkit/src/manifest.ts"
-];
+const hostConstantFiles = ["packages/extension-api/src/manifest.ts", "packages/extension-devkit/src/manifest.ts"];
 
 let touched = 0;
 let skipped = 0;
@@ -32,10 +29,7 @@ let skipped = 0;
 for (const relative of hostConstantFiles) {
   const absolute = join(repoRoot, relative);
   const content = readFileSync(absolute, "utf8");
-  const next = content.replace(
-    /(FLMUX_EXTENSION_API_VERSION\s*=\s*)(\d+)/,
-    (_match, prefix) => `${prefix}${target}`
-  );
+  const next = content.replace(/(FLMUX_EXTENSION_API_VERSION\s*=\s*)(\d+)/, (_match, prefix) => `${prefix}${target}`);
   if (next === content) {
     skipped += 1;
     console.log(`  (no change) ${relative}`);

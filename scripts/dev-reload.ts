@@ -51,10 +51,7 @@ async function stopPtyd(root: string) {
 }
 
 async function killListenersOnPort(p: number) {
-  const pids =
-    process.platform === "win32"
-      ? findWindowsPids(p)
-      : findUnixPids(p);
+  const pids = process.platform === "win32" ? findWindowsPids(p) : findUnixPids(p);
   if (pids.length === 0) return;
   for (const pid of pids) {
     Bun.spawnSync(process.platform === "win32" ? ["taskkill", "/F", "/PID", pid] : ["kill", "-9", pid]);

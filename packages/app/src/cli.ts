@@ -91,7 +91,12 @@ const lsEachGetCmd = defineCommand({
     const values = Object.fromEntries(
       await Promise.all(
         listed.result.entries.map(async (entry) => {
-          const value = await apiPost(origin, "/api/model/path/get", { authorityClientId: clientId, path: entry.path }, flags);
+          const value = await apiPost(
+            origin,
+            "/api/model/path/get",
+            { authorityClientId: clientId, path: entry.path },
+            flags
+          );
           return [entry.path, value];
         })
       )
@@ -226,7 +231,9 @@ async function buildSubCommands(): Promise<Record<string, CommandDef>> {
   const extensionCommands = await discoverLocalCliCommands(defaultExtensionsRootDir()).catch(() => []);
   const isHelpContext = !invoked || invoked === "--help" || invoked === "-h";
   const targetCommandId = isHelpContext ? null : invoked;
-  const loadOptions = { resolveExtensionDataDir: createCliDataDirResolver(extensionCommands.map((c) => c.extensionId)) };
+  const loadOptions = {
+    resolveExtensionDataDir: createCliDataDirResolver(extensionCommands.map((c) => c.extensionId))
+  };
 
   for (const cmd of extensionCommands) {
     if (cmd.commandId in subCommands) continue;

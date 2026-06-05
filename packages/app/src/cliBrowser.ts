@@ -58,26 +58,35 @@ function unwrap<T extends { ok: boolean; code?: string; error?: string }>(label:
 /** Resolve --pane explicitly, otherwise pick first browser pane via slot-free
  * status paths. HTTP CLI has no caller slot, so `/panes` (implicit-current)
  * returns INVALID_VALUE; walk `/status/workspaces` → first workspace's panes. */
-async function resolvePaneId(origin: string, clientId: string, flags: FlmuxCliFlags, explicit?: string): Promise<string> {
+async function resolvePaneId(
+  origin: string,
+  clientId: string,
+  flags: FlmuxCliFlags,
+  explicit?: string
+): Promise<string> {
   if (explicit) return explicit;
   const wsList = unwrap(
     "resolve --pane (workspaces list)",
-    (await apiPost<{ result: PathListResult }>(
-      origin,
-      "/api/model/path/list",
-      { authorityClientId: clientId, path: "/status/workspaces" },
-      flags
-    )).result
+    (
+      await apiPost<{ result: PathListResult }>(
+        origin,
+        "/api/model/path/list",
+        { authorityClientId: clientId, path: "/status/workspaces" },
+        flags
+      )
+    ).result
   );
   for (const wsEntry of wsList.entries ?? []) {
     const paneList = unwrap(
       "resolve --pane (workspace panes list)",
-      (await apiPost<{ result: PathListResult }>(
-        origin,
-        "/api/model/path/list",
-        { authorityClientId: clientId, path: `${wsEntry.path}/panes` },
-        flags
-      )).result
+      (
+        await apiPost<{ result: PathListResult }>(
+          origin,
+          "/api/model/path/list",
+          { authorityClientId: clientId, path: `${wsEntry.path}/panes` },
+          flags
+        )
+      ).result
     );
     for (const paneEntry of paneList.entries ?? []) {
       // status pane path is `.../panes/{id}` — last segment is paneId.
@@ -85,12 +94,14 @@ async function resolvePaneId(origin: string, clientId: string, flags: FlmuxCliFl
       if (!paneId) continue;
       const kindResult = unwrap(
         "resolve --pane (pane kind)",
-        (await apiPost<{ result: PathGetResult }>(
-          origin,
-          "/api/model/path/get",
-          { authorityClientId: clientId, path: `/panes/${paneId}/kind` },
-          flags
-        )).result
+        (
+          await apiPost<{ result: PathGetResult }>(
+            origin,
+            "/api/model/path/get",
+            { authorityClientId: clientId, path: `/panes/${paneId}/kind` },
+            flags
+          )
+        ).result
       );
       if (kindResult.value === "browser") return paneId;
     }
@@ -131,20 +142,30 @@ const openCmd = defineCommand({
     const clientId = await resolveClientId(origin, flags);
     if (args.pane) {
       // Navigate existing pane via path.set on /panes/{id}/browser/url
-      const result = await apiPost(origin, "/api/model/path/set", {
-        authorityClientId: clientId,
-        path: `/panes/${args.pane}/browser/url`,
-        value: args.url
-      }, flags);
+      const result = await apiPost(
+        origin,
+        "/api/model/path/set",
+        {
+          authorityClientId: clientId,
+          path: `/panes/${args.pane}/browser/url`,
+          value: args.url
+        },
+        flags
+      );
       printJson(result);
       return;
     }
     // No --pane: create a new browser pane via /panes/new path.call
-    const result = await apiPost(origin, "/api/model/path/call", {
-      authorityClientId: clientId,
-      path: "/panes/new",
-      args: { kind: "browser", url: args.url }
-    }, flags);
+    const result = await apiPost(
+      origin,
+      "/api/model/path/call",
+      {
+        authorityClientId: clientId,
+        path: "/panes/new",
+        args: { kind: "browser", url: args.url }
+      },
+      flags
+    );
     printJson(result);
   }
 });
@@ -161,11 +182,18 @@ const navigateCmd = defineCommand({
     const origin = resolveOrigin(flags);
     const clientId = await resolveClientId(origin, flags);
     const paneId = await resolvePaneId(origin, clientId, flags, args.pane);
-    printJson(await apiPost(origin, "/api/model/path/set", {
-      authorityClientId: clientId,
-      path: `/panes/${paneId}/browser/url`,
-      value: args.url
-    }, flags));
+    printJson(
+      await apiPost(
+        origin,
+        "/api/model/path/set",
+        {
+          authorityClientId: clientId,
+          path: `/panes/${paneId}/browser/url`,
+          value: args.url
+        },
+        flags
+      )
+    );
   }
 });
 
@@ -199,12 +227,19 @@ const evalCmd = defineCommand({
 
 function parseModifiers(raw?: unknown): string[] | undefined {
   if (!raw) return undefined;
-  return String(raw).split(",").map((s) => s.trim()).filter(Boolean);
+  return String(raw)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 /** Agent target string passed through to BrowserAgentSurface — `@e1` ref,
  * CSS selector, `text=`/`label=`/`role=`/`testid=`. Coord `x,y` also valid. */
-const targetArg = { type: "positional" as const, description: "Target (@ref / CSS / text=.. / role=..[name=..])", required: true };
+const targetArg = {
+  type: "positional" as const,
+  description: "Target (@ref / CSS / text=.. / role=..[name=..])",
+  required: true
+};
 const clickFlags = {
   pane: paneArg,
   button: { type: "string" as const, description: "left|middle|right" },
@@ -247,7 +282,11 @@ const pressCmd = defineCommand({
   },
   async run({ args }) {
     const callArgs: Record<string, unknown> = { key: args.key };
-    if (args.modifiers) callArgs.modifiers = String(args.modifiers).split(",").map((s) => s.trim()).filter(Boolean);
+    if (args.modifiers)
+      callArgs.modifiers = String(args.modifiers)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
     printJson(await callBrowser(toFlmuxCliFlags(args), args.pane, "press", callArgs));
   }
 });
@@ -369,10 +408,12 @@ const fillCmd = defineCommand({
     pane: paneArg
   },
   async run({ args }) {
-    printJson(await callBrowser(toFlmuxCliFlags(args), args.pane, "fill", {
-      target: args.target,
-      text: args.text ?? ""
-    }));
+    printJson(
+      await callBrowser(toFlmuxCliFlags(args), args.pane, "fill", {
+        target: args.target,
+        text: args.text ?? ""
+      })
+    );
   }
 });
 
@@ -385,10 +426,12 @@ const selectCmd = defineCommand({
     pane: paneArg
   },
   async run({ args }) {
-    printJson(await callBrowser(toFlmuxCliFlags(args), args.pane, "select", {
-      target: args.target,
-      value: args.value
-    }));
+    printJson(
+      await callBrowser(toFlmuxCliFlags(args), args.pane, "select", {
+        target: args.target,
+        value: args.value
+      })
+    );
   }
 });
 
@@ -411,7 +454,11 @@ const waitCmd = defineCommand({
   meta: { name: "wait", description: "Wait for load|idle|<selector>|--text|--url|--fn" },
   args: {
     ...commonArgs,
-    variantOrArg: { type: "positional" as const, description: "load | idle | <selector> | <text-if-flag>", required: false },
+    variantOrArg: {
+      type: "positional" as const,
+      description: "load | idle | <selector> | <text-if-flag>",
+      required: false
+    },
     pane: paneArg,
     text: { type: "string" as const, description: "Wait for body text" },
     url: { type: "string" as const, description: "Wait for URL match (glob)" },
@@ -422,12 +469,23 @@ const waitCmd = defineCommand({
     const tm = args["timeout-ms"];
     const callArgs: Record<string, unknown> = {};
     if (tm) callArgs.timeoutMs = Number(tm);
-    if (args.text) { callArgs.variant = "text"; callArgs.arg = args.text; }
-    else if (args.url) { callArgs.variant = "url"; callArgs.arg = args.url; }
-    else if (args.fn) { callArgs.variant = "fn"; callArgs.arg = args.fn; }
-    else if (args.variantOrArg === "load" || args.variantOrArg === "idle") { callArgs.variant = args.variantOrArg; }
-    else if (args.variantOrArg) { callArgs.variant = "selector"; callArgs.arg = args.variantOrArg; }
-    else { callArgs.variant = "load"; }
+    if (args.text) {
+      callArgs.variant = "text";
+      callArgs.arg = args.text;
+    } else if (args.url) {
+      callArgs.variant = "url";
+      callArgs.arg = args.url;
+    } else if (args.fn) {
+      callArgs.variant = "fn";
+      callArgs.arg = args.fn;
+    } else if (args.variantOrArg === "load" || args.variantOrArg === "idle") {
+      callArgs.variant = args.variantOrArg;
+    } else if (args.variantOrArg) {
+      callArgs.variant = "selector";
+      callArgs.arg = args.variantOrArg;
+    } else {
+      callArgs.variant = "load";
+    }
     printJson(await callBrowser(toFlmuxCliFlags(args), args.pane, "wait", callArgs));
   }
 });
@@ -465,7 +523,9 @@ const getCmd = defineCommand({
         pane: paneArg
       },
       async run({ args }) {
-        printJson(await callBrowser(toFlmuxCliFlags(args), args.pane, "getAttr", { target: args.target, name: args.name }));
+        printJson(
+          await callBrowser(toFlmuxCliFlags(args), args.pane, "getAttr", { target: args.target, name: args.name })
+        );
       }
     }),
     box: makeGetCmd("box", "getBox", "Bounding rect + visibility"),
@@ -609,11 +669,18 @@ const focusPaneCmd = defineCommand({
     const flags = toFlmuxCliFlags(args);
     const origin = resolveOrigin(flags);
     const clientId = await resolveClientId(origin, flags);
-    printJson(await apiPost(origin, "/api/model/path/call", {
-      authorityClientId: clientId,
-      path: `/panes/${args.pane}/setActive`,
-      args: { source: "call" }
-    }, flags));
+    printJson(
+      await apiPost(
+        origin,
+        "/api/model/path/call",
+        {
+          authorityClientId: clientId,
+          path: `/panes/${args.pane}/setActive`,
+          args: { source: "call" }
+        },
+        flags
+      )
+    );
   }
 });
 
@@ -627,11 +694,18 @@ const closePaneCmd = defineCommand({
     const flags = toFlmuxCliFlags(args);
     const origin = resolveOrigin(flags);
     const clientId = await resolveClientId(origin, flags);
-    printJson(await apiPost(origin, "/api/model/path/call", {
-      authorityClientId: clientId,
-      path: `/panes/${args.pane}/close`,
-      args: {}
-    }, flags));
+    printJson(
+      await apiPost(
+        origin,
+        "/api/model/path/call",
+        {
+          authorityClientId: clientId,
+          path: `/panes/${args.pane}/close`,
+          args: {}
+        },
+        flags
+      )
+    );
   }
 });
 

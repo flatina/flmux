@@ -30,12 +30,7 @@ export async function resolveColumnFillPlacement(
   if (!result.ok) {
     throw new Error(`resolveColumnFillPlacement: ${result.code} ${result.error}`);
   }
-  if (
-    !result.found ||
-    typeof result.value !== "object" ||
-    result.value === null ||
-    Array.isArray(result.value)
-  ) {
+  if (!result.found || typeof result.value !== "object" || result.value === null || Array.isArray(result.value)) {
     throw new Error(`resolveColumnFillPlacement: workspace '${options.workspaceId}' not found`);
   }
   const targets: string[] = [];

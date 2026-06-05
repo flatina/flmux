@@ -1,25 +1,21 @@
 import { mkdirSync, realpathSync } from "node:fs";
 import { delimiter, resolve, sep } from "node:path";
-import {
-  BrowserWindow,
-  AppRuntime,
-  acquireSingleInstanceLock
-} from "bunite-core";
+import { BrowserWindow, AppRuntime, acquireSingleInstanceLock } from "bunite-core";
 import type { Connection } from "bunite-core/rpc";
 import type { PathCallerContext, SequencedShellCoreEvent, ShellModelAPI } from "@flmux/core/shell";
 import { ModelPathError } from "@flmux/core/shell";
-import { flmuxBridgeCap, type FlmuxRendererBootstrapConfig, type FlmuxSessionSaveLayouts } from "../shared/rendererBridge";
+import {
+  flmuxBridgeCap,
+  type FlmuxRendererBootstrapConfig,
+  type FlmuxSessionSaveLayouts
+} from "../shared/rendererBridge";
 import { resolveWorkspaceTabstripMode } from "../shared/runtimeMode";
 import { createSessionImpl } from "./sessionImpl";
 import { createBridgeImpl, type MintedSession } from "./bridgeImpl";
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
 import { ClientRegistry } from "./clientRegistry";
 import { createSessionStore } from "./sessionStore";
-import {
-  DESKTOP_CLIENT_ID,
-  createDesktopShellAuthority,
-  type DesktopShellAuthority
-} from "./desktopShellAuthority";
+import { DESKTOP_CLIENT_ID, createDesktopShellAuthority, type DesktopShellAuthority } from "./desktopShellAuthority";
 import type { WebModeShellAuthority } from "./webModeShellAuthority";
 import { createWebModeUserAuthorityRegistry, type WebModeUserAuthorityRegistry } from "./userAuthorityRegistry";
 import { startFlmuxServer } from "./server";
@@ -319,9 +315,7 @@ function createExtensionShellClient(paneId: string | null, sessionId: string): S
   if (!authority) return null;
   const shellModel = authority.shellModel;
   const authorizer = webModeAuthorizer;
-  const caller: PathCallerContext = paneId
-    ? { slotKey: sessionId, sourcePaneId: paneId }
-    : { slotKey: sessionId };
+  const caller: PathCallerContext = paneId ? { slotKey: sessionId, sourcePaneId: paneId } : { slotKey: sessionId };
 
   // Per-call resolve so token revocation drops ACL on the next call.
   function resolveUser(): FlmuxUserImport | null {
@@ -386,7 +380,9 @@ async function attachExtensionsForSession(opts: {
   if (previous) {
     sessionExtensionsBySessionId.delete(opts.sessionId);
     for (const dispose of previous.sessionDisposes) {
-      try { dispose(); } catch (err) {
+      try {
+        dispose();
+      } catch (err) {
         console.warn(`[flmux] previous-session dispose error:`, err);
       }
     }
@@ -473,10 +469,16 @@ function detachExtensionsForSession(sessionId: string, conn: Connection) {
   if (!state) return;
   sessionExtensionsBySessionId.delete(sessionId);
   for (const handle of state.serveHandles) {
-    try { conn.unserve(handle); } catch { /* swallow */ }
+    try {
+      conn.unserve(handle);
+    } catch {
+      /* swallow */
+    }
   }
   for (const dispose of state.sessionDisposes) {
-    try { dispose(); } catch (err) {
+    try {
+      dispose();
+    } catch (err) {
       console.warn(`[flmux] extension session dispose error:`, err);
     }
   }
@@ -501,7 +503,9 @@ async function attachExtensionServerPane(paneId: string, kind: string, sessionId
   try {
     const inst = await server.onPaneConnected(paneId, sessionId, { shell, dataDir });
     if (!clientIdToConnection.has(sessionId)) {
-      try { inst?.dispose?.(); } catch (err) {
+      try {
+        inst?.dispose?.();
+      } catch (err) {
         console.warn(`[flmux] ext '${extId}' late pane dispose (pane ${paneId}, session ${sessionId}):`, err);
       }
       return;
@@ -518,7 +522,9 @@ function detachExtensionServerPane(paneId: string, kind: string, sessionId: stri
   const key = paneInstanceKey(extId, paneId, sessionId);
   const inst = paneServerInstances.get(key);
   if (!inst) return;
-  try { inst.dispose?.(); } catch (err) {
+  try {
+    inst.dispose?.();
+  } catch (err) {
     console.warn(`[flmux] ext '${extId}' pane dispose error (pane ${paneId}, session ${sessionId}):`, err);
   }
   paneServerInstances.delete(key);
@@ -742,7 +748,9 @@ function detachAllPanesForSession(sessionId: string) {
   for (const key of [...paneServerInstances.keys()]) {
     if (!key.endsWith(keyPrefix + sessionId)) continue;
     const inst = paneServerInstances.get(key);
-    try { inst?.dispose?.(); } catch (err) {
+    try {
+      inst?.dispose?.();
+    } catch (err) {
       console.warn(`[flmux] ext pane dispose error (key ${key}):`, err);
     }
     paneServerInstances.delete(key);
@@ -941,9 +949,8 @@ function setupConnection(
   const mintFresh = async (): Promise<MintedSession> => {
     const userId = mode === "desktop" ? "local" : authContext?.user.name;
     if (!userId) throw new Error("bridge.mintSession: no user resolved");
-    const authority: ShellAuthority = mode === "desktop"
-      ? desktopAuthority!
-      : await userAuthorityRegistry!.getOrCreate(userId);
+    const authority: ShellAuthority =
+      mode === "desktop" ? desktopAuthority! : await userAuthorityRegistry!.getOrCreate(userId);
     const sessionId = mode === "desktop" ? DESKTOP_CLIENT_ID : `web_${crypto.randomUUID()}`;
     if (mode === "web") {
       if (countUserClients(userId) >= MAX_SESSIONS_PER_USER) {
@@ -968,11 +975,14 @@ function setupConnection(
     return bindMintedSession({ conn, viewId, authority, sessionId: resumeToken, userId, authContext });
   };
 
-  conn.serve(flmuxBridgeCap, createBridgeImpl({
-    connection: conn,
-    mintSession: mintFresh,
-    resumeSession: resumeExisting
-  }));
+  conn.serve(
+    flmuxBridgeCap,
+    createBridgeImpl({
+      connection: conn,
+      mintSession: mintFresh,
+      resumeSession: resumeExisting
+    })
+  );
 }
 
 async function bindMintedSession(opts: {
@@ -1087,9 +1097,7 @@ console.log(
 if (webModeAuthPaths) {
   console.log(`[flmux] auth dir: ${webModeAuthPaths.authDir}`);
   console.log(`[flmux] web origin: ${server.origin} (sign in with a passkey at /login)`);
-  console.log(
-    `[flmux] enroll a user: bun src/cli.ts auth enroll --user <name> --auth-dir ${webModeAuthPaths.authDir}`
-  );
+  console.log(`[flmux] enroll a user: bun src/cli.ts auth enroll --user <name> --auth-dir ${webModeAuthPaths.authDir}`);
 }
 
 terminalService.subscribe((event: TerminalRuntimeEvent) => {

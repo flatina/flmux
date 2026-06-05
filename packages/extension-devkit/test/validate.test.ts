@@ -67,7 +67,16 @@ describe("extension manifest validation", () => {
   });
 
   it("rejects extension ids that could escape the per-extension data dir", () => {
-    for (const badId of ["..", ".", "../auth", "..\\auth", "with/slash", "with\\back", "spaces inside", "carriage\rid"]) {
+    for (const badId of [
+      "..",
+      ".",
+      "../auth",
+      "..\\auth",
+      "with/slash",
+      "with\\back",
+      "spaces inside",
+      "carriage\rid"
+    ]) {
       const result = validateExtensionManifest({
         id: badId,
         name: "Bad",
@@ -95,9 +104,7 @@ describe("extension manifest validation", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected validation to succeed");
-    expect(result.manifest.commands).toEqual([
-      { id: "cowsay", description: "Open a cowsay pane", shim: "cowsay" }
-    ]);
+    expect(result.manifest.commands).toEqual([{ id: "cowsay", description: "Open a cowsay pane", shim: "cowsay" }]);
   });
 
   it("rejects empty-string shim values", () => {
@@ -112,9 +119,7 @@ describe("extension manifest validation", () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected validation to fail");
-    expect(result.errors).toEqual([
-      "Manifest field 'commands[0].shim' must be a non-empty string when provided"
-    ]);
+    expect(result.errors).toEqual(["Manifest field 'commands[0].shim' must be a non-empty string when provided"]);
   });
 
   it("requires command metadata when cli entrypoints are declared", () => {

@@ -365,7 +365,9 @@ body.flmux-has-titlebar .flmux-titlebar-host {
    the freed height the moment the strip hides. Outer dockview only (inner
    render overlays live inside .workspace-panel). */
 .dockview-shell.flmux-outer-tabstrip-hidden .dv-render-overlay:not(.workspace-panel *) {
+  /* biome-ignore lint/complexity/noImportantStyles: overrides dockview's inline overlay geometry */
   top: 0 !important;
+  /* biome-ignore lint/complexity/noImportantStyles: overrides dockview's inline overlay geometry */
   height: 100% !important;
 }
 
@@ -807,7 +809,9 @@ body.flmux-has-titlebar .flmux-titlebar-host {
   padding: 16px;
   overflow: auto;
   color: var(--fl-error-foreground);
-  font: 13px/1.5 system-ui, sans-serif;
+  font:
+    13px / 1.5 system-ui,
+    sans-serif;
   white-space: pre-wrap;
 }
 
@@ -878,4 +882,3 @@ body.flmux-has-titlebar .flmux-titlebar-host {
   color: var(--fl-error-foreground);
   white-space: pre-wrap;
 }
-

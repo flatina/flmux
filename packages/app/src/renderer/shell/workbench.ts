@@ -216,10 +216,18 @@ export class FlmuxWorkbench {
       onAddPane: (kind, workspaceId) => {
         void this.shellModel.pathCall("/panes/new", { kind, workspaceId, place: "right" });
       },
-      onNewWorkspace: () => { void this.shellModel.pathCall("/workspaces/new"); },
-      onResetWorkspace: (id) => { void this.shellModel.pathCall(`/workspaces/${id}/reset`); },
-      onCloseWorkspace: (id) => { void this.shellModel.pathCall(`/workspaces/${id}/delete`); },
-      onActivateWorkspace: (id) => { void this.shellModel.pathCall(`/workspaces/${id}/setActive`); }
+      onNewWorkspace: () => {
+        void this.shellModel.pathCall("/workspaces/new");
+      },
+      onResetWorkspace: (id) => {
+        void this.shellModel.pathCall(`/workspaces/${id}/reset`);
+      },
+      onCloseWorkspace: (id) => {
+        void this.shellModel.pathCall(`/workspaces/${id}/delete`);
+      },
+      onActivateWorkspace: (id) => {
+        void this.shellModel.pathCall(`/workspaces/${id}/setActive`);
+      }
     });
     host.append(this.titlebar.element);
     document.body.classList.add("flmux-has-titlebar");
@@ -470,23 +478,22 @@ export class FlmuxWorkbench {
 
     // Stale ref → activePanel fallback. Absent → root-level split (column-fill helper relies on this).
     const resolved = payload.referencePaneId
-      ? record.innerApi.getPanel(payload.referencePaneId) ?? record.innerApi.activePanel
+      ? (record.innerApi.getPanel(payload.referencePaneId) ?? record.innerApi.activePanel)
       : null;
     // An edge-pane ref (e.g. the edge group's own `+`) would land a non-edge pane in the narrow edge group.
     const refIsEdge = !!resolved && record.paneEdge.has(resolved.id);
-    let position = payload.place && !refIsEdge
-      ? resolved
-        ? { referencePanel: resolved, direction: payload.place }
-        : { direction: payload.place }
-      : undefined;
+    let position =
+      payload.place && !refIsEdge
+        ? resolved
+          ? { referencePanel: resolved, direction: payload.place }
+          : { direction: payload.place }
+        : undefined;
     // No usable ref: anchor to a non-edge panel, or split the root grid when the main area is empty.
     if (!position) {
       const activeId = record.innerApi.activePanel?.id;
       if (!activeId || record.paneEdge.has(activeId)) {
         const mainAnchor = record.innerApi.panels.find((p) => !record.paneEdge.has(p.id));
-        position = mainAnchor
-          ? { referencePanel: mainAnchor, direction: "within" }
-          : { direction: "right" };
+        position = mainAnchor ? { referencePanel: mainAnchor, direction: "within" } : { direction: "right" };
       }
     }
     record.innerApi.addPanel({
@@ -686,13 +693,19 @@ export class FlmuxWorkbench {
         }),
       createPrefixHeaderActionComponent: this.usesInnerPrefixMenus()
         ? (group) => {
-            const action = new WorkspaceHeaderActions(group, {
-              onAdd: () => { void this.shellModel.pathCall("/workspaces/new"); },
-              onResetActive: () => {
-                if (!this.activeWorkspaceId) return;
-                void this.shellModel.pathCall(`/workspaces/${this.activeWorkspaceId}/reset`);
-              }
-            }, this.config);
+            const action = new WorkspaceHeaderActions(
+              group,
+              {
+                onAdd: () => {
+                  void this.shellModel.pathCall("/workspaces/new");
+                },
+                onResetActive: () => {
+                  if (!this.activeWorkspaceId) return;
+                  void this.shellModel.pathCall(`/workspaces/${this.activeWorkspaceId}/reset`);
+                }
+              },
+              this.config
+            );
             action.element.classList.add("flmux-workspace-prefix-menus");
             return action;
           }
@@ -873,17 +886,21 @@ export class FlmuxWorkbench {
             })
           : undefined,
       createRightHeaderActionComponent: (group) =>
-        new WorkspaceHeaderActions(group, {
-          onAdd: () => {
-            void this.shellModel.pathCall("/workspaces/new");
-          },
-          onResetActive: () => {
-            if (!this.activeWorkspaceId) {
-              return;
+        new WorkspaceHeaderActions(
+          group,
+          {
+            onAdd: () => {
+              void this.shellModel.pathCall("/workspaces/new");
+            },
+            onResetActive: () => {
+              if (!this.activeWorkspaceId) {
+                return;
+              }
+              void this.shellModel.pathCall(`/workspaces/${this.activeWorkspaceId}/reset`);
             }
-            void this.shellModel.pathCall(`/workspaces/${this.activeWorkspaceId}/reset`);
-          }
-        }, this.config)
+          },
+          this.config
+        )
     });
 
     this.outerApi.onDidActivePanelChange((panel) => {
@@ -952,10 +969,7 @@ export class FlmuxWorkbench {
     })();
   }
 
-  private subscribeTerminalEvents(
-    paneId: string,
-    handler: (event: TerminalRuntimeEvent) => void
-  ): () => void {
+  private subscribeTerminalEvents(paneId: string, handler: (event: TerminalRuntimeEvent) => void): () => void {
     const stream = this.session.terminalEvents({ paneId });
     let aborted = false;
     void (async () => {
@@ -979,7 +993,12 @@ export class FlmuxWorkbench {
     const account = this.config.account;
     if (account) return account.displayName ?? account.name;
     const dir = this.config.projectDir.replace(/[\\/]+$/, "");
-    return dir.split(/[\\/]+/).filter(Boolean).pop() || "Files";
+    return (
+      dir
+        .split(/[\\/]+/)
+        .filter(Boolean)
+        .pop() || "Files"
+    );
   }
 
   private createInnerPanelRenderer(record: WorkspaceRecord, options: CreateComponentOptions): IContentRenderer {
@@ -1085,8 +1104,8 @@ export class FlmuxWorkbench {
       // holds its state in pendingInnerLayout/pendingPanes — serializing the
       // empty dockview instead would wipe the saved layout (an empty-grid save
       // would also shadow the snapshot-pane fallback on the next bootstrap).
-      innerLayouts[workspaceId] = record.pendingInnerLayout
-        ?? (record.pendingPanes ? null : record.innerApi ? record.innerApi.toJSON() : null);
+      innerLayouts[workspaceId] =
+        record.pendingInnerLayout ?? (record.pendingPanes ? null : record.innerApi ? record.innerApi.toJSON() : null);
     }
     return {
       outerLayout: this.outerApi?.toJSON() ?? null,

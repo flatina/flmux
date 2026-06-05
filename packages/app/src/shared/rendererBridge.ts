@@ -75,7 +75,10 @@ export const sessionCap = defineCap("flmux.session", {
   get: call<{ path: string; sourcePaneId?: string; workspaceId?: string }, PathGetResult>(),
   list: call<{ path: string; sourcePaneId?: string; workspaceId?: string }, PathListResult>(),
   set: call<{ path: string; value: unknown; sourcePaneId?: string; workspaceId?: string }, PathSetResult>(),
-  call: call<{ path: string; args?: Record<string, unknown>; sourcePaneId?: string; workspaceId?: string }, PathCallResult>(),
+  call: call<
+    { path: string; args?: Record<string, unknown>; sourcePaneId?: string; workspaceId?: string },
+    PathCallResult
+  >(),
 
   events: stream<{ sinceSeq?: number }, SequencedShellCoreEvent>(),
   terminalEvents: stream<{ paneId: string }, TerminalRuntimeEvent>(),
@@ -100,9 +103,7 @@ export type FlmuxBridgeCapImpl = ImplOf<typeof flmuxBridgeCap>;
 // Renderer-served. Types below mirror bunite-core/rpc/framework structurally.
 export type BrowserPaneModifier = "alt" | "ctrl" | "meta" | "shift";
 
-export type BrowserPaneEvaluateResult =
-  | { ok: true; value: unknown }
-  | { ok: false; code: string; message: string };
+export type BrowserPaneEvaluateResult = { ok: true; value: unknown } | { ok: false; code: string; message: string };
 
 export type BrowserPaneScreenshotResult =
   | { ok: true; data: Uint8Array; mime: string; format: "png" | "jpeg" }
@@ -206,9 +207,7 @@ export type BrowserPaneDialogEvent =
     }
   | { kind: "auto-dismissed"; originalKind: string; message: string };
 
-export type BrowserPaneWaitResult =
-  | { ok: true }
-  | { ok: false; code: string; message: string };
+export type BrowserPaneWaitResult = { ok: true } | { ok: false; code: string; message: string };
 
 export type BrowserPaneConsoleLevel = "log" | "warn" | "error" | "info" | "debug";
 export interface BrowserPaneConsoleEntry {
@@ -235,92 +234,121 @@ export type BrowserPaneSurfaceEvent =
 
 export const paneBrowserCap = defineCap("flmux.paneBrowser", {
   evaluate: call<{ paneId: string; script: string; frameId?: string }, BrowserPaneEvaluateResult>(),
-  click: call<{
-    paneId: string;
-    x: number;
-    y: number;
-    button?: "left" | "middle" | "right";
-    clickCount?: number;
-    modifiers?: BrowserPaneModifier[];
-  }, void>(),
+  click: call<
+    {
+      paneId: string;
+      x: number;
+      y: number;
+      button?: "left" | "middle" | "right";
+      clickCount?: number;
+      modifiers?: BrowserPaneModifier[];
+    },
+    void
+  >(),
   type: call<{ paneId: string; text: string }, void>(),
   press: call<{ paneId: string; key: string; modifiers?: BrowserPaneModifier[] }, void>(),
-  scroll: call<{
-    paneId: string;
-    dx: number;
-    dy: number;
-    x?: number;
-    y?: number;
-    modifiers?: BrowserPaneModifier[];
-  }, void>(),
+  scroll: call<
+    {
+      paneId: string;
+      dx: number;
+      dy: number;
+      x?: number;
+      y?: number;
+      modifiers?: BrowserPaneModifier[];
+    },
+    void
+  >(),
   screenshot: call<{ paneId: string; format?: "png" | "jpeg"; quality?: number }, BrowserPaneScreenshotResult>(),
   capabilities: call<{ paneId: string }, BrowserPaneCapabilities>(),
   goBack: call<{ paneId: string }, void>(),
   reload: call<{ paneId: string }, void>(),
 
-  mouse: call<{
-    paneId: string;
-    action: "move" | "down" | "up";
-    x: number;
-    y: number;
-    button?: "left" | "middle" | "right";
-    modifiers?: BrowserPaneModifier[];
-  }, void>(),
+  mouse: call<
+    {
+      paneId: string;
+      action: "move" | "down" | "up";
+      x: number;
+      y: number;
+      button?: "left" | "middle" | "right";
+      modifiers?: BrowserPaneModifier[];
+    },
+    void
+  >(),
   dialogs: stream<{ paneId: string }, BrowserPaneDialogEvent>(),
   respondToDialog: call<{ paneId: string; requestId: number; accept: boolean; promptText?: string }, void>(),
   setDialogTimeout: call<{ paneId: string; ms: number | null }, void>(),
-  waitForSelector: call<{
-    paneId: string;
-    selector: string;
-    frameId?: string;
-    timeoutMs?: number;
-  }, BrowserPaneWaitResult>(),
-  waitForFunction: call<{
-    paneId: string;
-    expression: string;
-    frameId?: string;
-    timeoutMs?: number;
-    pollIntervalMs?: number;
-  }, BrowserPaneWaitResult>(),
+  waitForSelector: call<
+    {
+      paneId: string;
+      selector: string;
+      frameId?: string;
+      timeoutMs?: number;
+    },
+    BrowserPaneWaitResult
+  >(),
+  waitForFunction: call<
+    {
+      paneId: string;
+      expression: string;
+      frameId?: string;
+      timeoutMs?: number;
+      pollIntervalMs?: number;
+    },
+    BrowserPaneWaitResult
+  >(),
   consoleEvents: stream<{ paneId: string }, BrowserPaneConsoleEntry>(),
   getConsoleBuffer: call<{ paneId: string; clear?: boolean }, BrowserPaneConsoleEntry[]>(),
-  pressAction: call<{
-    paneId: string;
-    key: string;
-    action: "down" | "up" | "both";
-    modifiers?: BrowserPaneModifier[];
-  }, void>(),
+  pressAction: call<
+    {
+      paneId: string;
+      key: string;
+      action: "down" | "up" | "both";
+      modifiers?: BrowserPaneModifier[];
+    },
+    void
+  >(),
 
   getNavigationState: call<{ paneId: string }, BrowserPaneNavigationState>(),
   surfaceEvents: stream<{ paneId: string }, BrowserPaneSurfaceEvent>(),
-  accessibilitySnapshot: call<{
-    paneId: string;
-    frameId?: string;
-    interestingOnly?: boolean;
-  }, BrowserPaneAccessibilitySnapshotResult>(),
-  getBoundingRect: call<{
-    paneId: string;
-    selector: string;
-    frameId?: string;
-  }, BrowserPaneBoundingRectResult>(),
+  accessibilitySnapshot: call<
+    {
+      paneId: string;
+      frameId?: string;
+      interestingOnly?: boolean;
+    },
+    BrowserPaneAccessibilitySnapshotResult
+  >(),
+  getBoundingRect: call<
+    {
+      paneId: string;
+      selector: string;
+      frameId?: string;
+    },
+    BrowserPaneBoundingRectResult
+  >(),
   listFrames: call<{ paneId: string }, BrowserPaneListFramesResult>(),
-  setDownloadPolicy: call<{
-    paneId: string;
-    policy: BrowserPaneDownloadPolicy;
-    downloadDir?: string;
-  }, void>(),
+  setDownloadPolicy: call<
+    {
+      paneId: string;
+      policy: BrowserPaneDownloadPolicy;
+      downloadDir?: string;
+    },
+    void
+  >(),
   waitForDownload: call<{ paneId: string; timeoutMs?: number }, BrowserPaneWaitForDownloadResult>(),
   downloadEvents: stream<{ paneId: string }, BrowserPaneDownloadEvent>(),
-  acceptPopup: call<{
-    paneId: string;
-    newSurfaceId: number;
-    bounds: { x: number; y: number; width: number; height: number };
-  }, { ok: true } | { ok: false; code: string; message: string }>(),
+  acceptPopup: call<
+    {
+      paneId: string;
+      newSurfaceId: number;
+      bounds: { x: number; y: number; width: number; height: number };
+    },
+    { ok: true } | { ok: false; code: string; message: string }
+  >(),
   dismissPopup: call<{ paneId: string; newSurfaceId: number }, void>(),
   extendPopupTimeout: call<
     { paneId: string; newSurfaceId: number; gracePeriodMs: number },
-    | { ok: true; deadlineMs: number }
-    | { ok: false; code: string; message: string }
+    { ok: true; deadlineMs: number } | { ok: false; code: string; message: string }
   >(),
   resolveAndClick: call<
     {

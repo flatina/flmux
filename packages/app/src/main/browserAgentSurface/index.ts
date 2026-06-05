@@ -71,9 +71,10 @@ export class BrowserAgentSurface {
       if (adoptions.length > 0) {
         const v = result.value;
         return {
-          value: typeof v === "object" && v !== null
-            ? { ...(v as Record<string, unknown>), newPanes: adoptions }
-            : { result: v, newPanes: adoptions }
+          value:
+            typeof v === "object" && v !== null
+              ? { ...(v as Record<string, unknown>), newPanes: adoptions }
+              : { result: v, newPanes: adoptions }
         };
       }
     }

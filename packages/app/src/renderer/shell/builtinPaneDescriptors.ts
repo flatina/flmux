@@ -161,5 +161,10 @@ function textEditorTitle(path: string) {
   if (!path) return "Text Editor";
   // Split on both separators — desktop unconfined accepts native Windows paths.
   const trimmed = path.replace(/[\\/]+$/, "");
-  return trimmed.split(/[\\/]+/).filter(Boolean).pop() || "Text Editor";
+  return (
+    trimmed
+      .split(/[\\/]+/)
+      .filter(Boolean)
+      .pop() || "Text Editor"
+  );
 }

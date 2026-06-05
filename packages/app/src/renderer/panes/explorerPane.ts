@@ -1,10 +1,6 @@
 import type { GroupPanelPartInitParameters, IContentRenderer, PanelUpdateEvent } from "dockview-core";
 import type { ShellModelAPI } from "@flmux/core/shell/types";
-import {
-  mountExplorerControl,
-  type ExplorerControlInstance,
-  type ExplorerEntry
-} from "../controls/explorerControl";
+import { mountExplorerControl, type ExplorerControlInstance, type ExplorerEntry } from "../controls/explorerControl";
 
 interface ExplorerPaneRendererDependencies {
   shellModel: ShellModelAPI;

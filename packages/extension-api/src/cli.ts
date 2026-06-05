@@ -230,5 +230,3 @@ export function printJson(value: unknown): void {
 export function printError(message: string): void {
   console.error(message);
 }
-
-

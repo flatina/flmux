@@ -39,7 +39,14 @@ function mountItemsPane(host: HTMLElement, context: ExtensionPaneContext) {
     items: [
       { id: "ping", label: "Log a ping", icon: "📌", onClick: () => append("ping") },
       { id: "pong", label: "Log a pong", icon: "🏓", onClick: () => append("pong") },
-      { id: "clear", label: "Clear log", onClick: () => { log.length = 0; render(); } },
+      {
+        id: "clear",
+        label: "Clear log",
+        onClick: () => {
+          log.length = 0;
+          render();
+        }
+      },
       { id: "noop", label: "Disabled action", disabled: true, onClick: () => {} }
     ]
   };

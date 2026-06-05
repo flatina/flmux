@@ -5,11 +5,7 @@ import type {
   FlmuxSessionSaveLayouts,
   SessionCapImpl
 } from "../shared/rendererBridge";
-import type {
-  PathCallerContext,
-  SequencedShellCoreEvent,
-  ShellModelAPI
-} from "@flmux/core/shell";
+import type { PathCallerContext, SequencedShellCoreEvent, ShellModelAPI } from "@flmux/core/shell";
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
 
 export interface SessionImplDeps {
@@ -74,35 +70,37 @@ export function createSessionImpl(deps: SessionImplDeps): SessionCapImpl {
       return deps.shellModel.pathCall(path, args, callerCtx({ sourcePaneId, workspaceId }));
     },
 
-    events: ({ sinceSeq }) => Stream.from<SequencedShellCoreEvent>((emit, signal) => {
-      const unsub = deps.subscribeShellEvents(sinceSeq ?? 0, emit);
-      if (!unsub) {
-        throw new IpcError({
-          code: "failed_precondition",
-          message: "replay buffer overflow",
-          retry: { kind: "after-resync" }
-        });
-      }
-      signal.addEventListener("abort", unsub);
-    }),
+    events: ({ sinceSeq }) =>
+      Stream.from<SequencedShellCoreEvent>((emit, signal) => {
+        const unsub = deps.subscribeShellEvents(sinceSeq ?? 0, emit);
+        if (!unsub) {
+          throw new IpcError({
+            code: "failed_precondition",
+            message: "replay buffer overflow",
+            retry: { kind: "after-resync" }
+          });
+        }
+        signal.addEventListener("abort", unsub);
+      }),
 
-    terminalEvents: ({ paneId }) => Stream.from<TerminalRuntimeEvent>((emit, signal) => {
-      if (!deps.canSubscribeTerminalForPane(paneId)) {
-        throw new Error(`terminalEvents: access denied for pane '${paneId}'`);
-      }
-      let emitters = deps.paneEmitters.get(paneId);
-      if (!emitters) {
-        emitters = new Set();
-        deps.paneEmitters.set(paneId, emitters);
-      }
-      emitters.add(emit);
-      signal.addEventListener("abort", () => {
-        const set = deps.paneEmitters.get(paneId);
-        if (!set) return;
-        set.delete(emit);
-        if (set.size === 0) deps.paneEmitters.delete(paneId);
-      });
-    }),
+    terminalEvents: ({ paneId }) =>
+      Stream.from<TerminalRuntimeEvent>((emit, signal) => {
+        if (!deps.canSubscribeTerminalForPane(paneId)) {
+          throw new Error(`terminalEvents: access denied for pane '${paneId}'`);
+        }
+        let emitters = deps.paneEmitters.get(paneId);
+        if (!emitters) {
+          emitters = new Set();
+          deps.paneEmitters.set(paneId, emitters);
+        }
+        emitters.add(emit);
+        signal.addEventListener("abort", () => {
+          const set = deps.paneEmitters.get(paneId);
+          if (!set) return;
+          set.delete(emit);
+          if (set.size === 0) deps.paneEmitters.delete(paneId);
+        });
+      }),
 
     pushLayout: (layouts) => {
       deps.pushLayout(layouts);

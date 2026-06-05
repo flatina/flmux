@@ -47,7 +47,7 @@ function makeContext(
   const ctx = {
     paneId: override.paneId ?? "pane.browser",
     workspace,
-    record: override.record ?? ({ kind: "browser" as const, url: "https://example.test/page" }),
+    record: override.record ?? { kind: "browser" as const, url: "https://example.test/page" },
     currentParams: undefined,
     setParams: async () => ({}),
     patchParams: async () => ({})

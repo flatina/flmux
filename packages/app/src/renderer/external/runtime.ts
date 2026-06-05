@@ -29,7 +29,6 @@ export function createExternalPaneDescriptor(extensionId: string, renderer: Exte
 }
 
 function createExternalPaneContext(
-  extensionId: string,
   args: {
     workspace: PaneWorkspaceContext;
     options: CreateComponentOptions;
@@ -110,7 +109,7 @@ function wrapExternalPaneRenderer(
       // Render an in-pane error instead; the rest of the workbench is unaffected.
       try {
         synchronizeExternalPaneState(state, params.api, params.params);
-        instance = renderer.mount(host, createExternalPaneContext(extensionId, args, state));
+        instance = renderer.mount(host, createExternalPaneContext(args, state));
       } catch (error) {
         console.error(`[flmux] extension pane '${extensionId}' failed to mount`, error);
         renderPaneMountError(host, extensionId, error);

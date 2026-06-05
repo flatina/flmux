@@ -54,7 +54,6 @@ export function ensureFlmuxCliShim(options: EnsureOptions): CliShimResult {
   return { ok: true, entry, bunCommand };
 }
 
-
 export interface ExtensionShimSource {
   extensionId: string;
   commands: readonly ExtensionManifestCommand[] | undefined;

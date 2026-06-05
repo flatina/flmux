@@ -69,7 +69,9 @@ describe("/fs ShellModelAPI backend", () => {
     const { model, rw } = confinedFixture();
     writeFileSync(join(rw, "a.txt"), "x");
 
-    expect(value<{ entries: Array<{ name: string; kind: string }> }>(await model.pathCall("/fs/list", { path: "/" }))).toEqual({
+    expect(
+      value<{ entries: Array<{ name: string; kind: string }> }>(await model.pathCall("/fs/list", { path: "/" }))
+    ).toEqual({
       entries: [{ name: "w", kind: "dir" }]
     });
     expect(

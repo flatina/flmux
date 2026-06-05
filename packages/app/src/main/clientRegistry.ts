@@ -17,7 +17,8 @@ interface ClientState {
   /** Transport view id while connected; null during grace. */
   viewId: number | null;
   /** Ring buffer of events the client would have seen if it were live.
-   * Scope-filtered at push-time. Size-bounded — when
+   * Scope- and read-ACL-filtered upstream at push-time (`main.ts` per-client
+   * subscriber), so reconnect replay respects the ACL. Size-bounded — when
    * `lastAppliedSeq < buffer[0].seq - 1` the client must re-bootstrap. */
   readonly ringBuffer: SequencedShellCoreEvent[];
   /** Live `shell.events()` stream emitters. Each open stream registers one

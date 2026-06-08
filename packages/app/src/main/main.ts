@@ -1,5 +1,5 @@
 import { mkdirSync, realpathSync } from "node:fs";
-import { delimiter, resolve, sep } from "node:path";
+import { delimiter, join, resolve, sep } from "node:path";
 import { BrowserWindow, AppRuntime, acquireSingleInstanceLock } from "bunite-core";
 import type { Connection } from "bunite-core/rpc";
 import type { PathCallerContext, SequencedShellCoreEvent, ShellModelAPI } from "@flmux/core/shell";
@@ -30,7 +30,7 @@ import { createWebauthnAuthService } from "./auth/webauthnService";
 import type { FlmuxUser as FlmuxUserImport } from "./auth/userStore";
 import { eventToReadPath } from "./auth/eventAclPath";
 import { createFsPolicyResolver } from "./auth/fsPolicy";
-import { createFsPathMapper } from "./fsBackend";
+import { createFsPathMapper, createFsUploader } from "./fsBackend";
 import { generateToken } from "./auth/tokenFormat";
 import type { ExtensionFsBind, ExtensionFsPolicy } from "@flmux/extension-api";
 import { loadFlmuxBootConfig } from "./flmuxConfig";
@@ -1058,6 +1058,23 @@ const server = startFlmuxServer({
   rateLimit: bootConfig.server.rateLimit,
   wsKeepalive: bootConfig.server.ws,
   trustedProxies: bootConfig.server.trustedProxies,
+  // Web only: per-user streaming uploader built from the same fs policy as the
+  // user's `/fs` ops. Desktop writes its local fs directly (no web upload).
+  resolveFsUploader: webModeAuthorizer
+    ? (context) => {
+        const user = context ? webModeAuthorizer.getUser(context.user.name) : null;
+        if (!user) return null;
+        const policy = fsPolicyResolver.resolve(user);
+        // Stage chunks on the same volume-domain as the user's targets so the
+        // commit rename stays same-volume: confined targets live under
+        // `.flmux_users`, unconfined (dev) under `rootDir`/`.flmux`.
+        const stagingDir = policy.unconfined
+          ? join(flmuxPaths.tmpDir, "uploads", user.name)
+          : join(flmuxPaths.usersRootDir, ".uploads", user.name);
+        return createFsUploader({ policy, projectDir, stagingDir });
+      }
+    : undefined,
+  maxUploadBytes: bootConfig.limits.maxUploadBytes,
   saveSession: desktopAuthority
     ? (_context, layouts) => desktopAuthority.persistSession(layouts)
     : userAuthorityRegistry

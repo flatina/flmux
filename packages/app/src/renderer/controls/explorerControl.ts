@@ -27,10 +27,24 @@ export interface ExplorerControlOptions {
   onDelete?(virtual: string, isDir: boolean): Promise<void>;
   /** Paste a clipboard entry into `toParent` as `name`; `cut` = move, `copy` = copy. */
   onPaste?(args: { from: string; isDir: boolean; toParent: string; name: string; mode: "copy" | "cut" }): Promise<void>;
+  /** Upload local files/folders into `parentVirtual` (preserving relative paths).
+   * The pane streams each to the server; `report(done,total)` drives the banner. */
+  onUpload?(
+    parentVirtual: string,
+    files: readonly UploadFile[],
+    ctx: { report(done: number, total: number): void }
+  ): Promise<void>;
   initialExpanded?: readonly string[];
   className?: string;
   /** Header label (signed-in user / project name). */
   userLabel?: string;
+}
+
+/** A local file to upload, with its path relative to the dropped/selected root. */
+export interface UploadFile {
+  /** Posix relative path under the upload parent, e.g. `src/index.ts`. */
+  relativePath: string;
+  file: File;
 }
 
 export interface ExplorerControlInstance {
@@ -93,6 +107,10 @@ const EXPLORER_CSS = `
   display: flex;
   flex-direction: column;
   background: var(--fl-editor-background, #08101c);
+}
+.flmux-explorer-panel.flmux-explorer--drop {
+  outline: 2px dashed var(--fl-focus-border, #4c739d);
+  outline-offset: -2px;
 }
 .flmux-explorer__header {
   flex: 0 0 auto;
@@ -263,6 +281,8 @@ export function mountExplorerControl(container: HTMLElement, options: ExplorerCo
 
   panel.append(header, banner, element);
 
+  if (options.onUpload) installDropZone();
+
   const nodes = new Map<string, TreeNode>();
   const expanded = new Set<string>([rootPath]);
   const extensionSet = normalizeExtensions(options.extensions);
@@ -297,7 +317,8 @@ export function mountExplorerControl(container: HTMLElement, options: ExplorerCo
     paste: (target: string | null) => void performPaste(target),
     copyPath: (path: string) => {
       navigator.clipboard?.writeText(path).catch(() => showBanner("Copy to clipboard failed"));
-    }
+    },
+    upload: (target: string | null) => void pickAndUpload(target)
   };
 
   const rootNode: TreeNode = {
@@ -445,6 +466,7 @@ export function mountExplorerControl(container: HTMLElement, options: ExplorerCo
     const buttons: Array<{ glyph: string; title: string; run: () => void }> = [
       { glyph: "🗎", title: "New File", run: () => actions.newFile(selectedPath) },
       { glyph: "🖿", title: "New Folder", run: () => actions.newFolder(selectedPath) },
+      ...(options.onUpload ? [{ glyph: "⬆", title: "Upload", run: () => actions.upload(selectedPath) }] : []),
       { glyph: "↻", title: "Refresh", run: () => void actions.refresh() },
       { glyph: "⊟", title: "Collapse All", run: () => actions.collapseAll() }
     ];
@@ -466,6 +488,105 @@ export function mountExplorerControl(container: HTMLElement, options: ExplorerCo
     const node = nodes.get(target);
     if (node?.entry.kind === "dir") return target;
     return node?.parentPath ?? displayRootPath;
+  }
+
+  // ── Upload (file picker + drag-drop) ──
+
+  function pickAndUpload(target: string | null): void {
+    if (!options.onUpload || opInFlight || disposed) return;
+    const input = document.createElement("input");
+    input.type = "file";
+    input.multiple = true;
+    input.webkitdirectory = true; // whole-directory pick; webkitRelativePath = tree
+    input.addEventListener("change", () => {
+      const files = Array.from(input.files ?? []).map((file) => ({
+        relativePath: (file.webkitRelativePath || file.name).replace(/\\/g, "/"),
+        file
+      }));
+      if (files.length > 0) void runUpload(createParent(target), files);
+    });
+    input.click();
+  }
+
+  // Drag-drop tree → flat relative-path list via webkitGetAsEntry (the only API
+  // that exposes dropped *folders*); plain `dataTransfer.files` is the fallback.
+  async function filesFromDataTransfer(dt: DataTransfer): Promise<UploadFile[]> {
+    const entries = Array.from(dt.items)
+      .map((item) => (item.kind === "file" ? item.webkitGetAsEntry?.() : null))
+      .filter((e): e is FileSystemEntry => !!e);
+    if (entries.length === 0) {
+      return Array.from(dt.files).map((file) => ({ relativePath: file.name, file }));
+    }
+    const out: UploadFile[] = [];
+    const walk = async (entry: FileSystemEntry, prefix: string): Promise<void> => {
+      if (entry.isFile) {
+        const file = await new Promise<File>((res, rej) => (entry as FileSystemFileEntry).file(res, rej));
+        out.push({ relativePath: prefix + entry.name, file });
+      } else if (entry.isDirectory) {
+        const reader = (entry as FileSystemDirectoryEntry).createReader();
+        // readEntries returns in batches; loop until drained.
+        for (;;) {
+          const batch = await new Promise<FileSystemEntry[]>((res, rej) => reader.readEntries(res, rej));
+          if (batch.length === 0) break;
+          for (const child of batch) await walk(child, `${prefix}${entry.name}/`);
+        }
+      }
+    };
+    for (const entry of entries) await walk(entry, "");
+    return out;
+  }
+
+  // Drop a folder/file anywhere on the panel → upload into the row under the
+  // cursor (or the display root). Highlights while dragging files in.
+  function installDropZone(): void {
+    let depth = 0;
+    const setActive = (on: boolean) => panel.classList.toggle("flmux-explorer--drop", on);
+    panel.addEventListener("dragenter", (e) => {
+      if (!e.dataTransfer?.types.includes("Files")) return;
+      e.preventDefault();
+      if (depth++ === 0) setActive(true);
+    });
+    panel.addEventListener("dragover", (e) => {
+      if (!e.dataTransfer?.types.includes("Files")) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+    });
+    panel.addEventListener("dragleave", () => {
+      if (--depth <= 0) {
+        depth = 0;
+        setActive(false);
+      }
+    });
+    panel.addEventListener("drop", (e) => {
+      if (!e.dataTransfer?.types.includes("Files")) return;
+      e.preventDefault();
+      depth = 0;
+      setActive(false);
+      const dt = e.dataTransfer;
+      const targetPath = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-path]")?.dataset.path ?? null;
+      void (async () => {
+        const files = await filesFromDataTransfer(dt).catch(() => []);
+        if (files.length > 0) await runUpload(createParent(targetPath), files);
+      })();
+    });
+  }
+
+  async function runUpload(parentVirtual: string, files: readonly UploadFile[]): Promise<void> {
+    if (!options.onUpload || opInFlight) return;
+    opInFlight = true;
+    const plural = files.length === 1 ? "" : "s";
+    showBanner(`Uploading ${files.length} file${plural}…`);
+    try {
+      await options.onUpload(parentVirtual, files, {
+        report: (done, total) => showBanner(`Uploading ${done}/${total} file${plural}…`)
+      });
+      clearBanner();
+      await refresh(parentVirtual);
+    } catch (error) {
+      showBanner(`Upload failed: ${errorMessage(error)}`);
+    } finally {
+      opInFlight = false;
+    }
   }
 
   function beginCreate(mode: "createFile" | "createFolder", target: string | null): void {

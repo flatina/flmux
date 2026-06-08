@@ -16,6 +16,8 @@ import type { ExtensionHttpRequest, ExtensionHttpResponse, ExtensionHttpReturn }
 import type { DiscoveredLocalExtension } from "./localExtensions";
 import type { ResolvedExtHttpRoute } from "./extHttpRoutes";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
+import type { FsUploader } from "./fsBackend";
+import { ModelPathError } from "@flmux/core/shell";
 import type { FlmuxAuthorizationContext, FlmuxWebModeAuthorizer } from "./webModeAuth";
 import type { WebauthnAuthService } from "./auth/webauthnService";
 import { renderLoginPage, renderEnrollPage } from "./auth/authPages";
@@ -41,7 +43,11 @@ interface FlmuxServerHandle {
 let webAllowedOrigins: ReadonlySet<string> | null = null;
 
 const WS_MAX_PAYLOAD_BYTES = 4 * 1024 * 1024;
-const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
+// Global per-request body cap. Sized for upload chunks; JSON-RPC and webauthn
+// (pre-auth) re-impose their own smaller bounds via readBoundedText so the
+// raised ceiling doesn't widen their buffering surface.
+const MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024;
+const MAX_JSON_BODY_BYTES = 1024 * 1024;
 
 function parseTrustedProxies(raw: string | undefined): ReadonlySet<string> {
   if (raw)
@@ -212,6 +218,11 @@ export function startFlmuxServer(options: {
   wsKeepalive?: { pingIntervalMs: number; idleTimeoutSeconds: number };
   /** Comma list of trusted proxy socket IPs (see rateLimitKey); default loopback. */
   trustedProxies?: string;
+  /** Per-user streaming-upload writer for `/api/fs/upload` (web only; null in
+   * desktop / when the user has no fs policy). Reuses the `/fs` write boundary. */
+  resolveFsUploader?(context: FlmuxAuthorizationContext | null): FsUploader | null;
+  /** Per-file upload size limit (bytes). */
+  maxUploadBytes?: number;
 }): FlmuxServerHandle {
   const hostname = "127.0.0.1";
   const appName = options.appName ?? "flmux";
@@ -232,7 +243,12 @@ export function startFlmuxServer(options: {
           const userKey = options.authorizer ? rateLimitUserKey(request, options.authorizer) : null;
           return userKey ?? rateLimitKey(request, server, trustedProxies);
         },
-        skip: (_request, key) => !options.authorizer || !key
+        // Exempt the upload route ONLY for authenticated requests (user key
+        // `u:<name>`): a folder upload is many chunk requests that would trip the
+        // shared limiter, but it's per-file byte-capped. Unauthenticated upload
+        // requests keep their IP key and stay limited (no pre-auth flood).
+        skip: (request, key) =>
+          !options.authorizer || !key || (key.startsWith("u:") && new URL(request.url).pathname === "/api/fs/upload")
       })
     )
     .get("/health", () => ({ ok: true }))
@@ -383,6 +399,39 @@ export function startFlmuxServer(options: {
         await options.saveSession(auth.context, input);
         return { ok: true };
       });
+    })
+    // Folder upload (web). Body streamed to disk via the per-user FsUploader
+    // (reuses the `/fs` write boundary). A file is an ordered chunk sequence —
+    // the global body cap bounds each chunk, not the file.
+    .post("/api/fs/upload", async ({ request, set }) => {
+      const ctx = beginUpload(request, set, options);
+      if (!ctx.ok) return ctx.body;
+      const uploadId = ctx.query.get("uploadId") ?? "";
+      const offset = Number(ctx.query.get("offset") ?? "0");
+      const overwrite = ctx.query.get("overwrite") === "1";
+      const final = ctx.query.get("final") !== "0"; // last chunk commits; default single-shot
+      if (!Number.isInteger(offset) || offset < 0) {
+        set.status = 400;
+        return { ok: false, error: "offset must be a non-negative integer" };
+      }
+      try {
+        // Bun gives `request.body === null` for an empty body — a 0-byte file
+        // (`.gitkeep` etc.) is a valid single empty chunk, not an error.
+        const result = await ctx.uploader.upload(
+          ctx.path,
+          (request.body as AsyncIterable<Uint8Array>) ?? EMPTY_STREAM,
+          {
+            uploadId,
+            offset,
+            final,
+            overwrite,
+            maxBytes: options.maxUploadBytes ?? DEFAULT_MAX_UPLOAD_BYTES
+          }
+        );
+        return { ok: true, result };
+      } catch (error) {
+        return uploadError(set, error);
+      }
     })
     .get("/__flmux/internal/start", ({ request, set }) => {
       const auth = authorizeRequest(request, set, options.authorizer);
@@ -616,6 +665,69 @@ function denyUnauthorized(set: { status?: number | string; headers?: unknown } &
   return { ok: false };
 }
 
+const DEFAULT_MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024; // 2 GiB per file
+
+const EMPTY_STREAM: AsyncIterable<Uint8Array> = { async *[Symbol.asyncIterator]() {} };
+
+type UploadServerOptions = {
+  authorizer?: FlmuxWebModeAuthorizer;
+  resolveFsUploader?(context: FlmuxAuthorizationContext | null): FsUploader | null;
+};
+
+type UploadContext =
+  | { ok: true; uploader: FsUploader; path: string; query: URLSearchParams }
+  | { ok: false; body: unknown };
+
+// Shared preamble for both /api/fs/upload verbs: auth, fs-write ACL (same gate
+// as the `/fs/write` cap), uploader availability, and a `/`-rooted `path` query.
+function beginUpload(
+  request: Request,
+  set: { status?: number | string; headers?: unknown } & Record<string, unknown>,
+  options: UploadServerOptions
+): UploadContext {
+  const auth = authorizeRequest(request, set, options.authorizer);
+  if (!auth.ok) return { ok: false, body: "Unauthorized" };
+  const uploader = options.resolveFsUploader?.(auth.context) ?? null;
+  if (!uploader) {
+    set.status = 404;
+    return { ok: false, body: "Not Found" };
+  }
+  const query = new URL(request.url).searchParams;
+  const path = query.get("path") ?? "";
+  if (!path.startsWith("/")) {
+    set.status = 400;
+    return { ok: false, body: { ok: false, error: "path must be a '/'-rooted virtual path" } };
+  }
+  try {
+    assertPathAllowed("/fs/write", "call", auth.context, options.authorizer);
+  } catch (error) {
+    set.status = error instanceof FlmuxAuthzError ? error.status : 403;
+    return { ok: false, body: { ok: false, error: error instanceof Error ? error.message : String(error) } };
+  }
+  return { ok: true, uploader, path, query };
+}
+
+function uploadError(set: { status?: number | string }, error: unknown): { ok: false; error: string } {
+  set.status = error instanceof ModelPathError ? uploadStatusForCode(error.code) : 500;
+  return { ok: false, error: error instanceof Error ? error.message : String(error) };
+}
+
+function uploadStatusForCode(code: string): number {
+  switch (code) {
+    case "NOT_FOUND":
+      return 404;
+    case "NOT_WRITABLE":
+      return 403;
+    case "ALREADY_EXISTS":
+      return 409;
+    case "INVALID_PATH":
+    case "INVALID_VALUE":
+      return 400;
+    default:
+      return 500;
+  }
+}
+
 function assertPathAllowed(
   path: string,
   method: "read" | "write" | "call",
@@ -715,11 +827,10 @@ async function handleJsonRequest<T>(
   handler: (input: T) => Promise<unknown>
 ) {
   try {
-    const body = (await request.json()) as T;
-    return {
-      ok: true,
-      result: await handler(body)
-    };
+    // Bounded read (not request.json()): the global body cap is raised for
+    // uploads, so JSON-RPC re-imposes its own 1 MiB limit here.
+    const body = JSON.parse(await readBoundedText(request, MAX_JSON_BODY_BYTES)) as T;
+    return { ok: true, result: await handler(body) };
   } catch (error) {
     set.status = error instanceof FlmuxAuthzError ? error.status : 400;
     return {
@@ -727,6 +838,27 @@ async function handleJsonRequest<T>(
       error: error instanceof Error ? error.message : String(error)
     };
   }
+}
+
+// Read request.body up to `max` bytes, rejecting (413) past it — used where the
+// raised global body cap must not apply (the upload route streams unboundedly
+// large; everything else stays small).
+export async function readBoundedText(request: Request, max: number): Promise<string> {
+  const reader = request.body?.getReader();
+  if (!reader) return "";
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > max) {
+      await reader.cancel();
+      throw new FlmuxAuthzError("request body too large", 413);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 function resolveRendererPath(rendererDir: string, pathname: string): string | null {

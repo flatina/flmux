@@ -35,7 +35,12 @@ describe("loadFlmuxBootConfig", () => {
     expect(cfg.server.portSource).toBe("default");
     expect(cfg.server.rateLimit).toEqual({ max: 600, windowMs: 60_000 });
     expect(cfg.server.ws).toEqual({ pingIntervalMs: 25_000, idleTimeoutSeconds: 120 });
-    expect(cfg.limits).toEqual({ maxSessionsPerUser: 25, maxPanesPerUser: 200, maxTerminalsPerUser: 50 });
+    expect(cfg.limits).toEqual({
+      maxSessionsPerUser: 25,
+      maxPanesPerUser: 200,
+      maxTerminalsPerUser: 50,
+      maxUploadBytes: undefined
+    });
     expect(cfg.grace).toEqual({ clientMs: undefined, authorityEvictionMs: undefined });
     expect(cfg.app.name).toBeUndefined();
   });

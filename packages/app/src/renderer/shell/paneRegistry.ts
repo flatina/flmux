@@ -21,6 +21,8 @@ export interface PaneRendererRuntimeContext {
   onBrowserUrlChange(paneId: string, url: string): void;
   /** Label for the explorer header (web: signed-in user; desktop: project name). */
   userLabel: string;
+  /** Web mode → folder upload affordance is available (`/api/fs/upload`). */
+  canUpload: boolean;
 }
 
 export interface PaneDescriptor<TStateRecord extends PaneStateRecord = PaneStateRecord> extends PaneSpec<TStateRecord> {

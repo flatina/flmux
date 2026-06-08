@@ -1035,7 +1035,8 @@ export class FlmuxWorkbench {
             console.warn(`failed to propagate browser url change for pane '${paneId}'`, error);
           });
         },
-        userLabel: this.explorerUserLabel()
+        userLabel: this.explorerUserLabel(),
+        canUpload: this.config.mode === "web"
       }
     });
   }

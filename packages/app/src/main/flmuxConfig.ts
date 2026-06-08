@@ -28,7 +28,13 @@ export interface FlmuxBootConfig {
     /** Comma list of trusted proxy socket IPs; undefined → loopback default. */
     trustedProxies: string | undefined;
   };
-  limits: { maxSessionsPerUser: number; maxPanesPerUser: number; maxTerminalsPerUser: number };
+  limits: {
+    maxSessionsPerUser: number;
+    maxPanesPerUser: number;
+    maxTerminalsPerUser: number;
+    /** Per-file upload cap (bytes); undefined → server default (2 GiB). */
+    maxUploadBytes: number | undefined;
+  };
   grace: { clientMs: number | undefined; authorityEvictionMs: number | undefined };
 }
 
@@ -58,6 +64,7 @@ export async function loadFlmuxBootConfig(options: {
         FLMUX_MAX_SESSIONS_PER_USER: "limits.maxSessionsPerUser",
         FLMUX_MAX_PANES_PER_USER: "limits.maxPanesPerUser",
         FLMUX_MAX_TERMINALS_PER_USER: "limits.maxTerminalsPerUser",
+        FLMUX_MAX_UPLOAD_BYTES: "limits.maxUploadBytes",
         FLMUX_CLIENT_GRACE_MS: "grace.clientMs",
         FLMUX_AUTHORITY_EVICTION_GRACE_MS: "grace.authorityEvictionMs"
       }
@@ -111,7 +118,8 @@ function normalize(raw: Record<string, unknown>): FlmuxBootConfig {
     limits: {
       maxSessionsPerUser: positive(limits.maxSessionsPerUser, "FLMUX_MAX_SESSIONS_PER_USER") ?? 25,
       maxPanesPerUser: positive(limits.maxPanesPerUser, "FLMUX_MAX_PANES_PER_USER") ?? 200,
-      maxTerminalsPerUser: positive(limits.maxTerminalsPerUser, "FLMUX_MAX_TERMINALS_PER_USER") ?? 50
+      maxTerminalsPerUser: positive(limits.maxTerminalsPerUser, "FLMUX_MAX_TERMINALS_PER_USER") ?? 50,
+      maxUploadBytes: positive(limits.maxUploadBytes, "FLMUX_MAX_UPLOAD_BYTES")
     },
     grace: {
       clientMs: positive(grace.clientMs, "FLMUX_CLIENT_GRACE_MS"),

@@ -132,9 +132,25 @@ export function createWebauthnAuthService(options: {
     return ctx ? { user: ctx.user.name } : null;
   }
 
+  // Pre-auth endpoint: bound the body well below the (upload-sized) global cap.
+  // Passkey ceremony payloads are a few KB; oversized/invalid → {} → 400.
   async function readJson(request: Request): Promise<Record<string, unknown>> {
+    const reader = request.body?.getReader();
+    if (!reader) return {};
+    const chunks: Uint8Array[] = [];
+    let total = 0;
     try {
-      const body = await request.json();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.length;
+        if (total > 64 * 1024) {
+          await reader.cancel();
+          return {};
+        }
+        chunks.push(value);
+      }
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       return body && typeof body === "object" ? (body as Record<string, unknown>) : {};
     } catch {
       return {};

@@ -16,8 +16,8 @@ import {
   type Dirent,
   type Stats
 } from "node:fs";
-import { randomBytes } from "node:crypto";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { createHash, randomBytes } from "node:crypto";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { ModelPathError, type FsBackend, type FsEntryKind, type FsListEntry } from "@flmux/core/shell";
 import type { ExtensionFsBind, ExtensionFsPolicy } from "@flmux/extension-api";
 
@@ -47,6 +47,301 @@ const O_NOFOLLOW = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLL
 
 export function createFsBackend(options: CreateFsBackendOptions): FsBackend {
   return new NodeFsBackend(options);
+}
+
+/** Streaming upload reusing NodeFsBackend's binds/containment. Chunks accumulate
+ * in a flmux-managed staging file outside any bind; `final` atomic-renames it
+ * onto the target, so the target dir only ever holds complete files. Ordered
+ * chunk sequence keyed by `uploadId`; `maxBytes` bounds the whole file. */
+export interface FsUploader {
+  upload(
+    virtual: string,
+    body: AsyncIterable<Uint8Array>,
+    options: { uploadId: string; offset: number; final: boolean; overwrite: boolean; maxBytes: number }
+  ): Promise<{ size: number; committed: boolean }>;
+}
+
+export interface CreateFsUploaderOptions extends CreateFsBackendOptions {
+  /** Per-user staging dir, flmux-managed and outside every bind. Must be on the
+   * same volume-domain as the user's targets so the commit rename stays
+   * same-volume (confined and dev targets live on different volumes). */
+  stagingDir: string;
+}
+
+// Staging GC throttle. Module-side because the uploader is rebuilt per request.
+// The TTL doubles as the in-progress guard — a live upload touches its file
+// every chunk, so only stalled/abandoned ones age out.
+const STAGING_TTL_MS = 60 * 60 * 1000;
+const STAGING_SWEEP_THROTTLE_MS = 60 * 1000;
+const stagingLastSweptMs = new Map<string, number>();
+
+export function createFsUploader(options: CreateFsUploaderOptions): FsUploader {
+  const projectRoot = tryCanonicalizeExisting(options.projectDir) ?? resolve(options.projectDir);
+  const unconfined = options.policy.unconfined;
+  const binds = options.policy.binds.flatMap((b) => {
+    const n = normalizeBind(b);
+    return n ? [n] : [];
+  });
+  const stagingDir = options.stagingDir;
+
+  function resolveWritableRoot(virtual: string): { root: string; segments: string[] } {
+    if (unconfined) {
+      return { root: projectRoot, segments: parseUnconfinedPath(virtual).segments };
+    }
+    const parsed = parseVirtualPath(virtual, { rejectNativeAbsolute: true });
+    const matched = matchBind(binds, parsed.normalized);
+    if (!matched) throw new ModelPathError("NOT_FOUND", "Path not found");
+    if (matched.mode !== "rw") throw new ModelPathError("NOT_WRITABLE", "Path is not writable");
+    return { root: matched.realPath, segments: parsed.segments.slice(matched.virtualSegments.length) };
+  }
+
+  // Fail-fast no-clobber; authoritative re-check at commit. Skip if the parent
+  // doesn't exist yet (then neither can the leaf — parents are made at commit).
+  function preflightNoClobber(root: string, parentSegments: readonly string[], leaf: string, overwrite: boolean): void {
+    let parentReal: string;
+    try {
+      parentReal = resolveUnderRoot(root, parentSegments).realPath;
+    } catch (error) {
+      if (error instanceof ModelPathError && error.code === "NOT_FOUND") return;
+      throw error;
+    }
+    assertLeafAbsentOrFile(join(parentReal, leaf), { allowExisting: overwrite });
+  }
+
+  return {
+    async upload(virtual, body, { uploadId, offset, final, overwrite, maxBytes }) {
+      if (!/^[a-z0-9]{8,64}$/i.test(uploadId)) {
+        throw new ModelPathError("INVALID_VALUE", "invalid uploadId");
+      }
+      const now = Date.now();
+      // rw-gate re-checked per chunk (mid-upload role demotion → NOT_WRITABLE).
+      const { root, segments } = resolveWritableRoot(virtual);
+      if (segments.length === 0) throw new ModelPathError("INVALID_PATH", "Path is not a file");
+      const leaf = segments[segments.length - 1]!;
+      validateLeafName(leaf);
+      for (const segment of segments.slice(0, -1)) validateLeafName(segment);
+
+      const stagedDir = ensureStagingDirNoFollow(stagingDir);
+      const stagingFile = join(stagedDir, stagingName(root, segments, uploadId));
+
+      let position = offset;
+      let fd: number;
+      if (offset === 0) {
+        sweepStagingDir(stagedDir, now);
+        preflightNoClobber(root, segments.slice(0, -1), leaf, overwrite);
+        // O_EXCL: fresh file, and refuses a planted symlink even where
+        // O_NOFOLLOW is a no-op (Windows).
+        try {
+          fd = openSync(stagingFile, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | O_NOFOLLOW, 0o600);
+        } catch (error) {
+          throw mapFsError(error);
+        }
+      } else {
+        let st: Stats;
+        try {
+          st = lstatSync(stagingFile);
+        } catch {
+          throw new ModelPathError("NOT_FOUND", "No upload in progress");
+        }
+        if (st.isSymbolicLink() || !st.isFile()) {
+          throw new ModelPathError("INVALID_PATH", "Upload target is not a file");
+        }
+        // Past-TTL → expired, matching GC's boundary so a racing sweep can't
+        // unlink bytes from under an open writer.
+        if (now - st.mtimeMs > STAGING_TTL_MS) {
+          safeUnlink(stagingFile);
+          throw new ModelPathError("NOT_FOUND", "Upload expired");
+        }
+        if (st.size !== offset) {
+          throw new ModelPathError("INVALID_VALUE", `offset ${offset} does not match current size ${st.size}`);
+        }
+        try {
+          fd = openSync(stagingFile, constants.O_WRONLY | O_NOFOLLOW, 0o600);
+        } catch (error) {
+          throw mapFsError(error);
+        }
+      }
+
+      try {
+        for await (const chunk of body) {
+          if (chunk.length === 0) continue;
+          if (position + chunk.length > maxBytes) {
+            throw new ModelPathError("INVALID_VALUE", `Upload exceeds the ${maxBytes}-byte limit`);
+          }
+          const buf = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+          let written = 0;
+          while (written < buf.length) {
+            const n = writeSync(fd, buf, written, buf.length - written, position + written);
+            if (n === 0) throw new Error("writeSync returned 0");
+            written += n;
+          }
+          position += buf.length;
+        }
+      } catch (error) {
+        closeSync(fd);
+        // Cap breach is unrecoverable → drop the staging file; other errors keep
+        // it (a same-uploadId offset-0 retry re-creates; GC reaps the rest).
+        if (error instanceof ModelPathError && error.code === "INVALID_VALUE") safeUnlink(stagingFile);
+        if (error instanceof ModelPathError) throw error;
+        throw mapFsError(error);
+      }
+      closeSync(fd);
+
+      if (!final) return { size: position, committed: false };
+
+      // Materialize: create parents now (an abandoned upload leaves no target
+      // dirs) and atomic-rename the staging file onto the leaf.
+      const parentDir = mkdirpNoFollow(root, segments.slice(0, -1));
+      const leafPath = join(parentDir, leaf);
+      assertLeafAbsentOrFile(leafPath, { allowExisting: overwrite });
+      materializeStaging(stagingFile, leafPath, overwrite);
+      return { size: position, committed: true };
+    }
+  };
+}
+
+// Re-pins the resolved target into the name: a chunk/`final` for a different
+// path can't reach these bytes (→ NOT_FOUND), and a reused uploadId across paths
+// can't collide. `uploadId` is assumed unique per file (client-minted).
+function stagingName(root: string, segments: readonly string[], uploadId: string): string {
+  const key = `${root} ${segments.join("/")}`;
+  const hash = createHash("sha256").update(key).digest("hex").slice(0, 32);
+  return `${hash}.${uploadId}`;
+}
+
+// No-follow: an unconfined user can reach this tree via its own `/fs`, so refuse
+// a planted symlink at the base or the dir itself.
+function ensureStagingDirNoFollow(dir: string): string {
+  const base = dirname(dir);
+  mkdirSync(base, { recursive: true });
+  if (lstatSync(base).isSymbolicLink()) {
+    throw new ModelPathError("INVALID_PATH", "Staging base is a symbolic link");
+  }
+  let st: Stats | null = null;
+  try {
+    st = lstatSync(dir);
+  } catch {
+    st = null;
+  }
+  if (st) {
+    if (st.isSymbolicLink() || !st.isDirectory()) {
+      throw new ModelPathError("INVALID_PATH", "Staging dir is not a directory");
+    }
+    return dir;
+  }
+  try {
+    mkdirSync(dir);
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
+    if (code !== "EEXIST") throw mapFsError(error);
+  }
+  return dir;
+}
+
+// Throttled per dir. Set `lastSweptMs` before the (synchronous) readdir so
+// concurrent offset-0 requests don't double-sweep — keep this sync.
+function sweepStagingDir(dir: string, now: number): void {
+  const last = stagingLastSweptMs.get(dir) ?? 0;
+  if (now - last < STAGING_SWEEP_THROTTLE_MS) return;
+  stagingLastSweptMs.set(dir, now);
+  let names: string[];
+  try {
+    const ds = lstatSync(dir);
+    if (ds.isSymbolicLink() || !ds.isDirectory()) return;
+    names = readdirSync(dir);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    const p = join(dir, name);
+    try {
+      const st = lstatSync(p);
+      if (st.isFile() && now - st.mtimeMs > STAGING_TTL_MS) unlinkSync(p);
+    } catch {
+      // raced unlink / transient — skip
+    }
+  }
+}
+
+// Atomic rename onto the target — no pre-unlink for `overwrite` (renameSync
+// replaces on POSIX / modern Windows). EXDEV (staging≠target volume) fails
+// loudly rather than copying through the target dir, which would re-expose
+// partials; a platform that refuses replace falls back to unlink+rename.
+function materializeStaging(stagingFile: string, leafPath: string, overwrite: boolean): void {
+  try {
+    renameSync(stagingFile, leafPath);
+    return;
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
+    if (code === "EXDEV") {
+      safeUnlink(stagingFile);
+      throw new ModelPathError("INTERNAL_ERROR", "Upload staging and target are on different volumes");
+    }
+    if (overwrite && (code === "EEXIST" || code === "EPERM" || code === "EACCES")) {
+      safeUnlink(leafPath);
+      try {
+        renameSync(stagingFile, leafPath);
+        return;
+      } catch (retryError) {
+        throw mapFsError(retryError);
+      }
+    }
+    throw mapFsError(error);
+  }
+}
+
+// Reject a pre-existing destination (no-clobber) or a planted symlink/dir.
+function assertLeafAbsentOrFile(leafPath: string, { allowExisting }: { allowExisting: boolean }): void {
+  let st: Stats;
+  try {
+    st = lstatSync(leafPath);
+  } catch {
+    return; // absent — fine
+  }
+  if (st.isSymbolicLink()) {
+    throw new ModelPathError("INVALID_PATH", "Symbolic links are not allowed in filesystem paths");
+  }
+  if (!st.isFile()) {
+    throw new ModelPathError("INVALID_PATH", "Path is not a file");
+  }
+  if (!allowExisting) {
+    throw new ModelPathError("ALREADY_EXISTS", "Destination already exists");
+  }
+}
+
+// Create each missing parent segment no-follow, validating names. Returns the
+// real parent dir. EEXIST passes only when the existing entry is a directory.
+function mkdirpNoFollow(root: string, parentSegments: readonly string[]): string {
+  let current = canonicalizeExisting(root);
+  for (const segment of parentSegments) {
+    validateLeafName(segment);
+    const next = join(current, segment);
+    let st: Stats | null = null;
+    try {
+      st = lstatSync(next);
+    } catch {
+      st = null;
+    }
+    if (st) {
+      if (st.isSymbolicLink()) {
+        throw new ModelPathError("INVALID_PATH", "Symbolic links are not allowed in filesystem paths");
+      }
+      if (!st.isDirectory()) {
+        throw new ModelPathError("ALREADY_EXISTS", `'${segment}' exists and is not a directory`);
+      }
+      current = canonicalizeExisting(next);
+      continue;
+    }
+    try {
+      mkdirSync(next);
+    } catch (error) {
+      const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
+      if (code !== "EEXIST") throw mapFsError(error);
+    }
+    current = canonicalizeExisting(next);
+    assertInsideRoot(root, current);
+  }
+  return current;
 }
 
 export interface FsPathMapper {

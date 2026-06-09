@@ -1,39 +1,28 @@
 import { createConfig } from "@flatina/confkit";
 
-/**
- * Boot-time app/server config — the single confkit load for flmux core.
- * `app.toml` is the canonical schema (every key below is file-configurable);
- * `FLMUX_*` env vars are curated aliases onto the same paths, CLI flags on
- * top. Layering: defaults < `<flmuxDir>/app.toml` < env < CLI. Loaded once in
- * main; every other module receives plain values (no global store), so tests
- * keep injecting via options. Invalid values (malformed file, `FLMUX_PORT=abc`,
- * zero/negative knobs) fail the boot instead of being silently skipped.
- * Mode flags (`--dev`, `FLMUX_HIDDEN_WINDOW`) live in `runtimeMode.ts`, not here.
- */
+const DEFAULT_DISPLAY_TEMPLATE = "${appName} v${appVersion}";
+
+// confkit layering: defaults < app.toml < FLMUX_* env < CLI; invalid values fail the boot.
 export interface FlmuxBootConfig {
   app: {
-    /** Display name (login/enroll pages, default window title). */
-    name: string | undefined;
-    /** Initial window title; falls back to `name`. */
-    title: string | undefined;
+    name: string | undefined; // also the `${appName}` template var
+    appTitle: string;
+    watermarkHeader: string | undefined; // unset → hidden
+    watermarkFooter: string;
   };
   server: {
-    /** undefined → let the OS pick (Bun listens on 0). */
-    port: number | undefined;
-    /** Effective-port provenance for the boot log. */
+    port: number | undefined; // undefined → OS picks
     portSource: "cli" | "env" | "config" | "default";
     publicOrigin: string | undefined;
     rateLimit: { max: number; windowMs: number };
     ws: { pingIntervalMs: number; idleTimeoutSeconds: number };
-    /** Comma list of trusted proxy socket IPs; undefined → loopback default. */
-    trustedProxies: string | undefined;
+    trustedProxies: string | undefined; // comma list; undefined → loopback
   };
   limits: {
     maxSessionsPerUser: number;
     maxPanesPerUser: number;
     maxTerminalsPerUser: number;
-    /** Per-file upload cap (bytes); undefined → server default (2 GiB). */
-    maxUploadBytes: number | undefined;
+    maxUploadBytes: number | undefined; // per-file; undefined → 2 GiB default
   };
   grace: { clientMs: number | undefined; authorityEvictionMs: number | undefined };
 }
@@ -75,8 +64,7 @@ export async function loadFlmuxBootConfig(options: {
   try {
     config = await builder.load();
   } catch (error) {
-    // confkit wraps validator throws ("Config validation failed") — surface
-    // the actual reason in the boot error.
+    // confkit wraps validator throws — surface the actual reason.
     throw (error as { cause?: unknown }).cause ?? error;
   }
   const portTrace = config.getTrace("server.port").find((t) => t.effective);
@@ -100,7 +88,12 @@ function normalize(raw: Record<string, unknown>): FlmuxBootConfig {
   const limits = asRecord(raw.limits);
   const grace = asRecord(raw.grace);
   return {
-    app: { name: nonEmpty(app.name), title: nonEmpty(app.title) },
+    app: {
+      name: nonEmpty(app.name),
+      appTitle: nonEmpty(app.appTitle) ?? DEFAULT_DISPLAY_TEMPLATE,
+      watermarkHeader: nonEmpty(app.watermarkHeader),
+      watermarkFooter: nonEmpty(app.watermarkFooter) ?? DEFAULT_DISPLAY_TEMPLATE
+    },
     server: {
       port: port(server.port),
       portSource: "default", // overwritten from trace after load
@@ -138,8 +131,7 @@ function nonEmpty(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-/** Integer from number or (trimmed) numeric string — tolerates whitespace
- * padding common in .env/systemd files; trailing junk stays invalid. */
+// Tolerates whitespace padding (.env/systemd); trailing junk stays invalid.
 function toInt(value: unknown): number | undefined {
   if (typeof value === "number") return Number.isInteger(value) ? value : undefined;
   if (typeof value === "string" && value.trim() !== "") {

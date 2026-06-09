@@ -1,6 +1,6 @@
 import type { ClientOf } from "bunite-core/rpc";
 import type { BrowserWindowCap as BrowserWindowCapDef } from "bunite-core/rpc";
-import { openPaneKindPopup, type PaneKindOption } from "./headerActions";
+import { openPaneKindPopup, positionMenuPopup, type PaneKindOption } from "./headerActions";
 import { getThemePreference, setThemePreference, type ThemePreference } from "../theme";
 
 const THEME_GLYPH: Record<ThemePreference, string> = {
@@ -16,6 +16,7 @@ const THEME_OPTIONS: ReadonlyArray<{ preference: ThemePreference; label: string 
 ];
 
 export interface FlmuxTitlebarHandlers {
+  appName: string;
   listKinds(): PaneKindOption[];
   onAddPane(kind: string, workspaceId: string): void;
   onNewWorkspace(): void;
@@ -59,7 +60,7 @@ export class FlmuxTitlebar {
 
     const appLabel = document.createElement("div");
     appLabel.className = "flmux-titlebar__app";
-    appLabel.textContent = "flmux";
+    appLabel.textContent = handlers.appName;
 
     // Tabs container has no opt-out; individual tabs set data-bunite-no-drag.
     this.tabsHost.className = "flmux-titlebar__tabs";
@@ -282,9 +283,7 @@ export class FlmuxTitlebar {
     }
     document.body.append(popup);
     this.themePopup = popup;
-    const rect = this.themeBtn.getBoundingClientRect();
-    popup.style.top = `${rect.bottom + 4}px`;
-    popup.style.left = `${Math.max(4, rect.right - popup.offsetWidth)}px`;
+    positionMenuPopup(this.themeBtn, popup, "end");
   }
 
   private closeThemePopup() {

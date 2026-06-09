@@ -29,7 +29,7 @@ interface FlmuxPaths {
   /** `<flmuxDir>/session.json` — desktop single-user session snapshot. */
   desktopSessionFile: string;
   /** `<flmuxDir>/app.toml` — user-editable app config. Sections:
-   * `[server] port`, `[app] title`. */
+   * `[server] port`, `[app] name`/`appTitle`/`watermarkHeader`/`watermarkFooter`. */
   appConfigFile: string;
   /** `<flmuxDir>/ext` — parent of per-extension data dirs. Extensions are
    * handed only `<extDataRootDir>/<extensionId>/`; this parent isn't

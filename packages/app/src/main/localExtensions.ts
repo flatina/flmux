@@ -33,7 +33,7 @@ export interface DiscoveredLocalExtension {
   /** Return an import-ready URL for a runtime-relative entry file. Source
    * returns `file://<absPath>`. Archive returns `data:text/javascript;base64,<...>`
    * built from the in-memory bytes — works because cli/server entries are
-   * contract-bound to zero runtime externals (internal design). Returns
+   * contract-bound to zero runtime externals. Returns
    * null if the relative path doesn't resolve. */
   resolveEntryImportUrl(relativePath: string): Promise<string | null>;
   /** Materialize the manifest `sharedDir` subtree as a real directory and
@@ -326,8 +326,8 @@ async function discoverArchiveExtension(tarballPath: string): Promise<Discovered
         const file = files.get(key);
         if (!file) return null;
         const entryBytes = await file.bytes();
-        // Contract: cli/server entries have zero runtime externals, so
-        // `data:` URL import (no resolution context) works reliably.
+        // cli/server entries have zero runtime externals, so a `data:` URL
+        // import (no resolution context) works reliably.
         return `data:text/javascript;base64,${Buffer.from(entryBytes).toString("base64")}`;
       },
       async resolveSharedAssetDir(relativeDir: string, extractBaseDir: string): Promise<string | null> {

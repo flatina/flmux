@@ -1,7 +1,5 @@
 .tmp/
 .flmux*/
-internal-notes/
-.deploy/
 dist/
 node_modules/
 test-results/

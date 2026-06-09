@@ -10,6 +10,7 @@ import {
   type FlmuxSessionSaveLayouts
 } from "../shared/rendererBridge";
 import { resolveWorkspaceTabstripMode } from "../shared/runtimeMode";
+import { renderAppTemplate } from "../shared/appTemplate";
 import { createSessionImpl } from "./sessionImpl";
 import { createBridgeImpl, type MintedSession } from "./bridgeImpl";
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
@@ -562,7 +563,11 @@ if (devAuthAs && runtimeMode === "web") {
 }
 
 const appName = bootConfig.app.name ?? "flmux";
-const initialAppTitle = bootConfig.app.title ?? appName;
+const initialAppTitle = renderAppTemplate(bootConfig.app.appTitle, {
+  appName,
+  appVersion: FLMUX_APP_VERSION,
+  host: ""
+});
 
 const desktopAuthority: DesktopShellAuthority | null =
   runtimeMode === "desktop" && sessionStore
@@ -927,6 +932,10 @@ function buildShellConfig(authContext: FlmuxAuthorizationContext | null): FlmuxR
   return {
     mode: runtimeMode,
     appName,
+    appVersion: FLMUX_APP_VERSION,
+    appTitle: bootConfig.app.appTitle,
+    watermarkHeader: bootConfig.app.watermarkHeader,
+    watermarkFooter: bootConfig.app.watermarkFooter,
     appOrigin: serverOrigin,
     projectDir,
     // Web: relative URLs so ext modules load via the page origin (proxy/Funnel), not the internal bind.
@@ -1065,9 +1074,7 @@ const server = startFlmuxServer({
         const user = context ? webModeAuthorizer.getUser(context.user.name) : null;
         if (!user) return null;
         const policy = fsPolicyResolver.resolve(user);
-        // Stage chunks on the same volume-domain as the user's targets so the
-        // commit rename stays same-volume: confined targets live under
-        // `.flmux_users`, unconfined (dev) under `rootDir`/`.flmux`.
+        // Stage on the target's volume so the commit rename is atomic.
         const stagingDir = policy.unconfined
           ? join(flmuxPaths.tmpDir, "uploads", user.name)
           : join(flmuxPaths.usersRootDir, ".uploads", user.name);

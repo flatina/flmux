@@ -54,6 +54,7 @@ import type {
 } from "../../shared/rendererBridge";
 import type { WorkspaceTabstripMode } from "../../shared/runtimeMode";
 import { FlmuxTitlebar, type FlmuxTitlebarWorkspace } from "./titlebar";
+import { renderAppTemplate } from "../../shared/appTemplate";
 import { resolveTerminalCwdFromRoot } from "@flmux/core/terminal/path";
 import type { TerminalRuntimeEvent } from "@flmux/core/terminal/types";
 import { createShellModelClientOverSession } from "./shellModelClient";
@@ -147,7 +148,11 @@ export class FlmuxWorkbench {
     private readonly session: SessionCap
   ) {
     this.tabstripMode = config.workspaceTabstrip;
-    this.appTitle = config.appName;
+    this.appTitle = renderAppTemplate(config.appTitle, {
+      appName: config.appName,
+      appVersion: config.appVersion,
+      host: ""
+    });
     registerBuiltinPaneDescriptors(this.paneRegistry, {
       installRoot: config.projectDir,
       resolveTerminalCwd: resolveTerminalCwdFromRoot
@@ -212,6 +217,7 @@ export class FlmuxWorkbench {
     const host = document.querySelector<HTMLElement>(".flmux-titlebar-host");
     if (!host) return;
     this.titlebar = new FlmuxTitlebar({
+      appName: this.config.appName,
       listKinds: () => this.listMenuKinds(),
       onAddPane: (kind, workspaceId) => {
         void this.shellModel.pathCall("/panes/new", { kind, workspaceId, place: "right" });
@@ -668,7 +674,11 @@ export class FlmuxWorkbench {
           listKinds: () => this.listMenuKinds(),
           onSelect: (kind) => {
             void this.shellModel.pathCall("/panes/new", { kind, place: "right" });
-          }
+          },
+          appName: this.config.appName,
+          appVersion: this.config.appVersion,
+          watermarkHeader: this.config.watermarkHeader,
+          watermarkFooter: this.config.watermarkFooter
         }),
       createComponent: (options) => this.createInnerPanelRenderer(record, options),
       createTabComponent: (options) =>
@@ -1097,7 +1107,7 @@ export class FlmuxWorkbench {
     }
     const record: WorkspaceRecord = {
       id: workspaceId,
-      // Renderer-local bus (cross-client broadcast deferred — architecture).
+      // Renderer-local bus (cross-client broadcast deferred).
       bus: createWorkspaceBus(workspaceId),
       statusStore: createWorkspaceStatusStore(),
       outerPanelApi: null,

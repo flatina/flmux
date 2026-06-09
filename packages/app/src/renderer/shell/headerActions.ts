@@ -9,6 +9,7 @@ import type {
 import { DefaultTab } from "dockview-core";
 import type { PaneHeaderMenu, PaneHeaderMenuItem } from "@flmux/extension-api";
 import type { FlmuxRendererBootstrapConfig } from "../../shared/rendererBridge";
+import { renderAppTemplate } from "../../shared/appTemplate";
 import { getPaneHeaderMenu } from "../external/paneTabMenuRegistry";
 import { logout, openSettingsDialog } from "./settingsDialog";
 
@@ -125,10 +126,7 @@ export class WorkspaceHeaderActions implements IHeaderActionsRenderer {
 
     document.body.append(popup);
     this.popup = popup;
-
-    const rect = this.menuButton.getBoundingClientRect();
-    popup.style.top = `${rect.bottom + 4}px`;
-    popup.style.left = `${Math.max(4, rect.right - popup.offsetWidth)}px`;
+    positionMenuPopup(this.menuButton, popup, "end");
   }
 
   private closePopup() {
@@ -149,6 +147,45 @@ export interface PaneKindOption {
   kind: string;
   label: string;
   iconUrl?: string;
+}
+
+/** Place a popup against an anchor: below, flipping above when cramped, both
+ *  axes clamped to the viewport. `align` pins its right ("end") or left ("start")
+ *  edge to the anchor. Call after the popup is in the DOM (measures `offset*`). */
+export function positionMenuPopup(anchor: HTMLElement, popup: HTMLElement, align: "start" | "end" = "end"): void {
+  const margin = 4;
+  const rect = anchor.getBoundingClientRect();
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const w = popup.offsetWidth;
+  const h = popup.offsetHeight;
+
+  let top = rect.bottom + margin;
+  if (top + h > vh - margin && rect.top - margin - h >= margin) {
+    top = rect.top - margin - h; // flip above
+  }
+  top = Math.max(margin, Math.min(top, vh - margin - h));
+
+  let left = align === "end" ? rect.right - w : rect.left;
+  left = Math.max(margin, Math.min(left, vw - margin - w));
+
+  popup.style.top = `${top}px`;
+  popup.style.left = `${left}px`;
+}
+
+/** Icon + label; shared by the popup rows and the watermark grid cards. */
+export function fillKindButton(button: HTMLButtonElement, option: PaneKindOption, iconClass: string): void {
+  button.type = "button";
+  button.dataset.kind = option.kind;
+  const icon = document.createElement("span");
+  icon.className = iconClass;
+  const img = document.createElement("img");
+  img.src = option.iconUrl ?? "/__flmux/assets/pane.svg";
+  img.alt = "";
+  icon.append(img);
+  const label = document.createElement("span");
+  label.textContent = option.label;
+  button.append(icon, label);
 }
 
 /**
@@ -175,18 +212,8 @@ export function openPaneKindPopup(
   } else {
     for (const option of kinds) {
       const item = document.createElement("button");
-      item.type = "button";
       item.className = "header-action-popup__item";
-      item.dataset.kind = option.kind;
-      const icon = document.createElement("span");
-      icon.className = "header-action-popup__icon";
-      const img = document.createElement("img");
-      img.src = option.iconUrl ?? "/__flmux/assets/pane.svg";
-      img.alt = "";
-      icon.append(img);
-      const label = document.createElement("span");
-      label.textContent = option.label;
-      item.append(icon, label);
+      fillKindButton(item, option, "header-action-popup__icon");
       item.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -198,10 +225,7 @@ export function openPaneKindPopup(
   }
 
   document.body.append(popup);
-
-  const rect = anchor.getBoundingClientRect();
-  popup.style.top = `${rect.bottom + 4}px`;
-  popup.style.left = `${Math.max(4, rect.right - popup.offsetWidth)}px`;
+  positionMenuPopup(anchor, popup, "end");
 
   return popup;
 }
@@ -260,73 +284,67 @@ export class NewPaneHeaderAction extends HeaderActionButton implements IHeaderAc
   }
 }
 
-/**
- * Watermark shown by an empty inner dockview (0 groups). dockview renders the
- * watermark exactly when there are no grid groups, so this doubles as the only
- * add-pane affordance for an empty workspace (no group header → no inner `+`).
- */
+export interface EmptyWorkspaceWatermarkOptions {
+  listKinds: () => PaneKindOption[];
+  onSelect: (kind: string) => void;
+  appName: string;
+  appVersion: string;
+  watermarkHeader?: string;
+  watermarkFooter: string;
+}
+
+/** Empty-workspace watermark: an inline pane-kind grid (header / grid / footer),
+ *  the add-pane affordance when a workspace has no panes. */
 export class EmptyWorkspaceWatermark implements IWatermarkRenderer {
   readonly element: HTMLElement;
-  private popup: HTMLDivElement | null = null;
-  private readonly disposers: Array<() => void> = [];
 
-  constructor(
-    private readonly options: {
-      listKinds: () => PaneKindOption[];
-      onSelect: (kind: string) => void;
-    }
-  ) {
+  constructor(options: EmptyWorkspaceWatermarkOptions) {
+    const vars = { appName: options.appName, appVersion: options.appVersion, host: window.location.host };
     this.element = document.createElement("div");
     this.element.className = "flmux-empty-watermark";
 
-    const title = document.createElement("div");
-    title.className = "flmux-empty-watermark__title";
-    title.textContent = "Empty workspace";
+    if (options.watermarkHeader) {
+      const header = document.createElement("div");
+      header.className = "flmux-empty-watermark__header";
+      header.textContent = renderAppTemplate(options.watermarkHeader, vars);
+      this.element.append(header);
+    }
 
-    const add = document.createElement("button");
-    add.type = "button";
-    add.className = "flmux-empty-watermark__add";
-    add.textContent = "+ Add pane";
+    const grid = document.createElement("div");
+    grid.className = "flmux-empty-watermark__grid";
+    const kinds = options.listKinds();
+    if (kinds.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "flmux-empty-watermark__empty";
+      empty.textContent = "No pane kinds registered.";
+      grid.append(empty);
+    } else {
+      for (const option of kinds) {
+        const card = document.createElement("button");
+        card.className = "flmux-empty-watermark__kind";
+        fillKindButton(card, option, "flmux-empty-watermark__kind-icon");
+        card.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          options.onSelect(option.kind);
+        });
+        grid.append(card);
+      }
+    }
+    this.element.append(grid);
 
-    const onClick = (event: MouseEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-      this.togglePopup(add);
-    };
-    add.addEventListener("click", onClick);
-    this.disposers.push(() => add.removeEventListener("click", onClick));
-
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null;
-      if (target && (this.element.contains(target) || this.popup?.contains(target))) return;
-      this.closePopup();
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    this.disposers.push(() => document.removeEventListener("pointerdown", onPointerDown));
-
-    this.element.append(title, add);
+    const footer = document.createElement("div");
+    footer.className = "flmux-empty-watermark__footer";
+    footer.textContent = renderAppTemplate(options.watermarkFooter, vars);
+    this.element.append(footer);
   }
 
   init(_params: WatermarkRendererInitParameters): void {
     // noop
   }
 
-  private togglePopup(anchor: HTMLElement): void {
-    if (this.popup) {
-      this.closePopup();
-      return;
-    }
-    this.popup = openPaneKindPopup(anchor, this.options.listKinds, this.options.onSelect, () => this.closePopup());
-  }
-
-  private closePopup(): void {
-    this.popup?.remove();
-    this.popup = null;
-  }
-
   dispose(): void {
-    this.closePopup();
-    for (const dispose of this.disposers) dispose();
+    this.element.replaceChildren();
   }
 }
 
@@ -535,9 +553,7 @@ export class PaneTabRenderer extends DefaultTab {
       if (typeof dispose === "function") this.popupDispose = dispose;
     }
 
-    const rect = this.menuButton.getBoundingClientRect();
-    popup.style.top = `${rect.bottom + 4}px`;
-    popup.style.left = `${Math.max(4, rect.left)}px`;
+    positionMenuPopup(this.menuButton, popup, "start");
   }
 
   private renderItems(popup: HTMLDivElement, items: PaneHeaderMenuItem[]): void {

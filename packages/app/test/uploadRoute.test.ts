@@ -11,9 +11,8 @@ afterEach(() => {
   while (tempDirs.length > 0) rmSync(tempDirs.pop()!, { recursive: true, force: true });
 });
 
-// A real listening server with a no-authorizer (desktop-like) uploader, so we
-// exercise the actual Elysia POST path — proving `request.body` streams (not
-// pre-buffered/locked) and the chunk→staging→rename flow commits over HTTP.
+// Real listening server (no-authorizer, desktop-like) so the test proves
+// `request.body` streams through Elysia rather than being pre-buffered/locked.
 function startServer() {
   const root = mkdtempSync(join(tmpdir(), "flmux-upload-route-"));
   tempDirs.push(root);
@@ -46,7 +45,6 @@ describe("/api/fs/upload route", () => {
       const u = (q: Record<string, string>) => uploadUrl(server.origin, "/dir/sub/file.bin", q);
       const r1 = await fetch(u({ offset: "0", final: "0" }), { method: "POST", body: new Uint8Array([1, 2, 3]) });
       expect(await r1.json()).toEqual({ ok: true, result: { size: 3, committed: false } });
-      // Not yet visible — only the .part exists.
       const r2 = await fetch(u({ offset: "3", final: "1" }), { method: "POST", body: new Uint8Array([4, 5]) });
       expect(await r2.json()).toEqual({ ok: true, result: { size: 5, committed: true } });
       expect([...readFileSync(join(root, "dir", "sub", "file.bin"))]).toEqual([1, 2, 3, 4, 5]);

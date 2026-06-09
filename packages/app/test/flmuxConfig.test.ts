@@ -1,3 +1,4 @@
+// biome-ignore-all lint/suspicious/noTemplateCurlyInString: literal `${...}` template strings asserted as config values
 import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -69,11 +70,19 @@ describe("loadFlmuxBootConfig", () => {
     await expect(load({ env: { FLMUX_PORT: "70000" } })).rejects.toThrow(/invalid port/);
   });
 
-  it("app name/title from app.toml; blank → undefined", async () => {
-    const file = appToml(`[app]\nname = "Demo"\ntitle = "  "\n`);
+  it("app display strings from app.toml; defaults + blank handling", async () => {
+    const file = appToml(`[app]\nname = "Acme"\nwatermarkHeader = "  "\nappTitle = "\${appName}"\n`);
     const cfg = await load({ appConfigFile: file });
-    expect(cfg.app.name).toBe("Demo");
-    expect(cfg.app.title).toBeUndefined();
+    expect(cfg.app.name).toBe("Acme");
+    expect(cfg.app.appTitle).toBe("${appName}"); // explicit override
+    expect(cfg.app.watermarkHeader).toBeUndefined(); // blank → undefined (hidden)
+    expect(cfg.app.watermarkFooter).toBe("${appName} v${appVersion}"); // unset → default template
+  });
+
+  it("appTitle/watermarkFooter default to the version template when unset", async () => {
+    const cfg = await load({ appConfigFile: appToml(`[app]\nname = "Acme"\n`) });
+    expect(cfg.app.appTitle).toBe("${appName} v${appVersion}");
+    expect(cfg.app.watermarkFooter).toBe("${appName} v${appVersion}");
   });
 
   it("tolerates a missing config file", async () => {

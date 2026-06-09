@@ -53,6 +53,11 @@ export interface FlmuxLocalExtensionLoadEntry {
 export interface FlmuxRendererBootstrapConfig {
   mode: FlmuxRuntimeMode;
   appName: string;
+  appVersion: string;
+  /** Display templates (renderAppTemplate); watermarkHeader unset → hidden. */
+  appTitle: string;
+  watermarkHeader?: string;
+  watermarkFooter: string;
   appOrigin: string;
   projectDir: string;
   localExtensions: FlmuxLocalExtensionLoadEntry[];

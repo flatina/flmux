@@ -26,7 +26,7 @@ const SKIP_ROOT_FILES = new Set(["manifest.json", "package.json", "tsconfig.json
 /**
  * Build an extension directory into `<extensionDir>/dist/`.
  *
- * Contract ({@link internal notes}):
+ * Contract:
  * - Each entrypoint (renderer/cli/server) bundles to a single-file ESM.
  * - `@flmux/extension-api` stays external (renderer importmap resolves it;
  *   cli/server never import it at runtime — types only).

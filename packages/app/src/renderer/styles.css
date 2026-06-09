@@ -416,6 +416,10 @@ body.flmux-has-titlebar .flmux-titlebar-host {
   position: fixed;
   z-index: 1000;
   min-width: 160px;
+  /* Viewport cap so a long list scrolls instead of overflowing offscreen. */
+  max-width: calc(100vw - 8px);
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   padding: 4px;
@@ -456,33 +460,76 @@ body.flmux-has-titlebar .flmux-titlebar-host {
   border-color: var(--fl-widget-border);
 }
 
-/* Empty inner-dockview watermark (shown when a workspace has no panes). */
+/* Empty-workspace watermark: inline pane-kind picker (header / grid / footer). */
 .flmux-empty-watermark {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: 18px;
   width: 100%;
   height: 100%;
+  padding: 24px;
+  box-sizing: border-box;
   user-select: none;
 }
-.flmux-empty-watermark__title {
-  font-size: 13px;
-  color: var(--fl-description-foreground);
+.flmux-empty-watermark__header {
+  flex: 0 0 auto;
+  font-size: 15px;
+  color: var(--fl-foreground);
+  text-align: center;
+  white-space: pre-line;
 }
-.flmux-empty-watermark__add {
-  padding: 6px 14px;
-  border-radius: 6px;
+.flmux-empty-watermark__grid {
+  min-height: 0; /* scroll instead of pushing the footer out */
+  overflow-y: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  justify-content: center;
+  gap: 10px;
+  max-width: 720px;
+}
+.flmux-empty-watermark__kind {
+  width: 104px;
+  height: 84px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
   background: transparent;
   border: 1px solid var(--fl-widget-border);
   color: var(--fl-foreground);
   font-size: 12px;
+  text-align: center;
   cursor: pointer;
 }
-.flmux-empty-watermark__add:hover {
+.flmux-empty-watermark__kind:hover {
   background: var(--fl-button-hover-background);
-  color: var(--fl-foreground);
+}
+.flmux-empty-watermark__kind-icon {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.flmux-empty-watermark__kind-icon img {
+  max-width: 28px;
+  max-height: 28px;
+}
+.flmux-empty-watermark__empty {
+  font-size: 13px;
+  color: var(--fl-description-foreground);
+}
+.flmux-empty-watermark__footer {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--fl-description-foreground);
+  text-align: center;
 }
 
 .header-action-popup__item--active {
@@ -741,6 +788,9 @@ body.flmux-has-titlebar .flmux-titlebar-host {
   position: fixed;
   z-index: 1000;
   min-width: 160px;
+  max-width: calc(100vw - 8px);
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
   background: var(--fl-widget-background);
   border: 1px solid var(--fl-widget-border);
   border-radius: 4px;

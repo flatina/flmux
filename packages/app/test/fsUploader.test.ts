@@ -29,7 +29,6 @@ function fixture(): { uploader: FsUploader; rw: string; ro: string; staging: str
   const projectDir = join(root, "project");
   const ro = join(root, "ro");
   const rw = join(root, "rw");
-  // Per-user staging dir on the same volume as the binds (all under `root`).
   const staging = join(root, "staging", "user");
   mkdirSync(projectDir);
   mkdirSync(ro);
@@ -52,8 +51,6 @@ async function* bytes(...chunks: string[]): AsyncIterable<Uint8Array> {
 const MAX = 1024 * 1024;
 const HOUR_MS = 60 * 60 * 1000;
 let idSeq = 0;
-// Default upload options with a unique id per call. Multi-chunk tests pass a
-// shared `uploadId` so the chunks target the same staging file.
 function opts(o: Partial<Parameters<FsUploader["upload"]>[2]> = {}): Parameters<FsUploader["upload"]>[2] {
   return {
     uploadId: `testid${(idSeq++).toString().padStart(4, "0")}`,
@@ -83,7 +80,7 @@ describe("createFsUploader", () => {
     );
     expect(r).toEqual({ size: 11, committed: true });
     expect(readFileSync(join(rw, "a", "b", "c.txt"), "utf8")).toBe("hello world");
-    expect(stagingFiles(staging)).toHaveLength(0); // staging consumed by the commit rename
+    expect(stagingFiles(staging)).toHaveLength(0);
   });
 
   it("handles binary bytes", async () => {
@@ -126,7 +123,7 @@ describe("createFsUploader", () => {
       uploader.upload("/w/rw/big.txt", bytes("abcdef"), opts({ offset: 0, final: true, overwrite: false, maxBytes: 3 }))
     ).rejects.toMatchObject({ code: "INVALID_VALUE" });
     expect(existsSync(join(rw, "big.txt"))).toBe(false);
-    expect(stagingFiles(staging)).toHaveLength(0); // cap breach drops the staging file
+    expect(stagingFiles(staging)).toHaveLength(0);
   });
 
   it("validates leaf names — rejects NTFS ADS / reserved / traversal", async () => {
@@ -154,7 +151,6 @@ describe("createFsUploader", () => {
     const { uploader, rw } = fixture();
     const uploadId = "seqid0001";
     await uploader.upload("/w/rw/seq.txt", bytes("abc"), opts({ uploadId, offset: 0, final: false }));
-    // A mismatched offset is rejected (no arbitrary-offset writes); the staging file is kept.
     await expect(uploader.upload("/w/rw/seq.txt", bytes("X"), opts({ uploadId, offset: 99 }))).rejects.toMatchObject({
       code: "INVALID_VALUE"
     });
@@ -171,7 +167,7 @@ describe("createFsUploader", () => {
       size: 3,
       committed: false
     });
-    expect(stagingFiles(staging)).toHaveLength(1); // pending bytes live in staging, not the target
+    expect(stagingFiles(staging)).toHaveLength(1);
     expect(existsSync(join(rw, "chunked.txt"))).toBe(false);
     expect(
       await uploader.upload("/w/rw/chunked.txt", bytes("bbb"), opts({ uploadId, offset: 3, final: true }))
@@ -200,23 +196,19 @@ describe("createFsUploader", () => {
 
   it("isolates concurrent uploads to one path — distinct ids, no byte-mixing", async () => {
     const { uploader, rw } = fixture();
-    // Two interleaved uploads of /w/rw/race.txt with different ids: each staging
-    // file is independent, so the committed file is wholly one upload's bytes.
     await uploader.upload("/w/rw/race.txt", bytes("AAA"), opts({ uploadId: "raceida01", offset: 0, final: false }));
     await uploader.upload("/w/rw/race.txt", bytes("BBB"), opts({ uploadId: "raceidb02", offset: 0, final: false }));
     await uploader.upload("/w/rw/race.txt", bytes("aaa"), opts({ uploadId: "raceida01", offset: 3, final: true }));
-    // Second commit hits the now-existing leaf → no-clobber.
     await expect(
       uploader.upload("/w/rw/race.txt", bytes("bbb"), opts({ uploadId: "raceidb02", offset: 3, final: true }))
     ).rejects.toMatchObject({ code: "ALREADY_EXISTS" });
-    expect(readFileSync(join(rw, "race.txt"), "utf8")).toBe("AAAaaa"); // wholly upload A
+    expect(readFileSync(join(rw, "race.txt"), "utf8")).toBe("AAAaaa");
   });
 
   it("re-pins to the target path — a chunk for a different path can't reach the staged bytes", async () => {
     const { uploader } = fixture();
     const uploadId = "pinid0001";
     await uploader.upload("/w/rw/a.txt", bytes("aaa"), opts({ uploadId, offset: 0, final: false }));
-    // Same id, different target path → different staging file → no upload in progress.
     await expect(
       uploader.upload("/w/rw/b.txt", bytes("bbb"), opts({ uploadId, offset: 3, final: true }))
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
@@ -242,7 +234,7 @@ describe("createFsUploader", () => {
     const old = (Date.now() - 2 * HOUR_MS) / 1000;
     utimesSync(stale, old, old);
     await uploader.upload("/w/rw/fresh.txt", bytes("fresh"), opts());
-    expect(existsSync(stale)).toBe(false); // stale orphan swept on the new upload
+    expect(existsSync(stale)).toBe(false);
     expect(readFileSync(join(rw, "fresh.txt"), "utf8")).toBe("fresh");
   });
 

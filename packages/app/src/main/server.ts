@@ -96,7 +96,7 @@ function rateLimitUserKey(request: Request, authorizer: FlmuxWebModeAuthorizer):
 
 // ── Extension HTTP route surface (served at /api/ext/<extId><path>) ──
 // flmux owns the security envelope (auth, CORS, header filtering, error
-// scrubbing); the extension handler only computes a body. See internal docs.
+// scrubbing); the extension handler only computes a body.
 
 const EXT_ALLOWED_RESPONSE_HEADERS = new Set([
   "content-type",

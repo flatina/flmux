@@ -186,7 +186,7 @@ describe("stable user handle (invariant #4)", () => {
   it("create-user persists a random handle distinct from the name, looked up by handle", async () => {
     const dir = await authDir();
     await runTokensCli(["bootstrap", "--name", "admin", "--auth-dir", dir]);
-    await runAuthCli(["create-user", "--name", "dave", "--role", "user", "--auth-dir", dir]);
+    await runAuthCli(["create-user", "--name", "dave", "--role", "basic", "--auth-dir", dir]);
 
     const paths = resolveFlmuxAuthPaths(dir);
     const usersToml = readFileSync(paths.usersFile, "utf8");

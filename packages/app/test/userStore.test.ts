@@ -26,32 +26,32 @@ describe("userStore role presets + handle", () => {
     expect(u.dirsRw).toEqual(["{flmux_users}/u/{name}", "{flmux_users}/shared_skills", "{flmux_users}/shared_rw"]);
   });
 
-  it("user preset → no terminal, own+shared_rw (no skills)", () => {
-    const u = storeWith(`[[users]]\nname="x"\nrole="user"\nhandle="h3"\n`).getUser("x")!;
+  it("basic preset → no terminal, own+shared_rw (no skills)", () => {
+    const u = storeWith(`[[users]]\nname="x"\nrole="basic"\nhandle="h3"\n`).getUser("x")!;
     expect(u.denyPaneKinds).toEqual(["terminal"]);
     expect(u.dirsRw).toEqual(["{flmux_users}/u/{name}", "{flmux_users}/shared_rw"]);
   });
 
   it("explicit dirs_rw + fs_unconfined override preset", () => {
     const u = storeWith(
-      `[[users]]\nname="o"\nrole="user"\nhandle="h4"\nfs_unconfined=true\ndirs_rw=["{flmux_users}/shared_rw"]\n`
+      `[[users]]\nname="o"\nrole="basic"\nhandle="h4"\nfs_unconfined=true\ndirs_rw=["{flmux_users}/shared_rw"]\n`
     ).getUser("o")!;
     expect(u.fsUnconfined).toBe(true);
     expect(u.dirsRw).toEqual(["{flmux_users}/shared_rw"]);
   });
 
   it("unknown role without allow_pane_kinds → throws", () => {
-    expect(() => storeWith(`[[users]]\nname="z"\nrole="ghost"\n`).getUser("z")).toThrow(/dev\|tech\|user/);
+    expect(() => storeWith(`[[users]]\nname="z"\nrole="ghost"\n`).getUser("z")).toThrow(/dev\|tech\|basic/);
   });
 
   it("invalid handle charset → throws", () => {
-    expect(() => storeWith(`[[users]]\nname="b"\nrole="user"\nhandle="../etc"\n`).getUser("b")).toThrow(
+    expect(() => storeWith(`[[users]]\nname="b"\nrole="basic"\nhandle="../etc"\n`).getUser("b")).toThrow(
       /invalid handle/
     );
   });
 
   it("duplicate handle → throws", () => {
-    const toml = `[[users]]\nname="a"\nrole="user"\nhandle="dup"\n\n[[users]]\nname="b"\nrole="user"\nhandle="dup"\n`;
+    const toml = `[[users]]\nname="a"\nrole="basic"\nhandle="dup"\n\n[[users]]\nname="b"\nrole="basic"\nhandle="dup"\n`;
     expect(() => storeWith(toml).listUsers()).toThrow(/duplicate handle/);
   });
 });

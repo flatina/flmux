@@ -53,7 +53,7 @@ function createUser(paths: FlmuxAuthPaths, argv: string[]) {
       `auth create-user: --name must be a path-safe key (ASCII letters, digits, '.', '_', '-'; not '.'/'..') — it becomes the /w/u/<name> dir`
     );
   }
-  const role = readFlag(argv, "--role") ?? "user";
+  const role = readFlag(argv, "--role") ?? "basic";
   const allowPaneKindsArg = readFlag(argv, "--allow-pane-kinds");
   const displayNameArg = readFlag(argv, "--display-name");
   const displayName = displayNameArg ? validateDisplayName(displayNameArg) : generateDisplayName();
@@ -63,10 +63,10 @@ function createUser(paths: FlmuxAuthPaths, argv: string[]) {
     throw new Error(`User '${name}' already exists in ${paths.usersFile}`);
   }
 
-  // Preset roles (dev/tech/user) derive pane-kinds + fs from the role on load;
+  // Preset roles (dev/tech/basic) derive pane-kinds + fs from the role on load;
   // custom roles need an explicit pane-kind allowlist. fs fields default here
   // and the preset fills them in `parseUser` (writer omits defaults).
-  const presetRole = role === "dev" || role === "tech" || role === "user";
+  const presetRole = role === "dev" || role === "tech" || role === "basic";
   const allowPaneKinds: AllowPaneKinds = allowPaneKindsArg
     ? parseAllowPaneKinds(allowPaneKindsArg)
     : presetRole

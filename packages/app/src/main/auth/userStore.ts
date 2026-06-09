@@ -151,7 +151,7 @@ const ROLE_PRESETS: Record<string, RolePreset> = {
     dirsRw: [OWN_WORKSPACE, SHARED_SKILLS, SHARED_RW],
     dirsRo: []
   },
-  user: {
+  basic: {
     allowPaneKinds: "*",
     denyPaneKinds: ["terminal"],
     fsUnconfined: false,
@@ -193,7 +193,7 @@ function parseUser(raw: Record<string, unknown>): FlmuxUser {
   const allowPaneKinds =
     raw.allow_pane_kinds !== undefined ? parseAllowPaneKinds(raw.allow_pane_kinds, name) : preset?.allowPaneKinds;
   if (allowPaneKinds === undefined) {
-    throw new Error(`users.toml: user '${name}' needs allow_pane_kinds or a preset role (dev|tech|user)`);
+    throw new Error(`users.toml: user '${name}' needs allow_pane_kinds or a preset role (dev|tech|basic)`);
   }
   const denyPaneKinds =
     raw.deny_pane_kinds !== undefined

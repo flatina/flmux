@@ -63,6 +63,10 @@ export interface ExtensionServerSessionContext {
    * Same user scope the extension already holds via `shell`. */
   mintApiToken?(): { origin: string; token: string };
   shell: ShellClient;
+  /** Invoke another extension's inProcess CLI command in-process, scoped to this user.
+   * argv = canonical subcommand tokens first, then flags/positionals (citty-parsed; only the leaf runs).
+   * opts.signal reaches the command as ctx.signal — cancellation is cooperative. */
+  invokeExtensionCli(extId: string, argv: string[], opts?: { signal?: AbortSignal }): Promise<unknown>;
   serve<C extends CapDef<any, any>>(cap: C, impl: ImplOf<C>): void;
   bootstrap<C extends CapDef<any, any>>(cap: C): Promise<ClientOf<C>>;
   onDispose(fn: () => void): void;

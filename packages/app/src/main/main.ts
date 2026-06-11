@@ -36,6 +36,7 @@ import { generateToken } from "./auth/tokenFormat";
 import type { ExtensionFsBind, ExtensionFsPolicy } from "@flmux/extension-api";
 import { loadFlmuxBootConfig } from "./flmuxConfig";
 import { createExtensionConfigLoader } from "./extConfig";
+import { invokeInProcessExtensionCli, isInProcessCliEntitled } from "../cliExtensions";
 import { resolveFlmuxRuntimeMode, resolveFlmuxDevMode, resolveFlmuxHiddenWindow } from "./runtimeMode";
 import { resolveFlmuxRootDir, resolveFlmuxPaths, resolveInstallLayout } from "./flmuxPaths";
 import { ensureFlmuxCliShim, ensureExtensionCliShims } from "./cliShim";
@@ -449,6 +450,8 @@ async function attachExtensionsForSession(opts: {
         fsPolicy,
         mintApiToken,
         shell,
+        invokeExtensionCli: (targetExtId, argv, cliOpts) =>
+          runInProcessExtensionCli(opts.sessionId, opts.userId, targetExtId, argv, cliOpts?.signal),
         serve: <C extends CapDef<any, any>>(cap: C, impl: ImplOf<C>) => {
           state.serveHandles.push(opts.conn.serve(cap, impl));
         },
@@ -783,6 +786,34 @@ function userCanUseExtension(userId: string, extId: string): boolean {
   const kinds = ext?.runtimeManifest.panes?.map((p) => p.kind) ?? [];
   if (kinds.length === 0) return true;
   return kinds.some((k) => isPaneKindAllowedForUser(userId, k));
+}
+
+// Stricter than userCanUseExtension: a pane-less ext has no role signal → deny.
+function canInvokeExtensionCliInProcess(userId: string, extId: string): boolean {
+  if (!webModeAuthorizer) return true; // desktop: single trusted user
+  const ext = localExtensions.find((e) => e.id === extId);
+  const kinds = ext?.runtimeManifest.panes?.map((p) => p.kind) ?? [];
+  return isInProcessCliEntitled(kinds, (k) => isPaneKindAllowedForUser(userId, k));
+}
+
+function runInProcessExtensionCli(
+  callerSessionId: string,
+  callerUserId: string,
+  extId: string,
+  argv: string[],
+  signal?: AbortSignal
+): Promise<unknown> {
+  return invokeInProcessExtensionCli(
+    {
+      canInvoke: canInvokeExtensionCliInProcess,
+      findExtension: (id) => localExtensions.find((e) => e.id === id) ?? null,
+      resolveDataDir: (id) => resolveExtensionDataDir(id) ?? null,
+      createShell: (sid) => createExtensionShellClient(null, sid),
+      createConfigLoader: (id, dataDir, registerDispose) =>
+        createExtensionConfigLoader({ extId: id, dataDir, registerDispose })
+    },
+    { callerSessionId, callerUserId, extId, argv, signal }
+  );
 }
 
 // Broadcast ACL gate: deliver only if user has read on the event's mapped path.

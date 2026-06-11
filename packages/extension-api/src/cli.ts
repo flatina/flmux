@@ -13,11 +13,19 @@ import type {
 // out of the dep graph entirely.
 export { defineCommand } from "citty";
 export type { ArgsDef, CommandDef, SubCommandsDef } from "citty";
+export type { ShellClient } from "./shell";
 
 /** Read-only context flmux injects into every extension CLI subcommand. */
 export interface FlmuxExtensionCliContext {
   /** Per-extension data dir — `<rootDir>/.flmux/ext/<extId>/`, mkdir'd. */
   readonly dataDir: string;
+  /** flmux access — use this, not createFlmuxClient. In-process: implicit-current paths
+   * (`/panes/current`, `/status/workspace`, …) resolve to the calling session's slot. */
+  readonly shell: ShellClient;
+  /** Calling session id — in-process only (subprocess has no session). Use to key per-session state. */
+  readonly sessionId?: string;
+  /** Cancellation, cooperative: fires when the in-process caller aborts. Subprocess: never fires (cancel = process kill). */
+  readonly signal: AbortSignal;
   /** Same contract as the server entry's `onInit` (see config.ts). The store
    * lives for this command invocation only — flmux disposes it after `run`,
    * so `watch` has no effect worth using here. */
@@ -31,10 +39,14 @@ export const FLMUX_EXTENSION_COMMAND = Symbol.for("flmux.extensionCommand");
 
 export interface FlmuxExtensionCommand<A extends ArgsDef = ArgsDef> {
   readonly [FLMUX_EXTENSION_COMMAND]: true;
+  /** Opt in to in-process invocation. run() must use only ctx.shell, return data (no process.exit), and be reentrant. */
+  readonly inProcess?: boolean;
   readonly meta?: CommandDef<A>["meta"];
   readonly args?: A;
   readonly subCommands?: Record<string, FlmuxExtensionCommand>;
   run(parsedArgs: ParsedArgs<A>, ctx: FlmuxExtensionCliContext, rawArgs: string[]): unknown | Promise<unknown>;
+  /** Optional subprocess-only renderer: flmux streams its lines to stdout after run(); in-process callers get the raw return. */
+  readonly format?: (result: unknown, parsedArgs: ParsedArgs<A>) => string | Iterable<string> | AsyncIterable<string>;
 }
 
 /**

@@ -15,7 +15,11 @@ export function readCookie(rawCookieHeader: string | null, cookieName: string): 
   for (const entry of rawCookieHeader.split(";")) {
     const [rawName, ...rawValue] = entry.trim().split("=");
     if (rawName !== cookieName) continue;
-    return decodeURIComponent(rawValue.join("="));
+    try {
+      return decodeURIComponent(rawValue.join("="));
+    } catch {
+      return null; // malformed %-encoding → treat as absent (callers must not throw)
+    }
   }
   return null;
 }

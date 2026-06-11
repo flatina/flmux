@@ -90,6 +90,11 @@ function rateLimitKey(
   return socketIP;
 }
 
+// Routes an unauthenticated user must reach to get a session.
+function isLoginSurface(pathname: string): boolean {
+  return pathname === "/login" || pathname === "/enroll" || pathname.startsWith("/api/auth/");
+}
+
 // Per-user (not per-IP) so co-located clients behind one NAT (meeting room)
 // don't share — and drain — a single bucket. null → caller falls back to IP.
 function rateLimitUserKey(request: Request, authorizer: FlmuxWebModeAuthorizer): string | null {
@@ -220,7 +225,7 @@ export function startFlmuxServer(options: {
   isExtensionEnabled?(extId: string): boolean;
   /** Web-mode per-user entitlement for an extension (mirrors cap serving). */
   canUseExtension?(userId: string, extId: string): boolean;
-  rateLimit?: { max: number; windowMs: number };
+  rateLimit?: { max: number; windowMs: number; userMax: number };
   /** WS keepalive: periodic server→client ping keeps idle connections alive under
    * a reverse proxy's idle timeout; idleTimeout is the dead-peer backstop. */
   wsKeepalive?: { pingIntervalMs: number; idleTimeoutSeconds: number };
@@ -236,7 +241,7 @@ export function startFlmuxServer(options: {
 }): FlmuxServerHandle {
   const hostname = "127.0.0.1";
   const appName = options.appName ?? "flmux";
-  const rateLimitConfig = options.rateLimit ?? { max: 600, windowMs: 60_000 };
+  const rateLimitConfig = options.rateLimit ?? { max: 600, windowMs: 60_000, userMax: 6000 };
   const wsKeepalive = options.wsKeepalive ?? { pingIntervalMs: 25_000, idleTimeoutSeconds: 120 };
   const trustedProxies = parseTrustedProxies(options.trustedProxies);
   const app = new Elysia({
@@ -248,17 +253,22 @@ export function startFlmuxServer(options: {
       rateLimit({
         scoping: "global",
         duration: rateLimitConfig.windowMs,
-        max: rateLimitConfig.max,
+        max: (key) => (key.startsWith("u:") ? rateLimitConfig.userMax : rateLimitConfig.max),
         generator: (request, server) => {
           const userKey = options.authorizer ? rateLimitUserKey(request, options.authorizer) : null;
-          return userKey ?? rateLimitKey(request, server, trustedProxies);
+          if (userKey) return userKey;
+          const ip = rateLimitKey(request, server, trustedProxies);
+          if (!ip) return ip; // "" → skipped
+          // Separate bucket so a general unauth flood can't lock out same-NAT login.
+          return isLoginSurface(new URL(request.url).pathname) ? `auth:${ip}` : `ip:${ip}`;
         },
-        // Exempt the upload route ONLY for authenticated requests (user key
-        // `u:<name>`): a folder upload is many chunk requests that would trip the
-        // shared limiter, but it's per-file byte-capped. Unauthenticated upload
-        // requests keep their IP key and stay limited (no pre-auth flood).
-        skip: (request, key) =>
-          !options.authorizer || !key || (key.startsWith("u:") && new URL(request.url).pathname === "/api/fs/upload")
+        // /health exempt (liveness); authed upload exempt (per-file byte-capped, many chunks).
+        skip: (request, key) => {
+          if (!options.authorizer || !key) return true;
+          const pathname = new URL(request.url).pathname;
+          if (pathname === "/health") return true;
+          return key.startsWith("u:") && pathname === "/api/fs/upload";
+        }
       })
     )
     .get("/health", () => ({ ok: true }))

@@ -14,7 +14,7 @@ export interface FlmuxBootConfig {
     port: number | undefined; // undefined → OS picks
     portSource: "cli" | "env" | "config" | "default";
     publicOrigin: string | undefined;
-    rateLimit: { max: number; windowMs: number };
+    rateLimit: { max: number; windowMs: number; userMax: number };
     ws: { pingIntervalMs: number; idleTimeoutSeconds: number };
     trustedProxies: string | undefined; // comma list; undefined → loopback
   };
@@ -46,6 +46,7 @@ export async function loadFlmuxBootConfig(options: {
         FLMUX_PORT: "server.port",
         FLMUX_PUBLIC_ORIGIN: "server.publicOrigin",
         FLMUX_RATELIMIT_MAX: "server.rateLimit.max",
+        FLMUX_RATELIMIT_USER_MAX: "server.rateLimit.userMax",
         FLMUX_RATELIMIT_WINDOW_MS: "server.rateLimit.windowMs",
         FLMUX_WS_PING_INTERVAL_MS: "server.ws.pingIntervalMs",
         FLMUX_WS_IDLE_TIMEOUT_SECONDS: "server.ws.idleTimeoutSeconds",
@@ -100,6 +101,8 @@ function normalize(raw: Record<string, unknown>): FlmuxBootConfig {
       publicOrigin: nonEmpty(server.publicOrigin),
       rateLimit: {
         max: positive(rateLimit.max, "FLMUX_RATELIMIT_MAX") ?? 600,
+        // Large: one agent action fans out to many path RPCs, so a tight cap trips legit use.
+        userMax: positive(rateLimit.userMax, "FLMUX_RATELIMIT_USER_MAX") ?? 6000,
         windowMs: positive(rateLimit.windowMs, "FLMUX_RATELIMIT_WINDOW_MS") ?? 60_000
       },
       ws: {

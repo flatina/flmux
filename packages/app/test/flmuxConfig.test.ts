@@ -34,7 +34,7 @@ describe("loadFlmuxBootConfig", () => {
     const cfg = await load({});
     expect(cfg.server.port).toBeUndefined();
     expect(cfg.server.portSource).toBe("default");
-    expect(cfg.server.rateLimit).toEqual({ max: 600, windowMs: 60_000 });
+    expect(cfg.server.rateLimit).toEqual({ max: 600, windowMs: 60_000, userMax: 6000 });
     expect(cfg.server.ws).toEqual({ pingIntervalMs: 25_000, idleTimeoutSeconds: 120 });
     expect(cfg.limits).toEqual({
       maxSessionsPerUser: 25,
@@ -91,8 +91,11 @@ describe("loadFlmuxBootConfig", () => {
   });
 
   it("numeric env knobs: empty → default, zero/garbage throw", async () => {
-    const cfg = await load({ env: { FLMUX_RATELIMIT_MAX: "900", FLMUX_MAX_SESSIONS_PER_USER: "" } });
+    const cfg = await load({
+      env: { FLMUX_RATELIMIT_MAX: "900", FLMUX_RATELIMIT_USER_MAX: "12000", FLMUX_MAX_SESSIONS_PER_USER: "" }
+    });
     expect(cfg.server.rateLimit.max).toBe(900);
+    expect(cfg.server.rateLimit.userMax).toBe(12000);
     expect(cfg.limits.maxSessionsPerUser).toBe(25);
     await expect(load({ env: { FLMUX_RATELIMIT_MAX: "lots" } })).rejects.toThrow(/FLMUX_RATELIMIT_MAX/);
     await expect(load({ env: { FLMUX_MAX_SESSIONS_PER_USER: "0" } })).rejects.toThrow(/FLMUX_MAX_SESSIONS_PER_USER/);

@@ -34,6 +34,8 @@ export interface ExplorerControlOptions {
     files: readonly UploadFile[],
     ctx: { report(done: number, total: number): void }
   ): Promise<void>;
+  /** Download `virtual` via the browser (file as-is, folder as zip). */
+  onDownload?(virtual: string): void;
   initialExpanded?: readonly string[];
   className?: string;
   /** Header label (signed-in user / project name). */
@@ -318,7 +320,8 @@ export function mountExplorerControl(container: HTMLElement, options: ExplorerCo
     copyPath: (path: string) => {
       navigator.clipboard?.writeText(path).catch(() => showBanner("Copy to clipboard failed"));
     },
-    upload: (target: string | null) => void pickAndUpload(target)
+    upload: (target: string | null) => void pickAndUpload(target),
+    download: (path: string) => options.onDownload?.(path)
   };
 
   const rootNode: TreeNode = {
@@ -767,7 +770,16 @@ export function mountExplorerControl(container: HTMLElement, options: ExplorerCo
       { label: "Cut", disabled: !hasTarget, run: () => target && actions.cut(target) },
       { label: "Paste", disabled: !clipboard, run: () => actions.paste(target) },
       "sep",
-      { label: "Copy Path", disabled: !hasTarget, run: () => target && actions.copyPath(target) }
+      { label: "Copy Path", disabled: !hasTarget, run: () => target && actions.copyPath(target) },
+      ...(options.onDownload
+        ? [
+            {
+              label: node?.entry.kind === "dir" ? "Download as .tar.gz" : "Download",
+              disabled: !hasTarget,
+              run: () => target && actions.download(target)
+            }
+          ]
+        : [])
     ];
 
     const popup = document.createElement("div");

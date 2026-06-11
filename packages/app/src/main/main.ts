@@ -32,6 +32,7 @@ import type { FlmuxUser as FlmuxUserImport } from "./auth/userStore";
 import { eventToReadPath } from "./auth/eventAclPath";
 import { createFsPolicyResolver } from "./auth/fsPolicy";
 import { createFsPathMapper, createFsUploader } from "./fsBackend";
+import { createFsDownloader } from "./fsDownload";
 import { generateToken } from "./auth/tokenFormat";
 import type { ExtensionFsBind, ExtensionFsPolicy } from "@flmux/extension-api";
 import { loadFlmuxBootConfig } from "./flmuxConfig";
@@ -1113,6 +1114,13 @@ const server = startFlmuxServer({
       }
     : undefined,
   maxUploadBytes: bootConfig.limits.maxUploadBytes,
+  resolveFsDownloader: webModeAuthorizer
+    ? (context) => {
+        const user = context ? webModeAuthorizer.getUser(context.user.name) : null;
+        if (!user) return null;
+        return createFsDownloader({ policy: fsPolicyResolver.resolve(user), projectDir });
+      }
+    : undefined,
   saveSession: desktopAuthority
     ? (_context, layouts) => desktopAuthority.persistSession(layouts)
     : userAuthorityRegistry

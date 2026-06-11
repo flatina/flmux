@@ -39,7 +39,8 @@ function createBuiltinPaneDescriptors(deps: BuiltinPaneDescriptorDependencies): 
         new ExplorerPaneRenderer({
           shellModel: runtime.shellModel,
           userLabel: runtime.userLabel,
-          canUpload: runtime.canUpload
+          canUpload: runtime.canUpload,
+          canDownload: runtime.canDownload
         }),
       lifecycle: {
         createParams: ({ input }) => explorerParams(input.params),

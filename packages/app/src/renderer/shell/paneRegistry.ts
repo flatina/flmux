@@ -23,6 +23,8 @@ export interface PaneRendererRuntimeContext {
   userLabel: string;
   /** Web mode → folder upload affordance is available (`/api/fs/upload`). */
   canUpload: boolean;
+  /** Web mode → file/folder download affordance is available (`/api/fs/download`). */
+  canDownload: boolean;
 }
 
 export interface PaneDescriptor<TStateRecord extends PaneStateRecord = PaneStateRecord> extends PaneSpec<TStateRecord> {

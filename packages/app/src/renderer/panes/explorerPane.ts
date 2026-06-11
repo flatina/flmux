@@ -8,6 +8,8 @@ interface ExplorerPaneRendererDependencies {
   /** Folder upload is web-only (server-side `/api/fs/upload`); desktop writes
    * the local fs directly, so the upload affordance is hidden there. */
   canUpload?: boolean;
+  /** Download is web-only for the same reason (`/api/fs/download`). */
+  canDownload?: boolean;
 }
 
 type ExplorerPaneParams = {
@@ -81,7 +83,18 @@ export class ExplorerPaneRenderer implements IContentRenderer {
       onDelete: (path, isDir) => this.fsCall("/fs/delete", { path, recursive: isDir }),
       onPaste: ({ from, toParent, name, mode }) =>
         this.fsCall(mode === "copy" ? "/fs/copy" : "/fs/rename", { from, to: joinVirtual(toParent, name) }),
-      onUpload: this.deps.canUpload ? (parent, files, ctx) => this.uploadFiles(parent, files, ctx) : undefined
+      onUpload: this.deps.canUpload ? (parent, files, ctx) => this.uploadFiles(parent, files, ctx) : undefined,
+      // Same-origin GET → cookie auth; the browser owns the download UX.
+      onDownload: this.deps.canDownload
+        ? (path) => {
+            const anchor = document.createElement("a");
+            anchor.href = `/api/fs/download?path=${encodeURIComponent(path)}`;
+            anchor.download = "";
+            document.body.append(anchor);
+            anchor.click();
+            anchor.remove();
+          }
+        : undefined
     });
   }
 

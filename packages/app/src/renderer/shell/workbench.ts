@@ -1046,7 +1046,8 @@ export class FlmuxWorkbench {
           });
         },
         userLabel: this.explorerUserLabel(),
-        canUpload: this.config.mode === "web"
+        canUpload: this.config.mode === "web",
+        canDownload: this.config.mode === "web"
       }
     });
   }

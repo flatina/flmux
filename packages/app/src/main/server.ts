@@ -17,6 +17,7 @@ import type { DiscoveredLocalExtension } from "./localExtensions";
 import type { ResolvedExtHttpRoute } from "./extHttpRoutes";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
 import type { FsUploader } from "./fsBackend";
+import { attachmentDisposition, tarGzDirStream, type FsDownloader } from "./fsDownload";
 import { ModelPathError } from "@flmux/core/shell";
 import { DEV_AUTH_TOKEN_ID, type FlmuxAuthorizationContext, type FlmuxWebModeAuthorizer } from "./webModeAuth";
 import type { WebauthnAuthService } from "./auth/webauthnService";
@@ -223,6 +224,8 @@ export function startFlmuxServer(options: {
   resolveFsUploader?(context: FlmuxAuthorizationContext | null): FsUploader | null;
   /** Per-file upload size limit (bytes). */
   maxUploadBytes?: number;
+  /** Per-user read resolver for `/api/fs/download` (web only). Reuses the `/fs` read boundary. */
+  resolveFsDownloader?(context: FlmuxAuthorizationContext | null): FsDownloader | null;
 }): FlmuxServerHandle {
   const hostname = "127.0.0.1";
   const appName = options.appName ?? "flmux";
@@ -430,6 +433,51 @@ export function startFlmuxServer(options: {
         );
         return { ok: true, result };
       } catch (error) {
+        return uploadError(set, error);
+      }
+    })
+    // File / folder download (web). Mirror of upload: same auth + `/fs/read`
+    // ACL gate + bind containment (FsDownloader reuses the `/fs` path mapper).
+    // Folders stream as gzipped tar via the system `tar` — no temp file, no
+    // full buffering (native walk + compression piped straight to the socket).
+    .get("/api/fs/download", ({ request, set }) => {
+      const auth = authorizeRequest(request, set, options.authorizer);
+      if (!auth.ok) return "Unauthorized";
+      const downloader = options.resolveFsDownloader?.(auth.context) ?? null;
+      if (!downloader) {
+        set.status = 404;
+        return "Not Found";
+      }
+      const path = new URL(request.url).searchParams.get("path") ?? "";
+      if (!path.startsWith("/")) {
+        set.status = 400;
+        return { ok: false, error: "path must be a '/'-rooted virtual path" };
+      }
+      try {
+        assertPathAllowed("/fs/read", "call", auth.context, options.authorizer);
+        const target = downloader.open(path);
+        const baseHeaders = { "x-content-type-options": "nosniff" };
+        if (target.kind === "file") {
+          return new Response(Bun.file(target.realPath), {
+            headers: {
+              ...baseHeaders,
+              "content-type": "application/octet-stream",
+              "content-disposition": attachmentDisposition(target.name)
+            }
+          });
+        }
+        return new Response(tarGzDirStream(target.realPath), {
+          headers: {
+            ...baseHeaders,
+            "content-type": "application/gzip",
+            "content-disposition": attachmentDisposition(`${target.name}.tar.gz`)
+          }
+        });
+      } catch (error) {
+        if (error instanceof FlmuxAuthzError) {
+          set.status = error.status;
+          return { ok: false, error: error.message };
+        }
         return uploadError(set, error);
       }
     })

@@ -12,6 +12,7 @@ import type {
 } from "../shared/rendererBridge";
 import paneSvg from "./assets/pane.svg" with { type: "text" };
 import folderSvg from "./assets/folder.svg" with { type: "text" };
+import fileSvg from "./assets/file.svg" with { type: "text" };
 import type { ExtensionHttpRequest, ExtensionHttpResponse, ExtensionHttpReturn } from "@flmux/extension-api";
 import type { DiscoveredLocalExtension } from "./localExtensions";
 import type { ResolvedExtHttpRoute } from "./extHttpRoutes";
@@ -23,6 +24,12 @@ import { DEV_AUTH_TOKEN_ID, type FlmuxAuthorizationContext, type FlmuxWebModeAut
 import type { WebauthnAuthService } from "./auth/webauthnService";
 import { renderLoginPage, renderEnrollPage } from "./auth/authPages";
 import { readCookie } from "./auth/cookies";
+
+const SHARED_SVG_ASSETS: Record<string, string> = {
+  "pane.svg": paneSvg,
+  "folder.svg": folderSvg,
+  "file.svg": fileSvg
+};
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -307,23 +314,19 @@ export function startFlmuxServer(options: {
         return { displayName: updated.displayName };
       });
     })
-    // Shared static assets at /__flmux/assets/<file>. One route per asset
-    // for now — keeps the surface trivial; if/when shared assets need
-    // theme overlays (e.g. /__flmux/assets/theme/<file>), pivot to a
-    // small dispatcher.
-    .get("/__flmux/assets/pane.svg", ({ request, set }) => {
+    // Shared static SVG assets at /__flmux/assets/<file>. Single-segment param
+    // (theme overlays under /__flmux/assets/theme/<file> won't match).
+    .get("/__flmux/assets/:name", ({ request, params, set }) => {
       const auth = authorizeRequest(request, set, options.authorizer);
       if (!auth.ok) {
         return "Unauthorized";
       }
-      return new Response(paneSvg, { headers: { "content-type": "image/svg+xml" } });
-    })
-    .get("/__flmux/assets/folder.svg", ({ request, set }) => {
-      const auth = authorizeRequest(request, set, options.authorizer);
-      if (!auth.ok) {
-        return "Unauthorized";
+      const svg = SHARED_SVG_ASSETS[params.name];
+      if (!svg) {
+        set.status = 404;
+        return "Not Found";
       }
-      return new Response(folderSvg, { headers: { "content-type": "image/svg+xml" } });
+      return new Response(svg, { headers: { "content-type": "image/svg+xml" } });
     })
     .get("/__flmux/ext/:extensionId/:version/manifest.json", ({ request, params, set }) => {
       const auth = authorizeRequest(request, set, options.authorizer);

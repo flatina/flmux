@@ -5,11 +5,15 @@ import { json } from "@codemirror/lang-json";
 import { html } from "@codemirror/lang-html";
 import { css } from "@codemirror/lang-css";
 import { python } from "@codemirror/lang-python";
+import { indentUnit } from "@codemirror/language";
 import { Compartment, EditorState, type Extension, type TransactionSpec } from "@codemirror/state";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { EditorView, keymap } from "@codemirror/view";
 import { basicSetup } from "codemirror";
+import type { PaneHeaderMenuItem } from "@flmux/extension-api";
 import type { ShellModelAPI } from "@flmux/core/shell/types";
+import { clearPaneHeaderMenu, setPaneHeaderMenu } from "../external/paneTabMenuRegistry";
+import { EDITOR_OPTIONS_EVENT, type EditorOptions, loadEditorOptions, saveEditorOptions } from "./editorOptions";
 
 interface TextEditorPaneRendererDependencies {
   shellModel: ShellModelAPI;
@@ -133,16 +137,19 @@ export class TextEditorPaneRenderer implements IContentRenderer {
   private saving = false;
   private readonly createTextEditorView: TextEditorPaneViewFactory;
   private readonly themeCompartment = new Compartment();
+  private readonly optionsCompartment = new Compartment();
   private readonly onThemeChange = () => {
     this.view?.dispatch({
       effects: this.themeCompartment.reconfigure(activeThemeExtension())
     });
   };
+  private readonly onOptionsChange = () => this.applyEditorOptions();
 
   constructor(private readonly deps: TextEditorPaneRendererDependencies) {
     this.element.className = "text-editor-panel";
     this.createTextEditorView = deps.textEditorViewFactory ?? ((options) => new EditorView(options));
     document.addEventListener("flmux-theme-change", this.onThemeChange);
+    document.addEventListener(EDITOR_OPTIONS_EVENT, this.onOptionsChange);
   }
 
   init(params: GroupPanelPartInitParameters) {
@@ -167,6 +174,8 @@ export class TextEditorPaneRenderer implements IContentRenderer {
     this.disposed = true;
     this.loadToken += 1;
     document.removeEventListener("flmux-theme-change", this.onThemeChange);
+    document.removeEventListener(EDITOR_OPTIONS_EVENT, this.onOptionsChange);
+    clearPaneHeaderMenu(this.paneId);
     this.destroyView();
     this.element.replaceChildren();
     this.banner = undefined;
@@ -179,6 +188,8 @@ export class TextEditorPaneRenderer implements IContentRenderer {
     this.loadToken += 1;
     const token = this.loadToken;
     this.destroyView();
+    // Options menu belongs to a live editor only — placeholder/error panes drop it.
+    clearPaneHeaderMenu(this.paneId);
     this.element.replaceChildren();
 
     if (!path) {
@@ -239,6 +250,7 @@ export class TextEditorPaneRenderer implements IContentRenderer {
         extensions: textEditorExtensions(
           path,
           this.themeCompartment,
+          this.optionsCompartment,
           () => this.onDocChange(),
           () => {
             void this.save();
@@ -248,6 +260,39 @@ export class TextEditorPaneRenderer implements IContentRenderer {
       }),
       parent: this.body
     });
+    this.installOptionsMenu(loadEditorOptions());
+  }
+
+  private applyEditorOptions() {
+    const options = loadEditorOptions();
+    this.view?.dispatch({ effects: this.optionsCompartment.reconfigure(editorOptionExtensions(options)) });
+    if (this.view) this.installOptionsMenu(options);
+  }
+
+  private installOptionsMenu(options: EditorOptions) {
+    const set = (patch: Partial<EditorOptions>) => saveEditorOptions({ ...loadEditorOptions(), ...patch });
+    const mark = (on: boolean) => (on ? "✓" : "");
+    const items: PaneHeaderMenuItem[] = [
+      {
+        id: "wrap",
+        label: "Word Wrap",
+        icon: mark(options.wordWrap),
+        onClick: () => set({ wordWrap: !options.wordWrap })
+      },
+      {
+        id: "gutter",
+        label: "Line Numbers",
+        icon: mark(options.lineNumbers),
+        onClick: () => set({ lineNumbers: !options.lineNumbers })
+      },
+      ...([2, 4, 8] as const).map((n) => ({
+        id: `tab-${n}`,
+        label: `Tab Size ${n}`,
+        icon: mark(options.tabSize === n),
+        onClick: () => set({ tabSize: n })
+      }))
+    ];
+    setPaneHeaderMenu(this.paneId, { items });
   }
 
   private onDocChange() {
@@ -364,6 +409,7 @@ export class TextEditorPaneRenderer implements IContentRenderer {
 function textEditorExtensions(
   path: string,
   themeCompartment: Compartment,
+  optionsCompartment: Compartment,
   onChange: () => void,
   onSave: () => boolean
 ): Extension[] {
@@ -375,8 +421,18 @@ function textEditorExtensions(
       if (update.docChanged) onChange();
     }),
     themeCompartment.of(activeThemeExtension()),
+    optionsCompartment.of(editorOptionExtensions(loadEditorOptions())),
     THEME_FROM_VARS,
     ...(language ? [language] : [])
+  ];
+}
+
+function editorOptionExtensions(options: EditorOptions): Extension[] {
+  return [
+    options.wordWrap ? EditorView.lineWrapping : [],
+    options.lineNumbers ? [] : EditorView.theme({ ".cm-gutters": { display: "none" } }),
+    EditorState.tabSize.of(options.tabSize),
+    indentUnit.of(" ".repeat(options.tabSize))
   ];
 }
 

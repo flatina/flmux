@@ -54,6 +54,7 @@ function createBuiltinPaneDescriptors(deps: BuiltinPaneDescriptorDependencies): 
     {
       kind: "textEditor",
       defaultTitle: "Text Editor",
+      iconUrl: "/__flmux/assets/file.svg",
       newMenu: false,
       createRenderer: ({ runtime }) =>
         new TextEditorPaneRenderer({

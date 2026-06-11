@@ -157,6 +157,11 @@ function isExpired(token: FlmuxIssuedToken): boolean {
   return Number.isNaN(expiryMs) || expiryMs <= Date.now();
 }
 
+/** Synthetic tokenId for `--dev-auth-as` contexts — never present in the token
+ * store, so it must not enter the live-revoke registry (the store-watch sweep
+ * closes any tracked socket whose tokenId it can't resolve). */
+export const DEV_AUTH_TOKEN_ID = "dev-auth-as";
+
 function resolveDevContext(userStore: UserStore, name: string): FlmuxAuthorizationContext {
   const existing = userStore.getUser(name);
   const user: FlmuxUser = existing ?? {
@@ -171,5 +176,5 @@ function resolveDevContext(userStore: UserStore, name: string): FlmuxAuthorizati
     dirsRw: [],
     dirsRo: []
   };
-  return { user, tokenId: "dev-auth-as" };
+  return { user, tokenId: DEV_AUTH_TOKEN_ID };
 }

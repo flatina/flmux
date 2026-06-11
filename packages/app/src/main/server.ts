@@ -18,7 +18,7 @@ import type { ResolvedExtHttpRoute } from "./extHttpRoutes";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
 import type { FsUploader } from "./fsBackend";
 import { ModelPathError } from "@flmux/core/shell";
-import type { FlmuxAuthorizationContext, FlmuxWebModeAuthorizer } from "./webModeAuth";
+import { DEV_AUTH_TOKEN_ID, type FlmuxAuthorizationContext, type FlmuxWebModeAuthorizer } from "./webModeAuth";
 import type { WebauthnAuthService } from "./auth/webauthnService";
 import { renderLoginPage, renderEnrollPage } from "./auth/authPages";
 import { readCookie } from "./auth/cookies";
@@ -540,9 +540,11 @@ export function startFlmuxServer(options: {
         });
         wsToConn.set(raw, conn);
         // Track by session tokenId so logout / external revoke can force-close
-        // this live socket. Machine bearer / dev-auth-as tokenIds are tracked
-        // too but simply never targeted by logout.
-        if (options.webauthn && auth.context?.tokenId) {
+        // this live socket. The synthetic dev-auth tokenId must NOT be tracked:
+        // it's never in the token store, so the store-watch sweep (any
+        // users.tokens.toml write, e.g. an extension's mintApiToken) would
+        // treat it as revoked and kill the socket.
+        if (options.webauthn && auth.context?.tokenId && auth.context.tokenId !== DEV_AUTH_TOKEN_ID) {
           wsToUntrack.set(
             raw,
             options.webauthn.registerRpcConnection(auth.context.tokenId, () => {

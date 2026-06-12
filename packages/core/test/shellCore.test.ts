@@ -61,7 +61,7 @@ function recordingTerminalBackend(): RecordingBackend {
   };
 }
 
-function buildShellCore(extraSpecs: PaneSpec[] = []) {
+function buildShellCore(extraSpecs: PaneSpec[] = [], options: { maxPanes?: number } = {}) {
   const paneRegistry = new PaneRegistry<PaneSpec>();
   paneRegistry.register(createPlaceholderPaneSpec());
   for (const spec of [...builtinSpecs(), ...extraSpecs]) {
@@ -72,7 +72,8 @@ function buildShellCore(extraSpecs: PaneSpec[] = []) {
     paneRegistry,
     runtimeLabel: "test",
     projectDir: PROJECT_DIR,
-    terminalBackend: backend
+    terminalBackend: backend,
+    ...options
   });
   core.setAppOrigin(ORIGIN);
   core.initialize();
@@ -153,10 +154,10 @@ describe("ShellCore", () => {
     expect(backend.killCalls.map((call) => call.runtimeId).sort()).toEqual(["rt_1", "rt_2"]);
   });
 
-  it("singletonScope=workspace activates the existing pane instead of creating a duplicate", async () => {
+  it("identity scope=workspace (singleton) activates the existing pane instead of creating a duplicate", async () => {
     const singletonSpec: PaneSpec = {
       kind: "myext.tag-tree",
-      singletonScope: "workspace",
+      identity: { scope: "workspace" },
       lifecycle: {
         createRecord: () => ({ kind: "myext.tag-tree" }),
         createSnapshot: ({ paneId, title }) => ({ id: paneId, kind: "myext.tag-tree", title }),
@@ -180,10 +181,10 @@ describe("ShellCore", () => {
     expect(events.filter((e) => e.topic === "pane.added")).toHaveLength(1);
   });
 
-  it("singletonScope=app — same workspace activates; cross-workspace returns snapshot without switching", async () => {
+  it("identity scope=app (singleton) — same workspace activates; cross-workspace returns snapshot without switching", async () => {
     const appSingletonSpec: PaneSpec = {
       kind: "myext.agent",
-      singletonScope: "app",
+      identity: { scope: "app" },
       lifecycle: {
         createRecord: () => ({ kind: "myext.agent" }),
         createSnapshot: ({ paneId, title }) => ({ id: paneId, kind: "myext.agent", title }),
@@ -214,6 +215,112 @@ describe("ShellCore", () => {
     core.setActiveWorkspace(ws1);
     await core.createPane({ kind: "myext.agent" }, { workspaceId: ws1 });
     expect((await Promise.resolve(core.listPanesByWorkspace(ws1))).map((p) => p.id)).toEqual([created.id]);
+  });
+
+  it("keyless identity summons before createParams — a validating hook can't break activation", async () => {
+    const strictSpec: PaneSpec = {
+      kind: "myext.strict",
+      identity: { scope: "workspace" },
+      lifecycle: {
+        createParams: ({ input }) => {
+          if (input.params?.mode !== "valid") throw new Error("invalid params");
+          return { mode: "valid" };
+        },
+        createRecord: () => ({ kind: "myext.strict" }),
+        createSnapshot: ({ paneId, title }) => ({ id: paneId, kind: "myext.strict", title }),
+        getTitle: () => "Strict"
+      }
+    };
+    const { core } = buildShellCore([strictSpec]);
+
+    const first = await core.createPane({ kind: "myext.strict", params: { mode: "valid" } });
+    // No params — the hook would throw, but the summon must not consult it.
+    const summoned = await core.createPane({ kind: "myext.strict" });
+    expect(summoned.id).toBe(first.id);
+  });
+
+  it("keyed identity — same key summons, different key creates, null key always creates", async () => {
+    const editorSpec: PaneSpec = {
+      kind: "myext.editor",
+      identity: {
+        scope: "workspace",
+        key: (params) => (typeof params?.path === "string" && params.path ? params.path : null)
+      },
+      lifecycle: {
+        createRecord: () => ({ kind: "myext.editor" }),
+        createSnapshot: ({ paneId, title }) => ({ id: paneId, kind: "myext.editor", title }),
+        getTitle: () => "Editor"
+      }
+    };
+    const { core } = buildShellCore([editorSpec]);
+
+    const added: string[] = [];
+    core.subscribe((event) => {
+      if (event.topic === "pane.added") added.push((event.payload as { paneId: string }).paneId);
+    });
+
+    const a1 = await core.createPane({ kind: "myext.editor", params: { path: "/w/a.md" } });
+    const a2 = await core.createPane({ kind: "myext.editor", params: { path: "/w/a.md" } });
+    expect(a2.id).toBe(a1.id);
+    expect(added).toHaveLength(1);
+
+    const b = await core.createPane({ kind: "myext.editor", params: { path: "/w/b.md" } });
+    expect(b.id).not.toBe(a1.id);
+
+    // null key = identity-less instance — never dedups.
+    const u1 = await core.createPane({ kind: "myext.editor" });
+    const u2 = await core.createPane({ kind: "myext.editor" });
+    expect(u2.id).not.toBe(u1.id);
+    expect((await core.listPanes()).map((p) => p.id)).toEqual([a1.id, b.id, u1.id, u2.id]);
+  });
+
+  it("summon stays usable at maxPanes cap — quota gates creation only", async () => {
+    const editorSpec: PaneSpec = {
+      kind: "myext.editor",
+      identity: {
+        scope: "workspace",
+        key: (params) => (typeof params?.path === "string" && params.path ? params.path : null)
+      },
+      lifecycle: {
+        createRecord: () => ({ kind: "myext.editor" }),
+        createSnapshot: ({ paneId, title }) => ({ id: paneId, kind: "myext.editor", title }),
+        getTitle: () => "Editor"
+      }
+    };
+    const { core } = buildShellCore([editorSpec], { maxPanes: 1 });
+
+    const pane = await core.createPane({ kind: "myext.editor", params: { path: "/w/a.md" } });
+    const summoned = await core.createPane({ kind: "myext.editor", params: { path: "/w/a.md" } });
+    expect(summoned.id).toBe(pane.id);
+
+    await expect(core.createPane({ kind: "myext.editor", params: { path: "/w/b.md" } })).rejects.toThrow(
+      "pane limit reached"
+    );
+  });
+
+  it("keyed identity follows param changes — repointed pane frees its old key", async () => {
+    const editorSpec: PaneSpec = {
+      kind: "myext.editor",
+      identity: {
+        scope: "workspace",
+        key: (params) => (typeof params?.path === "string" && params.path ? params.path : null)
+      },
+      lifecycle: {
+        createRecord: () => ({ kind: "myext.editor" }),
+        createSnapshot: ({ paneId, title }) => ({ id: paneId, kind: "myext.editor", title }),
+        getTitle: () => "Editor"
+      }
+    };
+    const { core } = buildShellCore([editorSpec]);
+
+    const pane = await core.createPane({ kind: "myext.editor", params: { path: "/w/a.md" } });
+    await core.setPaneParams(pane.id, { path: "/w/c.md" });
+
+    const freshA = await core.createPane({ kind: "myext.editor", params: { path: "/w/a.md" } });
+    expect(freshA.id).not.toBe(pane.id);
+
+    const summonedC = await core.createPane({ kind: "myext.editor", params: { path: "/w/c.md" } });
+    expect(summonedC.id).toBe(pane.id);
   });
 
   it("setAppOrigin stores the origin without rewriting existing panes (adapter owns re-normalization)", async () => {

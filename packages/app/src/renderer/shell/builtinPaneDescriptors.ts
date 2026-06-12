@@ -34,7 +34,6 @@ function createBuiltinPaneDescriptors(deps: BuiltinPaneDescriptorDependencies): 
       defaultTitle: "Explorer",
       iconUrl: "/__flmux/assets/folder.svg",
       edgeGroup: "left",
-      singletonScope: "workspace",
       createRenderer: ({ runtime }) =>
         new ExplorerPaneRenderer({
           shellModel: runtime.shellModel,

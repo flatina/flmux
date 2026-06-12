@@ -30,7 +30,7 @@ export function createBuiltinPaneSpecs(
     {
       kind: "explorer",
       edgeGroup: "left",
-      singletonScope: "workspace",
+      identity: { scope: "workspace" },
       lifecycle: {
         createParams: ({ input }) => explorerParams(input.params),
         getTitle: ({ params }) => explorerTitle(optionalStringParam(params?.root) ?? "/")
@@ -43,6 +43,8 @@ export function createBuiltinPaneSpecs(
     {
       kind: "textEditor",
       newMenu: false,
+      // One editor per file per workspace; path-less editors stay independent.
+      identity: { scope: "workspace", key: (params) => optionalStringParam(params?.path) ?? null },
       lifecycle: {
         createParams: ({ input }) => textEditorParams(input.params),
         getTitle: ({ params }) => textEditorTitle(optionalStringParam(params?.path) ?? "")
@@ -157,17 +159,18 @@ async function loadExtensionPaneSpecs(
 function createExtensionPaneSpec(manifestPane: ExtensionManifestPane, spec: ExtensionPaneSpec | undefined): PaneSpec {
   const defaultTitle = manifestPane.defaultTitle;
   // edgeGroup implies workspace singleton — explicit singletonScope still wins.
-  const singletonScope = manifestPane.singletonScope ?? (manifestPane.edgeGroup ? "workspace" : undefined);
+  const identityScope = manifestPane.singletonScope ?? (manifestPane.edgeGroup ? "workspace" : undefined);
+  const identity = identityScope ? { scope: identityScope } : undefined;
   const edgeGroup = manifestPane.edgeGroup;
   const newMenu = manifestPane.newMenu;
 
   if (!spec) {
     if (!defaultTitle) {
-      return { kind: manifestPane.kind, singletonScope, edgeGroup, newMenu };
+      return { kind: manifestPane.kind, identity, edgeGroup, newMenu };
     }
     return {
       kind: manifestPane.kind,
-      singletonScope,
+      identity,
       edgeGroup,
       newMenu,
       lifecycle: {
@@ -188,7 +191,7 @@ function createExtensionPaneSpec(manifestPane: ExtensionManifestPane, spec: Exte
 
   return {
     kind: manifestPane.kind,
-    singletonScope,
+    identity,
     edgeGroup,
     newMenu,
     lifecycle: mergedLifecycle,

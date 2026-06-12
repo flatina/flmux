@@ -70,16 +70,23 @@ export interface PanePathMount<TRecord extends PaneStateRecord = PaneStateRecord
 
 export type PaneSubtreeMount<TRecord extends PaneStateRecord = PaneStateRecord> = PanePathMount<TRecord>;
 
-export type PaneSingletonScope = "workspace" | "app";
+export type PaneIdentityScope = "workspace" | "app";
+
+/** Pane identity within a scope — `/panes/new` summons the existing pane with
+ *  the same identity instead of creating a duplicate. Without `key` the kind
+ *  itself is the identity (singleton). With `key`, identity is per key value
+ *  computed from pane params; returning null marks the instance identity-less
+ *  (always creates). */
+export interface PaneIdentity {
+  scope: PaneIdentityScope;
+  key?: (params: Record<string, unknown> | undefined) => string | null;
+}
 
 export type PaneEdgeGroup = "left" | "right" | "top" | "bottom";
 
 export interface PaneSpec<TRecord extends PaneStateRecord = PaneStateRecord> {
   kind: string;
-  /** Constrain `/panes/new` to a single instance — `"workspace"`: one per
-   *  workspace; `"app"`: one across the whole shell (active only when the
-   *  existing pane sits in caller's active workspace). */
-  singletonScope?: PaneSingletonScope;
+  identity?: PaneIdentity;
   /** Mount in dockview edge group at this position. Implies workspace singleton. */
   edgeGroup?: PaneEdgeGroup;
   /** When false, hide the kind from the `+` new-pane menu. Default true. */
@@ -154,6 +161,15 @@ export function resolvePaneCreateParams<TRecord extends PaneStateRecord>(options
       input: options.input
     }) ?? options.fallbackParams
   );
+}
+
+/** null = no identity (plain create). Keyless identity uses a constant key. */
+export function resolvePaneIdentityKey<TRecord extends PaneStateRecord>(
+  spec: PaneSpec<TRecord>,
+  params: Record<string, unknown> | undefined
+): string | null {
+  if (!spec.identity) return null;
+  return spec.identity.key ? spec.identity.key(params) : "";
 }
 
 export function resolvePaneTitle<TRecord extends PaneStateRecord>(options: {

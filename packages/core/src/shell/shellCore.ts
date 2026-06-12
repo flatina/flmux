@@ -7,6 +7,7 @@ import {
   createPaneStateRecord,
   isTerminalPaneStateRecord,
   resolvePaneCreateParams,
+  resolvePaneIdentityKey,
   resolvePaneTitle,
   serializePaneParams as serializePaneParamsHelper,
   type PanePathMount,
@@ -754,7 +755,6 @@ export class ShellCore implements ShellModelHost {
     }
     const workspace = this.requireWorkspace(workspaceId);
     this.assertPaneKindAllowed(input.kind);
-    this.assertPaneQuota(input.kind);
     return this.addPane(workspace, input, slotKey);
   }
 
@@ -1156,33 +1156,54 @@ export class ShellCore implements ShellModelHost {
     };
   }
 
-  private findPaneOfKind(workspace: WorkspaceRecord, kind: string): string | undefined {
+  /** Identity keys are recomputed from current params, so identity follows
+   *  later param changes (e.g. an editor repointed to another path). */
+  private findPaneByIdentity(workspace: WorkspaceRecord, spec: PaneSpec, key: string): string | undefined {
     for (const paneId of workspace.paneOrder) {
-      if (workspace.paneStates.get(paneId)?.kind === kind) return paneId;
+      if (workspace.paneStates.get(paneId)?.kind !== spec.kind) continue;
+      if (resolvePaneIdentityKey(spec, workspace.paneParams.get(paneId)) === key) return paneId;
     }
     return undefined;
   }
 
-  private findAppSingleton(kind: string): { workspace: WorkspaceRecord; paneId: string } | undefined {
+  private findAppPaneByIdentity(
+    spec: PaneSpec,
+    key: string
+  ): { workspace: WorkspaceRecord; paneId: string } | undefined {
     for (const workspace of this.workspaces.values()) {
-      const paneId = this.findPaneOfKind(workspace, kind);
+      const paneId = this.findPaneByIdentity(workspace, spec, key);
       if (paneId) return { workspace, paneId };
     }
     return undefined;
   }
 
-  private activateExistingSingleton(
-    workspace: WorkspaceRecord,
-    paneId: string,
-    slotKey: string
-  ): ShellPaneRecordSnapshot {
+  private summonExistingPane(workspace: WorkspaceRecord, paneId: string, slotKey: string): ShellPaneRecordSnapshot {
     const slot = this.ensureSlot(slotKey);
     slot.activePaneIdByWorkspace.set(workspace.id, paneId);
-    // Always re-emit — `/panes/new` of an existing singleton is a "summon"
+    // Always re-emit — `/panes/new` of an existing identity is a "summon"
     // intent (focus + expand collapsed edge group). Renderer setActive is
     // idempotent so no-op when nothing visually changes.
     this.emit({ topic: "pane.activeChanged", payload: { workspaceId: workspace.id, paneId } }, slotKey);
     return this.createPaneSnapshot(workspace, paneId);
+  }
+
+  private summonByIdentity(
+    workspace: WorkspaceRecord,
+    spec: PaneSpec,
+    key: string,
+    slotKey: string
+  ): ShellPaneRecordSnapshot | undefined {
+    if (spec.identity?.scope === "workspace") {
+      const existing = this.findPaneByIdentity(workspace, spec, key);
+      return existing ? this.summonExistingPane(workspace, existing, slotKey) : undefined;
+    }
+    const hit = this.findAppPaneByIdentity(spec, key);
+    if (!hit) return undefined;
+    // Only activate when it lives in caller's active workspace —
+    // never silently switch the active workspace itself.
+    return hit.workspace === workspace
+      ? this.summonExistingPane(workspace, hit.paneId, slotKey)
+      : this.createPaneSnapshot(hit.workspace, hit.paneId);
   }
 
   private addPane(workspace: WorkspaceRecord, input: NewPaneInput, slotKey: string): ShellPaneRecordSnapshot {
@@ -1190,22 +1211,14 @@ export class ShellCore implements ShellModelHost {
     if (!spec) {
       throw new Error(`Unknown pane kind '${input.kind}'`);
     }
-    if (spec.singletonScope === "workspace") {
-      const existing = this.findPaneOfKind(workspace, input.kind);
-      if (existing) {
-        return this.activateExistingSingleton(workspace, existing, slotKey);
-      }
-    } else if (spec.singletonScope === "app") {
-      const hit = this.findAppSingleton(input.kind);
-      if (hit) {
-        // Only activate when it lives in caller's active workspace —
-        // never silently switch the active workspace itself.
-        return hit.workspace === workspace
-          ? this.activateExistingSingleton(workspace, hit.paneId, slotKey)
-          : this.createPaneSnapshot(hit.workspace, hit.paneId);
-      }
+    // Identity dedup in two phases, mirroring the data dependency: a keyless
+    // (singleton) identity is param-independent and summons *before*
+    // createParams — a validating hook must not break activation. A keyed
+    // identity derives from the resolved params.
+    if (spec.identity && !spec.identity.key) {
+      const summoned = this.summonByIdentity(workspace, spec, "", slotKey);
+      if (summoned) return summoned;
     }
-    const paneId = this.allocatePaneId();
     const workspaceContext = this.toWorkspaceContext(workspace);
     const params = resolvePaneCreateParams({
       spec,
@@ -1213,6 +1226,16 @@ export class ShellCore implements ShellModelHost {
       input,
       fallbackParams: cloneJsonObject(input.params)
     });
+    if (spec.identity?.key) {
+      const identityKey = spec.identity.key(params);
+      if (identityKey !== null) {
+        const summoned = this.summonByIdentity(workspace, spec, identityKey, slotKey);
+        if (summoned) return summoned;
+      }
+    }
+    // Quota gates creation only — a summon adds nothing, so it stays usable at cap.
+    this.assertPaneQuota(input.kind);
+    const paneId = this.allocatePaneId();
     const title = resolvePaneTitle({
       spec,
       workspace: workspaceContext,

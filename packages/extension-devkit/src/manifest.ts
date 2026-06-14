@@ -44,9 +44,6 @@ export interface ExtensionManifest {
   commands?: ExtensionManifestCommand[];
   panes?: ExtensionManifestPane[];
   devOnly?: boolean;
-  /** Bundle-relative dir exposed read-only to confined sessions (that hold the
-   * shared_skills grant) at the virtual path `/w/shared/<id>`. */
-  sharedDir?: string;
 }
 
 export type ExtensionManifestValidationResult =
@@ -103,9 +100,6 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
     errors.push("Manifest field 'devOnly' must be a boolean when provided");
   }
   const devOnly = typeof devOnlyRaw === "boolean" ? devOnlyRaw : undefined;
-  const sharedDirError = validateManifestEntrypointPath(value.sharedDir, "sharedDir");
-  if (sharedDirError) errors.push(sharedDirError);
-  const sharedDir = typeof value.sharedDir === "string" ? value.sharedDir.trim().replace(/\\/g, "/") : undefined;
 
   if (rendererPath) errors.push(rendererPath);
   if (cliPath) errors.push(cliPath);
@@ -137,8 +131,7 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
       },
       commands: commandsResult.ok ? commandsResult.commands : undefined,
       panes: panesResult.ok ? panesResult.panes : undefined,
-      ...(devOnly !== undefined ? { devOnly } : {}),
-      ...(sharedDir ? { sharedDir } : {})
+      ...(devOnly !== undefined ? { devOnly } : {})
     }
   };
 }

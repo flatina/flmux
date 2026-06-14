@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
-import { dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
+import { isAbsolute, join, normalize, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { validateExtensionManifest, type ExtensionManifest } from "@flmux/extension-api";
 import type { FlmuxLocalExtensionLoadEntry } from "../shared/rendererBridge";
@@ -36,11 +36,6 @@ export interface DiscoveredLocalExtension {
    * contract-bound to zero runtime externals. Returns
    * null if the relative path doesn't resolve. */
   resolveEntryImportUrl(relativePath: string): Promise<string | null>;
-  /** Materialize the manifest `sharedDir` subtree as a real directory and
-   * return its absolute path (for the `/w/shared/<id>` ro bind). Source returns
-   * the in-place dist dir; archive extracts under `<extractBaseDir>/<id>/<version>`
-   * once — dir existence means already extracted. `null` if absent / not a dir. */
-  resolveSharedAssetDir(relativeDir: string, extractBaseDir: string): Promise<string | null>;
 }
 
 export interface LocalExtensionCatalogConfig {
@@ -256,11 +251,6 @@ async function discoverSourceExtension(extensionRootDir: string): Promise<Discov
         const full = resolveExtensionRelativePath(runtimeRootDir, relativePath);
         if (!full || !existsSync(full)) return null;
         return pathToFileURL(full).href;
-      },
-      async resolveSharedAssetDir(relativeDir: string): Promise<string | null> {
-        const full = resolveExtensionRelativePath(runtimeRootDir, relativeDir);
-        if (!full || !existsSync(full)) return null;
-        return statSync(full).isDirectory() ? full : null;
       }
     };
   } catch (error) {
@@ -329,51 +319,12 @@ async function discoverArchiveExtension(tarballPath: string): Promise<Discovered
         // cli/server entries have zero runtime externals, so a `data:` URL
         // import (no resolution context) works reliably.
         return `data:text/javascript;base64,${Buffer.from(entryBytes).toString("base64")}`;
-      },
-      async resolveSharedAssetDir(relativeDir: string, extractBaseDir: string): Promise<string | null> {
-        const prefix = normalizeArchiveKey(relativeDir);
-        if (prefix === null) return null;
-        const destRoot = join(extractBaseDir, runtimeManifest.id, runtimeManifest.version);
-        // `version` is only non-empty-checked by the validator; assert the
-        // derived cache dir can't escape the base before any mkdir.
-        if (!isPathInside(extractBaseDir, destRoot)) return null;
-        const destDir = join(destRoot, prefix);
-        if (existsSync(destDir)) return destDir; // dir-existence = already extracted
-        const prefixSlash = `${prefix}/`;
-        const matched = [...files].filter(([key]) => key.startsWith(prefixSlash) && !key.endsWith("/"));
-        if (matched.length === 0) return null;
-        // Extract into a tmp tree, then atomic rename — so a crashed partial
-        // extract never leaves a half dir that the existence check would reuse.
-        mkdirSync(dirname(destRoot), { recursive: true });
-        const tmpRoot = mkdtempSync(`${destRoot}.tmp-`);
-        try {
-          for (const [key, file] of matched) {
-            const target = join(tmpRoot, key);
-            // A tarball member with `..` would escape the extraction tree.
-            if (!isPathInside(tmpRoot, target)) {
-              throw new Error(`archive member escapes extraction root: ${key}`);
-            }
-            mkdirSync(dirname(target), { recursive: true });
-            writeFileSync(target, Buffer.from(await file.bytes()));
-          }
-          renameSync(tmpRoot, destRoot);
-        } catch (error) {
-          rmSync(tmpRoot, { recursive: true, force: true });
-          if (existsSync(destDir)) return destDir; // lost a race — reuse the winner
-          throw error;
-        }
-        return destDir;
       }
     };
   } catch (error) {
     console.warn(`[flmux] failed to load extension tarball: ${tarballPath}`, error);
     return null;
   }
-}
-
-function isPathInside(root: string, target: string): boolean {
-  const rel = relative(root, target);
-  return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }
 
 function resolveExtensionRelativePath(rootDir: string, relativePath: string) {

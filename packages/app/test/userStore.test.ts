@@ -19,17 +19,22 @@ describe("userStore role presets + handle", () => {
     expect(u.dirsRw).toEqual([]);
   });
 
-  it("tech preset → no terminal, own+skills+shared_rw", () => {
+  it("tech preset → no terminal, own+shared+skills+public", () => {
     const u = storeWith(`[[users]]\nname="t"\nrole="tech"\nhandle="h2"\n`).getUser("t")!;
     expect(u.fsUnconfined).toBe(false);
     expect(u.denyPaneKinds).toEqual(["terminal"]);
-    expect(u.dirsRw).toEqual(["{flmux_users}/u/{name}", "{flmux_users}/shared_skills", "{flmux_users}/shared_rw"]);
+    expect(u.dirsRw).toEqual([
+      "{flmux_users}/u/{name}",
+      "{flmux_users}/shared",
+      "{flmux_users}/shared_skills",
+      "{flmux_users}/public"
+    ]);
   });
 
-  it("basic preset → no terminal, own+shared_rw (no skills)", () => {
+  it("basic preset → no terminal, own+public (no shared/skills)", () => {
     const u = storeWith(`[[users]]\nname="x"\nrole="basic"\nhandle="h3"\n`).getUser("x")!;
     expect(u.denyPaneKinds).toEqual(["terminal"]);
-    expect(u.dirsRw).toEqual(["{flmux_users}/u/{name}", "{flmux_users}/shared_rw"]);
+    expect(u.dirsRw).toEqual(["{flmux_users}/u/{name}", "{flmux_users}/public"]);
   });
 
   it("explicit dirs_rw + fs_unconfined override preset", () => {

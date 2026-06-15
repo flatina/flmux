@@ -19,16 +19,11 @@ describe("userStore role presets + handle", () => {
     expect(u.dirsRw).toEqual([]);
   });
 
-  it("tech preset → no terminal, own+shared+skills+public", () => {
+  it("tech preset → no terminal, own+shared+public", () => {
     const u = storeWith(`[[users]]\nname="t"\nrole="tech"\nhandle="h2"\n`).getUser("t")!;
     expect(u.fsUnconfined).toBe(false);
     expect(u.denyPaneKinds).toEqual(["terminal"]);
-    expect(u.dirsRw).toEqual([
-      "{flmux_users}/u/{name}",
-      "{flmux_users}/shared",
-      "{flmux_users}/shared_skills",
-      "{flmux_users}/public"
-    ]);
+    expect(u.dirsRw).toEqual(["{flmux_users}/u/{name}", "{flmux_users}/shared", "{flmux_users}/public"]);
   });
 
   it("basic preset → no terminal, own+public (no shared/skills)", () => {

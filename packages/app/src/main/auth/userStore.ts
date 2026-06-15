@@ -137,9 +137,6 @@ function writeUsersFile(filePath: string, users: readonly FlmuxUser[]): void {
 const OWN_WORKSPACE = "{flmux_users}/u/{name}";
 const SHARED = "{flmux_users}/shared";
 const PUBLIC = "{flmux_users}/public";
-// Legacy override dir; kept until the agents-checkout cutover (an extension's
-// agent-dir fallback still keys on this bind). Remove with the cutover.
-const SHARED_SKILLS = "{flmux_users}/shared_skills";
 interface RolePreset {
   allowPaneKinds: AllowPaneKinds;
   denyPaneKinds: readonly string[];
@@ -153,7 +150,7 @@ const ROLE_PRESETS: Record<string, RolePreset> = {
     allowPaneKinds: "*",
     denyPaneKinds: ["terminal"],
     fsUnconfined: false,
-    dirsRw: [OWN_WORKSPACE, SHARED, SHARED_SKILLS, PUBLIC],
+    dirsRw: [OWN_WORKSPACE, SHARED, PUBLIC],
     dirsRo: []
   },
   basic: {

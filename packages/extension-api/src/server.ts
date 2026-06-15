@@ -52,6 +52,9 @@ export interface ExtensionServerSessionContext {
   dataDir: string;
   sessionId: string;
   userId: string;
+  /** Account role (flmux's single source for user→role binding, e.g. `dev`/`tech`/`basic`).
+   * `undefined` on desktop (no auth) or for a user with no assigned role. */
+  role?: string;
   /** Filesystem the host grants this session — the extension confines its own
    * command execution (e.g. agent bash) to this. See `ExtensionFsPolicy`.
    * Carries the virtual↔real mapper so the extension reuses flmux containment. */

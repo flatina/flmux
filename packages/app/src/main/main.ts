@@ -372,11 +372,11 @@ async function attachExtensionsForSession(opts: {
   const state: SessionExtensionsState = { serveHandles: [], sessionDisposes: [] };
   // Per-user fs grant (shared by the session's extensions). Desktop (no
   // authorizer) = unconfined; web resolves per user, absent → fail-closed.
+  const user = webModeAuthorizer ? webModeAuthorizer.getUser(opts.userId) : null;
   const basePolicy: ExtensionFsPolicy = webModeAuthorizer
-    ? (() => {
-        const u = webModeAuthorizer.getUser(opts.userId);
-        return u ? fsPolicyResolver.resolve(u) : { unconfined: false, binds: [] };
-      })()
+    ? user
+      ? fsPolicyResolver.resolve(user)
+      : { unconfined: false, binds: [] }
     : { unconfined: true, binds: [] };
   // Carry virtual↔real conversion (flmux containment) so the extension reuses it.
   const fsPolicy = { ...basePolicy, ...createFsPathMapper({ policy: basePolicy, projectDir }) };
@@ -421,6 +421,7 @@ async function attachExtensionsForSession(opts: {
         dataDir,
         sessionId: opts.sessionId,
         userId: opts.userId,
+        role: user?.role,
         fsPolicy,
         mintApiToken,
         shell,

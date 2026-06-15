@@ -34,7 +34,7 @@
     "@simplewebauthn/server": "^13",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
-    "bunite-core": "^0.17.1",
+    "bunite-core": "^0.17.2",
     "bunite-native-linux-x64": "^0.0.5",
     "bunite-native-mac-arm64": "^0.0.5",
     "bunite-native-win-x64": "^0.0.15",

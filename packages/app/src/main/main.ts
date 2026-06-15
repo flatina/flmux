@@ -56,7 +56,7 @@ import type {
   ExtensionServerPaneInstance,
   ShellClient as ShellClientImport
 } from "@flmux/extension-api";
-import type { CapDef, ImplOf, ServeHandle } from "bunite-core/rpc";
+import type { AnyCapDef, ImplOf, ServeHandle } from "bunite-core/rpc";
 
 type ShellAuthority = Pick<
   DesktopShellAuthority | WebModeShellAuthority,
@@ -427,10 +427,10 @@ async function attachExtensionsForSession(opts: {
         shell,
         invokeExtensionCli: (targetExtId, argv, cliOpts) =>
           runInProcessExtensionCli(opts.sessionId, opts.userId, targetExtId, argv, cliOpts?.signal),
-        serve: <C extends CapDef<any, any>>(cap: C, impl: ImplOf<C>) => {
+        serve: <C extends AnyCapDef>(cap: C, impl: ImplOf<C>) => {
           state.serveHandles.push(opts.conn.serve(cap, impl));
         },
-        bootstrap: <C extends CapDef<any, any>>(cap: C) => opts.conn.bootstrap(cap),
+        bootstrap: <C extends AnyCapDef>(cap: C) => opts.conn.bootstrap(cap),
         onDispose: (fn) => {
           state.sessionDisposes.push(fn);
         }

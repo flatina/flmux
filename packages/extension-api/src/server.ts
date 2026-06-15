@@ -1,4 +1,4 @@
-import type { CapDef, ClientOf, ImplOf } from "bunite-core/rpc";
+import type { AnyCapDef, ClientOf, ImplOf } from "bunite-core/rpc";
 import type { ShellClient } from "./shell";
 import type { ExtensionPaneSpec } from "./pane";
 import type { ExtensionConfig, ExtensionConfigBuilder } from "./config";
@@ -70,8 +70,8 @@ export interface ExtensionServerSessionContext {
    * argv = canonical subcommand tokens first, then flags/positionals (citty-parsed; only the leaf runs).
    * opts.signal reaches the command as ctx.signal — cancellation is cooperative. */
   invokeExtensionCli(extId: string, argv: string[], opts?: { signal?: AbortSignal }): Promise<unknown>;
-  serve<C extends CapDef<any, any>>(cap: C, impl: ImplOf<C>): void;
-  bootstrap<C extends CapDef<any, any>>(cap: C): Promise<ClientOf<C>>;
+  serve<C extends AnyCapDef>(cap: C, impl: ImplOf<C>): void;
+  bootstrap<C extends AnyCapDef>(cap: C): Promise<ClientOf<C>>;
   onDispose(fn: () => void): void;
 }
 

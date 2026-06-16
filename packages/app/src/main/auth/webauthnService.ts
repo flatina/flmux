@@ -23,8 +23,13 @@ import {
   type WebauthnRpConfig
 } from "./webauthn";
 import { createChallengeStore, createWebauthnStore, type ChallengeStore, type WebauthnStore } from "./webauthnStore";
+import type { TotpStore } from "./totpStore";
+import type { LoginThrottle } from "./loginThrottle";
 
-const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days (default; overridable)
+// Recovery-code login is a break-glass path → short session, just enough to
+// re-enroll. (Capability-scoping to re-enroll-only is a documented follow-up.)
+const RECOVERY_SESSION_TTL_MS = 10 * 60 * 1000;
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" } as const;
 
 /** Tracks every open `/rpc` connection by the session tokenId that opened it,
@@ -40,6 +45,8 @@ export interface WebauthnAuthService {
   handleRegisterVerify(request: Request): Promise<Response>;
   handleAuthenticateOptions(request: Request): Promise<Response>;
   handleAuthenticateVerify(request: Request): Promise<Response>;
+  handleTotpAuthenticate(request: Request): Promise<Response>;
+  handleTotpRecovery(request: Request): Promise<Response>;
   handleLogout(request: Request): Promise<Response>;
   dispose(): void;
 }
@@ -49,8 +56,21 @@ export function createWebauthnAuthService(options: {
   webauthnFile: string;
   tokensFile: string;
   publicOrigin: string | undefined;
+  /** Closed-network TOTP front-door (optional; enabled per deployment). */
+  totpStore?: TotpStore;
+  totpWindowSteps?: number;
+  /** Per-username lockout for TOTP/recovery login — the brute-force control;
+   * required (not optional) so it can't be silently dropped while TOTP is on. */
+  throttle: LoginThrottle;
+  /** Minted session lifetime (ms). Default 30d. */
+  sessionTtlMs?: number;
+  /** Enabled methods — passkey RP config is built only when passkey is on, so a
+   * TOTP-only deployment boots without FLMUX_PUBLIC_ORIGIN. */
+  authMethods?: string[];
 }): WebauthnAuthService {
-  const rp: WebauthnRpConfig = resolveWebauthnRpConfig(options.publicOrigin);
+  const passkeyEnabled = (options.authMethods ?? ["passkey"]).includes("passkey");
+  const rp: WebauthnRpConfig | null = passkeyEnabled ? resolveWebauthnRpConfig(options.publicOrigin) : null;
+  const sessionTtlMs = options.sessionTtlMs ?? SESSION_TTL_MS;
   const webauthnStore: WebauthnStore = createWebauthnStore(options.webauthnFile);
   const challenges: ChallengeStore & { dispose(): void } = createChallengeStore();
   const tokenStore = options.authorizer.tokenStore;
@@ -109,6 +129,31 @@ export function createWebauthnAuthService(options: {
 
   function err(message: string, status = 400, headers?: Record<string, string>): Response {
     return json({ ok: false, error: message }, { status, headers });
+  }
+
+  /** 429 (+ Retry-After) if the username is locked out, else null. */
+  function lockedResponse(username: string): Response | null {
+    const wait = options.throttle.retryAfterMs(username);
+    if (wait <= 0) return null;
+    return err("Too many attempts; try again later", 429, { "retry-after": String(Math.ceil(wait / 1000)) });
+  }
+
+  /** Mint a durable session token + set its cookie — the single mint path shared
+   * by every front-door (passkey / totp / recovery). authorize() validates it
+   * unchanged on every subsequent request. */
+  function mintSession(user: string, label: string, ttlMs: number, secure: boolean): Response {
+    const minted = generateToken();
+    tokenStore.append({
+      id: minted.id,
+      user,
+      tokenHash: minted.hash,
+      tokenPrefix: minted.prefix,
+      createdAt: new Date().toISOString(),
+      kind: "session",
+      label,
+      expiresAt: new Date(Date.now() + ttlMs).toISOString()
+    });
+    return json({ ok: true }, { headers: { "set-cookie": serializeSessionCookie(minted.value, secure) } });
   }
 
   /** Authz for credential registration: a still-valid enrollment token (in
@@ -174,6 +219,7 @@ export function createWebauthnAuthService(options: {
     },
 
     async handleRegisterOptions(request) {
+      if (!rp) return err("Passkey auth is disabled", 404);
       const body = await readJson(request);
       const token = typeof body.token === "string" ? body.token : undefined;
       const authz = resolveRegisterAuthz(request, token);
@@ -195,6 +241,7 @@ export function createWebauthnAuthService(options: {
     },
 
     async handleRegisterVerify(request) {
+      if (!rp) return err("Passkey auth is disabled", 404);
       const secure = isSecureRequest(request);
       const ceremonyId = readCookie(request.headers.get("cookie"), CEREMONY_COOKIE);
       const clearCookie = clearCeremonyCookie(secure);
@@ -253,6 +300,7 @@ export function createWebauthnAuthService(options: {
     },
 
     async handleAuthenticateOptions(request) {
+      if (!rp) return err("Passkey auth is disabled", 404);
       const options = await buildAuthenticationOptions({ rp });
       const ceremonyId = challenges.put({ challenge: options.challenge, kind: "authenticate" });
       const secure = isSecureRequest(request);
@@ -260,6 +308,7 @@ export function createWebauthnAuthService(options: {
     },
 
     async handleAuthenticateVerify(request) {
+      if (!rp) return err("Passkey auth is disabled", 404);
       const secure = isSecureRequest(request);
       const ceremonyId = readCookie(request.headers.get("cookie"), CEREMONY_COOKIE);
       const clearCookie = clearCeremonyCookie(secure);
@@ -304,21 +353,53 @@ export function createWebauthnAuthService(options: {
       // record the advanced counter. (Admin-disable via needsReview is Stage 2.)
       webauthnStore.updateUsage(credentialId, authInfo.newCounter, new Date().toISOString());
 
-      // Mint a durable session token; the existing authorize() cookie path
-      // validates it unchanged on every subsequent request.
-      const minted = generateToken();
-      tokenStore.append({
-        id: minted.id,
-        user: credential.user,
-        tokenHash: minted.hash,
-        tokenPrefix: minted.prefix,
-        createdAt: new Date().toISOString(),
-        kind: "session",
-        label: "passkey",
-        expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString()
-      });
+      // Mint the session (shared path) — authorize() validates it unchanged after.
+      return mintSession(credential.user, "passkey", sessionTtlMs, secure);
+    },
 
-      return json({ ok: true }, { headers: { "set-cookie": serializeSessionCookie(minted.value, secure) } });
+    // TOTP front-door: username + 6-digit code → verify+consume → mint session
+    // (same currency as passkey). Throttle/verify run for any username (unknown
+    // accounts get the same 401/lockout path) so the response can't enumerate
+    // users; per-username lockout bounds brute force of the 10⁶ code space.
+    async handleTotpAuthenticate(request) {
+      const secure = isSecureRequest(request);
+      const fail = () => err("Invalid credentials", 401);
+      if (!options.totpStore) return fail();
+      const body = await readJson(request);
+      const username = typeof body.username === "string" ? body.username.trim() : "";
+      const code = typeof body.code === "string" ? body.code.trim() : "";
+      if (!username || !code) return fail();
+      const locked = lockedResponse(username);
+      if (locked) return locked;
+      // verifyAndConsume returns false for an unknown user (no enrollment).
+      if (!options.totpStore.verifyAndConsume(username, code, options.totpWindowSteps ?? 1)) {
+        options.throttle.recordFailure(username);
+        return fail();
+      }
+      if (!userStore.getUser(username)) return fail(); // orphan enrollment (account gone)
+      options.throttle.recordSuccess(username);
+      return mintSession(username, "totp", sessionTtlMs, secure);
+    },
+
+    // Break-glass: a single-use recovery code → short-lived session. (Capability
+    // scoping to re-enroll-only is a follow-up; re-enroll itself is admin CLI.)
+    async handleTotpRecovery(request) {
+      const secure = isSecureRequest(request);
+      const fail = () => err("Invalid credentials", 401);
+      if (!options.totpStore) return fail();
+      const body = await readJson(request);
+      const username = typeof body.username === "string" ? body.username.trim() : "";
+      const code = typeof body.code === "string" ? body.code : "";
+      if (!username || !code) return fail();
+      const locked = lockedResponse(username);
+      if (locked) return locked;
+      if (!options.totpStore.consumeRecoveryCode(username, code)) {
+        options.throttle.recordFailure(username);
+        return fail();
+      }
+      if (!userStore.getUser(username)) return fail(); // orphan enrollment (account gone)
+      options.throttle.recordSuccess(username);
+      return mintSession(username, "totp-recovery", RECOVERY_SESSION_TTL_MS, secure);
     },
 
     async handleLogout(request) {

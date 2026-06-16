@@ -28,6 +28,8 @@ import {
   type FlmuxWebModeAuthorizer
 } from "./webModeAuth";
 import { createWebauthnAuthService } from "./auth/webauthnService";
+import { createTotpStore } from "./auth/totpStore";
+import { createLoginThrottle } from "./auth/loginThrottle";
 import type { FlmuxUser as FlmuxUserImport } from "./auth/userStore";
 import { eventToReadPath } from "./auth/eventAclPath";
 import { createFsPolicyResolver } from "./auth/fsPolicy";
@@ -514,7 +516,8 @@ const webModeAuthPaths =
         authDir: flmuxPaths.authDir,
         usersFile: flmuxPaths.usersFile,
         tokensFile: flmuxPaths.tokensFile,
-        webauthnFile: flmuxPaths.webauthnFile
+        webauthnFile: flmuxPaths.webauthnFile,
+        totpFile: flmuxPaths.totpFile
       }
     : null;
 const webModeAuthorizer = webModeAuthPaths ? createFlmuxWebModeAuthorizer(webModeAuthPaths, { devAuthAs }) : null;
@@ -531,7 +534,15 @@ const webauthnService =
         authorizer: webModeAuthorizer,
         webauthnFile: flmuxPaths.webauthnFile,
         tokensFile: flmuxPaths.tokensFile,
-        publicOrigin: bootConfig.server.publicOrigin
+        publicOrigin: bootConfig.server.publicOrigin,
+        totpStore: createTotpStore(flmuxPaths.totpFile),
+        totpWindowSteps: bootConfig.auth.totp.windowSteps,
+        throttle: createLoginThrottle(join(flmuxPaths.authDir, "login-throttle.json"), {
+          maxFailures: bootConfig.auth.totp.maxFailures,
+          lockMs: bootConfig.auth.totp.lockMs
+        }),
+        sessionTtlMs: bootConfig.auth.sessionTtlMs,
+        authMethods: bootConfig.auth.methods
       })
     : null;
 if (devAuthAs && runtimeMode === "web") {
@@ -1109,6 +1120,7 @@ const server = startFlmuxServer({
       : undefined,
   authorizer: webModeAuthorizer ?? undefined,
   webauthn: webauthnService ?? undefined,
+  authMethods: bootConfig.auth.methods,
   onRpcConnection:
     runtimeMode === "web"
       ? (conn, authContext) => {

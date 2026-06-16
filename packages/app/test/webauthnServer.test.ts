@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { resolveFlmuxAuthPaths } from "../src/main/auth/authConfig";
 import { createFlmuxWebModeAuthorizer } from "../src/main/webModeAuth";
 import { createWebauthnAuthService } from "../src/main/auth/webauthnService";
+import { createLoginThrottle } from "../src/main/auth/loginThrottle";
 import { startFlmuxServer } from "../src/main/server";
 import { runTokensCli } from "../src/cliTokens";
 import { runAuthCli } from "../src/cliAuth";
@@ -33,7 +34,8 @@ function startServer(rendererDir: string, dir: string) {
     authorizer,
     webauthnFile: paths.webauthnFile,
     tokensFile: paths.tokensFile,
-    publicOrigin: "https://flmux.example.ts.net"
+    publicOrigin: "https://flmux.example.ts.net",
+    throttle: createLoginThrottle(join(dir, "login-throttle.json"), { maxFailures: 5, lockMs: 60_000 })
   });
   const server = startFlmuxServer({
     rendererDir,

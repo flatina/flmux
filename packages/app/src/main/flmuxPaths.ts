@@ -25,6 +25,8 @@ interface FlmuxPaths {
   tokensFile: string;
   /** `<authDir>/webauthn.toml` — registered passkey credentials. */
   webauthnFile: string;
+  /** `<authDir>/totp.toml` — SECRET: TOTP seeds + recovery hashes. */
+  totpFile: string;
   webSessionsDir: string;
   /** `<flmuxDir>/session.json` — desktop single-user session snapshot. */
   desktopSessionFile: string;
@@ -83,6 +85,7 @@ export function resolveFlmuxPaths(rootDir: string): FlmuxPaths {
     usersFile: join(authDir, "users.toml"),
     tokensFile: join(authDir, "users.tokens.toml"),
     webauthnFile: join(authDir, "webauthn.toml"),
+    totpFile: join(authDir, "totp.toml"),
     webSessionsDir: join(authDir, "sessions"),
     desktopSessionFile: join(flmuxDir, "session.json"),
     appConfigFile: join(flmuxDir, "app.toml"),

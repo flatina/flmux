@@ -25,6 +25,23 @@ export interface FlmuxBootConfig {
     maxUploadBytes: number | undefined; // per-file; undefined → 2 GiB default
   };
   grace: { clientMs: number | undefined; authorityEvictionMs: number | undefined };
+  auth: {
+    /** Enabled human login methods. `passkey` (internet/stable-domain) and/or
+     * `totp` (closed-network passwordless). OSS default: passkey only. */
+    methods: string[];
+    /** Minted session lifetime (ms). Shorter for cleartext deployments — the
+     * session cookie is a bearer that transits every request. Default 30d. */
+    sessionTtlMs: number;
+    totp: {
+      /** ± steps tolerated around the current period (clock-drift slack on
+       * air-gapped hosts). 1 ⇒ ±30s. Wider = larger brute-force surface. */
+      windowSteps: number;
+      /** Consecutive failed codes before a username is locked. */
+      maxFailures: number;
+      /** Lock duration (ms) once maxFailures is hit. */
+      lockMs: number;
+    };
+  };
 }
 
 export async function loadFlmuxBootConfig(options: {
@@ -56,7 +73,12 @@ export async function loadFlmuxBootConfig(options: {
         FLMUX_MAX_TERMINALS_PER_USER: "limits.maxTerminalsPerUser",
         FLMUX_MAX_UPLOAD_BYTES: "limits.maxUploadBytes",
         FLMUX_CLIENT_GRACE_MS: "grace.clientMs",
-        FLMUX_AUTHORITY_EVICTION_GRACE_MS: "grace.authorityEvictionMs"
+        FLMUX_AUTHORITY_EVICTION_GRACE_MS: "grace.authorityEvictionMs",
+        FLMUX_AUTH_METHODS: "auth.methods",
+        FLMUX_SESSION_TTL_MS: "auth.sessionTtlMs",
+        FLMUX_TOTP_WINDOW_STEPS: "auth.totp.windowSteps",
+        FLMUX_TOTP_MAX_FAILURES: "auth.totp.maxFailures",
+        FLMUX_TOTP_LOCK_MS: "auth.totp.lockMs"
       }
     })
     .useArgv({ name: "cli", map: { port: "server.port" } })
@@ -88,6 +110,8 @@ function normalize(raw: Record<string, unknown>): FlmuxBootConfig {
   const ws = asRecord(server.ws);
   const limits = asRecord(raw.limits);
   const grace = asRecord(raw.grace);
+  const auth = asRecord(raw.auth);
+  const totp = asRecord(auth.totp);
   return {
     app: {
       name: nonEmpty(app.name),
@@ -120,6 +144,15 @@ function normalize(raw: Record<string, unknown>): FlmuxBootConfig {
     grace: {
       clientMs: positive(grace.clientMs, "FLMUX_CLIENT_GRACE_MS"),
       authorityEvictionMs: positive(grace.authorityEvictionMs, "FLMUX_AUTHORITY_EVICTION_GRACE_MS")
+    },
+    auth: {
+      methods: methodList(auth.methods),
+      sessionTtlMs: positive(auth.sessionTtlMs, "FLMUX_SESSION_TTL_MS") ?? 30 * 24 * 60 * 60 * 1000,
+      totp: {
+        windowSteps: boundedNonNeg(totp.windowSteps, "FLMUX_TOTP_WINDOW_STEPS", 3) ?? 1,
+        maxFailures: positive(totp.maxFailures, "FLMUX_TOTP_MAX_FAILURES") ?? 5,
+        lockMs: positive(totp.lockMs, "FLMUX_TOTP_LOCK_MS") ?? 15 * 60 * 1000
+      }
     }
   };
 }
@@ -157,6 +190,31 @@ function positive(value: unknown, label: string): number | undefined {
   const n = toInt(value);
   if (n === undefined || n <= 0) throw new Error(`invalid ${label}: ${String(value)}`);
   return n;
+}
+
+/** Integer in [0, max]; empty/absent → undefined (default applies). Unlike
+ * `positive`, 0 is valid (TOTP windowSteps=0 ⇒ exact-period only). */
+function boundedNonNeg(value: unknown, label: string, max: number): number | undefined {
+  if (value === undefined || value === "") return undefined;
+  const n = toInt(value);
+  if (n === undefined || n < 0 || n > max) throw new Error(`invalid ${label}: ${String(value)} (0-${max})`);
+  return n;
+}
+
+const KNOWN_AUTH_METHODS = ["passkey", "totp"];
+
+/** Enabled auth methods: TOML array or comma string; empty/absent → ["passkey"].
+ * Unknown names fail the boot (fail-fast) — a typo would otherwise silently
+ * disable all login and lock everyone out. */
+function methodList(value: unknown): string[] {
+  const raw = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
+  const methods = raw.map((v) => (typeof v === "string" ? v.trim() : "")).filter((v) => v.length > 0);
+  for (const m of methods) {
+    if (!KNOWN_AUTH_METHODS.includes(m)) {
+      throw new Error(`invalid FLMUX_AUTH_METHODS: unknown method '${m}' (allowed: ${KNOWN_AUTH_METHODS.join(", ")})`);
+    }
+  }
+  return methods.length > 0 ? methods : ["passkey"];
 }
 
 /** confkit argv parses `--key=value` only; rewrite known `--flag value` pairs. */

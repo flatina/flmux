@@ -6,6 +6,9 @@ import { generateToken, generateUserHandle } from "./main/auth/tokenFormat";
 import { createTokenStore } from "./main/auth/tokenStore";
 import { createUserStore, isPathSafeUserName, type AllowPaneKinds, type FlmuxUser } from "./main/auth/userStore";
 import { createWebauthnStore } from "./main/auth/webauthnStore";
+import { createTotpStore } from "./main/auth/totpStore";
+import { generateTotpSecret, totpUri } from "./main/auth/totp";
+import { generateRecoveryCodes } from "./main/auth/recoveryCodes";
 import { stringifyUsersToml } from "./main/auth/tomlWriter";
 import { generateDisplayName, validateDisplayName } from "./main/auth/displayName";
 
@@ -14,7 +17,7 @@ const ENROLLMENT_TTL_MS = 15 * 60 * 1000; // 15 minutes
 export async function runAuthCli(rawArgs: string[]): Promise<unknown> {
   const [subcommand, ...rest] = rawArgs;
   if (!subcommand) {
-    throw new Error("auth requires a subcommand (create-user | enroll | credentials)");
+    throw new Error("auth requires a subcommand (create-user | enroll | enroll-totp | credentials)");
   }
 
   const { authDir, argv } = extractAuthDirFlag(rest);
@@ -25,6 +28,8 @@ export async function runAuthCli(rawArgs: string[]): Promise<unknown> {
       return createUser(paths, argv);
     case "enroll":
       return enroll(paths, argv);
+    case "enroll-totp":
+      return enrollTotp(paths, argv);
     case "credentials":
       return credentials(paths, argv);
     default:
@@ -136,6 +141,50 @@ async function enroll(paths: FlmuxAuthPaths, argv: string[]) {
     enrollUrl: url,
     expiresInMinutes: ENROLLMENT_TTL_MS / 60_000
   };
+}
+
+/** Provision a user's TOTP enrollment: fresh secret + recovery codes. Re-enroll
+ * replaces the prior secret, recovery codes, and step counter (set() overwrites).
+ * Secrets (QR/seed/recovery codes) go to stdout ONCE — never the returned object
+ * (which lands in scrollback / shell history / log capture). */
+async function enrollTotp(paths: FlmuxAuthPaths, argv: string[]) {
+  const userName = readFlag(argv, "--user");
+  if (!userName) {
+    throw new Error("auth enroll-totp: --user <name> is required");
+  }
+  const userStore = createUserStore(paths.usersFile);
+  if (!userStore.getUser(userName)) {
+    throw new Error(`User '${userName}' not found in ${paths.usersFile}`);
+  }
+  const issuer = readFlag(argv, "--issuer") ?? "flmux";
+
+  const store = createTotpStore(paths.totpFile);
+  const reenrolled = store.get(userName) !== null;
+  const secret = generateTotpSecret();
+  const { codes, hashes } = generateRecoveryCodes();
+  store.set({
+    user: userName,
+    secret,
+    lastUsedStep: 0,
+    recoveryHashes: hashes,
+    createdAt: new Date().toISOString()
+  });
+
+  const uri = totpUri({ secret, label: userName, issuer });
+  const qrcode = (await import("qrcode-terminal")).default;
+  await new Promise<void>((resolveQr) => {
+    qrcode.generate(uri, { small: true }, (rendered: string) => {
+      process.stdout.write(`${rendered}\n`);
+      resolveQr();
+    });
+  });
+  process.stdout.write(`\notpauth URI: ${uri}\n`);
+  process.stdout.write(`secret (manual entry): ${secret}\n`);
+  process.stdout.write(`\nRecovery codes — store securely, shown once, each usable once:\n`);
+  for (const code of codes) process.stdout.write(`  ${code}\n`);
+  process.stdout.write("\n");
+
+  return { ok: true, authDir: paths.authDir, user: userName, reenrolled, recoveryCount: codes.length };
 }
 
 function credentials(paths: FlmuxAuthPaths, argv: string[]) {

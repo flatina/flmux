@@ -219,6 +219,9 @@ export function startFlmuxServer(options: {
   /** Passkey auth service (web mode). Owns `/api/auth/*`, mints sessions, and
    *  tracks live `/rpc` connections by tokenId for logout/revoke close. */
   webauthn?: WebauthnAuthService;
+  /** Enabled human login methods (`passkey`/`totp`). Gates routes + login UI;
+   *  default passkey-only. Route-level enforcement — UI hiding alone is bypassable. */
+  authMethods?: string[];
   /** Extension-declared HTTP routes, resolved with their extId + dataDir. */
   extHttpRoutes?: ResolvedExtHttpRoute[];
   /** Request-time liveness for a route's extension (onInit failure disables it). */
@@ -241,6 +244,7 @@ export function startFlmuxServer(options: {
 }): FlmuxServerHandle {
   const hostname = "127.0.0.1";
   const appName = options.appName ?? "flmux";
+  const authMethods = options.authMethods ?? ["passkey"];
   const rateLimitConfig = options.rateLimit ?? { max: 600, windowMs: 60_000, userMax: 6000 };
   const wsKeepalive = options.wsKeepalive ?? { pingIntervalMs: 25_000, idleTimeoutSeconds: 120 };
   const trustedProxies = parseTrustedProxies(options.trustedProxies);
@@ -275,19 +279,29 @@ export function startFlmuxServer(options: {
     // Pre-auth carve-out: login/enroll pages + the passkey ceremony endpoints
     // are reachable WITHOUT a session (they exist to create one). Every other
     // route stays behind authorizeRequest via `.all("*")`.
-    .get("/login", () => htmlPage(renderLoginPage(appName)))
+    .get("/login", () => htmlPage(renderLoginPage(appName, authMethods)))
     .get("/enroll", () => htmlPage(renderEnrollPage(appName)))
     .post("/api/auth/passkey/register/options", ({ request }) =>
-      options.webauthn ? options.webauthn.handleRegisterOptions(request) : notFound()
+      options.webauthn && authMethods.includes("passkey") ? options.webauthn.handleRegisterOptions(request) : notFound()
     )
     .post("/api/auth/passkey/register/verify", ({ request }) =>
-      options.webauthn ? options.webauthn.handleRegisterVerify(request) : notFound()
+      options.webauthn && authMethods.includes("passkey") ? options.webauthn.handleRegisterVerify(request) : notFound()
     )
     .post("/api/auth/passkey/authenticate/options", ({ request }) =>
-      options.webauthn ? options.webauthn.handleAuthenticateOptions(request) : notFound()
+      options.webauthn && authMethods.includes("passkey")
+        ? options.webauthn.handleAuthenticateOptions(request)
+        : notFound()
     )
     .post("/api/auth/passkey/authenticate/verify", ({ request }) =>
-      options.webauthn ? options.webauthn.handleAuthenticateVerify(request) : notFound()
+      options.webauthn && authMethods.includes("passkey")
+        ? options.webauthn.handleAuthenticateVerify(request)
+        : notFound()
+    )
+    .post("/api/auth/totp/authenticate", ({ request }) =>
+      options.webauthn && authMethods.includes("totp") ? options.webauthn.handleTotpAuthenticate(request) : notFound()
+    )
+    .post("/api/auth/totp/recovery", ({ request }) =>
+      options.webauthn && authMethods.includes("totp") ? options.webauthn.handleTotpRecovery(request) : notFound()
     )
     .post("/api/auth/logout", ({ request }) => (options.webauthn ? options.webauthn.handleLogout(request) : notFound()))
     .get("/api/clients", async ({ request, set }) => {

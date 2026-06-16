@@ -78,6 +78,10 @@ const PAGE_STYLE = /* css */ `
   button { width: 100%; padding: 11px 16px; border: 0; border-radius: 10px; cursor: pointer;
     background: #2f6df0; color: white; font-size: 15px; font-weight: 600; }
   button:disabled { opacity: 0.6; cursor: default; }
+  input { width: 100%; box-sizing: border-box; padding: 11px 14px; margin-bottom: 10px;
+    border: 1px solid #32445f; border-radius: 10px; background: #0f1726; color: #e6eefc; font-size: 15px; }
+  .sep { text-align: center; color: #6b7f9e; margin: 14px 0; font-size: 13px; }
+  a.link { display: inline-block; margin-top: 10px; color: #7fa8ff; font-size: 13px; cursor: pointer; }
   #status { margin-top: 14px; font-size: 13px; min-height: 18px; }
   #status.err { color: #ff9a9a; }
 `;
@@ -85,21 +89,22 @@ const PAGE_STYLE = /* css */ `
 const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-export const renderLoginPage = (appName: string) => {
+export const renderLoginPage = (appName: string, methods: string[] = ["passkey"]) => {
   const brand = escapeHtml(appName);
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>${brand} — Sign in</title><style>${PAGE_STYLE}</style></head>
-<body><main>
-  <h1>Sign in to ${brand}</h1>
-  <p>Use your passkey — no username needed.</p>
-  <button id="go">Sign in with passkey</button>
-  <div id="status"></div>
-</main>
-<script type="module">
-${CLIENT_GLUE}
-const btn = document.getElementById("go");
+  const passkey = methods.includes("passkey");
+  const totp = methods.includes("totp");
+  const passkeyBlock = passkey ? `<button id="go">Sign in with passkey</button>` : "";
+  const sep = passkey && totp ? `<div class="sep">— or —</div>` : "";
+  const totpBlock = totp
+    ? `<form id="totp-form" autocomplete="off">
+    <input id="totp-user" placeholder="Username" autocomplete="username" required />
+    <input id="totp-code" inputmode="numeric" autocomplete="one-time-code" placeholder="Authenticator code" required />
+    <button type="submit">Sign in with code</button>
+  </form>
+  <a href="#" id="rec-toggle" class="link">Lost your device? Use a recovery code</a>`
+    : "";
+  const passkeyScript = passkey
+    ? `const btn = document.getElementById("go");
 async function login() {
   btn.disabled = true;
   setStatus("Waiting for your passkey…");
@@ -109,12 +114,49 @@ async function login() {
     await postJSON("/api/auth/passkey/authenticate/verify", authToJSON(cred));
     setStatus("Signed in. Redirecting…");
     location.href = "/";
-  } catch (e) {
-    setStatus(e.message || "Sign-in failed", true);
-    btn.disabled = false;
-  }
+  } catch (e) { setStatus(e.message || "Sign-in failed", true); btn.disabled = false; }
 }
-btn.addEventListener("click", login);
+btn.addEventListener("click", login);`
+    : "";
+  const totpScript = totp
+    ? `const form = document.getElementById("totp-form");
+const codeInput = document.getElementById("totp-code");
+const recToggle = document.getElementById("rec-toggle");
+let recovery = false;
+recToggle.addEventListener("click", (e) => {
+  e.preventDefault();
+  recovery = !recovery;
+  codeInput.value = "";
+  codeInput.placeholder = recovery ? "Recovery code" : "Authenticator code";
+  recToggle.textContent = recovery ? "Use your authenticator code instead" : "Lost your device? Use a recovery code";
+});
+form.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const username = document.getElementById("totp-user").value.trim();
+  const code = codeInput.value.trim();
+  setStatus("Verifying…");
+  try {
+    await postJSON(recovery ? "/api/auth/totp/recovery" : "/api/auth/totp/authenticate", { username, code });
+    setStatus("Signed in. Redirecting…");
+    location.href = "/";
+  } catch (e) { setStatus(e.message || "Sign-in failed", true); }
+});`
+    : "";
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${brand} — Sign in</title><style>${PAGE_STYLE}</style></head>
+<body><main>
+  <h1>Sign in to ${brand}</h1>
+  ${passkeyBlock}
+  ${sep}
+  ${totpBlock}
+  <div id="status"></div>
+</main>
+<script type="module">
+${CLIENT_GLUE}
+${passkeyScript}
+${totpScript}
 </script></body></html>`;
 };
 

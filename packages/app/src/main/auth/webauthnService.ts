@@ -56,6 +56,10 @@ export function createWebauthnAuthService(options: {
   webauthnFile: string;
   tokensFile: string;
   publicOrigin: string | undefined;
+  /** Display name shown in the native passkey prompt (WebAuthn RP name).
+   * Display-only — `rpID` stays the hostname, so changing it never invalidates
+   * existing credentials. Undefined → "flmux" default. */
+  appName?: string;
   /** Closed-network TOTP front-door (optional; enabled per deployment). */
   totpStore?: TotpStore;
   totpWindowSteps?: number;
@@ -69,7 +73,9 @@ export function createWebauthnAuthService(options: {
   authMethods?: string[];
 }): WebauthnAuthService {
   const passkeyEnabled = (options.authMethods ?? ["passkey"]).includes("passkey");
-  const rp: WebauthnRpConfig | null = passkeyEnabled ? resolveWebauthnRpConfig(options.publicOrigin) : null;
+  const rp: WebauthnRpConfig | null = passkeyEnabled
+    ? resolveWebauthnRpConfig(options.publicOrigin, options.appName)
+    : null;
   const sessionTtlMs = options.sessionTtlMs ?? SESSION_TTL_MS;
   const webauthnStore: WebauthnStore = createWebauthnStore(options.webauthnFile);
   const challenges: ChallengeStore & { dispose(): void } = createChallengeStore();

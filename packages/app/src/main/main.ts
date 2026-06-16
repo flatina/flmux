@@ -535,6 +535,7 @@ const webauthnService =
         webauthnFile: flmuxPaths.webauthnFile,
         tokensFile: flmuxPaths.tokensFile,
         publicOrigin: bootConfig.server.publicOrigin,
+        appName: bootConfig.app.name,
         totpStore: createTotpStore(flmuxPaths.totpFile),
         totpWindowSteps: bootConfig.auth.totp.windowSteps,
         throttle: createLoginThrottle(join(flmuxPaths.authDir, "login-throttle.json"), {
@@ -1182,7 +1183,7 @@ async function stopRuntime() {
 if (runtimeMode === "desktop" && app) {
   const tabstripMode = resolveWorkspaceTabstripMode({ runtimeMode, platform: process.platform });
   const win = new BrowserWindow({
-    title: `flmux skeleton v${app.version} - ${app.engineName ?? "engine"} ${app.engineVersion ?? "unknown"}`,
+    title: initialAppTitle,
     frame: { x: 80, y: 80, width: 1280, height: 860 },
     url: server.origin,
     titleBarStyle: tabstripMode === "titlebar" ? "hidden" : "default",

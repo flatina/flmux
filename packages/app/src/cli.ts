@@ -5,6 +5,7 @@ import { browserCmd } from "./cliBrowser";
 import { discoverLocalCliCommands, defaultExtensionsRootDir, loadLocalCliCommandDef } from "./cliExtensions";
 import { runTokensCli } from "./cliTokens";
 import { runAuthCli } from "./cliAuth";
+import { runConfigCli } from "./cliConfig";
 import { resolveFlmuxPaths, resolveFlmuxRootDir, resolveInstallLayout } from "./main/flmuxPaths";
 import { commonArgs, printJson, resolveClientId, resolveOrigin, toFlmuxCliFlags } from "@flmux/extension-api/cli";
 import type { FlmuxCliFlags } from "@flmux/extension-api/cli";
@@ -193,6 +194,20 @@ const authCmd = defineCommand({
   }
 });
 
+const configCmd = defineCommand({
+  meta: {
+    name: "config",
+    description:
+      "Config-value crypto (encrypt). `config encrypt [--aad <ctx>]` reads plaintext on stdin and prints a host-bound enc: placeholder (AES-256-GCM, key from systemd-creds)."
+  },
+  async run({ rawArgs }) {
+    const result = await runConfigCli(rawArgs);
+    if (result !== undefined) {
+      printJson(result);
+    }
+  }
+});
+
 const rootCmd = defineCommand({
   meta: {
     name: "flmux",
@@ -214,6 +229,7 @@ async function buildSubCommands(): Promise<Record<string, CommandDef>> {
     call: callCmd as CommandDef,
     tokens: tokensCmd as CommandDef,
     auth: authCmd as CommandDef,
+    config: configCmd as CommandDef,
     browser: browserCmd
   };
 

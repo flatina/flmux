@@ -30,6 +30,13 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
+// Concise by default (often Claude-run) — `--verbose` / FLMUX_DEPLOY_VERBOSE=1
+// restores per-phase narration. Warnings and errors always print.
+const VERBOSE = Bun.argv.includes("--verbose") || process.env.FLMUX_DEPLOY_VERBOSE === "1";
+const step = (m: string) => {
+  if (VERBOSE) console.log(m);
+};
+
 type Target = "win" | "mac" | "linux" | "linux-arm64";
 interface TargetSpec {
   bunTarget: string;
@@ -120,15 +127,15 @@ const outDir =
 if (existsSync(outDir)) rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 
-console.log(`Target: ${target} (${spec.bunTarget})`);
-console.log(`Out:    ${outDir}\n`);
+step(`Target: ${target} (${spec.bunTarget})`);
+step(`Out:    ${outDir}\n`);
 
 // 1. Resolve native package (download tarball if cross-target's native isn't installed locally).
 // Web-only skips bunite native — web mode never instantiates AppRuntime.
 const nativeDir = webOnly ? null : await ensureNativePackage(spec.nativePkg);
 
 // 2. Compile entrypoint → exe
-console.log(`1. compile entrypoint → ${spec.exeName}`);
+step(`1. compile entrypoint → ${spec.exeName}`);
 const exePath = join(outDir, spec.exeName);
 await $`bun build src/entrypoint.ts --compile --minify --define __FLMUX_COMPILED__=true --target=${spec.bunTarget} --outfile ${exePath}`.cwd(
   appDir
@@ -154,8 +161,10 @@ if (target === "win") {
 }
 
 // 3. Renderer (Bun.build — HTML entry + CSS graph)
-console.log("\n2. renderer");
-await $`bun run build:renderer`.cwd(appDir);
+step("\n2. renderer");
+// Quiet the renderer build chatter unless verbose; a failure is still caught by
+// the existsSync(rendererOut) check below.
+await (VERBOSE ? $`bun run build:renderer`.cwd(appDir) : $`bun run build:renderer`.cwd(appDir).quiet());
 const rendererOut = join(appDir, "dist/renderer");
 if (!existsSync(rendererOut)) {
   console.error(`renderer output not found at ${rendererOut}`);
@@ -165,9 +174,9 @@ cpSync(rendererOut, join(outDir, "renderer"), { recursive: true });
 
 // 4. Native files (web-only: skip bunite native; terminals use built-in Bun.Terminal)
 if (webOnly) {
-  console.log("\n3. native (web — bunite native skipped; terminals use Bun.Terminal)");
+  step("\n3. native (web — bunite native skipped; terminals use Bun.Terminal)");
 } else {
-  console.log(`\n3. native (${spec.nativePkg})`);
+  step(`\n3. native (${spec.nativePkg})`);
   for (const f of spec.nativeFiles) {
     const src = join(nativeDir!, f);
     if (!existsSync(src)) {
@@ -178,8 +187,31 @@ if (webOnly) {
   }
 }
 
+// Newest mtime across a set of files/dirs (recursive, files only). Flags a
+// stale extension dist (build inputs newer than the last build) before ship.
+function newestMtimeMs(paths: string[]): number {
+  let newest = 0;
+  for (const p of paths) {
+    if (!existsSync(p)) continue;
+    const st = statSync(p);
+    if (st.isDirectory()) {
+      for (const rel of new Bun.Glob("**/*").scanSync({ cwd: p })) {
+        try {
+          const m = statSync(join(p, rel)).mtimeMs;
+          if (m > newest) newest = m;
+        } catch {
+          /* file vanished mid-scan */
+        }
+      }
+    } else if (st.mtimeMs > newest) {
+      newest = st.mtimeMs;
+    }
+  }
+  return newest;
+}
+
 // 5. Extensions (expanded dist; sample.* skipped)
-console.log("\n4. extensions");
+step("\n4. extensions");
 const extOutDir = join(outDir, "extensions");
 mkdirSync(extOutDir, { recursive: true });
 const srcExtDir = join(repoRoot, "extensions");
@@ -196,7 +228,7 @@ for (const entry of readdirSync(srcExtDir, { withFileTypes: true })) {
   }
   if (typeof manifest.id !== "string") continue;
   if (manifest.devOnly === true) {
-    console.log(`  (skip)   ${entry.name}`);
+    step(`(skip)   ${entry.name}`);
     continue;
   }
   const distSrc = join(srcExtDir, entry.name, "dist");
@@ -204,23 +236,36 @@ for (const entry of readdirSync(srcExtDir, { withFileTypes: true })) {
     console.warn(`  (no dist) ${entry.name}`);
     continue;
   }
+  // Stale-dist warning: build inputs (src / package.json / manifest) newer than
+  // the built dist = a forgotten `bun run build:prod` in the extension's repo.
+  // Ship anyway (operator may have reason), but flag it loudly.
+  const extDir = join(srcExtDir, entry.name);
+  const inputMs = newestMtimeMs([join(extDir, "src"), join(extDir, "package.json"), manifestPath]);
+  const distMs = newestMtimeMs([distSrc]);
+  if (inputMs > distMs) {
+    console.warn(
+      `  ⚠ STALE  ${entry.name}: build inputs newer than dist ` +
+        `(${new Date(inputMs).toISOString()} > ${new Date(distMs).toISOString()}) — run \`bun run build:prod\` in its repo`
+    );
+  }
   cpSync(distSrc, join(extOutDir, entry.name, "dist"), { recursive: true });
-  console.log(`  OK       ${entry.name} (${manifest.id})`);
+  step(`OK       ${entry.name} (${manifest.id})`);
   copied += 1;
 }
 if (copied === 0 && !webOnly) {
   console.error("\nno private extensions copied — aborting");
   process.exit(1);
 }
+console.log(`   extensions: ${copied} copied`);
 
 // 6. Launcher
-console.log("\n5. launcher");
+step("\n5. launcher");
 const launcherPath = join(outDir, spec.launcherName);
 writeFileSync(launcherPath, webOnly ? webLauncher() : spec.launcherContent);
 if (target !== "win") chmodSync(launcherPath, 0o755);
 
 // 7. Size report
-console.log("");
+step("");
 function sizeOf(p: string): number {
   const s = statSync(p);
   if (s.isFile()) return s.size;
@@ -233,9 +278,9 @@ let total = 0;
 for (const e of readdirSync(outDir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
   const sz = sizeOf(join(outDir, e.name));
   total += sz;
-  console.log(`  ${e.name}${e.isDirectory() ? "/" : ""}  ${mb(sz)} MB`);
+  step(`${e.name}${e.isDirectory() ? "/" : ""}  ${mb(sz)} MB`);
 }
-console.log(`\n  Total: ${mb(total)} MB`);
+step(`\n  Total: ${mb(total)} MB`);
 console.log(`\nDeploy ready: ${outDir}`);
 console.log(`Run on target: ${spec.launcherName}`);
 
@@ -248,7 +293,7 @@ async function ensureNativePackage(pkg: string): Promise<string> {
   const candidate2 = join(repoRoot, "packages/app/node_modules", pkg);
   if (existsSync(join(candidate2, spec.nativeFiles[0]!))) return candidate2;
 
-  console.log(`  fetching ${pkg} (cross-target — not installed locally)`);
+  step(`fetching ${pkg} (cross-target — not installed locally)`);
   const cacheDir = join(repoRoot, "dist/.native-cache", pkg);
   const distInfo = await $`bun pm view ${pkg} dist`.text();
   const tarballMatch = distInfo.match(/"tarball":\s*"([^"]+)"/);

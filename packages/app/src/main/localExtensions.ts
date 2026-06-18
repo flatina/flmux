@@ -54,6 +54,14 @@ interface LocalExtensionCatalogPolicy {
 }
 
 export async function discoverLocalExtensions(rootDir: string): Promise<DiscoveredLocalExtension[]> {
+  // A root that is itself a built extension (has dist/manifest.json) is treated as
+  // a single extension — lets a configured root point straight at an extension dir
+  // nested among non-extension siblings, no curated catalog/junction required.
+  if (await Bun.file(join(rootDir, "dist", "manifest.json")).exists()) {
+    const single = await discoverSourceExtension(rootDir);
+    return single ? [single] : [];
+  }
+
   let entries: Array<{ name: string; isDirectory(): boolean; isSymbolicLink(): boolean }>;
 
   try {

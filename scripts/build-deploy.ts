@@ -28,7 +28,7 @@ import {
   statSync,
   writeFileSync
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 // Concise by default (often Claude-run) — `--verbose` / FLMUX_DEPLOY_VERBOSE=1
 // restores per-phase narration. Warnings and errors always print.
@@ -210,15 +210,46 @@ function newestMtimeMs(paths: string[]): number {
   return newest;
 }
 
+// Extra extension dirs from extensions/catalog.json `additionalRoots` (absolute or
+// relative-to-extensions); each is a direct extension dir — replaces junctioning
+// private extensions into the tree.
+function readCatalogAdditionalRoots(extRootDir: string): string[] {
+  const catalogPath = join(extRootDir, "catalog.json");
+  if (!existsSync(catalogPath)) return [];
+  try {
+    const parsed = JSON.parse(readFileSync(catalogPath, "utf8")) as { additionalRoots?: unknown };
+    if (!Array.isArray(parsed.additionalRoots)) return [];
+    return parsed.additionalRoots
+      .filter((r): r is string => typeof r === "string" && r.trim().length > 0)
+      .map((r) => resolve(extRootDir, r));
+  } catch {
+    console.warn(`  (catalog) failed to parse ${catalogPath}`);
+    return [];
+  }
+}
+
 // 5. Extensions (expanded dist; sample.* skipped)
 step("\n4. extensions");
 const extOutDir = join(outDir, "extensions");
 mkdirSync(extOutDir, { recursive: true });
 const srcExtDir = join(repoRoot, "extensions");
-let copied = 0;
+// First-party live under extensions/; private ones come from catalog.json
+// additionalRoots (direct extension dirs). Dedupe by id so a leftover junction +
+// catalog entry for the same extension don't double-copy.
+const candidates: Array<{ name: string; dir: string }> = [];
 for (const entry of readdirSync(srcExtDir, { withFileTypes: true })) {
-  if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
-  const manifestPath = join(srcExtDir, entry.name, "manifest.json");
+  if (entry.isDirectory() || entry.isSymbolicLink()) {
+    candidates.push({ name: entry.name, dir: join(srcExtDir, entry.name) });
+  }
+}
+for (const root of readCatalogAdditionalRoots(srcExtDir)) {
+  candidates.push({ name: basename(root), dir: root });
+}
+
+let copied = 0;
+const seenIds = new Set<string>();
+for (const { name, dir } of candidates) {
+  const manifestPath = join(dir, "manifest.json");
   if (!existsSync(manifestPath)) continue;
   let manifest: { id?: string; devOnly?: unknown };
   try {
@@ -228,28 +259,29 @@ for (const entry of readdirSync(srcExtDir, { withFileTypes: true })) {
   }
   if (typeof manifest.id !== "string") continue;
   if (manifest.devOnly === true) {
-    step(`(skip)   ${entry.name}`);
+    step(`(skip)   ${name}`);
     continue;
   }
-  const distSrc = join(srcExtDir, entry.name, "dist");
+  if (seenIds.has(manifest.id)) continue;
+  const distSrc = join(dir, "dist");
   if (!existsSync(distSrc)) {
-    console.warn(`  (no dist) ${entry.name}`);
+    console.warn(`  (no dist) ${name}`);
     continue;
   }
   // Stale-dist warning: build inputs (src / package.json / manifest) newer than
   // the built dist = a forgotten `bun run build:prod` in the extension's repo.
   // Ship anyway (operator may have reason), but flag it loudly.
-  const extDir = join(srcExtDir, entry.name);
-  const inputMs = newestMtimeMs([join(extDir, "src"), join(extDir, "package.json"), manifestPath]);
+  const inputMs = newestMtimeMs([join(dir, "src"), join(dir, "package.json"), manifestPath]);
   const distMs = newestMtimeMs([distSrc]);
   if (inputMs > distMs) {
     console.warn(
-      `  ⚠ STALE  ${entry.name}: build inputs newer than dist ` +
+      `  ⚠ STALE  ${name}: build inputs newer than dist ` +
         `(${new Date(inputMs).toISOString()} > ${new Date(distMs).toISOString()}) — run \`bun run build:prod\` in its repo`
     );
   }
-  cpSync(distSrc, join(extOutDir, entry.name, "dist"), { recursive: true });
-  step(`OK       ${entry.name} (${manifest.id})`);
+  cpSync(distSrc, join(extOutDir, name, "dist"), { recursive: true });
+  step(`OK       ${name} (${manifest.id})`);
+  seenIds.add(manifest.id);
   copied += 1;
 }
 if (copied === 0 && !webOnly) {

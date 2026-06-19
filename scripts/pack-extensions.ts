@@ -11,7 +11,8 @@
 // Packs already-built `dist/` trees — run the extension's build first
 // (`bun run build:extensions` for first-party; a per-extension workflow for
 // anything else). Using the already-built dist keeps this script agnostic to
-// how each extension is built (junction layouts, custom bundlers, etc.).
+// how each extension is built (custom bundlers, etc.). First-party only;
+// external extensions ship expanded dist via build-deploy, not tarball.
 
 import { readdir, readFile, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";

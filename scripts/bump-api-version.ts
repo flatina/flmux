@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Atomically bump FLMUX_EXTENSION_API_VERSION across the host constants and
-// every extensions/<name>/manifest.json that lives under this install (first-
-// party subfolders + any junctioned directory with a top-level manifest).
+// every first-party extensions/<name>/manifest.json. External extensions
+// (catalog additionalRoots) self-maintain their apiVersion in their own repos.
 //
 // Usage:  bun scripts/bump-api-version.ts <next-version>
 //
@@ -47,7 +47,7 @@ for (const entry of readdirSync(extensionsDir)) {
   try {
     raw = readFileSync(manifestPath, "utf8");
   } catch {
-    continue; // Not an extension dir (or junction target absent).
+    continue; // Not an extension dir.
   }
   if (!statSync(manifestPath).isFile()) continue;
 

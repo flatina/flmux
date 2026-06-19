@@ -62,12 +62,6 @@ export interface WebModeUserAuthorityRegistry {
  * Per-user session persistence is wired when `sessionsDir` is set:
  * each authority gets its own store at `<sessionsDir>/<userId>/session.json`.
  * Without `sessionsDir` the authorities stay in-memory (useful for tests).
- *
- * Phase 2+ gap (intentional):
- * - **Authority eviction** — authorities live for the process lifetime.
- *   Every user who ever authenticated contributes a `ShellCore` that
- *   receives every terminal event forever. Phase 2+ adds a
- *   no-client-in-grace-period sweep here.
  */
 export function createWebModeUserAuthorityRegistry(
   options: WebModeUserAuthorityRegistryOptions

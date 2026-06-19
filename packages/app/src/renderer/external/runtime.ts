@@ -14,6 +14,8 @@ import type {
 import type { PaneDescriptor, PaneRendererRuntimeContext, PaneWorkspaceContext } from "../shell/paneRegistry";
 import type { ShellModelAPI } from "@flmux/core/shell/types";
 import { setPaneHeaderMenu } from "./paneTabMenuRegistry";
+import { registerPaneForCapture, unregisterPaneForCapture } from "./paneCaptureRegistry";
+import { capturePaneInWorkspace } from "./paneCapture";
 
 // Renderer-side pane descriptor — only `kind` + `createRenderer`. The
 // host owns lifecycle / pathMount / persistence via the server entry's
@@ -83,7 +85,8 @@ function createExternalPaneContext(
       }
     },
     state,
-    setHeaderMenu: (menu) => setPaneHeaderMenu(paneId, menu)
+    setHeaderMenu: (menu) => setPaneHeaderMenu(paneId, menu),
+    capturePane: (targetPaneId, opts) => capturePaneInWorkspace(args.workspace.id, targetPaneId, opts)
   };
 }
 
@@ -110,6 +113,13 @@ function wrapExternalPaneRenderer(
       try {
         synchronizeExternalPaneState(state, params.api, params.params);
         instance = renderer.mount(host, createExternalPaneContext(args, state));
+        // Register only on successful mount (a throw skips this → not capturable).
+        registerPaneForCapture(args.options.id, {
+          host,
+          instance: instance || undefined,
+          workspaceId: args.workspace.id,
+          kind: renderer.kind
+        });
       } catch (error) {
         console.error(`[flmux] extension pane '${extensionId}' failed to mount`, error);
         renderPaneMountError(host, extensionId, error);
@@ -144,6 +154,7 @@ function wrapExternalPaneRenderer(
       try {
         instance?.dispose?.();
       } finally {
+        unregisterPaneForCapture(args.options.id, host);
         disposeExternalPaneState(state);
       }
     }

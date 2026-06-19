@@ -184,6 +184,7 @@ export interface TestPaneContextOptions {
   bus?: TestBus | WorkspaceBusClient;
   workspaceStatus?: WorkspaceStatusStoreClient;
   state?: PaneStateStore;
+  capturePane?: ExtensionPaneContext["capturePane"];
 }
 
 export function createTestPaneContext(options: TestPaneContextOptions = {}): ExtensionPaneContext {
@@ -200,7 +201,10 @@ export function createTestPaneContext(options: TestPaneContextOptions = {}): Ext
     bus,
     workspaceStatus,
     state,
-    setHeaderMenu: () => {}
+    setHeaderMenu: () => {},
+    capturePane:
+      options.capturePane ??
+      (() => Promise.reject(new Error("capturePane is not implemented in createTestPaneContext")))
   };
 }
 

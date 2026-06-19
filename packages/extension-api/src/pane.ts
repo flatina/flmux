@@ -37,6 +37,28 @@ export type PaneHeaderMenu =
   | { items: PaneHeaderMenuItem[] }
   | { build(container: HTMLElement, api: { close(): void }): (() => void) | void };
 
+export interface CapturePaneOptions {
+  /** Target width on the page in mm — drives layout size (label density +
+   *  on-page font size). Required: print/report layout is caller knowledge,
+   *  not a flmux default. */
+  widthMm: number;
+  /** Target height in mm. Omit to derive from the target host's aspect ratio. */
+  heightMm?: number;
+  /** Output resolution; pixelRatio = dpi/96. Default 300 (print). */
+  dpi?: number;
+  /** Fill behind transparent areas. Default "white". A pane painting an opaque
+   *  themed surface must switch to white in `onBeforeCapture` — this only fills gaps. */
+  background?: string;
+  /** Hard cap per output side (browser canvas limit). Default ~8192. */
+  maxOutputPx?: number;
+}
+
+export interface CapturedImage {
+  blob: Blob;
+  width: number;
+  height: number;
+}
+
 export interface ExtensionPaneContext {
   paneId: string;
   workspaceId: string;
@@ -49,6 +71,14 @@ export interface ExtensionPaneContext {
   state: PaneStateStore;
   /** Set/clear the pane's tab-header menu. Pass `null` to remove. */
   setHeaderMenu(menu: PaneHeaderMenu | null): void;
+  /** Capture another pane in the SAME workspace as a high-resolution PNG.
+   *  flmux resizes the target host to the requested physical size (so its
+   *  `ResizeObserver` re-fits for more detail), awaits the target's
+   *  `onBeforeCapture`, rasterizes the host (DOM + 2D canvases) via dom-to-image,
+   *  then restores. Exclusive — await each call; a concurrent call rejects.
+   *  Rejects if the target isn't a capturable extension pane in this workspace
+   *  (browser/iframe panes are not capturable). */
+  capturePane(targetPaneId: string, opts: CapturePaneOptions): Promise<CapturedImage>;
 }
 
 export interface ExtensionPaneInstance {
@@ -57,6 +87,15 @@ export interface ExtensionPaneInstance {
   focus?(): void;
   toJSON?(): Record<string, unknown>;
   dispose?(): void;
+  /** Capture prep. flmux has already resized this pane's host to `width`×`height`
+   *  (output px) before calling. Set your supersample (e.g. SciChart
+   *  `DpiHelper.PIXEL_RATIO = dpr`), switch to a print/white surface, force a
+   *  re-fit, and resolve ONLY once the surface is settled — only the pane knows
+   *  when its render is done. */
+  onBeforeCapture?(opts: { width: number; height: number; dpr: number }): void | Promise<void>;
+  /** Restore what `onBeforeCapture` changed. Must be idempotent/defensive —
+   *  may run after a partial or throwing `onBeforeCapture`. */
+  onAfterCapture?(): void | Promise<void>;
 }
 
 // ── pathMount / lifecycle (host-side) ──

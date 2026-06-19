@@ -70,6 +70,7 @@
         "citty": "^0.2.2",
         "codemirror": "^6.0.2",
         "dockview-core": "^6.6.1",
+        "dom-to-image-more": "^3.10.0",
         "elysia": "^1.4.29",
         "elysia-rate-limit": "^4.6.2",
         "otpauth": "^9.5.1",
@@ -361,7 +362,7 @@
 
     "bunite-core": ["bunite-core@0.17.2", "", { "dependencies": { "msgpackr": "^1.11.9" }, "optionalDependencies": { "bunite-native-linux-x64": "0.0.5", "bunite-native-mac-arm64": "0.0.5", "bunite-native-win-x64": "0.0.15" } }, "sha512-DFy2T1dVVzaR++9gzJ6c6yKvHJaMq88b2cVnNIQvYKOK+K+9bv0sjevosjPDPgfnIv/423xbUQzSgOVHpzLjLw=="],
 
-    "bunite-dev": ["bunite-dev@0.0.7", "", { "peerDependencies": { "bunite-core": "*" }, "bin": { "bunite-build": "scripts/build.ts", "bunite-setup-cef": "scripts/setup-cef.ts", "bunite-setup-webview2-sdk": "scripts/setup-webview2-sdk.ts" } }, "sha512-QKZIcUWUnIUKF4tfbrOSlzAGNkYBxRRSxO6LvMij3hAHpM51pZi0tLWoQtqBHTnyo1RoNJN8WPAYk0fL6SXPyA=="],
+    "bunite-dev": ["bunite-dev@0.0.10", "", { "peerDependencies": { "bunite-core": "*" }, "bin": { "bunite-build": "scripts/build.ts", "bunite-setup-cef": "scripts/setup-cef.ts", "bunite-setup-webview2-sdk": "scripts/setup-webview2-sdk.ts" } }, "sha512-q6KP9VvME9boTA8bTgHgPw0l7R2fQ/9vBpzWcBwmzB02TGrutBmsIenaw4Jtwl6jZtK3sskJaTMj2YJG/hIO+Q=="],
 
     "bunite-native-linux-x64": ["bunite-native-linux-x64@0.0.5", "", { "os": "linux", "cpu": "x64" }, "sha512-32uF8SX9yxhWJEBWpi2WJ8izqddDjzfsfFBq0ix1C3+ZV3RgIFcK9NP2IxMEkYNVBInCGzkIDoUgRjFlhVAUGg=="],
 
@@ -384,6 +385,8 @@
     "detect-libc": ["detect-libc@2.1.2", "", {}, "sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ=="],
 
     "dockview-core": ["dockview-core@6.6.1", "", {}, "sha512-WuNoO2wl3rGI8MaTuvmfgViek4WafHLD9Kf//Hw69g8TgAHSpAWr6RW15kU6U9vwtQxIi/YBxQNcIA5RzQ46Fw=="],
+
+    "dom-to-image-more": ["dom-to-image-more@3.10.0", "", {}, "sha512-APrFEimSmH4phJKs8DlURuSr3BFwDqNi62l14bx73Wrhx0OhE4dd0qzZR+4E3sH8PnHxvax1LOrosC9oXRFA5A=="],
 
     "elysia": ["elysia@1.4.29", "", { "dependencies": { "cookie": "^1.1.1", "exact-mirror": "^0.2.7", "fast-decode-uri-component": "^1.0.1", "memoirist": "^0.4.0" }, "peerDependencies": { "@sinclair/typebox": ">= 0.34.0 < 1", "@types/bun": ">= 1.2.0", "file-type": ">= 20.0.0", "openapi-types": ">= 12.0.0", "typescript": ">= 5.0.0" }, "optionalPeers": ["@types/bun", "typescript"] }, "sha512-GwMRGGwSdjfPt+w3LA0fqTuYJtS8uVRJicvoar98/HrO5qdFKDc9CwjIb6Kja+v39lkY+58hr2JvdR9jQzlUuA=="],
 

@@ -41,6 +41,7 @@
     "citty": "^0.2.2",
     "codemirror": "^6.0.2",
     "dockview-core": "^6.6.1",
+    "dom-to-image-more": "^3.10.0",
     "elysia": "^1.4.29",
     "elysia-rate-limit": "^4.6.2",
     "otpauth": "^9.5.1",

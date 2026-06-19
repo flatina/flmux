@@ -528,8 +528,11 @@ if (webModeAuthorizer) {
   const pruneTimer = setInterval(() => webModeAuthorizer.tokenStore.prune(), 60 * 60 * 1000);
   (pruneTimer as { unref?(): void }).unref?.();
 }
+// --dev-auth-as bypasses real auth → the webauthn service (and its passkey RP /
+// FLMUX_PUBLIC_ORIGIN requirement) is moot; skip it so dev/test web boots
+// without an origin.
 const webauthnService =
-  runtimeMode === "web" && webModeAuthorizer
+  runtimeMode === "web" && webModeAuthorizer && !devAuthAs
     ? createWebauthnAuthService({
         authorizer: webModeAuthorizer,
         webauthnFile: flmuxPaths.webauthnFile,

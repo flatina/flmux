@@ -13,7 +13,7 @@ const THEME_OPTIONS: ReadonlyArray<{ preference: ThemePreference; label: string 
   { preference: "system", label: "System" }
 ];
 
-type SectionId = "appearance" | "account";
+type SectionId = "appearance" | "account" | "about";
 
 interface SettingsSection {
   id: SectionId;
@@ -115,6 +115,7 @@ class SettingsDialog {
     if (this.config.mode === "web" && this.config.account) {
       sections.push({ id: "account", label: "Account", render: (body) => this.renderAccount(body) });
     }
+    sections.push({ id: "about", label: "About", render: (body) => this.renderAbout(body) });
     return sections;
   }
 
@@ -209,6 +210,25 @@ class SettingsDialog {
     body.append(logoutRow);
   }
 
+  private renderAbout(body: HTMLElement): void {
+    const list = document.createElement("div");
+    list.className = "settings-about";
+    list.append(
+      aboutRow("App", this.config.appName),
+      aboutRow("Version", this.config.appVersion),
+      aboutRow("Build date", formatBuildDate(this.config.buildDate))
+    );
+    body.append(list);
+
+    const message = this.config.aboutMessage?.trim();
+    if (message) {
+      const blurb = document.createElement("div");
+      blurb.className = "settings-about__message";
+      blurb.textContent = message;
+      body.append(blurb);
+    }
+  }
+
   private async saveDisplayName(
     value: string,
     ui: { input: HTMLInputElement; saveBtn: HTMLButtonElement; error: HTMLElement }
@@ -258,6 +278,25 @@ function sectionHeading(text: string): HTMLElement {
   heading.className = "settings-section-heading";
   heading.textContent = text;
   return heading;
+}
+
+function aboutRow(label: string, value: string): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "settings-about__row";
+  const labelEl = document.createElement("span");
+  labelEl.className = "settings-about__label";
+  labelEl.textContent = label;
+  const valueEl = document.createElement("span");
+  valueEl.className = "settings-about__value";
+  valueEl.textContent = value;
+  row.append(labelEl, valueEl);
+  return row;
+}
+
+function formatBuildDate(value: string): string {
+  if (value === "dev") return "dev";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
 export async function logout(): Promise<void> {

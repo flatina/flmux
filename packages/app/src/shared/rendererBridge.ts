@@ -54,6 +54,11 @@ export interface FlmuxRendererBootstrapConfig {
   mode: FlmuxRuntimeMode;
   appName: string;
   appVersion: string;
+  /** Compiled-binary file date (ISO, mtime of the running exe) — a per-deploy
+   * "is the latest build live?" signal. `"dev"` when run from source. */
+  buildDate: string;
+  /** Free-form About blurb from `[app] aboutMessage`; absent → section hides it. */
+  aboutMessage?: string;
   /** Display templates (renderAppTemplate); watermarkHeader unset → hidden. */
   appTitle: string;
   watermarkHeader?: string;

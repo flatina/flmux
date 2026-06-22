@@ -707,6 +707,34 @@ body.flmux-has-titlebar .flmux-titlebar-host {
   font-size: 12px;
 }
 
+.settings-about {
+  display: flex;
+  flex-direction: column;
+}
+.settings-about__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 7px 2px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--fl-widget-border);
+}
+.settings-about__label {
+  color: var(--fl-description-foreground);
+}
+.settings-about__value {
+  color: var(--fl-foreground);
+  text-align: right;
+  user-select: text;
+}
+.settings-about__message {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--fl-description-foreground);
+  white-space: pre-wrap;
+  user-select: text;
+}
+
 .settings-btn {
   padding: 6px 12px;
   border-radius: 5px;

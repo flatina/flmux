@@ -9,6 +9,7 @@ export interface FlmuxBootConfig {
     appTitle: string;
     watermarkHeader: string | undefined; // unset → hidden
     watermarkFooter: string;
+    aboutMessage: string | undefined; // free-form About blurb (copyright/notice); unset → hidden
   };
   server: {
     port: number | undefined; // undefined → OS picks
@@ -117,7 +118,8 @@ function normalize(raw: Record<string, unknown>): FlmuxBootConfig {
       name: nonEmpty(app.name),
       appTitle: nonEmpty(app.appTitle) ?? DEFAULT_DISPLAY_TEMPLATE,
       watermarkHeader: nonEmpty(app.watermarkHeader),
-      watermarkFooter: nonEmpty(app.watermarkFooter) ?? DEFAULT_DISPLAY_TEMPLATE
+      watermarkFooter: nonEmpty(app.watermarkFooter) ?? DEFAULT_DISPLAY_TEMPLATE,
+      aboutMessage: nonEmpty(app.aboutMessage)
     },
     server: {
       port: port(server.port),

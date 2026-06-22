@@ -1,4 +1,4 @@
-import { mkdirSync, realpathSync } from "node:fs";
+import { mkdirSync, realpathSync, statSync } from "node:fs";
 import { delimiter, join, resolve, sep } from "node:path";
 import { BrowserWindow, AppRuntime, acquireSingleInstanceLock } from "bunite-core";
 import type { Connection } from "bunite-core/rpc";
@@ -44,6 +44,7 @@ import { resolveFlmuxRuntimeMode, resolveFlmuxDevMode, resolveFlmuxHiddenWindow 
 import { resolveFlmuxRootDir, resolveFlmuxPaths, resolveInstallLayout } from "./flmuxPaths";
 import { ensureFlmuxCliShim, ensureExtensionCliShims } from "./cliShim";
 import { FLMUX_APP_VERSION } from "../version";
+import { isCompiledBinary } from "../shared/buildTarget";
 import { PtydLockFile } from "@flmux/core/terminal/ptyd/lockFile";
 import { callJsonRpcIpc } from "@flmux/core/terminal/ptyd/jsonRpcIpc";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
@@ -556,6 +557,9 @@ if (devAuthAs && runtimeMode === "web") {
 }
 
 const appName = bootConfig.app.name ?? "flmux";
+// Compiled binary: mtime of the running exe ≈ when this build was deployed.
+// From source there's no meaningful exe → "dev".
+const buildDate = isCompiledBinary ? new Date(statSync(process.execPath).mtimeMs).toISOString() : "dev";
 const initialAppTitle = renderAppTemplate(bootConfig.app.appTitle, {
   appName,
   appVersion: FLMUX_APP_VERSION,
@@ -954,6 +958,8 @@ function buildShellConfig(authContext: FlmuxAuthorizationContext | null): FlmuxR
     mode: runtimeMode,
     appName,
     appVersion: FLMUX_APP_VERSION,
+    buildDate,
+    aboutMessage: bootConfig.app.aboutMessage,
     appTitle: bootConfig.app.appTitle,
     watermarkHeader: bootConfig.app.watermarkHeader,
     watermarkFooter: bootConfig.app.watermarkFooter,

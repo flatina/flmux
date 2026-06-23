@@ -54,7 +54,7 @@ export interface FsBackend {
   list(input: { path: string }): Awaitable<FsListResult>;
   read(input: { path: string; maxBytes?: number }): Awaitable<FsReadResult>;
   stat(input: { path: string }): Awaitable<FsStatResult>;
-  write(input: { path: string; content: string }): Awaitable<FsWriteResult>;
+  write(input: { path: string; content: string | Uint8Array }): Awaitable<FsWriteResult>;
   /** No-clobber empty-file create (fails if exists). */
   create(input: { path: string }): Awaitable<FsCreateResult>;
   mkdir(input: { path: string }): Awaitable<FsMkdirResult>;

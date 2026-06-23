@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createShellModel, type PathCallResult } from "@flmux/core/shell";
@@ -127,6 +127,24 @@ describe("/fs ShellModelAPI backend", () => {
       ok: false,
       code: "NOT_WRITABLE"
     });
+  });
+
+  it("writes binary content (Uint8Array) byte-exact through /fs", async () => {
+    const { model, rw } = confinedFixture();
+    // PNG signature + NUL/0xFF — bytes a UTF-8 round-trip would corrupt.
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0x1a, 0x0a]);
+    // A non-zero-offset subarray view of a larger buffer — the production shape
+    // (msgpackr decodes `bin` as a view into the message buffer). Sentinels on
+    // both ends catch a writer that ignores byteOffset/byteLength.
+    const framed = new Uint8Array([0xaa, 0xbb, ...bytes, 0xcc, 0xdd]);
+    const content = framed.subarray(2, 2 + bytes.length);
+
+    expect(await model.pathCall("/fs/write", { path: "/w/rw/img.png", content })).toEqual({
+      ok: true,
+      value: { bytesWritten: bytes.length }
+    });
+    // Read raw from disk — proves byte fidelity (the model read path is utf8-only).
+    expect(new Uint8Array(readFileSync(join(rw, "img.png")))).toEqual(bytes);
   });
 
   it("rejects parent segments and NUL bytes before traversal", async () => {

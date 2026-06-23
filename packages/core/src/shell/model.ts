@@ -1688,9 +1688,11 @@ function optionalBoolean(value: unknown): boolean {
   return value;
 }
 
-function requiredFsContentArg(args: Record<string, unknown>): string {
-  if (typeof args.content !== "string") {
-    throw new ModelPathError("INVALID_VALUE", "call /fs/write requires content=<string>");
+function requiredFsContentArg(args: Record<string, unknown>): string | Uint8Array {
+  // Binary content (Uint8Array) rides the in-process / cap path (msgpackr); HTTP-JSON
+  // callers send a string. Both land in the single contained writer (no-follow/O_EXCL/atomic).
+  if (typeof args.content !== "string" && !(args.content instanceof Uint8Array)) {
+    throw new ModelPathError("INVALID_VALUE", "call /fs/write requires content=<string | Uint8Array>");
   }
 
   return args.content;

@@ -465,12 +465,19 @@ class NodeFsBackend implements FsBackend {
     return readUtf8File(target.realPath, input.maxBytes);
   }
 
-  write({ path: inputPath, content }: { path: string; content: string }) {
-    const buf = Buffer.from(content, "utf8");
+  write({ path: inputPath, content }: { path: string; content: string | Uint8Array }) {
+    // Gate the path (bind match + rw) before materializing content, so a bad
+    // path always fails on the gate, never on a content-buffer error.
     const { root, segments } = this.resolveWritable(inputPath);
     if (segments.length === 0) {
       throw new ModelPathError("INVALID_PATH", "Path is not a file");
     }
+    // Uint8Array may be a subarray view (msgpackr `bin`) — honor offset/length,
+    // never the whole backing buffer.
+    const buf =
+      typeof content === "string"
+        ? Buffer.from(content, "utf8")
+        : Buffer.from(content.buffer, content.byteOffset, content.byteLength);
     return writeAtomicNoFollow(root, segments, buf);
   }
 

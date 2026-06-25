@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createShellModel, type PathCallResult } from "@flmux/core/shell";
 import type { ExtensionFsPolicy } from "@flmux/extension-api";
-import { createFsBackend } from "../src/main/fsBackend";
+import { createFsBackend, createFsPathMapper } from "../src/main/fsBackend";
 import { TestShellModelHost } from "./support/testShellModelHost";
 
 const tempRoots: string[] = [];
@@ -181,6 +181,29 @@ describe("/fs ShellModelAPI backend", () => {
       ok: false,
       code: "INVALID_PATH"
     });
+  });
+
+  it("unconfined toVirtual round-trips (projectRoot-relative, not absolute)", () => {
+    const root = realpathSync(tempRoot()); // canonical base so non-existent lexical fallback is exact
+    const projectDir = join(root, "project");
+    mkdirSync(join(projectDir, "a", "b"), { recursive: true });
+    const file = join(projectDir, "a", "b", "x.png");
+    writeFileSync(file, "x");
+    const mapper = createFsPathMapper({ projectDir, policy: { unconfined: true, binds: [] } });
+
+    // Relative `/<rel>` (not absolute canon) → toReal re-roots under projectDir → identity.
+    const v = mapper.toVirtual(file);
+    expect(v).toBe("/a/b/x.png");
+    expect(realpathSync(mapper.toReal(v!, "read").realPath)).toBe(realpathSync(file));
+    expect(mapper.toVirtual(projectDir)).toBe("/");
+    // Outside projectRoot is unreachable via unconfined /fs → no virtual form.
+    expect(mapper.toVirtual(join(root, "outside.txt"))).toBeNull();
+
+    // Non-existent in-project leaf: toVirtual lexical-resolve branch + toReal write branch.
+    mkdirSync(join(projectDir, "c"));
+    const newV = mapper.toVirtual(join(projectDir, "c", "new.txt"));
+    expect(newV).toBe("/c/new.txt");
+    expect(mapper.toReal(newV!, "write").realPath).toBe(join(projectDir, "c", "new.txt"));
   });
 
   it("rejects a planted symlink that points outside a bind", async () => {

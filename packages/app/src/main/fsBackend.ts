@@ -384,7 +384,15 @@ export function createFsPathMapper(options: CreateFsBackendOptions): FsPathMappe
     },
     toVirtual(real) {
       const canon = tryCanonicalizeExisting(real) ?? resolve(real);
-      if (unconfined) return canon;
+      if (unconfined) {
+        // projectRoot-relative `/…` so `toReal∘toVirtual` is identity (toReal
+        // re-roots virtual under projectRoot). Outside projectRoot is unreachable
+        // via unconfined `/fs`, so it has no virtual form → null. (Identity is for
+        // canonical in-project paths; a symlinked ancestor on a non-existent leaf
+        // or a `\` in a POSIX filename are virtual-scheme limits, as in toReal.)
+        const rel = relativeUnder(projectRoot, canon);
+        return rel === null ? null : rel ? `/${rel}` : "/";
+      }
       let best: { virtual: string; rel: string; realLen: number } | null = null;
       for (const bind of binds) {
         const rel = relativeUnder(bind.realPath, canon);

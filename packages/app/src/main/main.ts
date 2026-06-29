@@ -963,7 +963,10 @@ function buildShellConfig(authContext: FlmuxAuthorizationContext | null): FlmuxR
     appTitle: bootConfig.app.appTitle,
     watermarkHeader: bootConfig.app.watermarkHeader,
     watermarkFooter: bootConfig.app.watermarkFooter,
-    appOrigin: serverOrigin,
+    // Web renderer reaches the server via the browser's origin, not the internal
+    // bind. Use publicOrigin (e.g. behind Funnel or a LAN IP) so absolute URLs the
+    // workbench builds are same-origin; fall back to serverOrigin (loopback) for local/desktop.
+    appOrigin: runtimeMode === "web" && bootConfig.server.publicOrigin ? bootConfig.server.publicOrigin : serverOrigin,
     projectDir,
     // Web: relative URLs so ext modules load via the page origin (proxy/Funnel), not the internal bind.
     localExtensions: createLocalExtensionLoadEntries(localExtensions, runtimeMode === "web" ? "" : serverOrigin),

@@ -245,6 +245,10 @@ export function startFlmuxServer(options: {
   resolveFsDownloader?(context: FlmuxAuthorizationContext | null): FsDownloader | null;
 }): FlmuxServerHandle {
   const hostname = options.host ?? "127.0.0.1";
+  // bind address ≠ reachable origin: 0.0.0.0/:: are bind-only. The returned
+  // `origin` is for internal callers (spawned-ext FLMUX_ORIGIN, mintApiToken) →
+  // must resolve to loopback. Browser-facing origin (web) is publicOrigin, set by main.
+  const originHost = hostname === "0.0.0.0" || hostname === "::" ? "127.0.0.1" : hostname;
   if (hostname !== "127.0.0.1" && hostname !== "::1") {
     console.warn(`[flmux] server binding to ${hostname} (non-loopback) — exposed on the network; ensure a trusted LAN`);
   }
@@ -693,7 +697,7 @@ export function startFlmuxServer(options: {
     : null;
 
   return {
-    origin: `http://${hostname}:${server.port}`,
+    origin: `http://${originHost}:${server.port}`,
     stop() {
       void app.stop(true);
     }

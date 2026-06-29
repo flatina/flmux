@@ -1089,6 +1089,7 @@ const server = startFlmuxServer({
   extHttpRoutes,
   isExtensionEnabled: (extId) => extensionServers.has(extId),
   canUseExtension: userCanUseExtension,
+  host: bootConfig.server.host,
   port: bootConfig.server.port,
   publicOrigin: bootConfig.server.publicOrigin,
   rateLimit: bootConfig.server.rateLimit,

@@ -12,6 +12,7 @@ export interface FlmuxBootConfig {
     aboutMessage: string | undefined; // free-form About blurb (copyright/notice); unset → hidden
   };
   server: {
+    host: string; // bind address; default 127.0.0.1 (loopback). FLMUX_HOST; 0.0.0.0 = all NICs
     port: number | undefined; // undefined → OS picks
     portSource: "cli" | "env" | "config" | "default";
     publicOrigin: string | undefined;
@@ -61,6 +62,7 @@ export async function loadFlmuxBootConfig(options: {
     .useEnv({
       name: "env",
       map: {
+        FLMUX_HOST: "server.host",
         FLMUX_PORT: "server.port",
         FLMUX_PUBLIC_ORIGIN: "server.publicOrigin",
         FLMUX_RATELIMIT_MAX: "server.rateLimit.max",
@@ -122,6 +124,7 @@ function normalize(raw: Record<string, unknown>): FlmuxBootConfig {
       aboutMessage: nonEmpty(app.aboutMessage)
     },
     server: {
+      host: nonEmpty(server.host) ?? "127.0.0.1",
       port: port(server.port),
       portSource: "default", // overwritten from trace after load
       publicOrigin: nonEmpty(server.publicOrigin),

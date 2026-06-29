@@ -234,6 +234,8 @@ export function startFlmuxServer(options: {
   wsKeepalive?: { pingIntervalMs: number; idleTimeoutSeconds: number };
   /** Comma list of trusted proxy socket IPs (see rateLimitKey); default loopback. */
   trustedProxies?: string;
+  /** Bind address; default 127.0.0.1 (loopback). 0.0.0.0/specific IP for direct LAN. */
+  host?: string;
   /** Per-user streaming-upload writer for `/api/fs/upload` (web only; null in
    * desktop / when the user has no fs policy). Reuses the `/fs` write boundary. */
   resolveFsUploader?(context: FlmuxAuthorizationContext | null): FsUploader | null;
@@ -242,7 +244,10 @@ export function startFlmuxServer(options: {
   /** Per-user read resolver for `/api/fs/download` (web only). Reuses the `/fs` read boundary. */
   resolveFsDownloader?(context: FlmuxAuthorizationContext | null): FsDownloader | null;
 }): FlmuxServerHandle {
-  const hostname = "127.0.0.1";
+  const hostname = options.host ?? "127.0.0.1";
+  if (hostname !== "127.0.0.1" && hostname !== "::1") {
+    console.warn(`[flmux] server binding to ${hostname} (non-loopback) — exposed on the network; ensure a trusted LAN`);
+  }
   const appName = options.appName ?? "flmux";
   const authMethods = options.authMethods ?? ["passkey"];
   const rateLimitConfig = options.rateLimit ?? { max: 600, windowMs: 60_000, userMax: 6000 };

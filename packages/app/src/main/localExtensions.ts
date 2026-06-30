@@ -8,10 +8,13 @@ import type { FlmuxLocalExtensionLoadEntry } from "../shared/rendererBridge";
 const LOCAL_EXTENSION_CATALOG_FILENAME = "catalog.json";
 
 /**
- * A discovered extension that the app loads. Either "source" (built into a
- * `dist/` directory — the dev workflow) or "archive" (packaged `.tar.gz` —
- * the distribution format). The two backends share a common resolver
- * interface so consumers (HTTP serving, CLI dispatch) don't branch on origin.
+ * A discovered extension that the app loads, via one of two backends sharing a
+ * common resolver interface (consumers don't branch on origin):
+ *   - "source": an expanded `dist/` directory loaded via `file://` — used in dev
+ *     AND by the deploy package (build-deploy ships expanded dirs, found via
+ *     FLMUX_EXTENSIONS_ROOT).
+ *   - "archive": a packaged `.tar.gz` loaded in-memory via `data:` URL — for
+ *     standalone tar.gz distribution.
  */
 export interface DiscoveredLocalExtension {
   id: string;

@@ -1,7 +1,8 @@
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { resolveFlmuxAuthPaths, type FlmuxAuthPaths } from "./main/auth/authConfig";
-import { resolveFlmuxPaths } from "./main/flmuxPaths";
+import { resolveFlmuxPaths, resolveFlmuxRootDir, resolveInstallLayout } from "./main/flmuxPaths";
+import { loadFlmuxBootConfig } from "./main/flmuxConfig";
 import { generateToken, generateUserHandle } from "./main/auth/tokenFormat";
 import { createTokenStore } from "./main/auth/tokenStore";
 import { createUserStore, isPathSafeUserName, type AllowPaneKinds, type FlmuxUser } from "./main/auth/userStore";
@@ -156,7 +157,10 @@ async function enrollTotp(paths: FlmuxAuthPaths, argv: string[]) {
   if (!userStore.getUser(userName)) {
     throw new Error(`User '${userName}' not found in ${paths.usersFile}`);
   }
-  const issuer = readFlag(argv, "--issuer") ?? "flmux";
+  // app.name from the install config (FLMUX_ROOT_DIR-aware), not from --auth-dir.
+  const rootDir = resolveFlmuxRootDir(resolveInstallLayout().installRoot);
+  const config = await loadFlmuxBootConfig({ appConfigFile: resolveFlmuxPaths(rootDir).appConfigFile });
+  const issuer = readFlag(argv, "--issuer") ?? config.app.name ?? "flmux";
 
   const store = createTotpStore(paths.totpFile);
   const reenrolled = store.get(userName) !== null;

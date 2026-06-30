@@ -35,6 +35,12 @@ export interface ExtensionManifestPane {
   newMenu?: boolean;
 }
 
+export interface ExtensionManifestBuild {
+  /** Build-time import aliases: exact import specifier → replacement module
+   *  (ext-dir-relative path or bare specifier). Stripped from the runtime manifest. */
+  alias?: Record<string, string>;
+}
+
 export interface ExtensionManifest {
   id: string;
   name: string;
@@ -44,6 +50,7 @@ export interface ExtensionManifest {
   commands?: ExtensionManifestCommand[];
   panes?: ExtensionManifestPane[];
   devOnly?: boolean;
+  build?: ExtensionManifestBuild;
 }
 
 export type ExtensionManifestValidationResult =
@@ -95,6 +102,7 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
   const serverPath = validateManifestEntrypointPath(server, "entrypoints.server");
   const commandsResult = validateManifestCommands(commands, Boolean(cli));
   const panesResult = validateManifestPanes(panes);
+  const buildResult = validateManifestBuild(value.build);
   const devOnlyRaw = value.devOnly;
   if (devOnlyRaw !== undefined && typeof devOnlyRaw !== "boolean") {
     errors.push("Manifest field 'devOnly' must be a boolean when provided");
@@ -106,6 +114,7 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
   if (serverPath) errors.push(serverPath);
   if (!commandsResult.ok) errors.push(...commandsResult.errors);
   if (!panesResult.ok) errors.push(...panesResult.errors);
+  if (!buildResult.ok) errors.push(...buildResult.errors);
 
   if (!renderer && !cli && !server) {
     errors.push(
@@ -131,9 +140,61 @@ export function validateExtensionManifest(value: unknown): ExtensionManifestVali
       },
       commands: commandsResult.ok ? commandsResult.commands : undefined,
       panes: panesResult.ok ? panesResult.panes : undefined,
-      ...(devOnly !== undefined ? { devOnly } : {})
+      ...(devOnly !== undefined ? { devOnly } : {}),
+      ...(buildResult.ok && buildResult.build ? { build: buildResult.build } : {})
     }
   };
+}
+
+function validateManifestBuild(value: unknown) {
+  if (value === undefined) return { ok: true as const, build: undefined };
+  if (!isPlainObject(value)) {
+    return { ok: false as const, errors: ["Manifest field 'build' must be an object when provided"] };
+  }
+  if (value.alias === undefined) return { ok: true as const, build: undefined };
+  if (!isPlainObject(value.alias)) {
+    return { ok: false as const, errors: ["Manifest field 'build.alias' must be an object"] };
+  }
+
+  const errors: string[] = [];
+  const alias: Record<string, string> = {};
+  for (const [rawFrom, to] of Object.entries(value.alias)) {
+    const from = rawFrom.trim();
+    if (!from) {
+      errors.push("Manifest field 'build.alias' keys must be non-empty strings");
+      continue;
+    }
+    // `from` must be a bare module specifier — a relative/absolute key would
+    // redirect every matching literal across the whole graph, not a package.
+    if (/^([./\\]|[A-Za-z]:)/.test(from)) {
+      errors.push(
+        `Manifest field 'build.alias' key '${from}' must be a bare module specifier (not relative or absolute)`
+      );
+      continue;
+    }
+    if (typeof to !== "string" || !to.trim()) {
+      errors.push(`Manifest field 'build.alias.${from}' must be a non-empty string`);
+      continue;
+    }
+    // `to` is a './'-relative path (contained to the ext dir) or a bare module
+    // specifier (node-resolved at build time). Classify exactly as the build does
+    // (`to.startsWith(".")`): a dot-less, non-absolute value (e.g. `lib/x`) is bare.
+    const target = to.trim();
+    let toError: string | null = null;
+    if (target.startsWith(".")) {
+      toError = validateManifestEntrypointPath(target, `build.alias.${from}`);
+    } else if (/^([/\\]|[A-Za-z]:)/.test(target)) {
+      toError = `Manifest field 'build.alias.${from}' must be a './'-relative path or a bare module specifier`;
+    }
+    if (toError) {
+      errors.push(toError);
+      continue;
+    }
+    alias[from] = target;
+  }
+
+  if (errors.length > 0) return { ok: false as const, errors };
+  return { ok: true as const, build: Object.keys(alias).length > 0 ? { alias } : undefined };
 }
 
 function validateManifestEntrypointPath(value: unknown, label: string) {

@@ -117,6 +117,41 @@ const fixtures: Fixture[] = [
       entrypoints: { renderer: "./index.ts" },
       panes: [{ kind: "a", icon: "../icon.svg" }]
     })
+  },
+  {
+    name: "build.alias valid (relative + bare targets)",
+    input: makeBase({
+      entrypoints: { renderer: "./index.ts" },
+      build: { alias: { "@scope/pkg": "./node_modules/@scope/pkg/dist/x.js", "other/sub": "other-pkg/dist/x.js" } }
+    })
+  },
+  {
+    name: "build.alias relative key rejected",
+    input: makeBase({ entrypoints: { renderer: "./index.ts" }, build: { alias: { "./local": "./x.js" } } })
+  },
+  {
+    name: "build.alias target escapes dir",
+    input: makeBase({ entrypoints: { renderer: "./index.ts" }, build: { alias: { "@scope/pkg": "../escape.js" } } })
+  },
+  {
+    name: "build.alias absolute target rejected",
+    input: makeBase({ entrypoints: { renderer: "./index.ts" }, build: { alias: { "@scope/pkg": "/abs.js" } } })
+  },
+  {
+    name: "build not an object",
+    input: makeBase({ entrypoints: { renderer: "./index.ts" }, build: "nope" })
+  },
+  {
+    name: "build.alias not an object",
+    input: makeBase({ entrypoints: { renderer: "./index.ts" }, build: { alias: "nope" } })
+  },
+  {
+    name: "build.alias empty map → no build field",
+    input: makeBase({ entrypoints: { renderer: "./index.ts" }, build: { alias: {} } })
+  },
+  {
+    name: "build.alias from with whitespace trimmed",
+    input: makeBase({ entrypoints: { renderer: "./index.ts" }, build: { alias: { "  pkg  ": "./x.ts" } } })
   }
 ];
 

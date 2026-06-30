@@ -1,5 +1,6 @@
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
+import type { BunPlugin } from "bun";
 import { compileIgnore } from "./ignore";
 import type { ExtensionManifest } from "./manifest";
 import { validateExtensionDirectory } from "./validate";
@@ -85,8 +86,21 @@ export async function buildExtensionDirectory(
   try {
     await copyStaticAssets(resolvedExtensionDir, tmpDir, builtFiles);
 
+    const aliasResult = await resolveBuildAlias(validation.manifest.build?.alias ?? {}, resolvedExtensionDir);
+    if (!aliasResult.ok) {
+      await rm(tmpDir, { recursive: true, force: true });
+      return {
+        ok: false,
+        extensionDir: resolvedExtensionDir,
+        outDir,
+        manifestPath: join(outDir, "manifest.json"),
+        builtFiles: [],
+        errors: aliasResult.errors
+      };
+    }
+
     for (const entry of entrypoints) {
-      const bundleResult = await bundleEntrypoint(entry, tmpDir, options.minify ?? false);
+      const bundleResult = await bundleEntrypoint(entry, tmpDir, options.minify ?? false, aliasResult.alias);
       if (!bundleResult.ok) {
         errors.push(...bundleResult.errors);
         continue;
@@ -157,7 +171,8 @@ export function formatExtensionBuildResult(result: ExtensionBuildResult) {
 async function bundleEntrypoint(
   entry: EntrypointSpec,
   tmpDir: string,
-  minify: boolean
+  minify: boolean,
+  resolvedAlias: Record<string, string>
 ): Promise<{ ok: true; builtFiles: string[] } | { ok: false; errors: string[] }> {
   const outPath = join(tmpDir, replaceTsExtension(stripRelativePrefix(entry.sourceRelative)));
   await mkdir(dirname(outPath), { recursive: true });
@@ -177,7 +192,9 @@ async function bundleEntrypoint(
     // Dev builds stay readable; production (deploy / --minify) mangles + dead-codes.
     minify,
     // sourcemap stays off even when minified — shipping one would undo the minify.
-    sourcemap: "none"
+    sourcemap: "none",
+    // Build-time `manifest.build.alias` redirects (e.g. trim a heavy provider dep).
+    plugins: Object.keys(resolvedAlias).length > 0 ? [makeAliasPlugin(resolvedAlias)] : []
   });
 
   if (!result.success) {
@@ -260,8 +277,77 @@ async function copyStaticAssetsRecursive(
   }
 }
 
-function createRuntimeManifest(sourceManifest: ExtensionManifest): ExtensionManifest {
+// Resolve each `build.alias` target (`./`-relative path or bare specifier) to an
+// absolute file, failing the build loudly if a target is missing. Bare specifiers
+// resolve once with default conditions — a renderer alias to a package with
+// `browser`/`default` conditional exports should use a direct-file `to`.
+async function resolveBuildAlias(
+  alias: Record<string, string>,
+  extensionDir: string
+): Promise<{ ok: true; alias: Record<string, string> } | { ok: false; errors: string[] }> {
+  const resolved: Record<string, string> = {};
+  const errors: string[] = [];
+  for (const [from, to] of Object.entries(alias)) {
+    let target: string | null = null;
+    try {
+      target = to.startsWith(".") ? resolve(extensionDir, to) : Bun.resolveSync(to, extensionDir);
+    } catch {
+      target = null;
+    }
+    if (!target || !(await Bun.file(target).exists())) {
+      errors.push(`build.alias['${from}']: alias target not found: ${to}`);
+      continue;
+    }
+    resolved[from] = target;
+  }
+  return errors.length > 0 ? { ok: false, errors } : { ok: true, alias: resolved };
+}
+
+// Redirect each exact import specifier to its pre-resolved replacement. onResolve
+// intercepts the specifier graph-wide (incl. deep transitive deps); the target is
+// inlined like any other module, so the 0-externals / self-contained contract holds.
+//
+// A custom namespace + onLoad (rather than a file-namespace `{ path }` return) is
+// deliberate: Bun (1.3.x / Windows) rejects an absolute file-namespace path from
+// onResolve — "path must be absolute" — when the importer sits at a junctioned
+// node_modules path (the `.bun` store), which is exactly the deep-dep case. The
+// custom namespace sidesteps that validation; `resolveDir` lets the target's own
+// imports resolve normally (back in the file namespace).
+const ALIAS_NAMESPACE = "flmux-alias";
+
+function makeAliasPlugin(resolvedAlias: Record<string, string>): BunPlugin {
   return {
+    name: "extension-alias",
+    setup(build) {
+      for (const [from, target] of Object.entries(resolvedAlias)) {
+        build.onResolve({ filter: new RegExp(`^${escapeRegExp(from)}$`) }, () => ({
+          path: target,
+          namespace: ALIAS_NAMESPACE
+        }));
+      }
+      build.onLoad({ filter: /.*/, namespace: ALIAS_NAMESPACE }, async (args) => ({
+        contents: await Bun.file(args.path).text(),
+        loader: aliasLoaderForPath(args.path),
+        resolveDir: dirname(args.path)
+      }));
+    }
+  };
+}
+
+function aliasLoaderForPath(path: string): "ts" | "tsx" | "jsx" | "json" | "js" {
+  if (path.endsWith(".ts")) return "ts";
+  if (path.endsWith(".tsx")) return "tsx";
+  if (path.endsWith(".jsx")) return "jsx";
+  if (path.endsWith(".json")) return "json";
+  return "js";
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function createRuntimeManifest(sourceManifest: ExtensionManifest): ExtensionManifest {
+  const runtime: ExtensionManifest = {
     ...sourceManifest,
     entrypoints: {
       renderer: sourceManifest.entrypoints.renderer
@@ -275,6 +361,10 @@ function createRuntimeManifest(sourceManifest: ExtensionManifest): ExtensionMani
         : undefined
     }
   };
+  // `build` is dev-only build config (alias paths into node_modules) — strip so
+  // it never ships in the runtime manifest (same class as package.json/tsconfig).
+  delete runtime.build;
+  return runtime;
 }
 
 function replaceTsExtension(path: string) {

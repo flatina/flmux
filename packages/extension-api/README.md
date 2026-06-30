@@ -257,11 +257,12 @@ Extension CLI entries default-export `defineExtensionCommand({...})`. flmux wrap
 
 ### Column-fill placement helper
 
-For consumers that spawn many panes (plot dashboards, AI agents, etc.) the default `--place right` quickly produces tall narrow columns. `resolveColumnFillPlacement(client, { workspaceId, isTargetKind, maxRowsPerColumn })` packs new panes into columns of at most `maxRowsPerColumn` rows by inspecting `/status/workspaces/<id>/panes`. Reference is the *most recently created* matching pane:
+For consumers that spawn many panes (plot dashboards, AI agents, etc.) the default `--place right` quickly produces tall narrow columns. `resolveColumnFillPlacement(client, { workspaceId, isTargetKind, maxRowsPerColumn, maxColumns })` packs new panes into a `maxColumns × maxRowsPerColumn` grid by inspecting `/status/workspaces/<id>/panes`, counting only `isTargetKind` panes. For `n` existing target panes (`cap = maxColumns · maxRowsPerColumn`):
 
-- 1st target pane → `{ place: "right" }` (split off the workspace)
-- count not yet a multiple of `maxRowsPerColumn` → `{ place: "below", referencePaneId: <last target> }` (extend column the last one is in)
-- count hits `maxRowsPerColumn` → `{ place: "right", referencePaneId: <last target> }` (start a new column off it)
+- `n = 0` → `{ place: "right" }` (split off the workspace)
+- `n ≥ cap` (grid full) → `{ place: "within", referencePaneId: <targets[n % cap]> }` (tab into a cell, round-robin by creation order so tab counts stay balanced)
+- `n` a multiple of `maxRowsPerColumn` → `{ place: "right" }` (new column; referencePaneId omitted so Dockview splits at the root)
+- otherwise → `{ place: "below", referencePaneId: <last target> }` (extend the column the last one is in)
 
 Available from `@flmux/extension-api` (renderer pane mounts, server entries) and `@flmux/extension-api/cli` (CLI commands) — same helper, takes any `ShellClient`:
 
@@ -274,7 +275,8 @@ import { resolveColumnFillPlacement } from "@flmux/extension-api";
 const placement = await resolveColumnFillPlacement(client, {
   workspaceId,
   isTargetKind: (kind) => kind.startsWith("myext-"),
-  maxRowsPerColumn: 4
+  maxRowsPerColumn: 4,
+  maxColumns: 3
 });
 await client.call("/panes/new", { kind: "myext-trend", ...placement });
 ```

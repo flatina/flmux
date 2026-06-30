@@ -18,7 +18,8 @@ describe("resolveColumnFillPlacement", () => {
     const placement = await resolveColumnFillPlacement(client, {
       workspaceId: "ws.1",
       isTargetKind: isPlot,
-      maxRowsPerColumn: 4
+      maxRowsPerColumn: 4,
+      maxColumns: 4
     });
     expect(placement).toEqual({ place: "right" });
   });
@@ -32,7 +33,8 @@ describe("resolveColumnFillPlacement", () => {
     const placement = await resolveColumnFillPlacement(client, {
       workspaceId: "ws.1",
       isTargetKind: isPlot,
-      maxRowsPerColumn: 4
+      maxRowsPerColumn: 4,
+      maxColumns: 4
     });
     expect(placement).toEqual({ place: "below", referencePaneId: "pane.plot.2" });
   });
@@ -48,7 +50,8 @@ describe("resolveColumnFillPlacement", () => {
     const placement = await resolveColumnFillPlacement(client, {
       workspaceId: "ws.1",
       isTargetKind: isPlot,
-      maxRowsPerColumn: 4
+      maxRowsPerColumn: 4,
+      maxColumns: 4
     });
     // No referencePaneId — the workbench reads that as Dockview's
     // absolute root-level split, which is what produces a fresh column.
@@ -67,7 +70,8 @@ describe("resolveColumnFillPlacement", () => {
     const placement = await resolveColumnFillPlacement(client, {
       workspaceId: "ws.1",
       isTargetKind: isPlot,
-      maxRowsPerColumn: 4
+      maxRowsPerColumn: 4,
+      maxColumns: 4
     });
     expect(placement).toEqual({ place: "below", referencePaneId: "pane.plot.2" });
   });
@@ -79,14 +83,15 @@ describe("resolveColumnFillPlacement", () => {
         "pane.plot.1": { kind: "plot.trend" },
         "pane.plot.2": { kind: "plot.trend" }
       }),
-      { workspaceId: "ws.1", isTargetKind: isPlot, maxRowsPerColumn: 2 }
+      { workspaceId: "ws.1", isTargetKind: isPlot, maxRowsPerColumn: 2, maxColumns: 4 }
     );
     expect(after2).toEqual({ place: "right" });
 
     const after1 = await resolveColumnFillPlacement(makeClient({ "pane.plot.1": { kind: "plot.trend" } }), {
       workspaceId: "ws.1",
       isTargetKind: isPlot,
-      maxRowsPerColumn: 2
+      maxRowsPerColumn: 2,
+      maxColumns: 4
     });
     expect(after1).toEqual({ place: "below", referencePaneId: "pane.plot.1" });
   });
@@ -98,7 +103,8 @@ describe("resolveColumnFillPlacement", () => {
       await resolveColumnFillPlacement(makeClient({ "pane.plot.1": { kind: "plot.trend" } }), {
         workspaceId: "ws.1",
         isTargetKind: isPlot,
-        maxRowsPerColumn: 1
+        maxRowsPerColumn: 1,
+        maxColumns: 4
       })
     ).toEqual({ place: "right" });
 
@@ -108,9 +114,75 @@ describe("resolveColumnFillPlacement", () => {
           "pane.plot.1": { kind: "plot.trend" },
           "pane.plot.2": { kind: "plot.trend" }
         }),
-        { workspaceId: "ws.1", isTargetKind: isPlot, maxRowsPerColumn: 1 }
+        { workspaceId: "ws.1", isTargetKind: isPlot, maxRowsPerColumn: 1, maxColumns: 4 }
       )
     ).toEqual({ place: "right" });
+  });
+
+  it("fills the last cell with `below` before the grid is full", async () => {
+    // maxRows=2, maxCols=2 → cap=4. n=3 (3 plots) is still below cap: 3%2=1 →
+    // extend the second column, NOT overflow.
+    const client = makeClient({
+      "pane.plot.1": { kind: "plot.trend" },
+      "pane.plot.2": { kind: "plot.trend" },
+      "pane.plot.3": { kind: "plot.trend" }
+    });
+    expect(
+      await resolveColumnFillPlacement(client, {
+        workspaceId: "ws.1",
+        isTargetKind: isPlot,
+        maxRowsPerColumn: 2,
+        maxColumns: 2
+      })
+    ).toEqual({ place: "below", referencePaneId: "pane.plot.3" });
+  });
+
+  it("overflows into round-robin tabs once the grid is full", async () => {
+    // maxRows=2, maxCols=2 → cap=4. Past cap, tab into cell targets[n % cap]
+    // in creation order, so overflow spreads evenly across the 4 cells.
+    const plots = (count: number) =>
+      Object.fromEntries(Array.from({ length: count }, (_, i) => [`pane.plot.${i + 1}`, { kind: "plot.trend" }]));
+    const resolve = (count: number) =>
+      resolveColumnFillPlacement(makeClient(plots(count)), {
+        workspaceId: "ws.1",
+        isTargetKind: isPlot,
+        maxRowsPerColumn: 2,
+        maxColumns: 2
+      });
+
+    expect(await resolve(4)).toEqual({ place: "within", referencePaneId: "pane.plot.1" }); // n=4 → 0
+    expect(await resolve(5)).toEqual({ place: "within", referencePaneId: "pane.plot.2" }); // n=5 → 1
+    expect(await resolve(7)).toEqual({ place: "within", referencePaneId: "pane.plot.4" }); // n=7 → 3
+    expect(await resolve(8)).toEqual({ place: "within", referencePaneId: "pane.plot.1" }); // n=8 → 0 (wrap)
+  });
+
+  it("overflows a full single column (maxColumns=1) instead of starting a phantom column", async () => {
+    // cap=1*2=2. The n>=cap check must precede n%maxRows===0 — otherwise a full
+    // single column (n=2, 2%2===0) would wrongly emit `right` and split a 2nd column.
+    const client = makeClient({
+      "pane.plot.1": { kind: "plot.trend" },
+      "pane.plot.2": { kind: "plot.trend" }
+    });
+    expect(
+      await resolveColumnFillPlacement(client, {
+        workspaceId: "ws.1",
+        isTargetKind: isPlot,
+        maxRowsPerColumn: 2,
+        maxColumns: 1
+      })
+    ).toEqual({ place: "within", referencePaneId: "pane.plot.1" });
+  });
+
+  it("overflows with maxRowsPerColumn=1 (cap = maxColumns)", async () => {
+    // maxRows=1, maxCols=1 → cap=1. n=1 → overflow into the single cell.
+    expect(
+      await resolveColumnFillPlacement(makeClient({ "pane.plot.1": { kind: "plot.trend" } }), {
+        workspaceId: "ws.1",
+        isTargetKind: isPlot,
+        maxRowsPerColumn: 1,
+        maxColumns: 1
+      })
+    ).toEqual({ place: "within", referencePaneId: "pane.plot.1" });
   });
 
   it("rejects an array payload — guards against a future shape change in the route", async () => {
@@ -121,7 +193,8 @@ describe("resolveColumnFillPlacement", () => {
       resolveColumnFillPlacement(client, {
         workspaceId: "ws.1",
         isTargetKind: isPlot,
-        maxRowsPerColumn: 4
+        maxRowsPerColumn: 4,
+        maxColumns: 4
       })
     ).rejects.toThrow("not found");
   });
@@ -133,9 +206,24 @@ describe("resolveColumnFillPlacement", () => {
         resolveColumnFillPlacement(client, {
           workspaceId: "ws.1",
           isTargetKind: isPlot,
-          maxRowsPerColumn: bad
+          maxRowsPerColumn: bad,
+          maxColumns: 4
         })
       ).rejects.toThrow("maxRowsPerColumn must be a positive integer");
+    }
+  });
+
+  it("rejects invalid maxColumns values up front", async () => {
+    const client = makeClient({});
+    for (const bad of [0, -1, 1.5, Number.NaN]) {
+      await expect(
+        resolveColumnFillPlacement(client, {
+          workspaceId: "ws.1",
+          isTargetKind: isPlot,
+          maxRowsPerColumn: 4,
+          maxColumns: bad
+        })
+      ).rejects.toThrow("maxColumns must be a positive integer");
     }
   });
 
@@ -146,7 +234,8 @@ describe("resolveColumnFillPlacement", () => {
       resolveColumnFillPlacement(client, {
         workspaceId: "ws.missing",
         isTargetKind: isPlot,
-        maxRowsPerColumn: 4
+        maxRowsPerColumn: 4,
+        maxColumns: 4
       })
     ).rejects.toThrow("NOT_FOUND");
   });

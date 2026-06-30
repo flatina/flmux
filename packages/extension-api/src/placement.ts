@@ -3,16 +3,18 @@ import type { ShellClient } from "./shell";
 export type PanePlacement = "within" | "left" | "right" | "above" | "below";
 
 /**
- * Pack `/panes/new` into columns of at most `maxRowsPerColumn` rows.
- * Counts only panes matching `isTargetKind`.
+ * Pack `/panes/new` into a `maxColumns × maxRowsPerColumn` grid, counting only
+ * `isTargetKind` panes. Once the grid is full, overflow tabs into cells
+ * round-robin by creation order (keeps per-cell tab counts balanced).
  *
- *   count = 0                  →  { place: "right" }                       (first split)
- *   count % maxRows === 0      →  { place: "right" }                       (new column — omit referencePaneId so Dockview splits at root)
- *   otherwise                  →  { place: "below", referencePaneId: last }
+ *   n = 0                    →  right                          (first split)
+ *   n ≥ maxColumns·maxRows    →  within, ref targets[n % cap]   (overflow tab)
+ *   n % maxRows === 0         →  right                          (new column, root split)
+ *   otherwise                →  below, ref targets[n-1]
  *
- * `last` = most-recently-created target. Creation-order proxy, not spatial
- * — after user drags/closes, "last" may no longer live where assumed.
- * Caller should allow explicit `--place` override.
+ * Count-based, not spatial: indices are a creation-order proxy, so after the
+ * user drags/closes a "cell" may not live where assumed. Caller should allow an
+ * explicit `--place` override.
  */
 export async function resolveColumnFillPlacement(
   client: ShellClient,
@@ -20,10 +22,14 @@ export async function resolveColumnFillPlacement(
     workspaceId: string;
     isTargetKind: (kind: string) => boolean;
     maxRowsPerColumn: number;
+    maxColumns: number;
   }
 ): Promise<{ place: PanePlacement; referencePaneId?: string }> {
   if (!Number.isInteger(options.maxRowsPerColumn) || options.maxRowsPerColumn <= 0) {
     throw new Error("resolveColumnFillPlacement: maxRowsPerColumn must be a positive integer");
+  }
+  if (!Number.isInteger(options.maxColumns) || options.maxColumns <= 0) {
+    throw new Error("resolveColumnFillPlacement: maxColumns must be a positive integer");
   }
   // No encodeURIComponent — shell path parser splits on `/` only, doesn't URL-decode.
   const result = await client.get(`/status/workspaces/${options.workspaceId}/panes`);
@@ -40,14 +46,22 @@ export async function resolveColumnFillPlacement(
       targets.push(paneId);
     }
   }
-  if (targets.length === 0) {
+  const n = targets.length;
+  if (n === 0) {
     return { place: "right" };
   }
-  if (targets.length % options.maxRowsPerColumn === 0) {
-    // Drop referencePaneId — Dockview's root-level split needs `direction` only;
-    // a panel-relative ref would split a single row instead of starting a new column.
+  const cap = options.maxRowsPerColumn * options.maxColumns;
+  if (n >= cap) {
+    // Grid full → tab into a cell, round-robin by creation order so per-cell
+    // tab counts stay balanced. `n % cap` indexes the original cell occupants
+    // (targets[0..cap-1]); equals the proposed `(n - cap) % cap` since cap ≡ 0.
+    return { place: "within", referencePaneId: targets[n % cap]! };
+  }
+  if (n % options.maxRowsPerColumn === 0) {
+    // New column (n < cap ⇒ column index < maxColumns). Drop referencePaneId —
+    // Dockview's root-level split needs `direction` only; a panel-relative ref
+    // would split a single row instead of starting a new column.
     return { place: "right" };
   }
-  const lastId = targets[targets.length - 1]!;
-  return { place: "below", referencePaneId: lastId };
+  return { place: "below", referencePaneId: targets[n - 1]! };
 }

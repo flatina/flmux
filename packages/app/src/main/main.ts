@@ -20,6 +20,7 @@ import { DESKTOP_CLIENT_ID, createDesktopShellAuthority, type DesktopShellAuthor
 import type { WebModeShellAuthority } from "./webModeShellAuthority";
 import { createWebModeUserAuthorityRegistry, type WebModeUserAuthorityRegistry } from "./userAuthorityRegistry";
 import { startFlmuxServer } from "./server";
+import { assertHostPolicy } from "./originPolicy";
 import { forwardTerminalEventToSubscribers } from "./terminalEventForwarding";
 import { createTerminalService } from "./terminal-service";
 import {
@@ -582,6 +583,7 @@ const desktopAuthority: DesktopShellAuthority | null =
     : null;
 
 let serverOrigin = "";
+let browserOrigin = ""; // set after listen
 
 // Web mode: `Map<userId, WebModeShellAuthority>`. Each authenticated user
 // gets an isolated `ShellCore` on first reach. Session persistence is NOT
@@ -597,7 +599,8 @@ const userAuthorityRegistry: WebModeUserAuthorityRegistry | null =
         clientRegistry,
         localExtensions,
         limits: { maxPanes: bootConfig.limits.maxPanesPerUser, maxTerminals: bootConfig.limits.maxTerminalsPerUser },
-        getOrigin: () => serverOrigin,
+        // Main-side appOrigin must match the renderer's browser origin (restored pane URLs).
+        getOrigin: () => browserOrigin,
         onAuthorityCreated: (userId, authority) => {
           trackPaneLifecycle(authority);
           // HTTP probes (/api/clients, /api/model/path/*) lazy-mint an authority
@@ -963,10 +966,8 @@ function buildShellConfig(authContext: FlmuxAuthorizationContext | null): FlmuxR
     appTitle: bootConfig.app.appTitle,
     watermarkHeader: bootConfig.app.watermarkHeader,
     watermarkFooter: bootConfig.app.watermarkFooter,
-    // Web renderer reaches the server via the browser's origin, not the internal
-    // bind. Use publicOrigin (e.g. behind Funnel or a LAN IP) so absolute URLs the
-    // workbench builds are same-origin; fall back to serverOrigin (loopback) for local/desktop.
-    appOrigin: runtimeMode === "web" && bootConfig.server.publicOrigin ? bootConfig.server.publicOrigin : serverOrigin,
+    // Web: the browser reaches the server via browserOrigin, not the internal bind.
+    appOrigin: runtimeMode === "web" ? browserOrigin : serverOrigin,
     projectDir,
     // Web: relative URLs so ext modules load via the page origin (proxy/Funnel), not the internal bind.
     localExtensions: createLocalExtensionLoadEntries(localExtensions, runtimeMode === "web" ? "" : serverOrigin),
@@ -1084,6 +1085,15 @@ async function bindMintedSession(opts: {
 
 let nextWebViewId = 1_000_000;
 
+// Fail fast on an unusable bind (clear errors below). process.exit, not throw —
+// the top-level uncaughtException handler would otherwise swallow it and hang.
+try {
+  assertHostPolicy({ runtimeMode, host: bootConfig.server.host, publicOrigin: bootConfig.server.publicOrigin });
+} catch (err) {
+  console.error(err instanceof Error ? err.message : String(err));
+  process.exit(1);
+}
+
 const server = startFlmuxServer({
   rendererDir,
   appName,
@@ -1145,6 +1155,7 @@ const server = startFlmuxServer({
       : undefined
 });
 serverOrigin = server.origin;
+browserOrigin = server.browserOrigin;
 // Spawned extensions inherit FLMUX_ORIGIN — no --origin needed.
 process.env.FLMUX_ORIGIN = serverOrigin;
 if (desktopAuthority) {
@@ -1159,7 +1170,7 @@ console.log(
 );
 if (webModeAuthPaths) {
   console.log(`[flmux] auth dir: ${webModeAuthPaths.authDir}`);
-  console.log(`[flmux] web origin: ${server.origin} (sign in with a passkey at /login)`);
+  console.log(`[flmux] web origin: ${browserOrigin} (sign in with a passkey at /login)`);
   console.log(`[flmux] enroll a user: bun src/cli.ts auth enroll --user <name> --auth-dir ${webModeAuthPaths.authDir}`);
 }
 

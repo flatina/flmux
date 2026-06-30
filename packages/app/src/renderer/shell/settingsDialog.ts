@@ -236,9 +236,6 @@ class SettingsDialog {
     ui.error.hidden = true;
     ui.saveBtn.disabled = true;
     try {
-      // Relative path → resolves to the page origin (the Funnel/proxy host in
-      // web mode). appOrigin is the internal bind (127.0.0.1) the remote browser
-      // can't reach — same reason logout below and ext loads use relative URLs.
       const response = await fetch(`/api/auth/profile`, {
         method: "POST",
         headers: { "content-type": "application/json" },

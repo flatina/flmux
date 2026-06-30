@@ -14,6 +14,7 @@ import paneSvg from "./assets/pane.svg" with { type: "text" };
 import folderSvg from "./assets/folder.svg" with { type: "text" };
 import fileSvg from "./assets/file.svg" with { type: "text" };
 import type { ExtensionHttpRequest, ExtensionHttpResponse, ExtensionHttpReturn } from "@flmux/extension-api";
+import { internalOriginHost, isLoopbackHost, resolveBrowserOrigin } from "./originPolicy";
 import type { DiscoveredLocalExtension } from "./localExtensions";
 import type { ResolvedExtHttpRoute } from "./extHttpRoutes";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
@@ -43,7 +44,8 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 interface FlmuxServerHandle {
-  origin: string;
+  origin: string; // internal (loopback-reachable)
+  browserOrigin: string; // what a remote browser dials (web)
   stop(): void;
 }
 
@@ -245,11 +247,8 @@ export function startFlmuxServer(options: {
   resolveFsDownloader?(context: FlmuxAuthorizationContext | null): FsDownloader | null;
 }): FlmuxServerHandle {
   const hostname = options.host ?? "127.0.0.1";
-  // bind address ≠ reachable origin: 0.0.0.0/:: are bind-only. The returned
-  // `origin` is for internal callers (spawned-ext FLMUX_ORIGIN, mintApiToken) →
-  // must resolve to loopback. Browser-facing origin (web) is publicOrigin, set by main.
-  const originHost = hostname === "0.0.0.0" || hostname === "::" ? "127.0.0.1" : hostname;
-  if (hostname !== "127.0.0.1" && hostname !== "::1") {
+  const originHost = internalOriginHost(hostname);
+  if (!isLoopbackHost(hostname)) {
     console.warn(`[flmux] server binding to ${hostname} (non-loopback) — exposed on the network; ensure a trusted LAN`);
   }
   const appName = options.appName ?? "flmux";
@@ -688,16 +687,23 @@ export function startFlmuxServer(options: {
     throw new Error("Elysia server failed to start");
   }
 
+  const port = server.port;
+  if (port === undefined) {
+    throw new Error("Elysia server has no port after listen");
+  }
+  const browserOrigin = resolveBrowserOrigin({ host: hostname, port, publicOrigin: options.publicOrigin });
   webAllowedOrigins = options.authorizer
-    ? new Set(
-        [`http://${hostname}:${server.port}`, `http://localhost:${server.port}`, options.publicOrigin].filter(
-          (o): o is string => Boolean(o)
-        )
-      )
+    ? new Set([
+        `http://${originHost}:${server.port}`,
+        `http://localhost:${server.port}`,
+        `http://127.0.0.1:${server.port}`,
+        browserOrigin
+      ])
     : null;
 
   return {
     origin: `http://${originHost}:${server.port}`,
+    browserOrigin,
     stop() {
       void app.stop(true);
     }

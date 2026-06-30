@@ -1097,6 +1097,7 @@ try {
 const server = startFlmuxServer({
   rendererDir,
   appName,
+  appTitle: initialAppTitle,
   resolveShellModelRouter: resolveShellModelRouterForRequest,
   localExtensions,
   extHttpRoutes,

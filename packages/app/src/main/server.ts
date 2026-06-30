@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { Elysia } from "elysia";
 import { rateLimit } from "elysia-rate-limit";
@@ -210,6 +210,8 @@ export function startFlmuxServer(options: {
   saveSession?(context: FlmuxAuthorizationContext | null, layouts: FlmuxSessionSaveLayouts): Promise<void>;
   authorizer?: FlmuxWebModeAuthorizer;
   appName?: string;
+  /** Injected into the served index.html <title> (first-paint brand). */
+  appTitle?: string;
   /** Explicit listen port. Undefined → OS-assigned (current default). */
   port?: number;
   /** Public browser origin (behind Funnel) added to the CSRF allowlist. */
@@ -252,6 +254,9 @@ export function startFlmuxServer(options: {
     console.warn(`[flmux] server binding to ${hostname} (non-loopback) — exposed on the network; ensure a trusted LAN`);
   }
   const appName = options.appName ?? "flmux";
+  // index.html <title> → configured brand (== renderer's document.title, so no flash).
+  const indexHtmlPath = join(options.rendererDir, "index.html");
+  const indexTitle = escapeHtml(options.appTitle ?? appName);
   const authMethods = options.authMethods ?? ["passkey"];
   const rateLimitConfig = options.rateLimit ?? { max: 600, windowMs: 60_000, userMax: 6000 };
   const wsKeepalive = options.wsKeepalive ?? { pingIntervalMs: 25_000, idleTimeoutSeconds: 120 };
@@ -522,7 +527,7 @@ export function startFlmuxServer(options: {
         return "Unauthorized";
       }
 
-      return handleInternalStartPageRequest(request);
+      return handleInternalStartPageRequest(request, appName);
     });
 
   // Extension-declared HTTP routes: concrete paths registered before the
@@ -572,6 +577,14 @@ export function startFlmuxServer(options: {
       // Workbench must never be framed by another origin (clickjacking).
       headers["content-security-policy"] = "frame-ancestors 'none'";
       headers["x-frame-options"] = "DENY";
+      if (resolved === indexHtmlPath) {
+        // Per-request read picks up dev rebuilds; fn replacement avoids $-token expansion.
+        const html = readFileSync(resolved, "utf8").replace(
+          /<title>[^<]*<\/title>/i,
+          () => `<title>${indexTitle}</title>`
+        );
+        return new Response(html, { headers });
+      }
     }
     return new Response(Bun.file(resolved), { headers });
   });
@@ -1034,7 +1047,7 @@ function handleLocalExtensionRuntimeRequest(
   });
 }
 
-function handleInternalStartPageRequest(request: Request): Response {
+function handleInternalStartPageRequest(request: Request, brand: string): Response {
   const url = new URL(request.url);
   const workspaceId = url.searchParams.get("workspace");
   const workspaceLabel = workspaceId?.trim() || "current workspace";
@@ -1045,7 +1058,7 @@ function handleInternalStartPageRequest(request: Request): Response {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>flmux Start</title>
+  <title>${escapeHtml(brand)} Start</title>
   <style>
     body { margin: 0; padding: 24px; color: #e6eefc; background: #0f1726; font: 14px/1.5 system-ui, sans-serif; }
     main { display: grid; gap: 16px; max-width: 720px; }
@@ -1058,7 +1071,7 @@ function handleInternalStartPageRequest(request: Request): Response {
   <main>
     <span class="badge">Built-in Start Page</span>
     <section class="card">
-      <h1>flmux browser pane</h1>
+      <h1>${escapeHtml(brand)} browser pane</h1>
       <p>This is the default same-origin browser content for ${escapeHtml(workspaceLabel)}.</p>
       <p>Open a URL from the browser pane navigation field or create a browser pane with an explicit <code>url</code>.</p>
     </section>

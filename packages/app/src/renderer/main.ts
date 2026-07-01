@@ -1,6 +1,7 @@
 import "bunite-core/polyfill";
 import { bootstrap as bootstrapCap, getConnection, type BuniteWebGlobal } from "bunite-core/rpc/renderer";
 import { flmuxBridgeCap, paneBrowserCap, type FlmuxBridgeCap, type SessionCap } from "../shared/rendererBridge";
+import { installConnectionLossOverlay, showConnectionLoss } from "./connectionOverlay";
 import { registerLocalExternalPaneDescriptors } from "./external/registerLocalExternalPaneDescriptors";
 import { createPaneBrowserCapImpl } from "./panes/browserPaneRegistry";
 import { FlmuxWorkbench } from "./shell/workbench";
@@ -33,6 +34,8 @@ async function bootstrap() {
   // Cross-bundle conn share — 0-externals extension bundles each inline bunite-core.
   const conn = await getConnection();
   window.__bunite = { ...(window.__bunite ?? {}), webConnection: conn };
+  // Surface WS loss (server restart / network drop) instead of freezing silently.
+  installConnectionLossOverlay(conn);
   // Serve paneBrowserCap before bridge so main's automation calls during
   // session bind cannot race ahead of cap registration.
   conn.serve(paneBrowserCap, createPaneBrowserCapImpl());
@@ -61,8 +64,13 @@ async function bootstrap() {
   await workbench.start();
 
   if (config.devMode) {
-    (window as unknown as { __flmuxTest: { setActiveWorkspace(id: string): void } }).__flmuxTest = {
-      setActiveWorkspace: (id: string) => workbench.setActiveWorkspace(id)
+    (
+      window as unknown as {
+        __flmuxTest: { setActiveWorkspace(id: string): void; simulateConnectionLoss(): void };
+      }
+    ).__flmuxTest = {
+      setActiveWorkspace: (id: string) => workbench.setActiveWorkspace(id),
+      simulateConnectionLoss: () => showConnectionLoss()
     };
   }
 }

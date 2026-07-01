@@ -297,6 +297,11 @@ function formatBuildDate(value: string): string {
 }
 
 export async function logout(): Promise<void> {
+  // Logout → unauthenticated: tear the WS connection down. A clean client-side
+  // close also reports info-undefined to bunite, so the connection-loss overlay
+  // stays hidden during the redirect to /login.
+  const conn = window.__bunite?.webConnection;
+  if (conn && !conn.closed) conn.shutdown();
   try {
     await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
   } finally {

@@ -113,7 +113,7 @@ export interface ExtensionHttpResponse {
 
 export interface ExtensionHttpRouteContext {
   dataDir: string;
-  /** User name on `session` routes (`"local"` on desktop); `null` on `public`. */
+  /** User name on `session` routes (`"_root"` on desktop); `null` on `public`. */
   userId: string | null;
   request: ExtensionHttpRequest;
 }

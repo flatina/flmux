@@ -1,4 +1,5 @@
 import {
+  DESKTOP_USER_ID,
   PLACEHOLDER_PANE_KIND,
   PaneRegistry,
   ShellCore,
@@ -81,9 +82,10 @@ export async function createDesktopShellAuthority(options: {
     // `"local"` so scope=client event envelopes are self-describing.
     // B2 switches to per-client slotKey = real clientId.
     defaultSlotKey: DESKTOP_CLIENT_ID,
-    // Desktop is single-user; surface `"local"` through
-    // `/status/clients/{id}/userId` for extension session keying.
-    authorityUserId: DESKTOP_CLIENT_ID
+    // Desktop is single-user; surface the reserved `DESKTOP_USER_ID` through
+    // `/status/clients/{id}/userId` for extension session keying (distinct from
+    // the slotKey/clientId axis above).
+    authorityUserId: DESKTOP_USER_ID
   });
   const shellModel = createShellModel({
     host: shellCore,

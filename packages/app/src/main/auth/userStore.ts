@@ -179,6 +179,12 @@ export function isPathSafeUserName(name: string): boolean {
   return name !== "." && name !== ".." && VALID_USER_NAME_PATTERN.test(name);
 }
 
+// `_`-prefixed names are reserved for flmux-minted principals (e.g. the desktop
+// user `_root`) so a real user can't forge one.
+export function isReservedUserName(name: string): boolean {
+  return name.startsWith("_");
+}
+
 function parseUser(raw: Record<string, unknown>): FlmuxUser {
   const name = typeof raw.name === "string" ? raw.name.trim() : "";
   if (!name) {
@@ -188,6 +194,9 @@ function parseUser(raw: Record<string, unknown>): FlmuxUser {
     throw new Error(
       `users.toml: user '${name}' has invalid name (only ASCII letters, digits, '.', '_', '-'; not '.'/'..')`
     );
+  }
+  if (isReservedUserName(name)) {
+    throw new Error(`users.toml: user '${name}' uses a reserved name ('_' prefix)`);
   }
 
   const role = typeof raw.role === "string" ? raw.role.trim() : undefined;

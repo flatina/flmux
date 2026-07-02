@@ -8,6 +8,8 @@ export type { PaneWorkspaceContext };
 
 export interface PaneRendererRuntimeContext {
   shellModel: ShellModelAPI;
+  /** Logged-in user; `_root` on desktop. Surfaced to extensions as `ctx.userId`. */
+  userId: string;
   browserPanelTemplate: HTMLTemplateElement;
   /** Opens a per-pane `shell.terminalEvents({paneId})` stream and routes
    *  events to `handler`. Returns unsubscribe; stream cancel on the bunite

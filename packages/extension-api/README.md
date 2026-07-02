@@ -93,7 +93,7 @@ export default defineExtensionServer({
 });
 ```
 
-- **`auth`** — `"session"` runs behind flmux auth + the per-user extension entitlement (`ctx.userId` is the caller; `null` on public, `"local"` on desktop). `"public"` is unauthenticated and GET-only.
+- **`auth`** — `"session"` runs behind flmux auth + the per-user extension entitlement (`ctx.userId` is the caller; `null` on public, `"_root"` on desktop). `"public"` is unauthenticated and GET-only.
 - **Return** — `ExtensionHttpResponse` (`{ status?, headers?, body? }`) or a bare `string`/`Uint8Array`/`ArrayBuffer` (content-type defaults to `text/plain`).
 - **flmux owns CORS** — you cannot set `Access-Control-Allow-Origin` (responses stay same-origin), `set-cookie`, or CSP; only a small content-type/caching header allow-list passes through. `ctx.request.header()` redacts `cookie`/`authorization`.
 - Read your own config/secret from `ctx.dataDir`.

@@ -5,7 +5,13 @@ import { resolveFlmuxPaths, resolveFlmuxRootDir, resolveInstallLayout } from "./
 import { loadFlmuxBootConfig } from "./main/flmuxConfig";
 import { generateToken, generateUserHandle } from "./main/auth/tokenFormat";
 import { createTokenStore } from "./main/auth/tokenStore";
-import { createUserStore, isPathSafeUserName, type AllowPaneKinds, type FlmuxUser } from "./main/auth/userStore";
+import {
+  createUserStore,
+  isPathSafeUserName,
+  isReservedUserName,
+  type AllowPaneKinds,
+  type FlmuxUser
+} from "./main/auth/userStore";
 import { createWebauthnStore } from "./main/auth/webauthnStore";
 import { createTotpStore } from "./main/auth/totpStore";
 import { generateTotpSecret, totpUri } from "./main/auth/totp";
@@ -58,6 +64,9 @@ function createUser(paths: FlmuxAuthPaths, argv: string[]) {
     throw new Error(
       `auth create-user: --name must be a path-safe key (ASCII letters, digits, '.', '_', '-'; not '.'/'..') — it becomes the /w/u/<name> dir`
     );
+  }
+  if (isReservedUserName(name)) {
+    throw new Error(`auth create-user: --name must not start with '_' (reserved for flmux-minted users)`);
   }
   const role = readFlag(argv, "--role") ?? "basic";
   const allowPaneKindsArg = readFlag(argv, "--allow-pane-kinds");

@@ -20,7 +20,7 @@ import type { ResolvedExtHttpRoute } from "./extHttpRoutes";
 import type { FlmuxShellModelRouter } from "./shellModelBridge";
 import type { FsUploader } from "./fsBackend";
 import { attachmentDisposition, tarGzDirStream, type FsDownloader } from "./fsDownload";
-import { ModelPathError } from "@flmux/core/shell";
+import { DESKTOP_USER_ID, ModelPathError } from "@flmux/core/shell";
 import { DEV_AUTH_TOKEN_ID, type FlmuxAuthorizationContext, type FlmuxWebModeAuthorizer } from "./webModeAuth";
 import type { WebauthnAuthService } from "./auth/webauthnService";
 import { renderLoginPage, renderEnrollPage } from "./auth/authPages";
@@ -146,7 +146,7 @@ async function serveExtRoute(
   if (route.auth === "session") {
     const auth = authorizeRequest(request, set, deps.authorizer);
     if (!auth.ok) return "Unauthorized";
-    userId = auth.context?.user?.name ?? (deps.authorizer ? null : "local");
+    userId = auth.context?.user?.name ?? (deps.authorizer ? null : DESKTOP_USER_ID);
     if (deps.authorizer && deps.canUseExtension && (!userId || !deps.canUseExtension(userId, route.extId))) {
       set.status = 403;
       return "Forbidden";

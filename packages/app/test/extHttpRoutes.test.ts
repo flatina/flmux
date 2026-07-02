@@ -181,7 +181,7 @@ describe("extension HTTP routes — serving", () => {
     }
   });
 
-  it("desktop (no authorizer): session route is single-user, userId = 'local'", async () => {
+  it("desktop (no authorizer): session route is single-user, userId = '_root'", async () => {
     const server = boot({
       routes: [
         {
@@ -197,7 +197,7 @@ describe("extension HTTP routes — serving", () => {
     try {
       const r = await fetch(url(server.origin, "/me"));
       expect(r.status).toBe(200);
-      expect(await r.text()).toBe("local");
+      expect(await r.text()).toBe("_root");
     } finally {
       server.stop();
     }

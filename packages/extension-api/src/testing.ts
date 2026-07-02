@@ -180,6 +180,7 @@ export function createTestShellClient(routes: Partial<TestShellRoutes> = {}): Sh
 export interface TestPaneContextOptions {
   paneId?: string;
   workspaceId?: string;
+  userId?: string;
   shell?: ShellClient;
   bus?: TestBus | WorkspaceBusClient;
   workspaceStatus?: WorkspaceStatusStoreClient;
@@ -190,6 +191,7 @@ export interface TestPaneContextOptions {
 export function createTestPaneContext(options: TestPaneContextOptions = {}): ExtensionPaneContext {
   const paneId = options.paneId ?? "pane.test";
   const workspaceId = options.workspaceId ?? "workspace.test";
+  const userId = options.userId ?? "user.test";
   const shell = options.shell ?? createTestShellClient();
   const state = options.state ?? createTestPaneStateStore();
   const bus = resolveBus(options.bus, workspaceId, paneId);
@@ -197,6 +199,7 @@ export function createTestPaneContext(options: TestPaneContextOptions = {}): Ext
   return {
     paneId,
     workspaceId,
+    userId,
     shell,
     bus,
     workspaceStatus,

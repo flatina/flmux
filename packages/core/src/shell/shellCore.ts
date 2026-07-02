@@ -21,6 +21,7 @@ import { ModelPathError } from "./model";
 import { createWorkspaceBus } from "./workspaceBus";
 import {
   SHELL_CORE_EVENT_SCOPES,
+  DESKTOP_USER_ID,
   type ActiveStateSlot,
   type AppStatusSnapshot,
   type NewPaneInput,
@@ -90,7 +91,7 @@ export interface ShellCoreOptions {
    * defaultSlotKey should either go away or become strictly test-scoped.
    */
   defaultSlotKey?: string;
-  /** Owning user. Authority passes its own user id — desktop: `"local"`,
+  /** Owning user. Authority passes its own user id — desktop: `DESKTOP_USER_ID`,
    * web: authenticated `user.name`. Surfaced through
    * `/status/clients/{id}/userId` so extensions can key session state
    * per user (flmux only routes; extensions own their schema). */
@@ -724,7 +725,7 @@ export class ShellCore implements ShellModelHost {
    * needed.
    */
   async listClientSlots(): Promise<import("./types").ClientSlotSummary[]> {
-    const userId = this.options.authorityUserId ?? "local";
+    const userId = this.options.authorityUserId ?? DESKTOP_USER_ID;
     return Array.from(this.activeSlots.entries()).map(([clientId, slot]) => ({
       clientId,
       userId,

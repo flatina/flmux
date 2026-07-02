@@ -43,6 +43,7 @@ function createExternalPaneContext(
   return {
     paneId,
     workspaceId: args.workspace.id,
+    userId: args.runtime.userId,
     shell: {
       get: (path) => args.runtime.shellModel.pathGet(path),
       list: (path) => args.runtime.shellModel.pathList(path),

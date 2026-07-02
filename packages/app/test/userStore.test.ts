@@ -50,6 +50,12 @@ describe("userStore role presets + handle", () => {
     );
   });
 
+  it("reserved '_'-prefixed name → throws (fail-closed)", () => {
+    expect(() => storeWith(`[[users]]\nname="_root"\nrole="basic"\nhandle="h5"\n`).getUser("_root")).toThrow(
+      /reserved/
+    );
+  });
+
   it("duplicate handle → throws", () => {
     const toml = `[[users]]\nname="a"\nrole="basic"\nhandle="dup"\n\n[[users]]\nname="b"\nrole="basic"\nhandle="dup"\n`;
     expect(() => storeWith(toml).listUsers()).toThrow(/duplicate handle/);

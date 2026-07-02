@@ -27,6 +27,7 @@ import {
   createWorkspaceBus,
   createWorkspaceStatusStore,
   isSafeBrowserPaneUrl,
+  DESKTOP_USER_ID,
   type WorkspaceStatusStore,
   PLACEHOLDER_PANE_KIND,
   type PaneWorkspaceContext,
@@ -1036,6 +1037,7 @@ export class FlmuxWorkbench {
       options,
       runtime: {
         shellModel: this.shellModel,
+        userId: this.config.account?.name ?? DESKTOP_USER_ID,
         browserPanelTemplate: this.browserPanelTemplate,
         subscribeTerminalEvents: (paneId, handler) => this.subscribeTerminalEvents(paneId, handler),
         workspaceStatus: record.statusStore,

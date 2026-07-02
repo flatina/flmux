@@ -58,7 +58,7 @@ export async function createWebModeShellAuthority(options: {
   sessionStore?: FlmuxSessionStore;
   /** Authenticated user this authority serves. Surfaced through
    * `/status/clients/{id}/userId` so extensions can key session state
-   * per user. `undefined` (legacy single-tenant tests) maps to `"local"`. */
+   * per user. `undefined` (legacy single-tenant tests) maps to `"_root"`. */
   userId?: string;
   /** Per-user pane-kind role gate; forwarded to ShellCore. */
   paneKindGuard?: (kind: string) => void;

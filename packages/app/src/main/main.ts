@@ -3,7 +3,7 @@ import { delimiter, join, resolve, sep } from "node:path";
 import { BrowserWindow, AppRuntime, acquireSingleInstanceLock } from "bunite-core";
 import type { Connection } from "bunite-core/rpc";
 import type { PathCallerContext, SequencedShellCoreEvent, ShellModelAPI } from "@flmux/core/shell";
-import { ModelPathError } from "@flmux/core/shell";
+import { DESKTOP_USER_ID, ModelPathError } from "@flmux/core/shell";
 import {
   flmuxBridgeCap,
   type FlmuxRendererBootstrapConfig,
@@ -987,7 +987,7 @@ function setupConnection(
   viewIdToConnection.set(viewId, conn);
 
   const mintFresh = async (): Promise<MintedSession> => {
-    const userId = mode === "desktop" ? "local" : authContext?.user.name;
+    const userId = mode === "desktop" ? DESKTOP_USER_ID : authContext?.user.name;
     if (!userId) throw new Error("bridge.mintSession: no user resolved");
     const authority: ShellAuthority =
       mode === "desktop" ? desktopAuthority! : await userAuthorityRegistry!.getOrCreate(userId);

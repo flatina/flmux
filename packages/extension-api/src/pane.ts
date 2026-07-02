@@ -62,6 +62,8 @@ export interface CapturedImage {
 export interface ExtensionPaneContext {
   paneId: string;
   workspaceId: string;
+  /** Logged-in user; `_root` on desktop. Key per-user state/storage by this. */
+  userId: string;
   shell: ShellClient;
   bus: WorkspaceBusClient;
   /** Retained KV store shared with every pane in the same workspace.

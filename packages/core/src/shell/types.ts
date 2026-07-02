@@ -170,12 +170,17 @@ export interface ShellCreatePaneOptions extends ShellSlotOptions {
   workspaceId?: string;
 }
 
+/** Reserved principal for the desktop/single-user (unconfined) session, and the
+ * default when no authenticated user is present. `_`-prefixed names are reserved
+ * from real users (userStore) so this can't be forged. */
+export const DESKTOP_USER_ID = "_root";
+
 /** Shape returned by `/status/clients/*`. Slot-level view state only —
  * transport-level metadata (connected, lastSeen) is a higher-layer concern. */
 export interface ClientSlotSummary {
   clientId: string;
-  /** Owning user. Desktop authority uses `"local"`; web authority fills in
-   * the authenticated user name. Surfaced so extension server entries can
+  /** Owning user. Desktop authority uses `DESKTOP_USER_ID`; web authority fills
+   * in the authenticated user name. Surfaced so extension server entries can
    * key session state per user via `/status/clients/{id}/userId`. */
   userId: string;
   activeWorkspaceId: string | null;

@@ -9,6 +9,7 @@ import type {
   ShellPathSetResult
 } from "./shell";
 import type { ExtensionPaneContext } from "./pane";
+import { createPreferenceReaders } from "./server";
 
 /**
  * Testing utilities for `@flmux/extension-api` consumers. Not bundled by
@@ -181,6 +182,7 @@ export interface TestPaneContextOptions {
   paneId?: string;
   workspaceId?: string;
   userId?: string;
+  extId?: string;
   shell?: ShellClient;
   bus?: TestBus | WorkspaceBusClient;
   workspaceStatus?: WorkspaceStatusStoreClient;
@@ -201,6 +203,7 @@ export function createTestPaneContext(options: TestPaneContextOptions = {}): Ext
     workspaceId,
     userId,
     shell,
+    ...createPreferenceReaders(shell, options.extId ?? "test.ext"),
     bus,
     workspaceStatus,
     state,

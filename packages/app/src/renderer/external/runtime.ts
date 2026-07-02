@@ -3,8 +3,10 @@ import type {
   ExtensionPaneInstance,
   ExtensionPaneRenderer,
   PaneStateStore,
+  ShellClient,
   WorkspaceBusEvent
 } from "@flmux/extension-api";
+import { createPreferenceReaders } from "@flmux/extension-api";
 import type {
   CreateComponentOptions,
   GroupPanelPartInitParameters,
@@ -31,6 +33,7 @@ export function createExternalPaneDescriptor(extensionId: string, renderer: Exte
 }
 
 function createExternalPaneContext(
+  extensionId: string,
   args: {
     workspace: PaneWorkspaceContext;
     options: CreateComponentOptions;
@@ -39,17 +42,19 @@ function createExternalPaneContext(
   state: PaneStateStore
 ): ExtensionPaneContext {
   const paneId = args.options.id;
+  const shell: ShellClient = {
+    get: (path) => args.runtime.shellModel.pathGet(path),
+    list: (path) => args.runtime.shellModel.pathList(path),
+    set: (path, value) => args.runtime.shellModel.pathSet(path, value),
+    call: (path, shellArgs) => args.runtime.shellModel.pathCall(path, shellArgs, { sourcePaneId: paneId })
+  };
 
   return {
     paneId,
     workspaceId: args.workspace.id,
     userId: args.runtime.userId,
-    shell: {
-      get: (path) => args.runtime.shellModel.pathGet(path),
-      list: (path) => args.runtime.shellModel.pathList(path),
-      set: (path, value) => args.runtime.shellModel.pathSet(path, value),
-      call: (path, shellArgs) => args.runtime.shellModel.pathCall(path, shellArgs, { sourcePaneId: paneId })
-    },
+    shell,
+    ...createPreferenceReaders(shell, extensionId),
     bus: {
       publish: (topic, payload) => {
         const event: WorkspaceBusEvent = {
@@ -113,7 +118,7 @@ function wrapExternalPaneRenderer(
       // Render an in-pane error instead; the rest of the workbench is unaffected.
       try {
         synchronizeExternalPaneState(state, params.api, params.params);
-        instance = renderer.mount(host, createExternalPaneContext(args, state));
+        instance = renderer.mount(host, createExternalPaneContext(extensionId, args, state));
         // Register only on successful mount (a throw skips this → not capturable).
         registerPaneForCapture(args.options.id, {
           host,

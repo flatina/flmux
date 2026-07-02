@@ -1,5 +1,5 @@
 import type { WorkspaceBusClient } from "./bus";
-import type { ShellClient } from "./shell";
+import type { PreferenceReaders, ShellClient } from "./shell";
 import type { PaneStateStore } from "./state";
 import type { WorkspaceStatusStoreClient } from "./status";
 
@@ -59,7 +59,7 @@ export interface CapturedImage {
   height: number;
 }
 
-export interface ExtensionPaneContext {
+export interface ExtensionPaneContext extends PreferenceReaders {
   paneId: string;
   workspaceId: string;
   /** Logged-in user; `_root` on desktop. Key per-user state/storage by this. */

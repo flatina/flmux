@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { parseArgs, type CommandDef } from "citty";
+import { createPreferenceReaders } from "@flmux/extension-api";
 import { resolveInstallLayout } from "./main/flmuxPaths";
 import { createExtensionConfigLoader } from "./main/extConfig";
 import {
@@ -145,15 +146,19 @@ function wrapAsCommandDef(
       // Dispose after run: a watch-backed store would otherwise keep the
       // event loop alive and hang the (short-lived) CLI process.
       const configDisposers: Array<() => void> = [];
+      const shell = lazyShellClient(
+        toFlmuxCliFlags(input.args as { origin?: string; client?: string; token?: string })
+      );
       const ctx: FlmuxExtensionCliContext = {
         dataDir,
-        shell: lazyShellClient(toFlmuxCliFlags(input.args as { origin?: string; client?: string; token?: string })),
+        shell,
         signal: new AbortController().signal,
         loadConfig: createExtensionConfigLoader({
           extId: extensionId,
           dataDir,
           registerDispose: (fn) => configDisposers.push(fn)
-        })
+        }),
+        ...createPreferenceReaders(shell, extensionId)
       };
       try {
         const result = await def.run(input.args, ctx, input.rawArgs);
@@ -312,7 +317,8 @@ export async function invokeInProcessExtensionCli(
     shell,
     sessionId: callerSessionId,
     signal: signal ?? new AbortController().signal,
-    loadConfig: host.createConfigLoader(extId, dataDir, (fn) => configDisposers.push(fn))
+    loadConfig: host.createConfigLoader(extId, dataDir, (fn) => configDisposers.push(fn)),
+    ...createPreferenceReaders(shell, extId)
   };
   try {
     return await cmd.run(parsedArgs as never, ctx, rest);

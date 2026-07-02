@@ -1,5 +1,5 @@
 import type { AnyCapDef, ClientOf, ImplOf } from "bunite-core/rpc";
-import type { ShellClient } from "./shell";
+import type { PreferenceReaders, ShellClient } from "./shell";
 import type { ExtensionPaneSpec } from "./pane";
 import type { ExtensionConfig, ExtensionConfigBuilder } from "./config";
 
@@ -157,6 +157,21 @@ export interface ExtensionPreferences {
     ctx: UserPreferenceContext
   ): { fields: readonly PreferenceField[] } | Promise<{ fields: readonly PreferenceField[] }>;
   write(ctx: UserPreferenceContext, key: string, value: unknown): void | Promise<void>;
+}
+
+/** Host-side: bind an extension's shell + id into `ctx.getPreferences`/`getPreference`. */
+export function createPreferenceReaders(shell: ShellClient, extId: string): PreferenceReaders {
+  return {
+    async getPreferences() {
+      const r = await shell.get(`/userpref/${extId}`);
+      return r.ok && r.found ? ((r.value as { values?: Record<string, unknown> }).values ?? {}) : {};
+    },
+    async getPreference(key) {
+      const r = await shell.get(`/userpref/${extId}/${key}`);
+      // Backend returns null for an unset key (and for no mount, found:false) — normalize to undefined.
+      return r.ok && r.found && r.value !== null ? r.value : undefined;
+    }
+  };
 }
 
 export interface ExtensionServerDefinition {

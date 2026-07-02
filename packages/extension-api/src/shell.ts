@@ -44,3 +44,10 @@ export interface ShellClient {
   set(path: string, value: unknown): Promise<ShellPathSetResult>;
   call(path: string, args?: Record<string, unknown>): Promise<ShellPathCallResult>;
 }
+
+/** Read this extension's own preferences for the calling user — sugar over
+ * `/userpref/<extId>`; the host injects it with the extId + shell bound. */
+export interface PreferenceReaders {
+  getPreferences(): Promise<Record<string, unknown>>;
+  getPreference(key: string): Promise<unknown>;
+}

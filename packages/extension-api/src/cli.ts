@@ -1,6 +1,7 @@
 import type { ArgsDef, CommandDef, ParsedArgs } from "citty";
 import type { ExtensionConfig, ExtensionConfigBuilder } from "./config";
 import type {
+  PreferenceReaders,
   ShellClient,
   ShellPathCallResult,
   ShellPathGetResult,
@@ -16,7 +17,7 @@ export type { ArgsDef, CommandDef, SubCommandsDef } from "citty";
 export type { ShellClient } from "./shell";
 
 /** Read-only context flmux injects into every extension CLI subcommand. */
-export interface FlmuxExtensionCliContext {
+export interface FlmuxExtensionCliContext extends PreferenceReaders {
   /** Per-extension data dir — `<rootDir>/.flmux/ext/<extId>/`, mkdir'd. */
   readonly dataDir: string;
   /** flmux access — use this, not createFlmuxClient. In-process: implicit-current paths

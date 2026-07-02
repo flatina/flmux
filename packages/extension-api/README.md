@@ -98,7 +98,29 @@ export default defineExtensionServer({
 - **flmux owns CORS** — you cannot set `Access-Control-Allow-Origin` (responses stay same-origin), `set-cookie`, or CSP; only a small content-type/caching header allow-list passes through. `ctx.request.header()` redacts `cookie`/`authorization`.
 - Read your own config/secret from `ctx.dataDir`.
 
-## Pane context
+## User preferences
+
+Declare user-editable settings; flmux renders them in the Settings popup ("Preferences" tab, one group per extension) and serves them at the path `/userpref/<extId>/*`. **You own storage** (any location/format) — flmux only routes and renders.
+
+```ts
+export default defineExtensionServer({
+  preferences: {
+    // ctx = { userId, dataDir, fsPolicy }
+    read: (ctx) => loadMyPrefs(ctx.userId),                 // all values
+    describe: () => ({                                      // dynamic schema
+      fields: [
+        { key: "step", label: "Increment step", type: "number", default: 1 },
+        { key: "dense", label: "Compact", type: "toggle", default: false }
+      ]
+    }),
+    write: (ctx, key, value) => saveMyPref(ctx.userId, key, value)
+  }
+});
+```
+
+- **Field types**: `toggle` | `text` | `number` | `select` (`select` needs `options: [{value,label}]`). `describe` is called per-open so options/fields can be computed per user/state. `default` is shown when the user hasn't set a value.
+- **Read from anywhere** (server / CLI / pane ctx): `await ctx.getPreferences()` (all) or `await ctx.getPreference(key)` (one; `undefined` if unset). `readKey?(ctx, key)` is an optional single-key optimization.
+- Values pass through unchanged (no coercion). Keep secrets out of prefs the login user shouldn't forge — they're editable by that user.
 
 Every pane receives `ExtensionPaneContext` on mount:
 

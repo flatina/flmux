@@ -8,6 +8,7 @@ import type {
 } from "dockview-core";
 import { DefaultTab } from "dockview-core";
 import type { PaneHeaderMenu, PaneHeaderMenuItem } from "@flmux/extension-api";
+import type { ShellModelAPI } from "@flmux/core/shell";
 import type { FlmuxRendererBootstrapConfig } from "../../shared/rendererBridge";
 import { renderAppTemplate } from "../../shared/appTemplate";
 import { getPaneHeaderMenu } from "../external/paneTabMenuRegistry";
@@ -50,7 +51,8 @@ export class WorkspaceHeaderActions implements IHeaderActionsRenderer {
   constructor(
     _group: DockviewGroupPanel,
     private readonly handlers: { onAdd: () => void; onResetActive: () => void },
-    private readonly config: FlmuxRendererBootstrapConfig
+    private readonly config: FlmuxRendererBootstrapConfig,
+    private readonly shellModel: ShellModelAPI
   ) {
     this.element.className = "header-action";
     this.menuButton.type = "button";
@@ -110,9 +112,11 @@ export class WorkspaceHeaderActions implements IHeaderActionsRenderer {
 
     const account = this.config.mode === "web" ? this.config.account : undefined;
     if (account) {
-      addItem(`👤  ${account.displayName ?? account.name}`, () => openSettingsDialog(this.config, "account"));
+      addItem(`👤  ${account.displayName ?? account.name}`, () =>
+        openSettingsDialog(this.config, this.shellModel, "account")
+      );
     }
-    addItem("⚙  Settings…", () => openSettingsDialog(this.config, "appearance"));
+    addItem("⚙  Settings…", () => openSettingsDialog(this.config, this.shellModel, "appearance"));
 
     addSeparator();
 

@@ -18,6 +18,16 @@ function broadcast() {
   for (const emit of subscribers) emit({ count, sourcePaneId: null });
 }
 
+// Per-user preferences demo — in-memory, keyed by userId (real extensions
+// persist to their own storage; this just exercises the /userpref surface).
+const userPrefs = new Map<string, Record<string, unknown>>();
+function readUserPrefs(userId: string): Record<string, unknown> {
+  return userPrefs.get(userId) ?? {};
+}
+function writeUserPref(userId: string, key: string, value: unknown): void {
+  userPrefs.set(userId, { ...readUserPrefs(userId), [key]: value });
+}
+
 export default defineExtensionServer({
   async onInit(ctx) {
     config = await ctx.loadConfig<CounterConfig>((b) =>
@@ -55,5 +65,26 @@ export default defineExtensionServer({
         })
     };
     ctx.serve(counterCap, impl);
+  },
+  preferences: {
+    read: (ctx) => readUserPrefs(ctx.userId),
+    describe: () => ({
+      fields: [
+        { key: "step", label: "Increment step", type: "number", default: 1 },
+        { key: "label", label: "Personal label", type: "text" },
+        { key: "showTotal", label: "Show running total", type: "toggle", default: true },
+        {
+          key: "density",
+          label: "Density",
+          type: "select",
+          default: "compact",
+          options: [
+            { value: "compact", label: "Compact" },
+            { value: "comfortable", label: "Comfortable" }
+          ]
+        }
+      ]
+    }),
+    write: (ctx, key, value) => writeUserPref(ctx.userId, key, value)
   }
 });

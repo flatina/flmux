@@ -685,6 +685,67 @@ body.flmux-has-titlebar .flmux-titlebar-host {
   margin-top: 16px;
 }
 
+.settings-hint {
+  font-size: 12px;
+  color: var(--fl-description-foreground);
+}
+
+.property-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.property-grid__group-header {
+  width: 100%;
+  text-align: left;
+  padding: 4px 6px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--fl-widget-border);
+  color: var(--fl-description-foreground);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.property-grid__group-header::before {
+  content: "▾ ";
+}
+.property-grid__group--collapsed .property-grid__group-header::before {
+  content: "▸ ";
+}
+.property-grid__group--collapsed .property-grid__group-body {
+  display: none;
+}
+.property-grid__group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 6px 2px;
+}
+.property-grid__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.property-grid__label {
+  flex: 1 1 auto;
+  color: var(--fl-foreground);
+}
+.property-grid__editor--toggle {
+  flex: 0 0 auto;
+}
+.property-grid__editor:not(.property-grid__editor--toggle) {
+  flex: 0 0 140px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  background: var(--fl-input-background);
+  border: 1px solid var(--fl-input-border);
+  color: var(--fl-input-foreground);
+  font-size: 12px;
+}
+
 .settings-input {
   flex: 1 1 auto;
   padding: 6px 8px;

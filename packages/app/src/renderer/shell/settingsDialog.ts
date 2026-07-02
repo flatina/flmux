@@ -1,5 +1,7 @@
+import type { ShellModelAPI } from "@flmux/core/shell";
 import type { FlmuxRendererBootstrapConfig } from "../../shared/rendererBridge";
 import { getThemePreference, setThemePreference, type ThemePreference } from "../theme";
+import { mountPropertyGrid, type PropertyFieldType, type PropertyGroup } from "../controls/propertyGridControl";
 
 const THEME_GLYPH: Record<ThemePreference, string> = {
   light: "☀",
@@ -13,7 +15,7 @@ const THEME_OPTIONS: ReadonlyArray<{ preference: ThemePreference; label: string 
   { preference: "system", label: "System" }
 ];
 
-type SectionId = "appearance" | "account" | "about";
+type SectionId = "appearance" | "account" | "preferences" | "about";
 
 interface SettingsSection {
   id: SectionId;
@@ -33,13 +35,14 @@ let openDialog: SettingsDialog | null = null;
 
 export function openSettingsDialog(
   config: FlmuxRendererBootstrapConfig,
+  shellModel: ShellModelAPI,
   initialSection: SectionId = "appearance"
 ): void {
   if (openDialog) {
     openDialog.show(initialSection);
     return;
   }
-  openDialog = new SettingsDialog(config, () => {
+  openDialog = new SettingsDialog(config, shellModel, () => {
     openDialog = null;
   });
   openDialog.show(initialSection);
@@ -50,6 +53,8 @@ class SettingsDialog {
   private readonly nav = document.createElement("div");
   private readonly body = document.createElement("div");
   private readonly sections: SettingsSection[];
+  // Bumped on every section switch; async renders bail if it changed under them.
+  private renderToken = 0;
 
   private readonly onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape") {
@@ -60,6 +65,7 @@ class SettingsDialog {
 
   constructor(
     private readonly config: FlmuxRendererBootstrapConfig,
+    private readonly shellModel: ShellModelAPI,
     private readonly onClosed: () => void
   ) {
     this.sections = this.buildSections();
@@ -115,6 +121,7 @@ class SettingsDialog {
     if (this.config.mode === "web" && this.config.account) {
       sections.push({ id: "account", label: "Account", render: (body) => this.renderAccount(body) });
     }
+    sections.push({ id: "preferences", label: "Preferences", render: (body) => this.renderPreferences(body) });
     sections.push({ id: "about", label: "About", render: (body) => this.renderAbout(body) });
     return sections;
   }
@@ -138,6 +145,7 @@ class SettingsDialog {
     }
     const section = this.sections.find((s) => s.id === sectionId);
     this.body.replaceChildren();
+    this.renderToken++;
     section?.render(this.body);
   }
 
@@ -162,6 +170,74 @@ class SettingsDialog {
       list.append(item);
     }
     body.append(list);
+  }
+
+  private renderPreferences(body: HTMLElement): void {
+    body.append(sectionHeading("Extension preferences"));
+    const status = document.createElement("div");
+    status.className = "settings-hint";
+    status.textContent = "Loading…";
+    body.append(status);
+
+    const token = this.renderToken;
+    void this.loadPreferenceGroups()
+      .then((groups) => {
+        if (this.renderToken !== token) return; // switched away while loading
+        status.remove();
+        if (groups.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "settings-hint";
+          empty.textContent = "No extension preferences.";
+          body.append(empty);
+          return;
+        }
+        mountPropertyGrid(body, {
+          groups,
+          onChange: (extId, key, value) => {
+            void this.shellModel.pathSet(`/userpref/${extId}/${key}`, value).catch((err) => {
+              console.warn(`failed to save preference '${extId}/${key}'`, err);
+            });
+          }
+        });
+      })
+      .catch((err) => {
+        if (this.renderToken !== token) return;
+        status.textContent = "Failed to load preferences.";
+        console.warn("preferences load failed", err);
+      });
+  }
+
+  private async loadPreferenceGroups(): Promise<PropertyGroup[]> {
+    const list = await this.shellModel.pathList("/userpref");
+    if (!list.ok || !list.found) return [];
+    const groups: PropertyGroup[] = [];
+    for (const entry of list.entries) {
+      const extId = entry.name;
+      try {
+        const got = await this.shellModel.pathGet(`/userpref/${extId}`);
+        if (!got.ok || !got.found) continue;
+        const { fields, values } = got.value as {
+          fields: Array<{
+            key: string;
+            label: string;
+            type: PropertyFieldType;
+            options?: { value: string; label: string }[];
+            help?: string;
+            default?: unknown;
+          }>;
+          values: Record<string, unknown>;
+        };
+        // Fall back to the field's declared default when the user hasn't set it.
+        groups.push({
+          id: extId,
+          label: extId,
+          fields: fields.map((f) => ({ ...f, value: values?.[f.key] ?? f.default }))
+        });
+      } catch (err) {
+        console.warn(`skipping malformed preferences for '${extId}'`, err);
+      }
+    }
+    return groups;
   }
 
   private renderAccount(body: HTMLElement): void {

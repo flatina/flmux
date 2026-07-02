@@ -715,7 +715,8 @@ export class FlmuxWorkbench {
                   void this.shellModel.pathCall(`/workspaces/${this.activeWorkspaceId}/reset`);
                 }
               },
-              this.config
+              this.config,
+              this.shellModel
             );
             action.element.classList.add("flmux-workspace-prefix-menus");
             return action;
@@ -928,7 +929,8 @@ export class FlmuxWorkbench {
               void this.shellModel.pathCall(`/workspaces/${this.activeWorkspaceId}/reset`);
             }
           },
-          this.config
+          this.config,
+          this.shellModel
         )
     });
 

@@ -5,6 +5,7 @@ import {
   ShellCore,
   createPlaceholderPaneSpec,
   createShellModel,
+  type PreferenceRegistry,
   type PaneSpec,
   type SequencedShellCoreEvent,
   type ShellModelAPI
@@ -58,6 +59,7 @@ export async function createDesktopShellAuthority(options: {
   clientRegistry: ClientRegistry;
   localExtensions?: readonly DiscoveredLocalExtension[];
   extensionModuleImporter?: ExtensionModuleImporter;
+  preferences?: PreferenceRegistry;
   cefCdpPort?: number;
 }): Promise<DesktopShellAuthority> {
   const browserController = createBrowserPaneController();
@@ -93,7 +95,8 @@ export async function createDesktopShellAuthority(options: {
     fs: createFsBackend({
       projectDir: options.projectDir,
       policy: { unconfined: true, binds: [] }
-    })
+    }),
+    preferences: options.preferences
   });
   const agentSurface = new BrowserAgentSurface(shellCore, browserController);
   browserController.setAgentSurface(agentSurface);

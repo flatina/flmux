@@ -1519,3 +1519,117 @@ describe("shell model direct", () => {
     });
   });
 });
+
+describe("shell model /userpref", () => {
+  function modelWithPrefs() {
+    const host = new TestShellModelHost({
+      workspaceId: "workspace.test",
+      workspaceTitle: "Workspace Test",
+      activePaneId: null,
+      panes: []
+    });
+    const store: Record<string, unknown> = { maxColumns: 3, theme: "compact" };
+    const mount = {
+      read: () => ({ ...store }),
+      describe: () => ({
+        fields: [
+          { key: "maxColumns", label: "Max columns", type: "number" as const },
+          {
+            key: "theme",
+            label: "Theme",
+            type: "select" as const,
+            options: [
+              { value: "compact", label: "Compact" },
+              { value: "wide", label: "Wide" }
+            ]
+          }
+        ]
+      }),
+      write: (key: string, value: unknown) => {
+        store[key] = value;
+      }
+    };
+    const preferences = {
+      list: () => ["demo.ext"],
+      get: (extId: string) => (extId === "demo.ext" ? mount : undefined)
+    };
+    return { model: host.createModel({ preferences }), store };
+  }
+
+  it("get /userpref/<extId> returns dynamic fields + values", async () => {
+    const { model } = modelWithPrefs();
+    const result = await model.pathGet("/userpref/demo.ext");
+    expect(result).toMatchObject({ ok: true, found: true });
+    if (result.ok && result.found) {
+      expect((result.value as { values: unknown }).values).toEqual({ maxColumns: 3, theme: "compact" });
+      expect((result.value as { fields: unknown[] }).fields).toHaveLength(2);
+    }
+  });
+
+  it("get single key, set (raw passthrough), and list keys + extIds", async () => {
+    const { model, store } = modelWithPrefs();
+
+    expect(await model.pathGet("/userpref/demo.ext/maxColumns")).toEqual({ ok: true, found: true, value: 3 });
+
+    expect(await model.pathSet("/userpref/demo.ext/maxColumns", 5)).toEqual({ ok: true, value: 5 });
+    expect(store.maxColumns).toBe(5);
+    // Raw passthrough: empty string is a valid value, never coerced/rejected.
+    expect(await model.pathSet("/userpref/demo.ext/theme", "")).toEqual({ ok: true, value: "" });
+    expect(store.theme).toBe("");
+
+    const keys = await model.pathList("/userpref/demo.ext");
+    expect(keys).toMatchObject({ ok: true, found: true });
+    if (keys.ok && keys.found) {
+      expect(keys.entries.map((e) => e.name)).toEqual(["maxColumns", "theme"]);
+      expect(keys.entries.every((e) => e.writable)).toBe(true);
+    }
+
+    const extIds = await model.pathList("/userpref");
+    if (extIds.ok && extIds.found) expect(extIds.entries.map((e) => e.name)).toEqual(["demo.ext"]);
+  });
+
+  it("unknown extension → not found; invalid key charset → INVALID_PATH", async () => {
+    const { model } = modelWithPrefs();
+    expect(await model.pathGet("/userpref/nope.ext")).toMatchObject({ ok: true, found: false });
+    expect(await model.pathSet("/userpref/demo.ext/bad@key", 1)).toMatchObject({ ok: false, code: "INVALID_PATH" });
+  });
+
+  it("no preferences injected → empty list, extension not found", async () => {
+    const host = new TestShellModelHost({
+      workspaceId: "workspace.test",
+      workspaceTitle: "Workspace Test",
+      activePaneId: null,
+      panes: []
+    });
+    const model = host.createModel();
+    expect(await model.pathList("/userpref")).toMatchObject({ ok: true, found: true, entries: [] });
+    expect(await model.pathGet("/userpref/demo.ext")).toMatchObject({ ok: true, found: false });
+  });
+
+  it("invalid field keys from describe are filtered from list + get", async () => {
+    const host = new TestShellModelHost({
+      workspaceId: "workspace.test",
+      workspaceTitle: "Workspace Test",
+      activePaneId: null,
+      panes: []
+    });
+    const mount = {
+      read: () => ({ ok: 1 }),
+      describe: () => ({
+        fields: [
+          { key: "ok", label: "OK", type: "number" as const },
+          { key: "bad key", label: "Bad", type: "text" as const }
+        ]
+      }),
+      write: () => {}
+    };
+    const model = host.createModel({ preferences: { list: () => ["x.ext"], get: () => mount } });
+
+    const list = await model.pathList("/userpref/x.ext");
+    if (list.ok && list.found) expect(list.entries.map((e) => e.name)).toEqual(["ok"]);
+    const got = await model.pathGet("/userpref/x.ext");
+    if (got.ok && got.found) {
+      expect((got.value as { fields: { key: string }[] }).fields.map((f) => f.key)).toEqual(["ok"]);
+    }
+  });
+});

@@ -27,6 +27,32 @@ export interface ShellPathEntry {
   writable: boolean;
 }
 
+/** One user-editable preference field = one row in the Preferences grid. */
+export interface PreferenceField {
+  key: string;
+  label: string;
+  type: "toggle" | "text" | "number" | "select";
+  options?: readonly { value: string; label: string }[];
+  default?: unknown;
+  help?: string;
+}
+
+/** One extension's preferences, userId-bound by the app before injection (core
+ * stays user-agnostic). Backs `/userpref/<extId>`. */
+export interface PreferenceMount {
+  read(): Record<string, unknown> | Promise<Record<string, unknown>>;
+  readKey?(key: string): unknown | Promise<unknown>;
+  describe(): { fields: readonly PreferenceField[] } | Promise<{ fields: readonly PreferenceField[] }>;
+  write(key: string, value: unknown): void | Promise<void>;
+}
+
+/** Resolves the authority user's preferences live per request (entitlement +
+ * ctx re-checked each call, not snapshotted — mirrors the pane-kind guard). */
+export interface PreferenceRegistry {
+  list(): readonly string[];
+  get(extId: string): PreferenceMount | undefined;
+}
+
 export interface PathCallerContext {
   // Per-call data — callers may supply these.
   sourcePaneId?: string;

@@ -8,6 +8,7 @@ import type {
   PathGetResult,
   PathListResult,
   PathSetResult,
+  PreferenceRegistry,
   ShellModelAPI,
   ShellModelHost,
   ShellPaneRecordSnapshot,
@@ -22,6 +23,8 @@ export interface ShellModelDependencies {
   host: ShellModelHost;
   terminal: ShellTerminalDelegate;
   fs?: FsBackend;
+  /** `extId` → userId-bound preferences mount (app binds userId per authority). */
+  preferences?: PreferenceRegistry;
 }
 
 export function createShellModel(deps: ShellModelDependencies): ShellModelAPI {
@@ -32,11 +35,13 @@ class ShellModel implements ShellModelAPI {
   private readonly host: ShellModelHost;
   private readonly terminal: ShellTerminalDelegate;
   private readonly fs: FsBackend | undefined;
+  private readonly preferences: PreferenceRegistry | undefined;
 
   constructor(deps: ShellModelDependencies) {
     this.host = deps.host;
     this.terminal = deps.terminal;
     this.fs = deps.fs;
+    this.preferences = deps.preferences;
   }
 
   async pathGet(path: string, caller: PathCallerContext = {}): Promise<PathGetResult> {
@@ -86,6 +91,10 @@ class ShellModel implements ShellModelAPI {
 
     if (segments[0] === "app") {
       return await this.getApp(segments.slice(1));
+    }
+
+    if (segments[0] === "userpref") {
+      return await this.getUserpref(segments.slice(1));
     }
 
     const rootProperty = getWorkspaceStatePropertyByAlias(segments[0]);
@@ -141,6 +150,10 @@ class ShellModel implements ShellModelAPI {
       return await this.listApp(segments.slice(1));
     }
 
+    if (segments[0] === "userpref") {
+      return await this.listUserpref(segments.slice(1));
+    }
+
     if (getWorkspaceStatePropertyByAlias(segments[0])) {
       return throwPathError("INVALID_PATH", "Leaf path cannot be listed");
     }
@@ -167,6 +180,10 @@ class ShellModel implements ShellModelAPI {
   private async setBySegments(segments: string[], value: unknown, caller: PathCallerContext): Promise<PathSetResult> {
     if (segments.length === 0 || segments[0] === "status" || segments[0] === "bus") {
       return throwPathError("NOT_WRITABLE", "Path is read-only");
+    }
+
+    if (segments[0] === "userpref") {
+      return await this.setUserpref(segments.slice(1), value);
     }
 
     if (segments[0] === "app") {
@@ -592,6 +609,47 @@ class ShellModel implements ShellModelAPI {
       const message = err instanceof Error ? err.message : String(err);
       return throwPathError("INTERNAL_ERROR", message);
     }
+  }
+
+  // userId is bound into each mount by the app, so the path carries none.
+  private async getUserpref(segments: string[]): Promise<PathGetResult> {
+    const mount = segments.length >= 1 && segments.length <= 2 ? this.preferences?.get(segments[0]!) : undefined;
+    if (!mount) return { ok: true, found: false, value: null };
+    if (segments.length === 1) {
+      const [described, values] = await Promise.all([mount.describe(), mount.read()]);
+      const fields = described.fields.filter((f) => isValidUserprefKey(f.key));
+      return { ok: true, found: true, value: { fields, values } };
+    }
+    const key = validateUserprefKey(segments[1]!);
+    const value = mount.readKey ? await mount.readKey(key) : (await mount.read())[key];
+    return { ok: true, found: true, value: value === undefined ? null : value };
+  }
+
+  private async listUserpref(segments: string[]): Promise<PathListResult> {
+    if (segments.length === 0) {
+      const extIds = this.preferences ? this.preferences.list() : [];
+      return { ok: true, found: true, entries: extIds.map((extId) => objectEntry(extId, `/userpref/${extId}`)) };
+    }
+    if (segments.length > 1) return notFoundList();
+    const mount = this.preferences?.get(segments[0]!);
+    if (!mount) return notFoundList();
+    const { fields } = await mount.describe();
+    return {
+      ok: true,
+      found: true,
+      entries: fields
+        .filter((f) => isValidUserprefKey(f.key))
+        .map((f) => leafEntry(f.key, `/userpref/${segments[0]}/${f.key}`, true))
+    };
+  }
+
+  private async setUserpref(segments: string[], value: unknown): Promise<PathSetResult> {
+    if (segments.length !== 2) return throwPathError("NOT_WRITABLE", "Path is not writable");
+    const mount = this.preferences?.get(segments[0]!);
+    if (!mount) return throwPathError("NOT_FOUND", "Path not found");
+    const key = validateUserprefKey(segments[1]!);
+    await mount.write(key, value); // raw passthrough — no coercion (toggle/number/empty all valid)
+    return { ok: true, value };
   }
 
   private async getApp(segments: string[]): Promise<PathGetResult> {
@@ -1751,6 +1809,16 @@ function toPaneStatusSnapshot(pane: ShellPaneRecordSnapshot) {
     : pane.kind === "terminal"
       ? { ...withActive, terminal: toTerminalStatusSnapshot(pane) }
       : withActive;
+}
+
+// Key becomes a path segment — reject break-out/collision chars.
+function isValidUserprefKey(key: string): boolean {
+  return /^[A-Za-z0-9._-]+$/.test(key) && key !== "." && key !== "..";
+}
+
+function validateUserprefKey(key: string): string {
+  if (!isValidUserprefKey(key)) throwPathError("INVALID_PATH", "Invalid preference key");
+  return key;
 }
 
 function paneStateEntries(_pane: ShellPaneRecordSnapshot, basePath: string): ShellPathEntry[] {

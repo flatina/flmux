@@ -129,9 +129,40 @@ export interface ExtensionHttpRoute {
   handler(ctx: ExtensionHttpRouteContext): ExtensionHttpReturn | Promise<ExtensionHttpReturn>;
 }
 
+// User-editable settings. flmux serves them at `/userpref/<extId>/*` + renders a
+// grouped property grid in Settings; storage is yours (`.config/` recommended).
+
+export interface PreferenceField {
+  key: string;
+  label: string;
+  type: "toggle" | "text" | "number" | "select";
+  options?: readonly { value: string; label: string }[];
+  default?: unknown;
+  help?: string;
+}
+
+export interface UserPreferenceContext {
+  userId: string;
+  dataDir: string;
+  fsPolicy: ExtensionFsPolicy & ExtensionFsPathMapper;
+}
+
+export interface ExtensionPreferences {
+  /** All values, from your own storage. */
+  read(ctx: UserPreferenceContext): Record<string, unknown> | Promise<Record<string, unknown>>;
+  /** Optional single-key read; else host uses `read(ctx)[key]`. */
+  readKey?(ctx: UserPreferenceContext, key: string): unknown | Promise<unknown>;
+  /** Field schema — dynamic (options/conditional per user/state). */
+  describe(
+    ctx: UserPreferenceContext
+  ): { fields: readonly PreferenceField[] } | Promise<{ fields: readonly PreferenceField[] }>;
+  write(ctx: UserPreferenceContext, key: string, value: unknown): void | Promise<void>;
+}
+
 export interface ExtensionServerDefinition {
   panes?: ExtensionPaneSpec[];
   httpRoutes?: ExtensionHttpRoute[];
+  preferences?: ExtensionPreferences;
   onInit?(ctx: ExtensionServerInitContext): void | Promise<void>;
   onSession?(ctx: ExtensionServerSessionContext): void | Promise<void>;
   onPaneConnected?(

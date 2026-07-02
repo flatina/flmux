@@ -9,7 +9,7 @@ import type {
   WorkspaceBusEvent,
   WorkspaceStatusSnapshot
 } from "@flmux/core/shell/types";
-import type { ShellModelAPI } from "@flmux/core/shell/types";
+import type { PreferenceRegistry, ShellModelAPI } from "@flmux/core/shell/types";
 import { createShellModel } from "@flmux/core/shell/model";
 import type {
   TerminalCreateResult,
@@ -130,10 +130,11 @@ export class TestShellModelHost implements ShellModelHost {
 
   assertPaneKindAllowed(_kind: string): void {}
 
-  createModel(): ShellModelAPI {
+  createModel(extra?: { preferences?: PreferenceRegistry }): ShellModelAPI {
     return createShellModel({
       host: this,
-      terminal: this.createTerminalDelegate()
+      terminal: this.createTerminalDelegate(),
+      preferences: extra?.preferences
     });
   }
 

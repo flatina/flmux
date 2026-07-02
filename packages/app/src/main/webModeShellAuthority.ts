@@ -4,6 +4,7 @@ import {
   createPlaceholderPaneSpec,
   createShellModel,
   type PaneSpec,
+  type PreferenceRegistry,
   type SequencedShellCoreEvent,
   type ShellModelAPI
 } from "@flmux/core/shell";
@@ -62,6 +63,8 @@ export async function createWebModeShellAuthority(options: {
   userId?: string;
   /** Per-user pane-kind role gate; forwarded to ShellCore. */
   paneKindGuard?: (kind: string) => void;
+  /** Per-user `extId`→preferences mount, serving `/userpref/*`. */
+  preferences?: PreferenceRegistry;
   /** Per-user pane/terminal caps; defaults 200/50. */
   limits?: { maxPanes: number; maxTerminals: number };
   /** Per-user filesystem policy source for `/fs/*`. Missing user/policy fails closed. */
@@ -108,7 +111,8 @@ export async function createWebModeShellAuthority(options: {
     fs: createFsBackend({
       projectDir: options.projectDir,
       policy: fsPolicy
-    })
+    }),
+    preferences: options.preferences
   });
   const agentSurface = new BrowserAgentSurface(shellCore, browserController);
   browserController.setAgentSurface(agentSurface);

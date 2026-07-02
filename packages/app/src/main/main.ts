@@ -2,7 +2,13 @@ import { mkdirSync, realpathSync, statSync } from "node:fs";
 import { delimiter, join, resolve, sep } from "node:path";
 import { BrowserWindow, AppRuntime, acquireSingleInstanceLock } from "bunite-core";
 import type { Connection } from "bunite-core/rpc";
-import type { PathCallerContext, SequencedShellCoreEvent, ShellModelAPI } from "@flmux/core/shell";
+import type {
+  PathCallerContext,
+  PreferenceMount,
+  PreferenceRegistry,
+  SequencedShellCoreEvent,
+  ShellModelAPI
+} from "@flmux/core/shell";
 import { DESKTOP_USER_ID, ModelPathError } from "@flmux/core/shell";
 import {
   flmuxBridgeCap,
@@ -37,7 +43,7 @@ import { createFsPolicyResolver } from "./auth/fsPolicy";
 import { createFsPathMapper, createFsUploader } from "./fsBackend";
 import { createFsDownloader } from "./fsDownload";
 import { generateToken } from "./auth/tokenFormat";
-import type { ExtensionFsPolicy } from "@flmux/extension-api";
+import type { ExtensionFsPolicy, ExtensionFsPathMapper } from "@flmux/extension-api";
 import { loadFlmuxBootConfig } from "./flmuxConfig";
 import { createExtensionConfigLoader } from "./extConfig";
 import { invokeInProcessExtensionCli, isInProcessCliEntitled } from "../cliExtensions";
@@ -58,7 +64,8 @@ import { collectExtHttpRoutes } from "./extHttpRoutes";
 import type {
   ExtensionServerDefinition,
   ExtensionServerPaneInstance,
-  ShellClient as ShellClientImport
+  ShellClient as ShellClientImport,
+  UserPreferenceContext
 } from "@flmux/extension-api";
 import type { AnyCapDef, ImplOf, ServeHandle } from "bunite-core/rpc";
 
@@ -354,6 +361,45 @@ function createExtensionShellClient(paneId: string | null, sessionId: string): S
   };
 }
 
+// Extension fs grant: desktop unconfined, web per-user (absent → fail-closed).
+function resolveExtensionFsPolicy(userId: string): ExtensionFsPolicy & ExtensionFsPathMapper {
+  const user = webModeAuthorizer ? webModeAuthorizer.getUser(userId) : null;
+  const basePolicy: ExtensionFsPolicy = webModeAuthorizer
+    ? user
+      ? fsPolicyResolver.resolve(user)
+      : { unconfined: false, binds: [] }
+    : { unconfined: true, binds: [] };
+  return { ...basePolicy, ...createFsPathMapper({ policy: basePolicy, projectDir }) };
+}
+
+// Serves `/userpref/*` for a user. Entitlement + ctx resolved live per call
+// (not snapshotted) so role edits apply without evicting the authority.
+function buildPreferenceRegistry(userId: string): PreferenceRegistry {
+  const resolve = (extId: string): PreferenceMount | undefined => {
+    const def = extensionServers.get(extId);
+    if (!def?.preferences || !userCanUseExtension(userId, extId)) return undefined;
+    const dataDir = resolveExtensionDataDir(extId);
+    if (!dataDir) return undefined;
+    const prefs = def.preferences;
+    const ctx: UserPreferenceContext = { userId, dataDir, fsPolicy: resolveExtensionFsPolicy(userId) };
+    return {
+      read: () => prefs.read(ctx),
+      readKey: prefs.readKey ? (key) => prefs.readKey!(ctx, key) : undefined,
+      describe: () => prefs.describe(ctx),
+      write: (key, value) => prefs.write(ctx, key, value)
+    };
+  };
+  return {
+    list: () =>
+      [...extensionServers]
+        .filter(
+          ([extId, def]) => def.preferences && userCanUseExtension(userId, extId) && resolveExtensionDataDir(extId)
+        )
+        .map(([extId]) => extId),
+    get: resolve
+  };
+}
+
 // Per-session: fire each extension's onSession + serve returned caps. Impl closure captures identity.
 async function attachExtensionsForSession(opts: {
   conn: Connection;
@@ -377,13 +423,7 @@ async function attachExtensionsForSession(opts: {
   // Per-user fs grant (shared by the session's extensions). Desktop (no
   // authorizer) = unconfined; web resolves per user, absent → fail-closed.
   const user = webModeAuthorizer ? webModeAuthorizer.getUser(opts.userId) : null;
-  const basePolicy: ExtensionFsPolicy = webModeAuthorizer
-    ? user
-      ? fsPolicyResolver.resolve(user)
-      : { unconfined: false, binds: [] }
-    : { unconfined: true, binds: [] };
-  // Carry virtual↔real conversion (flmux containment) so the extension reuses it.
-  const fsPolicy = { ...basePolicy, ...createFsPathMapper({ policy: basePolicy, projectDir }) };
+  const fsPolicy = resolveExtensionFsPolicy(opts.userId);
   // Per-session machine token for subprocess HTTP callbacks (e.g. the agent's
   // sandboxed CLI). User-scoped, revoked on session detach (state.sessionDisposes),
   // TTL-backstopped against a crash. Web only — desktop has no auth.
@@ -578,6 +618,7 @@ const desktopAuthority: DesktopShellAuthority | null =
         sessionStore,
         clientRegistry,
         localExtensions,
+        preferences: buildPreferenceRegistry(DESKTOP_USER_ID),
         cefCdpPort: parseOptionalPort(process.env.BUNITE_REMOTE_DEBUGGING_PORT)
       })
     : null;
@@ -633,7 +674,8 @@ const userAuthorityRegistry: WebModeUserAuthorityRegistry | null =
           if (!isPaneKindAllowedForUser(userId, kind)) {
             throw new ModelPathError("NOT_CALLABLE", `pane kind '${kind}' is not permitted for user '${userId}'`);
           }
-        }
+        },
+        makePreferenceRegistry: buildPreferenceRegistry
       })
     : null;
 

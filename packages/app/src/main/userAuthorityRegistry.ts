@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type { DiscoveredLocalExtension } from "./localExtensions";
 import { createSessionStore } from "./sessionStore";
 import { createWebModeShellAuthority, type WebModeShellAuthority } from "./webModeShellAuthority";
+import type { PreferenceRegistry } from "@flmux/core/shell";
 import type { ClientRegistry } from "./clientRegistry";
 import type { TerminalService } from "./terminal-service";
 import type { FsPolicyResolver } from "./auth/fsPolicy";
@@ -34,6 +35,7 @@ interface WebModeUserAuthorityRegistryOptions {
   /** Builds a per-user pane-kind role gate (resolved fresh per call so role
    * edits apply without restart). Injected into each user's ShellCore. */
   makePaneKindGuard?(userId: string): (kind: string) => void;
+  makePreferenceRegistry?(userId: string): PreferenceRegistry;
   /** Builds the per-user `/fs/*` policy at authority creation. */
   fsPolicyResolver?: FsPolicyResolver;
   resolveUserByName?(userId: string): FlmuxUser | null;
@@ -84,6 +86,7 @@ export function createWebModeUserAuthorityRegistry(
       sessionStore,
       userId,
       paneKindGuard: options.makePaneKindGuard?.(userId),
+      preferences: options.makePreferenceRegistry?.(userId),
       fsPolicyResolver: options.fsPolicyResolver,
       resolveUserByName: options.resolveUserByName,
       limits: options.limits

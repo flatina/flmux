@@ -4,10 +4,13 @@ import type { ExtensionManifestCommand } from "@flmux/extension-api";
 import { isCompiledBinary } from "../shared/buildTarget";
 
 const FLMUX_SHIM_NAME = "flmux";
+// `flweb` = `flmux browser` shorthand shim.
+const FLWEB_SHIM_NAME = "flweb";
 
 // Built-in subcommands an extension shim must not shadow.
 const RESERVED_SHIM_NAMES: ReadonlySet<string> = new Set([
   FLMUX_SHIM_NAME,
+  FLWEB_SHIM_NAME,
   "clients",
   "get",
   "ls",
@@ -39,6 +42,7 @@ export function ensureFlmuxCliShim(options: EnsureOptions): CliShimResult {
   if (isCompiledBinary) {
     mkdirSync(options.binDir, { recursive: true });
     writeCompiledShimPair(options.binDir, FLMUX_SHIM_NAME, "cli", []);
+    writeCompiledShimPair(options.binDir, FLWEB_SHIM_NAME, "cli", ["browser"]);
     return { ok: true, entry: process.execPath, bunCommand: process.execPath };
   }
 
@@ -50,6 +54,7 @@ export function ensureFlmuxCliShim(options: EnsureOptions): CliShimResult {
 
   mkdirSync(options.binDir, { recursive: true });
   writeShimPair(options.binDir, FLMUX_SHIM_NAME, bunCommand, [entry]);
+  writeShimPair(options.binDir, FLWEB_SHIM_NAME, bunCommand, [entry, "browser"]);
 
   return { ok: true, entry, bunCommand };
 }
@@ -99,7 +104,7 @@ export function ensureExtensionCliShims(options: {
     }
   }
 
-  pruneStaleShims(options.binDir, new Set([FLMUX_SHIM_NAME, ...written]));
+  pruneStaleShims(options.binDir, new Set([FLMUX_SHIM_NAME, FLWEB_SHIM_NAME, ...written]));
 
   return { written, skipped };
 }

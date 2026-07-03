@@ -73,6 +73,18 @@ describe("ensureFlmuxCliShim", () => {
     expect(cmd).toContain("%*");
   });
 
+  it("writes an flweb shim forwarding to `flmux browser`", () => {
+    const sourceEntry = join(baseDir, "cli.ts");
+    writeFileSync(sourceEntry, "// source", "utf8");
+
+    ensureFlmuxCliShim({ binDir, baseDir, resolveBunCommand: () => "/usr/bin/bun" });
+
+    const posix = readFileSync(join(binDir, "flweb"), "utf8");
+    expect(posix).toContain(`'/usr/bin/bun' '${resolve(sourceEntry)}' 'browser'`);
+    const cmd = readFileSync(join(binDir, "flweb.cmd"), "utf8");
+    expect(cmd).toContain(`"${resolve(sourceEntry)}" "browser"`);
+  });
+
   it("is idempotent — second call with identical inputs does not rewrite content", () => {
     const sourceEntry = join(baseDir, "cli.ts");
     writeFileSync(sourceEntry, "// source", "utf8");

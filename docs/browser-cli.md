@@ -7,6 +7,9 @@ Unlike a headless automation run, you can watch and touch the same pane by hand.
 Commands target the **first browser pane** by default; pass `--pane <id>` to pick one
 (`flmux browser list` shows them). See [flmux-cli.md](./flmux-cli.md) for transport flags.
 
+`flweb` is a shim for `flmux browser` (installed alongside `flmux` in `.flmux/bin/`), so
+`flweb open <url>` == `flmux browser open <url>`.
+
 ## Open / navigate
 
 ```sh

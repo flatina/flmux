@@ -63,6 +63,11 @@ flmux call /panes/<paneId>/terminal/kill                # kill runtime; pane sta
 `write` requires the literal CR (`\r`) to commit a line — bash `$'...'`
 quoting handles it.
 
+## Browser panes
+
+Browser panes are fully scriptable — navigate, query the DOM, click/fill, run JS,
+screenshot. See **[browser-cli.md](./browser-cli.md)**.
+
 ## Tokens (web auth)
 
 ```sh

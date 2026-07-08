@@ -1,6 +1,9 @@
 #!/bin/sh
-# Gate staged files on biome (format + lint errors). Warnings pass.
 bun x biome check --staged --no-errors-on-unmatched || {
   echo "biome check failed — fix (bun run check:fix) or inspect (bun run check) before committing." >&2
   exit 1
 }
+# core.hooksPath replaces .git/hooks — also run the repo-local hook.
+LOCAL="$(git rev-parse --git-dir)/hooks/pre-commit"
+[ -f "$LOCAL" ] && exec sh "$LOCAL"
+exit 0

@@ -1,0 +1,19 @@
+#!/bin/sh
+# Validate commit subject: Conventional Commits (block) + length (warn).
+SUBJECT=$(sed -n '1p' "$1")
+case "$SUBJECT" in
+  "Merge "*|"Revert "*|"fixup! "*|"squash! "*|"#"*|"") ;;
+  *)
+    if ! printf '%s' "$SUBJECT" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?!?: .+'; then
+      echo "commit-msg: subject must follow Conventional Commits — type(scope): description" >&2
+      echo "  got: $SUBJECT" >&2
+      exit 1
+    fi
+    # lenient cap — TS type names in subjects run long.
+    [ "${#SUBJECT}" -gt 144 ] && echo "commit-msg: subject is ${#SUBJECT} chars (>144) — consider shortening." >&2
+    ;;
+esac
+# core.hooksPath replaces .git/hooks — also run the repo-local hook.
+LOCAL="$(git rev-parse --git-dir)/hooks/commit-msg"
+[ -f "$LOCAL" ] && exec sh "$LOCAL" "$1"
+exit 0

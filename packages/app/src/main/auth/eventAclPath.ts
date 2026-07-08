@@ -1,14 +1,7 @@
 import type { SequencedShellCoreEvent } from "@flmux/core/shell";
 
-/**
- * Map a shellCore event to the path the user would need `allow_paths.read`
- * on to observe it. The broadcast-forwarder ACL check (B3) applies this
- * mapping so a user with a narrowed read-scope doesn't see events for
- * paths they can't query via HTTP.
- *
- * Returning `null` means the event is "structural" (pre-state, topology
- * not tied to a specific readable path) — always allowed.
- */
+/** Path a user needs `allow_paths.read` on to observe this event (broadcast ACL);
+ * `null` = structural (always allowed). Tagging a payload topic `null` passes silently. */
 export function eventToReadPath(event: SequencedShellCoreEvent): string | null {
   switch (event.topic) {
     case "app.titleChanged":
@@ -18,8 +11,7 @@ export function eventToReadPath(event: SequencedShellCoreEvent): string | null {
     case "workspace.titleChanged":
       return `/status/workspaces/${event.payload.id}`;
     case "workspace.activeChanged":
-      // Slot-scoped — observing the active-change of your own client
-      // requires read on /status/clients/{yourId}/currentWorkspace.
+      // slot-scoped: your own active-change → read on your currentWorkspace.
       return event.targetClientId ? `/status/clients/${event.targetClientId}/currentWorkspace` : null;
     case "pane.added":
     case "pane.removed":
@@ -29,11 +21,10 @@ export function eventToReadPath(event: SequencedShellCoreEvent): string | null {
     case "pane.activeChanged":
       return event.targetClientId ? `/status/clients/${event.targetClientId}/currentWorkspace` : null;
     default: {
-      // New topic = compile error: forces explicit mapping, else a forgotten
-      // topic would broadcast as structural (silent read-ACL fail-open).
+      // never: a new topic must map explicitly (compile error otherwise).
       const _exhaustive: never = event;
       void _exhaustive;
-      return "/__unmapped_event__"; // unreachable; fails closed if hit
+      return "/__unmapped_event__"; // fail-closed: matches no narrowed glob
     }
   }
 }
